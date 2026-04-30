@@ -1,12 +1,12 @@
 import chalk from 'chalk';
-import { AnalysisResult, BeneishResult, PiotroskiSignals } from '../types.js';
+import { AnalysisResult, BeneishResult, PiotroskiSignals, SectorMedians } from '../types.js';
 import { fmt, fmtPct, fmtBig } from '../analysis/metrics.js';
 
 export function formatMarkdown(r: AnalysisResult): string {
   const { financials: f, dcf, grahamNumber: gn, ratios, llmAnalysis: llm, news } = r;
   const { reverseDCF: rdcf, peterLynch: pl, evMultiples: ev, ruleOf40: r40,
           grahamRevised: gr, piotroski, altmanZ, ddm, epv, interestCoverage: ic,
-          sortino, beneish } = r;
+          sortino, beneish, sectorMedians: sm } = r;
 
   const recColor = (rec: string) =>
     rec.includes('STRONG BUY') ? chalk.green.bold(rec) :
@@ -45,15 +45,7 @@ export function formatMarkdown(r: AnalysisResult): string {
     row('Analyst Target',   f.targetMeanPrice ? `$${f.targetMeanPrice.toFixed(2)}` : 'N/A'),
     '',
 
-    chalk.bold('## 💹 Valuation Multiples'),
-    '',
-    `| Multiple       | Value    |  | Multiple       | Value    |`,
-    `|----------------|----------|--|----------------|----------|`,
-    `| P/E            | ${fmt(ratios.pe, 'x').padEnd(8)} |  | EV/EBITDA      | ${fmt(ev.evToEbitda, 'x').padEnd(8)} |`,
-    `| Forward P/E    | ${fmt(ratios.forwardPE, 'x').padEnd(8)} |  | EV/Revenue     | ${fmt(ev.evToRevenue, 'x').padEnd(8)} |`,
-    `| PEG            | ${fmt(ratios.peg).padEnd(8)} |  | EV/FCF         | ${fmt(ev.evToFCF, 'x').padEnd(8)} |`,
-    `| P/B            | ${fmt(ratios.pb, 'x').padEnd(8)} |  | P/FCF          | ${fmt(ev.priceToFCF, 'x').padEnd(8)} |`,
-    `| P/S            | ${fmt(ev.priceToSales, 'x').padEnd(8)} |  | Div. Yield     | ${fmtPct(f.dividendYield).padEnd(8)} |`,
+    ...formatPeerBlock(ratios, ev, f, sm),
     '',
 
     chalk.bold('## 📈 Profitability'),
@@ -196,6 +188,76 @@ export function formatMarkdown(r: AnalysisResult): string {
   lines.push(chalk.gray('Data: Yahoo Finance · Finnhub'));
 
   return lines.join('\n');
+}
+
+function formatPeerBlock(
+  ratios: AnalysisResult['ratios'],
+  ev: AnalysisResult['evMultiples'],
+  f: AnalysisResult['financials'],
+  sm: SectorMedians | null,
+): string[] {
+  if (!sm) {
+    // No peer data — plain 2-column multiples table
+    return [
+      chalk.bold('## 💹 Valuation Multiples'),
+      '',
+      `| Multiple       | Value    |  | Multiple       | Value    |`,
+      `|----------------|----------|--|----------------|----------|`,
+      `| P/E            | ${fmt(ratios.pe, 'x').padEnd(8)} |  | EV/EBITDA      | ${fmt(ev.evToEbitda, 'x').padEnd(8)} |`,
+      `| Forward P/E    | ${fmt(ratios.forwardPE, 'x').padEnd(8)} |  | EV/Revenue     | ${fmt(ev.evToRevenue, 'x').padEnd(8)} |`,
+      `| PEG            | ${fmt(ratios.peg).padEnd(8)} |  | EV/FCF         | ${fmt(ev.evToFCF, 'x').padEnd(8)} |`,
+      `| P/B            | ${fmt(ratios.pb, 'x').padEnd(8)} |  | P/FCF          | ${fmt(ev.priceToFCF, 'x').padEnd(8)} |`,
+      `| P/S            | ${fmt(ev.priceToSales, 'x').padEnd(8)} |  | Div. Yield     | ${fmtPct(f.dividendYield).padEnd(8)} |`,
+    ];
+  }
+
+  const peerNames = sm.peers.slice(0, 5).join(', ') + (sm.peers.length > 5 ? '…' : '');
+
+  // vs column: lowerBetter=true → above median is bad (red), below is good (green)
+  const vsCol = (val: number | null, median: number | null, lowerBetter: boolean): string => {
+    if (val === null || median === null || median === 0) return '—'.padEnd(18);
+    const pct = ((val - median) / Math.abs(median)) * 100;
+    const sign = pct >= 0 ? '+' : '';
+    const label = `${sign}${pct.toFixed(0)}%`;
+    const isGood  = lowerBetter ? pct < -15 : pct > 15;
+    const isBad   = lowerBetter ? pct >  30 : pct < -20;
+    const colored = isBad ? chalk.red(label) : isGood ? chalk.green(label) : chalk.yellow(label);
+    return `${fmt(median, lowerBetter ? 'x' : '', 1).padEnd(8)} ${colored}`;
+  };
+  const vsColPct = (val: number | null, median: number | null, lowerBetter: boolean): string => {
+    if (val === null || median === null || median === 0) return '—'.padEnd(18);
+    const pct = ((val - median) / Math.abs(median)) * 100;
+    const sign = pct >= 0 ? '+' : '';
+    const label = `${sign}${pct.toFixed(0)}%`;
+    const isGood  = lowerBetter ? pct < -15 : pct > 10;
+    const isBad   = lowerBetter ? pct >  30 : pct < -20;
+    const colored = isBad ? chalk.red(label) : isGood ? chalk.green(label) : chalk.yellow(label);
+    return `${fmtPct(median).padEnd(8)} ${colored}`;
+  };
+
+  const row = (label: string, val: string, medianCol: string) =>
+    `| ${label.padEnd(18)} | ${val.padEnd(10)} | ${medianCol} |`;
+
+  return [
+    chalk.bold(`## 🔬 vs Peer Group`) + chalk.gray(`  (${sm.peerCount} cos: ${peerNames})`),
+    '',
+    `| Metric             | Value      | Peer Median + Δ    |`,
+    `|--------------------|------------|---------------------|`,
+    // ── Valuation ──
+    row('P/E',              fmt(ratios.pe,          'x', 1), vsCol(ratios.pe,          sm.pe,               true)),
+    row('Forward P/E',      fmt(ratios.forwardPE,   'x', 1), '—'.padEnd(18)),
+    row('EV/EBITDA',        fmt(ev.evToEbitda,      'x', 1), vsCol(ev.evToEbitda,      sm.evToEbitda,       true)),
+    row('EV/Revenue',       fmt(ev.evToRevenue,     'x', 1), vsCol(ev.evToRevenue,     sm.evToRevenue,      true)),
+    row('P/FCF',            fmt(ev.priceToFCF,      'x', 1), vsCol(ev.priceToFCF,      sm.priceToFCF,       true)),
+    row('P/B',              fmt(ratios.pb,          'x', 1), vsCol(ratios.pb,          sm.pb,               true)),
+    // ── Profitability ──
+    row('Operating Margin', fmtPct(f.operatingMargin),       vsColPct(f.operatingMargin, sm.operatingMargin, false)),
+    row('Net Margin',       fmtPct(f.netMargin),             vsColPct(f.netMargin,       sm.netMargin,       false)),
+    row('ROE',              fmtPct(f.roe),                   vsColPct(f.roe,             sm.roe,             false)),
+    row('ROIC',             fmtPct(f.roic),                  vsColPct(f.roic,            sm.roic,            false)),
+    // ── Growth ──
+    row('Revenue Growth',   fmtPct(f.revenueGrowth),        vsColPct(f.revenueGrowth,   sm.revenueGrowthYoY, false)),
+  ];
 }
 
 function formatBeneishProbability(p: BeneishResult['probability']): string {

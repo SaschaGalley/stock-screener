@@ -6,7 +6,7 @@ import chalk from 'chalk';
 import { getConfig, requireApiKey } from './config.js';
 import { logger } from './utils/logger.js';
 import { getFinancials } from './data/yfinance.js';
-import { getNews, getBasicFinancials } from './data/finnhub.js';
+import { getNews, getBasicFinancials, getSectorMedians } from './data/finnhub.js';
 import {
   calculateDCF, calculateGraham, calculateRatios,
   calculateReverseDCF, calculatePeterLynch, calculateEVMultiples,
@@ -122,8 +122,8 @@ async function run(symbol: string, opts: Record<string, string | boolean>): Prom
     if (options.cache) writeCache(cfg.cacheDir, symbol, financials);
   }
 
-  // Rates + news are always live (not cached)
-  const [news, marketRates] = await Promise.all([
+  // Rates + news + peer data are always live (not cached)
+  const [news, marketRates, sectorMedians] = await Promise.all([
     cfg.finnhubApiKey
       ? getNews(symbol, cfg.finnhubApiKey).catch((e) => {
           logger.warn(`News unavailable: ${(e as Error).message}`);
@@ -132,6 +132,9 @@ async function run(symbol: string, opts: Record<string, string | boolean>): Prom
       : Promise.resolve([]),
     cfg.fredApiKey
       ? getMarketRates(cfg.fredApiKey)
+      : Promise.resolve(null),
+    cfg.finnhubApiKey
+      ? getSectorMedians(symbol, cfg.finnhubApiKey).catch(() => null)
       : Promise.resolve(null),
   ]);
 
@@ -183,7 +186,7 @@ async function run(symbol: string, opts: Record<string, string | boolean>): Prom
   const prompt = buildAnalysisPrompt(financials, {
     dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
     ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,
-    sortino, beneish, news,
+    sortino, beneish, sectorMedians, news,
   });
 
   const llmAnalysis = await provider.analyze(prompt, searchResults);
@@ -196,7 +199,7 @@ async function run(symbol: string, opts: Record<string, string | boolean>): Prom
     financials, dcf, grahamNumber, ratios,
     reverseDCF, peterLynch, evMultiples, ruleOf40, grahamRevised,
     piotroski, altmanZ, ddm, epv, interestCoverage,
-    sortino, beneish,
+    sortino, beneish, sectorMedians,
     llmAnalysis, news,
   };
 

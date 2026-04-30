@@ -252,6 +252,24 @@ export interface InterestCoverageResult {
   interpretation: 'excellent' | 'good' | 'fair' | 'poor' | 'critical' | 'unknown';
 }
 
+export interface SectorMedians {
+  // Valuation multiples
+  pe: number | null;
+  evToEbitda: number | null;
+  evToRevenue: number | null;
+  priceToFCF: number | null;
+  pb: number | null;
+  // Profitability
+  operatingMargin: number | null;
+  netMargin: number | null;
+  roe: number | null;
+  roic: number | null;
+  // Growth
+  revenueGrowthYoY: number | null;
+  peerCount: number;
+  peers: string[];
+}
+
 // ─── Main Result ─────────────────────────────────────────────────────────────
 
 export interface NewsItem {
@@ -303,6 +321,7 @@ export interface AnalysisResult {
   interestCoverage: InterestCoverageResult;
   sortino: SortinoResult;
   beneish: BeneishResult;
+  sectorMedians: SectorMedians | null;
   // LLM + news
   llmAnalysis: LLMAnalysis;
   news: NewsItem[];

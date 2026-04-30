@@ -19,7 +19,7 @@ import {
   fmtBig,
 } from '../analysis/metrics.js';
 import { getNews } from '../data/finnhub.js';
-import { StockFinancials } from '../types.js';
+import { SectorMedians, StockFinancials } from '../types.js';
 
 export interface PromptData {
   dcf: ReturnType<typeof calculateDCF>;
@@ -37,6 +37,7 @@ export interface PromptData {
   interestCoverage: ReturnType<typeof calculateInterestCoverage>;
   sortino: ReturnType<typeof calculateSortino>;
   beneish: ReturnType<typeof calculateBeneish>;
+  sectorMedians: SectorMedians | null;
   news: Awaited<ReturnType<typeof getNews>>;
 }
 
@@ -61,7 +62,8 @@ export function buildAnalysisPrompt(f: StockFinancials, d: PromptData): string {
 ### Traditional Valuation
 - P/E: ${fmt(d.ratios.pe, 'x')} | Forward P/E: ${fmt(d.ratios.forwardPE, 'x')} | PEG: ${fmt(d.ratios.peg)}
 - P/B: ${fmt(d.ratios.pb, 'x')} | P/S: ${fmt(d.evMultiples.priceToSales, 'x')} | P/FCF: ${fmt(d.evMultiples.priceToFCF, 'x')}
-- EV/EBITDA: ${fmt(d.evMultiples.evToEbitda, 'x')} | EV/Revenue: ${fmt(d.evMultiples.evToRevenue, 'x')}
+- EV/EBITDA: ${fmt(d.evMultiples.evToEbitda, 'x')} | EV/Revenue: ${fmt(d.evMultiples.evToRevenue, 'x')}${d.sectorMedians ? `
+- Peer medians (${d.sectorMedians.peerCount} cos): P/E ${fmt(d.sectorMedians.pe, 'x', 1)} | EV/EBITDA ${fmt(d.sectorMedians.evToEbitda, 'x', 1)} | EV/Revenue ${fmt(d.sectorMedians.evToRevenue, 'x', 1)} | P/FCF ${fmt(d.sectorMedians.priceToFCF, 'x', 1)} | P/B ${fmt(d.sectorMedians.pb, 'x', 1)}` : ''}
 
 ### Profitability & Growth
 - ROE: ${fmtPct(d.ratios.roe)} | ROA: ${fmtPct(d.ratios.roa)} | ROIC: ${fmtPct(f.roic)}
