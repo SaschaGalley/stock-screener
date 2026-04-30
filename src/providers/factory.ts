@@ -6,16 +6,14 @@ import { requireApiKey } from '../config.js';
 import { AnalysisOptions } from '../types.js';
 
 export function createProvider(options: AnalysisOptions): LLMProvider {
-  const useNativeSearch = options.search === 'claude-native';
-
   switch (options.model) {
     case 'anthropic': {
       const key = requireApiKey('anthropic');
-      return new AnthropicProvider(key, useNativeSearch);
+      return new AnthropicProvider(key, options.search === 'claude-native');
     }
     case 'openai': {
       const key = requireApiKey('openai');
-      return new OpenAIProvider(key);
+      return new OpenAIProvider(key, options.search === 'openai-native');
     }
     case 'gemini': {
       const key = requireApiKey('gemini');

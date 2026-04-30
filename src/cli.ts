@@ -45,7 +45,7 @@ program
   )
   .option(
     '-s, --search <type>',
-    'Web search enrichment\n  none           No web search (default)\n  claude-native  Claude built-in search (requires --model anthropic)\n  brave          Brave Search API — fresh results, free tier (recommended)\n  tavily         Tavily API (works with any model)\n  openai-tavily  Tavily injected into OpenAI prompt',
+    'Web search enrichment\n  none           No web search (default)\n  claude-native  Claude built-in search (requires --model anthropic)\n  openai-native  OpenAI built-in search (requires --model openai)\n  brave          Brave Search API — fresh results (recommended for dev)\n  tavily         Tavily API (works with any model)\n  openai-tavily  Tavily injected into OpenAI prompt',
     'none',
   )
   .option(
@@ -59,6 +59,7 @@ Examples:
   $ npx tsx src/cli.ts NOW
   $ npx tsx src/cli.ts AAPL --model openai
   $ npx tsx src/cli.ts MSFT --model anthropic --search claude-native
+  $ npx tsx src/cli.ts AAPL --model openai    --search openai-native
   $ npx tsx src/cli.ts NOW  --search tavily --output report.md
   $ npx tsx src/cli.ts NVDA --model gemini  --verbose
 
@@ -220,6 +221,7 @@ function normalizeSearch(search: string, model: string): AnalysisOptions['search
   if (!search || search === 'none') return 'none';
   if (search === 'openai-tavily') return 'openai-tavily';
   if (search === 'claude-native') return 'claude-native';
+  if (search === 'openai-native') return 'openai-native';
   if (search === 'brave') return 'brave';
   if (search === 'tavily') return model === 'openai' ? 'openai-tavily' : 'tavily';
   return 'none';
@@ -228,6 +230,9 @@ function normalizeSearch(search: string, model: string): AnalysisOptions['search
 function validateOptions(options: AnalysisOptions): void {
   if (options.search === 'claude-native' && options.model !== 'anthropic') {
     throw new Error('--search claude-native requires --model anthropic');
+  }
+  if (options.search === 'openai-native' && options.model !== 'openai') {
+    throw new Error('--search openai-native requires --model openai');
   }
   const valid = ['anthropic', 'openai', 'gemini'];
   if (!valid.includes(options.model)) {

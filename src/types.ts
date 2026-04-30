@@ -329,7 +329,7 @@ export interface AnalysisResult {
 
 export interface AnalysisOptions {
   model: 'anthropic' | 'openai' | 'gemini';
-  search: 'claude-native' | 'tavily' | 'openai-tavily' | 'brave' | 'none';
+  search: 'claude-native' | 'openai-native' | 'tavily' | 'openai-tavily' | 'brave' | 'none';
   cache: boolean;
   output?: string;
   verbose: boolean;
