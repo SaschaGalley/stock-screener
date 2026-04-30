@@ -3,16 +3,18 @@ import { LLMAnalysis, SearchResult } from '../types.js';
 import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
 import { logger } from '../utils/logger.js';
 
-const MODEL = 'claude-sonnet-4-6';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 export class AnthropicProvider extends LLMProvider {
   readonly name = 'anthropic';
   private client: Anthropic;
+  private model: string;
   private useNativeSearch: boolean;
 
-  constructor(apiKey: string, useNativeSearch = false) {
+  constructor(apiKey: string, modelId = DEFAULT_MODEL, useNativeSearch = false) {
     super();
     this.client = new Anthropic({ apiKey });
+    this.model = modelId;
     this.useNativeSearch = useNativeSearch;
   }
 
@@ -26,7 +28,7 @@ export class AnthropicProvider extends LLMProvider {
     }
 
     const message = await this.client.messages.create({
-      model: MODEL,
+      model: this.model,
       max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildFullPrompt(prompt, searchResults) }],
@@ -50,7 +52,7 @@ export class AnthropicProvider extends LLMProvider {
     // Agentic loop — Claude may call web_search multiple times
     for (let round = 0; round < 5; round++) {
       const response = await this.client.messages.create({
-        model: MODEL,
+        model: this.model,
         max_tokens: 4096,
         system: SYSTEM_PROMPT,
         // web_search_20250305 is a built-in tool not yet reflected in SDK v0.28 types

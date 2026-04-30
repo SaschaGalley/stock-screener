@@ -3,17 +3,19 @@ import { LLMAnalysis, SearchResult } from '../types.js';
 import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
 import { logger } from '../utils/logger.js';
 
-const MODEL = 'gpt-5.4-mini';
-const SEARCH_MODEL = 'gpt-4o-mini';
+const DEFAULT_MODEL = 'gpt-5.4-mini';
+const SEARCH_MODEL  = 'gpt-4o-mini'; // Responses API web_search_preview
 
 export class OpenAIProvider extends LLMProvider {
   readonly name = 'openai';
   private client: OpenAI;
+  private model: string;
   private useNativeSearch: boolean;
 
-  constructor(apiKey: string, useNativeSearch = false) {
+  constructor(apiKey: string, modelId = DEFAULT_MODEL, useNativeSearch = false) {
     super();
     this.client = new OpenAI({ apiKey });
+    this.model = modelId;
     this.useNativeSearch = useNativeSearch;
   }
 
@@ -27,8 +29,8 @@ export class OpenAIProvider extends LLMProvider {
     }
 
     const completion = await this.client.chat.completions.create({
-      model: MODEL,
-      max_tokens: 2048,
+      model: this.model,
+      max_completion_tokens: 2048,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },

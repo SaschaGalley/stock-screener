@@ -23,7 +23,7 @@ async function safeQuote(symbol: string): Promise<any> {
 async function safeSummary(symbol: string): Promise<any> {
   try {
     return await yf.quoteSummary(symbol, {
-      modules: ['financialData', 'defaultKeyStatistics', 'summaryDetail', 'assetProfile', 'price'],
+      modules: ['financialData', 'defaultKeyStatistics', 'summaryDetail', 'assetProfile', 'price', 'recommendationTrend'],
     } as any);
   } catch (e) { logger.warn(`Summary: ${(e as Error).message}`); return null; }
 }
@@ -69,6 +69,39 @@ async function safeTimeSeries(symbol: string, module: 'balance-sheet' | 'financi
   }
 }
 
+// ─── Symbol resolution ────────────────────────────────────────────────────────
+
+export async function resolveSymbol(input: string): Promise<string> {
+  // Check if the symbol works directly
+  try {
+    const q = await yf.quote(input);
+    if ((q as any)?.regularMarketPrice) return input;
+  } catch { /* fall through to search */ }
+
+  // Yahoo Finance search endpoint
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(input)}&quotesCount=8&newsCount=0&enableFuzzyQuery=false`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) return input;
+    const data = await res.json() as {
+      quotes?: Array<{ symbol?: string; shortname?: string; longname?: string; quoteType?: string; sector?: string; industry?: string }>
+    };
+
+    // Prefer genuine equities (sector field set = real company, not ETP/structured product)
+    const equities = (data.quotes ?? []).filter((q) => q.quoteType === 'EQUITY' && q.symbol);
+    const match = equities.find((q) => q.sector) ?? equities[0];
+
+    if (match?.symbol && match.symbol !== input) {
+      logger.info(`Resolved "${input}" → "${match.symbol}" (${match.longname ?? match.shortname ?? ''})`);
+      return match.symbol;
+    }
+  } catch (e) {
+    logger.warn(`Symbol lookup failed: ${(e as Error).message}`);
+  }
+
+  return input;
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function getFinancials(symbol: string): Promise<StockFinancials> {
@@ -90,6 +123,7 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
   const sd = summary?.summaryDetail        ?? {};
   const ap = summary?.assetProfile         ?? {};
   const pr = summary?.price                ?? {};
+  const rt = (summary as any)?.recommendationTrend?.trend?.[0] ?? {};
 
   // Most recent annual period (last element = most recent)
   const bs  = bsData[bsData.length - 1]   ?? {};
@@ -202,6 +236,16 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
     sharesOutstanding: num(ks.sharesOutstanding),
     targetMeanPrice:   num(fd.targetMeanPrice),
 
+    analystTargetHigh:   num(fd.targetHighPrice),
+    analystTargetLow:    num(fd.targetLowPrice),
+    analystTargetMedian: num(fd.targetMedianPrice),
+    analystCount:        num(fd.numberOfAnalystOpinions),
+    analystStrongBuy:    num(rt.strongBuy),
+    analystBuy:          num(rt.buy),
+    analystHold:         num(rt.hold),
+    analystSell:         num(rt.sell),
+    analystStrongSell:   num(rt.strongSell),
+
     fiftyTwoWeekHigh: num(quote?.fiftyTwoWeekHigh),
     fiftyTwoWeekLow:  num(quote?.fiftyTwoWeekLow),
     beta:             num(quote?.beta),
@@ -210,6 +254,12 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
 
     sector:   str(ap.sector),
     industry: str(ap.industry),
+
+    website:      str((ap as any).website),
+    employees:    num((ap as any).fullTimeEmployees),
+    headquarters: [str((ap as any).city), str((ap as any).state), str((ap as any).country)]
+                    .filter(Boolean).join(', ') || null,
+    description:  str((ap as any).longBusinessSummary),
 
     roic:                null,
     epsGrowth3Y:         null,

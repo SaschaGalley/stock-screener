@@ -27,10 +27,30 @@ export function formatMarkdown(r: AnalysisResult): string {
     return `| ${label.padEnd(22)} | ${value.padEnd(18)} |`;
   }
 
+  const profileRows: string[] = [
+    row('Company',       f.companyName),
+    row('Sector',        [f.sector, f.industry].filter(Boolean).join(' / ') || 'N/A'),
+  ];
+  if (f.headquarters) profileRows.push(row('Headquarters', f.headquarters));
+  if (f.employees)    profileRows.push(row('Employees',    f.employees.toLocaleString()));
+  if (f.website)      profileRows.push(row('Website',      f.website));
+
   const lines: string[] = [
     chalk.bold.white(`# ${r.symbol} — Investment Analysis`),
     chalk.gray(`${r.timestamp.replace('T', ' ').slice(0, 19)} UTC  |  ${r.provider}  |  search: ${r.searchProvider}`),
     '',
+
+    chalk.bold('## 🏢 Company Profile'),
+    '',
+    `| ${'Field'.padEnd(22)} | ${''.padEnd(18)} |`,
+    `|${'-'.repeat(24)}|${'-'.repeat(20)}|`,
+    ...profileRows,
+    '',
+    ...(f.description ? [chalk.italic(
+      f.description.length > 1000
+        ? f.description.slice(0, 997) + '…'
+        : f.description,
+    ), ''] : []),
 
     chalk.bold('## 📊 Snapshot'),
     '',
@@ -39,10 +59,8 @@ export function formatMarkdown(r: AnalysisResult): string {
     row('Price',            `$${f.price.toFixed(2)}`),
     row('Market Cap',       fmtBig(f.marketCap)),
     row('Enterprise Value', fmtBig(ev.enterpriseValue)),
-    row('Sector',           f.sector ?? 'N/A'),
     row('52W High / Low',   `$${fmt(f.fiftyTwoWeekHigh)} / $${fmt(f.fiftyTwoWeekLow)}`),
     row('Beta',             fmt(f.beta)),
-    row('Analyst Target',   f.targetMeanPrice ? `$${f.targetMeanPrice.toFixed(2)}` : 'N/A'),
     '',
 
     ...formatPeerBlock(ratios, ev, f, sm),
@@ -153,6 +171,9 @@ export function formatMarkdown(r: AnalysisResult): string {
       : '  N/A — insufficient balance sheet data',
     '',
 
+    ...formatAnalystBlock(f),
+    '',
+
     chalk.bold('## 🚀 Bull Case'),
     '',
     llm.bullCase,
@@ -258,6 +279,54 @@ function formatPeerBlock(
     // ── Growth ──
     row('Revenue Growth',   fmtPct(f.revenueGrowth),        vsColPct(f.revenueGrowth,   sm.revenueGrowthYoY, false)),
   ];
+}
+
+function formatAnalystBlock(f: AnalysisResult['financials']): string[] {
+  const total = (f.analystStrongBuy ?? 0) + (f.analystBuy ?? 0)
+              + (f.analystHold ?? 0) + (f.analystSell ?? 0) + (f.analystStrongSell ?? 0);
+
+  if (!f.targetMeanPrice && total === 0) return [];
+
+  const lines: string[] = [chalk.bold('## 🎯 Analyst Consensus'), ''];
+
+  // Price target row
+  if (f.targetMeanPrice) {
+    const mosPct = ((f.targetMeanPrice - f.price) / f.price * 100);
+    const updown = mosPct >= 0
+      ? chalk.green(`▲ ${mosPct.toFixed(1)}% upside`)
+      : chalk.red(`▼ ${Math.abs(mosPct).toFixed(1)}% downside`);
+    lines.push(
+      `  Price Target:   ${chalk.bold('$' + f.targetMeanPrice.toFixed(2))} avg  ${updown}${f.analystCount ? `  (${f.analystCount} analysts)` : ''}`,
+    );
+    if (f.analystTargetLow !== null && f.analystTargetHigh !== null) {
+      lines.push(`  Range:          $${f.analystTargetLow.toFixed(2)} – $${f.analystTargetHigh.toFixed(2)}` +
+        (f.analystTargetMedian ? `  |  median $${f.analystTargetMedian.toFixed(2)}` : ''));
+    }
+  }
+
+  // Rating breakdown bar
+  if (total > 0) {
+    const sb = f.analystStrongBuy  ?? 0;
+    const b  = f.analystBuy        ?? 0;
+    const h  = f.analystHold       ?? 0;
+    const s  = f.analystSell       ?? 0;
+    const ss = f.analystStrongSell ?? 0;
+    const bar = [
+      chalk.green('█').repeat(sb),
+      chalk.green('▓').repeat(b),
+      chalk.yellow('░').repeat(h),
+      chalk.red('▓').repeat(s),
+      chalk.red('█').repeat(ss),
+    ].join('');
+    const buyPct = Math.round(((sb + b) / total) * 100);
+    lines.push(
+      '',
+      `  Ratings:        [${bar}]`,
+      `  ${chalk.green(`Strong Buy: ${sb}  Buy: ${b}`)}  ${chalk.yellow(`Hold: ${h}`)}  ${chalk.red(`Sell: ${s}  Strong Sell: ${ss}`)}  →  ${chalk.bold(buyPct + '% bullish')}`,
+    );
+  }
+
+  return lines;
 }
 
 function formatBeneishProbability(p: BeneishResult['probability']): string {

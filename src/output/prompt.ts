@@ -57,7 +57,15 @@ export function buildAnalysisPrompt(f: StockFinancials, d: PromptData): string {
 - Price: $${f.price.toFixed(2)} | Market Cap: ${fmtBig(f.marketCap)}
 - Sector: ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}
 - 52W Range: $${fmt(f.fiftyTwoWeekLow)} – $${fmt(f.fiftyTwoWeekHigh)}
-- Beta: ${fmt(f.beta)} | Analyst Target: ${f.targetMeanPrice ? `$${f.targetMeanPrice.toFixed(2)}` : 'N/A'}
+- Beta: ${fmt(f.beta)}
+- Analyst Price Target: ${f.targetMeanPrice ? `$${f.targetMeanPrice.toFixed(2)} avg` : 'N/A'}${f.analystTargetLow !== null && f.analystTargetHigh !== null ? ` | Range $${f.analystTargetLow}–$${f.analystTargetHigh}` : ''}${f.analystCount ? ` | ${f.analystCount} analysts` : ''}
+- Analyst Ratings: ${[
+    f.analystStrongBuy  ? `Strong Buy: ${f.analystStrongBuy}`  : '',
+    f.analystBuy        ? `Buy: ${f.analystBuy}`               : '',
+    f.analystHold       ? `Hold: ${f.analystHold}`             : '',
+    f.analystSell       ? `Sell: ${f.analystSell}`             : '',
+    f.analystStrongSell ? `Strong Sell: ${f.analystStrongSell}` : '',
+  ].filter(Boolean).join(' | ') || 'N/A'}
 
 ### Traditional Valuation
 - P/E: ${fmt(d.ratios.pe, 'x')} | Forward P/E: ${fmt(d.ratios.forwardPE, 'x')} | PEG: ${fmt(d.ratios.peg)}

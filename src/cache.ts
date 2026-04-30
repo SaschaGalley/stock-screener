@@ -6,7 +6,7 @@ import { logger } from './utils/logger.js';
 
 const TTL_MS = 60 * 60 * 1000; // 1 hour
 // Bump whenever StockFinancials gains/loses fields — invalidates all old cache entries
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 5;
 
 function resolveCacheDir(dir: string): string {
   if (dir.startsWith('~')) return join(homedir(), dir.slice(1));

@@ -242,16 +242,24 @@ export function calculateGrahamRevised(
   bondYield = AAA_BOND_YIELD,
 ): GrahamRevisedResult {
   const eps = financials.eps;
-  const g   = financials.earningsGrowth ?? financials.revenueGrowth;
   const price = financials.price;
 
-  if (!eps || eps <= 0 || !g) {
+  // Use 3Y EPS CAGR when available (more stable than TTM); cap at 15% per Graham's own rule
+  const rawG = financials.epsGrowth3Y
+    ?? (financials.earningsGrowth !== null && financials.revenueGrowth !== null
+        ? Math.min(financials.earningsGrowth, financials.revenueGrowth)
+        : financials.earningsGrowth ?? financials.revenueGrowth);
+  const g = rawG !== null ? Math.max(0, Math.min(rawG, 0.15)) : null;
+
+  if (!eps || eps <= 0 || g === null) {
     return { fairValue: null, bondYield, growthRate: null,
              marginOfSafety: null, isUndervalued: null };
   }
 
-  const gPct = g * 100;
-  const fairValue = (eps * (8.5 + 2 * gPct) * 4.4) / bondYield;
+  // V* = EPS × (8.5 + 2G) × 4.4 / Y  — G and Y both in percent
+  const gPct     = g * 100;
+  const yieldPct = bondYield * 100;
+  const fairValue = (eps * (8.5 + 2 * gPct) * 4.4) / yieldPct;
   const marginOfSafety = (fairValue - price) / price;
 
   return { fairValue, bondYield, growthRate: g, marginOfSafety, isUndervalued: fairValue > price };
@@ -393,18 +401,19 @@ export function calculateDDM(financials: StockFinancials, riskFreeRate = 0.045):
 
   const dividendPerShare = price * dy;
   // CAPM: r = risk-free + beta × equity premium
-  const riskFree = riskFreeRate;
   const equityPremium = 0.055;
-  const requiredReturn = riskFree + beta * equityPremium;
+  const requiredReturn = riskFreeRate + beta * equityPremium;
 
-  // Dividend growth: prefer 5-year historical from Finnhub, else estimate via sustainable growth
-  const retentionRatio = financials.payoutRatio !== null ? 1 - financials.payoutRatio : 0.5;
-  const roe = financials.roe ?? 0.10;
-  const sustainableGrowth = roe * retentionRatio;
-  const eg = financials.dividendGrowthRate5Y ?? financials.earningsGrowth ?? sustainableGrowth;
-  const dividendGrowthRate = Math.min(eg, requiredReturn - 0.01, 0.12);
+  // Dividend growth: prefer 5-year historical from Finnhub, else earnings growth, else revenueGrowth
+  // Cap at 10% — DDM is only stable well below the required return
+  const rawGrowth = financials.dividendGrowthRate5Y ?? financials.earningsGrowth ?? financials.revenueGrowth;
+  // Clamp: non-negative and no higher than 10%
+  const dividendGrowthRate = rawGrowth !== null
+    ? Math.max(0, Math.min(rawGrowth, 0.10))
+    : Math.min(0.05, requiredReturn - 0.03); // conservative fallback
 
-  if (dividendGrowthRate >= requiredReturn) {
+  // Require at least 2% spread — DDM diverges when g ≈ r
+  if (dividendGrowthRate >= requiredReturn - 0.02) {
     return { fairValue: null, dividendPerShare, dividendGrowthRate, requiredReturn, isApplicable: true };
   }
 

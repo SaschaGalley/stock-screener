@@ -6,20 +6,20 @@ import { requireApiKey } from '../config.js';
 import { AnalysisOptions } from '../types.js';
 
 export function createProvider(options: AnalysisOptions): LLMProvider {
-  switch (options.model) {
-    case 'anthropic': {
-      const key = requireApiKey('anthropic');
-      return new AnthropicProvider(key, options.search === 'claude-native');
+  switch (options.provider) {
+    case 'claude': {
+      const key = requireApiKey('claude');
+      return new AnthropicProvider(key, options.modelId, options.search === 'claude');
     }
     case 'openai': {
       const key = requireApiKey('openai');
-      return new OpenAIProvider(key, options.search === 'openai-native');
+      return new OpenAIProvider(key, options.modelId, options.search === 'openai');
     }
     case 'gemini': {
       const key = requireApiKey('gemini');
-      return new GeminiProvider(key);
+      return new GeminiProvider(key, options.modelId);
     }
     default:
-      throw new Error(`Unknown provider: ${options.model}`);
+      throw new Error(`Unknown provider: ${options.provider}`);
   }
 }

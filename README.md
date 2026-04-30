@@ -2,41 +2,6 @@
 
 Fundamental stock analysis from the terminal. Fetches live financial data, runs 15 valuation models, then asks an LLM for a structured bull/bear analysis.
 
-```
-$ npx tsx src/cli.ts NOW --search brave
-
-  Investment Analysis — NOW
-
-→ Fetching market data...
-✓ ServiceNow, Inc.  $88.89  $91.67B
-→ Running valuation models...
-✓ 15 models calculated
-→ Running Brave web search...
-✓ 12 search results
-→ Calling Claude for analysis...
-✓ LLM analysis complete
-
-# NOW — Investment Analysis
-
-## 📊 Snapshot          ## 💹 Valuation Multiples    ## 📈 Profitability
-Price:     $88.89        P/E:       52.91x             Revenue:     $13.96B (+22.1%)
-Market Cap: $91.67B      Forward P/E: 17.77x            FCF:         $5.11B
-Beta:       N/A          EV/EBITDA: 31.36x             ROIC:        N/A
-
-## 📐 Intrinsic Value Models
-| Model                   | Fair Value  | vs. Price |
-|-------------------------|-------------|-----------|
-| DCF (5yr, 10% growth)   | $138.01     | ▲ 55.3%   |
-| Peter Lynch             | $123.58     | ▲ 39.0%   |
-| EPV (Greenwald)         | $25.45      | ▼ 71.4%   |
-
-## 🏆 Piotroski F-Score       ## ⚠️  Altman Z-Score
-Score: 4/8  NEUTRAL            Score: 8.62  →  safe zone
-
-## 📊 Recommendation
-Score: ███████░░░ 7/10  ·  BUY  ·  Fair Value: $123 – $145
-```
-
 ## Setup
 
 ```bash
@@ -49,10 +14,10 @@ cp .env.example .env   # fill in your API keys
 
 | Key | Service | Required | Where to get |
 |-----|---------|----------|--------------|
-| `ANTHROPIC_API_KEY` | Claude (default LLM) | yes | [console.anthropic.com](https://console.anthropic.com) |
+| `ANTHROPIC_API_KEY` | Claude — `--model claude/haiku/opus/claude-*` | yes | [console.anthropic.com](https://console.anthropic.com) |
 | `FINNHUB_API_KEY` | News & Finnhub metrics | yes | [finnhub.io](https://finnhub.io) — free tier |
-| `OPENAI_API_KEY` | GPT-4 Turbo | optional | [platform.openai.com](https://platform.openai.com) |
-| `GOOGLE_GEMINI_API_KEY` | Gemini 1.5 Pro | optional | [ai.google.dev](https://ai.google.dev) |
+| `OPENAI_API_KEY` | OpenAI — `--model openai/gpt-*/o1-*` | optional | [platform.openai.com](https://platform.openai.com) |
+| `GOOGLE_GEMINI_API_KEY` | Gemini — `--model gemini/gemini-*` | optional | [ai.google.dev](https://ai.google.dev) |
 | `BRAVE_API_KEY` | Brave web search | optional | [brave.com/search/api](https://brave.com/search/api/) — $5 free credits/mo |
 | `TAVILY_API_KEY` | Tavily web search | optional | [tavily.com](https://tavily.com) |
 | `FRED_API_KEY` | Live interest rates | optional | [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
@@ -64,28 +29,33 @@ With `FRED_API_KEY`, the Graham Revised, DDM and Sortino models use live 10-year
 ## Usage
 
 ```bash
-# Basic analysis (Claude, no search)
+# Basic analysis (Claude Sonnet, no search)
 npx tsx src/cli.ts NOW
 
-# Recommended: Brave search for current events (~$0.015/analysis, free up to 1000 req/mo)
-npx tsx src/cli.ts NOW --search brave
+# Native search (no value = auto-selects native for the active model)
+npx tsx src/cli.ts AAPL --model claude  --search
+npx tsx src/cli.ts AAPL --model openai  --search
 
-# Best quality: Claude native search (~$0.12/analysis, ideal for earnings season)
-npx tsx src/cli.ts NOW --search claude-native
+# Explicit search provider
+npx tsx src/cli.ts FACC --search brave
+npx tsx src/cli.ts NOW  --search tavily --output report.md
 
-# Other LLM providers
-npx tsx src/cli.ts AAPL --model openai
-npx tsx src/cli.ts MSFT --model gemini --search brave
+# Model shortcuts
+npx tsx src/cli.ts AAPL --model haiku       # claude-haiku-4-5-20251001
+npx tsx src/cli.ts AAPL --model opus        # claude-opus-4-7
+npx tsx src/cli.ts MSFT --model gemini
+
+# Full model ID override
+npx tsx src/cli.ts NOW  --model gpt-5.4
+npx tsx src/cli.ts NOW  --model claude-opus-4-7 --search brave
 
 # Save output
 npx tsx src/cli.ts NOW --output report.md
 npx tsx src/cli.ts NOW --output report.json
 
-# Skip cache (always refetch)
-npx tsx src/cli.ts NOW --cache disable
-
-# Debug logging
-npx tsx src/cli.ts NOW --verbose
+# Misc
+npx tsx src/cli.ts NOW --cache disable   # skip cache
+npx tsx src/cli.ts NOW --verbose         # debug logging
 ```
 
 ## Options
@@ -94,13 +64,17 @@ npx tsx src/cli.ts NOW --verbose
 Usage: investment-cli [options] <symbol>
 
 Arguments:
-  symbol              Stock ticker (e.g. NOW, AAPL, MSFT, NVDA)
+  symbol              Stock ticker — local exchange symbols auto-resolved
+                      (e.g. NOW, AAPL, FACC → 0QW9.IL)
 
 Options:
-  -m, --model         anthropic | openai | gemini        (default: anthropic)
-  -s, --search        none | brave | claude-native | tavily | openai-tavily  (default: none)
+  -m, --model <id>    Model shortcut or full model ID  (default: claude)
+                        Shortcuts:  claude | openai | gemini | haiku | opus | sonnet
+                        Full IDs:   claude-* | gpt-* | o1-* | gemini-*
+  -s, --search [type] Web search — omit value for native search of active model
+                        none | claude | openai | brave | tavily
   -o, --output        Save report — .md or .json
-  -c, --cache         enable | disable                   (default: enable, TTL 1h)
+  -c, --cache         enable | disable                 (default: enable, TTL 1h)
   -v, --verbose       Debug logging
   -h, --help          Show help
 ```
@@ -109,13 +83,15 @@ Options:
 
 | `--search` | Works with | Quality | Cost/analysis |
 |---|---|---|---|
-| `none` | any model | financial data only | free |
-| `brave` | any model | current news + snippets | ~$0.015 (free up to 1k req/mo) |
-| `claude-native` | `anthropic` only | live web, best quality | ~$0.12 |
+| *(omitted)* | any model | financial data only | free |
+| `brave` | any model | current news + snippets | ~$0.015 (free up to 2k req/mo) |
 | `tavily` | any model | current news | ~$0.005 |
-| `openai-tavily` | `openai` only | alias for tavily | ~$0.005 |
+| `openai` | `openai` / `gpt-*` only | live web via Responses API | ~$0.02 |
+| `claude` | `claude` / `claude-*` only | live web, best quality | ~$0.12 |
 
-**Recommendation:** `--search brave` for daily use, `--search claude-native` during earnings season or after major news events.
+Pass `--search` without a value to auto-select the native search for the active model (`claude` → claude search, `openai` → openai search).
+
+**Recommendation:** `--search brave` for daily use, `--search` (native) during earnings season or after major news events.
 
 ## Valuation models
 
@@ -141,22 +117,13 @@ Options:
 
 | Source | Data |
 |--------|------|
-| Yahoo Finance (`yahoo-finance2`) | Price, fundamentals, balance sheet, cash flow, historical prices |
+| Yahoo Finance (`yahoo-finance2`) | Price, fundamentals, balance sheet, cash flow, historical prices, analyst targets & ratings |
+| Yahoo Finance search API | Symbol auto-resolution — type `FACC` and it resolves to the correct exchange ticker |
 | Finnhub `/stock/metric` | ROIC, 3-year EPS CAGR, 5-year dividend growth rate |
+| Finnhub `/stock/peers` + `/stock/metric` | Peer group median multiples & profitability (up to 8 peers) |
 | Finnhub `/company-news` | Recent company news (last 7 days) |
 | FRED | Live 10-year Treasury yield (DGS10), Moody's AAA bond yield (DAAA) |
-| Brave / Tavily / Claude | Optional web search for current events |
-
-## Cost per analysis
-
-| LLM | Search | Approx. total |
-|-----|--------|---------------|
-| Claude | none | ~$0.01 |
-| Claude | brave | ~$0.025 |
-| Claude | claude-native | ~$0.12 |
-| OpenAI | none | ~$0.08 |
-| OpenAI | brave | ~$0.095 |
-| Gemini | none | free tier |
+| Brave / Tavily / Claude / OpenAI | Optional web search for current events |
 
 ## Project structure
 
@@ -164,11 +131,11 @@ Options:
 src/
 ├── cli.ts               Entry point & orchestration
 ├── config.ts            Env vars (Zod validated)
-├── types.ts             Shared TypeScript interfaces
+├── types.ts             Zod schemas with field descriptions (types inferred via z.infer<>)
 ├── cache.ts             File-based JSON cache (1h TTL, versioned)
 ├── providers/           LLM abstraction layer
-│   ├── anthropic.ts     Claude + native web_search tool
-│   ├── openai.ts        GPT-4 Turbo
+│   ├── anthropic.ts     Claude + native web_search_20250305 tool
+│   ├── openai.ts        OpenAI chat completions + Responses API web_search_preview
 │   ├── gemini.ts        Gemini 1.5 Pro
 │   └── factory.ts
 ├── search/
@@ -176,8 +143,8 @@ src/
 │   ├── brave.ts         Brave Search (extra_snippets)
 │   └── tavily.ts        Tavily
 ├── data/
-│   ├── yfinance.ts      Yahoo Finance — fundamentalsTimeSeries + chart()
-│   ├── finnhub.ts       News, sentiment, basic metrics
+│   ├── yfinance.ts      Yahoo Finance — symbol resolution, fundamentalsTimeSeries, chart(), analyst ratings
+│   ├── finnhub.ts       News, basic metrics (ROIC, EPS CAGR), peer group medians
 │   └── fred.ts          Live interest rates (10Y Treasury, AAA yield)
 ├── analysis/
 │   └── metrics.ts       15 valuation models + formatting helpers

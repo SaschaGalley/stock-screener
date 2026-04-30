@@ -44,24 +44,26 @@ export function getConfig(): AppConfig {
   return _config;
 }
 
-export function requireApiKey(provider: 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily' | 'brave'): string {
+export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily' | 'brave'): string {
   const cfg = getConfig();
   const keyMap: Record<string, string | undefined> = {
+    claude:    cfg.anthropicApiKey, // alias
     anthropic: cfg.anthropicApiKey,
-    openai: cfg.openaiApiKey,
-    gemini: cfg.googleGeminiApiKey,
-    finnhub: cfg.finnhubApiKey,
-    tavily: cfg.tavilyApiKey,
-    brave: cfg.braveApiKey,
+    openai:    cfg.openaiApiKey,
+    gemini:    cfg.googleGeminiApiKey,
+    finnhub:   cfg.finnhubApiKey,
+    tavily:    cfg.tavilyApiKey,
+    brave:     cfg.braveApiKey,
   };
 
   const envMap: Record<string, string> = {
+    claude:    'ANTHROPIC_API_KEY',
     anthropic: 'ANTHROPIC_API_KEY',
-    openai: 'OPENAI_API_KEY',
-    gemini: 'GOOGLE_GEMINI_API_KEY',
-    finnhub: 'FINNHUB_API_KEY',
-    tavily: 'TAVILY_API_KEY',
-    brave: 'BRAVE_API_KEY',
+    openai:    'OPENAI_API_KEY',
+    gemini:    'GOOGLE_GEMINI_API_KEY',
+    finnhub:   'FINNHUB_API_KEY',
+    tavily:    'TAVILY_API_KEY',
+    brave:     'BRAVE_API_KEY',
   };
 
   const key = keyMap[provider];

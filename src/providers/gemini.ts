@@ -3,15 +3,17 @@ import { LLMAnalysis, SearchResult } from '../types.js';
 import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
 import { logger } from '../utils/logger.js';
 
-const MODEL = 'gemini-1.5-pro';
+const DEFAULT_MODEL = 'gemini-1.5-pro';
 
 export class GeminiProvider extends LLMProvider {
   readonly name = 'gemini';
   private genAI: GoogleGenerativeAI;
+  private model: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, modelId = DEFAULT_MODEL) {
     super();
     this.genAI = new GoogleGenerativeAI(apiKey);
+    this.model = modelId;
   }
 
   supportsNativeSearch(): boolean { return false; }
@@ -23,7 +25,7 @@ export class GeminiProvider extends LLMProvider {
     const fullPrompt = SYSTEM_PROMPT + '\nRespond ONLY with valid JSON, no markdown.\n\n'
       + buildFullPrompt(prompt, searchResults);
 
-    const model = this.genAI.getGenerativeModel({ model: MODEL });
+    const model = this.genAI.getGenerativeModel({ model: this.model });
     const result = await model.generateContent(fullPrompt);
     const text = result.response.text();
 
