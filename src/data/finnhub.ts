@@ -46,6 +46,33 @@ export async function getNews(symbol: string, apiKey: string, days = 7): Promise
   }));
 }
 
+export interface FinnhubBasicMetrics {
+  roic: number | null;
+  epsGrowth3Y: number | null;
+  dividendGrowthRate5Y: number | null;
+}
+
+export async function getBasicFinancials(symbol: string, apiKey: string): Promise<FinnhubBasicMetrics> {
+  const empty: FinnhubBasicMetrics = { roic: null, epsGrowth3Y: null, dividendGrowthRate5Y: null };
+  try {
+    const path = `/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`;
+    const data = await fetchFinnhub(path, apiKey) as { metric?: Record<string, unknown> };
+    const m = data?.metric;
+    if (!m) return empty;
+
+    const pct = (v: unknown) => typeof v === 'number' && isFinite(v) ? v / 100 : null;
+
+    return {
+      roic:                pct(m['roicTTM']),
+      epsGrowth3Y:         pct(m['epsGrowth3Y']),
+      dividendGrowthRate5Y: pct(m['dividendGrowthRate5Y']),
+    };
+  } catch {
+    logger.warn('Could not fetch Finnhub basic financials');
+    return empty;
+  }
+}
+
 export async function getSentiment(
   symbol: string,
   apiKey: string,

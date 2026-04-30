@@ -10,6 +10,7 @@ const ConfigSchema = z.object({
   googleGeminiApiKey: z.string().optional(),
   finnhubApiKey: z.string().optional(),
   tavilyApiKey: z.string().optional(),
+  braveApiKey: z.string().optional(),
   fredApiKey: z.string().optional(),
   cacheDir: z.string().default('~/.investment-cli-cache'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -28,6 +29,7 @@ export function getConfig(): AppConfig {
     googleGeminiApiKey: process.env.GOOGLE_GEMINI_API_KEY,
     finnhubApiKey: process.env.FINNHUB_API_KEY,
     tavilyApiKey: process.env.TAVILY_API_KEY,
+    braveApiKey: process.env.BRAVE_API_KEY,
     fredApiKey: process.env.FRED_API_KEY,
     cacheDir: process.env.CACHE_DIR,
     logLevel: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error' | undefined,
@@ -42,7 +44,7 @@ export function getConfig(): AppConfig {
   return _config;
 }
 
-export function requireApiKey(provider: 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily'): string {
+export function requireApiKey(provider: 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily' | 'brave'): string {
   const cfg = getConfig();
   const keyMap: Record<string, string | undefined> = {
     anthropic: cfg.anthropicApiKey,
@@ -50,6 +52,7 @@ export function requireApiKey(provider: 'anthropic' | 'openai' | 'gemini' | 'fin
     gemini: cfg.googleGeminiApiKey,
     finnhub: cfg.finnhubApiKey,
     tavily: cfg.tavilyApiKey,
+    brave: cfg.braveApiKey,
   };
 
   const envMap: Record<string, string> = {
@@ -58,6 +61,7 @@ export function requireApiKey(provider: 'anthropic' | 'openai' | 'gemini' | 'fin
     gemini: 'GOOGLE_GEMINI_API_KEY',
     finnhub: 'FINNHUB_API_KEY',
     tavily: 'TAVILY_API_KEY',
+    brave: 'BRAVE_API_KEY',
   };
 
   const key = keyMap[provider];

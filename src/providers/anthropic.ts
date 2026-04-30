@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { LLMAnalysis, SearchResult, StockFinancials } from '../types.js';
-import { LLMProvider, parseJsonFromResponse } from './base.js';
+import { LLMAnalysis, SearchResult } from '../types.js';
+import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
 import { logger } from '../utils/logger.js';
 
 const MODEL = 'claude-sonnet-4-6';
@@ -16,46 +16,20 @@ export class AnthropicProvider extends LLMProvider {
     this.useNativeSearch = useNativeSearch;
   }
 
-  supportsNativeSearch(): boolean {
-    return true;
-  }
+  supportsNativeSearch(): boolean { return true; }
 
-  async analyze(
-    prompt: string,
-    _financials: StockFinancials,
-    searchResults?: SearchResult[],
-  ): Promise<LLMAnalysis> {
+  async analyze(prompt: string, searchResults?: SearchResult[]): Promise<LLMAnalysis> {
     logger.step('Calling Claude for analysis...');
 
-    const systemPrompt = `You are an expert financial analyst. Analyze stocks with rigorous fundamental analysis.
-Always respond with valid JSON matching this exact structure:
-{
-  "bullCase": "string",
-  "bearCase": "string",
-  "keyRisks": ["string", "string", "string"],
-  "thesis": "string (1-2 sentences)",
-  "score": number (0-10),
-  "recommendation": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL",
-  "fairValueEstimate": "string (e.g. '$120 - $145')"
-}`;
-
     if (this.useNativeSearch) {
-      return this.analyzeWithNativeSearch(systemPrompt, prompt);
-    }
-
-    let fullPrompt = prompt;
-    if (searchResults && searchResults.length > 0) {
-      fullPrompt += '\n\n## Recent Web Search Results\n';
-      searchResults.slice(0, 5).forEach((r, i) => {
-        fullPrompt += `\n### [${i + 1}] ${r.title}\n${r.content.substring(0, 500)}\n`;
-      });
+      return this.analyzeWithNativeSearch(prompt);
     }
 
     const message = await this.client.messages.create({
       model: MODEL,
       max_tokens: 2048,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: fullPrompt }],
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: buildFullPrompt(prompt, searchResults) }],
     });
 
     const text = message.content
@@ -67,7 +41,7 @@ Always respond with valid JSON matching this exact structure:
     return parseJsonFromResponse(text);
   }
 
-  private async analyzeWithNativeSearch(system: string, prompt: string): Promise<LLMAnalysis> {
+  private async analyzeWithNativeSearch(prompt: string): Promise<LLMAnalysis> {
     logger.step('Claude native web search enabled...');
 
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
@@ -78,7 +52,7 @@ Always respond with valid JSON matching this exact structure:
       const response = await this.client.messages.create({
         model: MODEL,
         max_tokens: 4096,
-        system,
+        system: SYSTEM_PROMPT,
         // web_search_20250305 is a built-in tool not yet reflected in SDK v0.28 types
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
@@ -95,7 +69,6 @@ Always respond with valid JSON matching this exact structure:
 
       if (response.stop_reason !== 'tool_use') break;
 
-      // Append assistant message and tool results to continue the loop
       messages.push({ role: 'assistant', content: response.content });
 
       const toolResults: Anthropic.ToolResultBlockParam[] = response.content

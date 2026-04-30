@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { LLMAnalysis, SearchResult, StockFinancials } from '../types.js';
-import { LLMProvider, parseJsonFromResponse } from './base.js';
+import { LLMAnalysis, SearchResult } from '../types.js';
+import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
 import { logger } from '../utils/logger.js';
 
 const MODEL = 'gemini-1.5-pro';
@@ -14,37 +14,14 @@ export class GeminiProvider extends LLMProvider {
     this.genAI = new GoogleGenerativeAI(apiKey);
   }
 
-  supportsNativeSearch(): boolean {
-    return false;
-  }
+  supportsNativeSearch(): boolean { return false; }
 
-  async analyze(
-    prompt: string,
-    _financials: StockFinancials,
-    searchResults?: SearchResult[],
-  ): Promise<LLMAnalysis> {
+  async analyze(prompt: string, searchResults?: SearchResult[]): Promise<LLMAnalysis> {
     logger.step('Calling Gemini for analysis...');
 
-    let fullPrompt = `You are an expert financial analyst. Analyze stocks with rigorous fundamental analysis.
-Respond ONLY with valid JSON matching this exact structure (no markdown, no explanation):
-{
-  "bullCase": "string",
-  "bearCase": "string",
-  "keyRisks": ["string", "string", "string"],
-  "thesis": "string (1-2 sentences)",
-  "score": number (0-10),
-  "recommendation": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL",
-  "fairValueEstimate": "string (e.g. '$120 - $145')"
-}
-
-${prompt}`;
-
-    if (searchResults && searchResults.length > 0) {
-      fullPrompt += '\n\n## Recent Web Search Results\n';
-      searchResults.slice(0, 5).forEach((r, i) => {
-        fullPrompt += `\n### [${i + 1}] ${r.title}\n${r.content.substring(0, 500)}\n`;
-      });
-    }
+    // Gemini has no separate system role — prepend to user message
+    const fullPrompt = SYSTEM_PROMPT + '\nRespond ONLY with valid JSON, no markdown.\n\n'
+      + buildFullPrompt(prompt, searchResults);
 
     const model = this.genAI.getGenerativeModel({ model: MODEL });
     const result = await model.generateContent(fullPrompt);
