@@ -24,6 +24,12 @@ import { buildAnalysisPrompt } from './output/prompt.js';
 import { formatMarkdown } from './output/markdown.js';
 import { AnalysisOptions, AnalysisResult, SearchResult } from './types.js';
 
+// ─── Model defaults ───────────────────────────────────────────────────────────
+
+const CLAUDE_DEFAULT = 'claude-sonnet-4-6';
+const OPENAI_DEFAULT = 'gpt-5.4-mini';
+const GEMINI_DEFAULT = 'gemini-1.5-pro';
+
 // ─── CLI Setup ───────────────────────────────────────────────────────────────
 
 const program = new Command();
@@ -237,10 +243,6 @@ async function run(symbol: string, opts: Record<string, string | boolean | undef
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const CLAUDE_DEFAULT = 'claude-sonnet-4-6';
-const OPENAI_DEFAULT = 'gpt-5.4-mini';
-const GEMINI_DEFAULT = 'gemini-1.5-pro';
 
 function resolveModel(input: string): { provider: AnalysisOptions['provider']; modelId: string } {
   const l = input.toLowerCase();
