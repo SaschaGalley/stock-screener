@@ -5,7 +5,7 @@ import chalk from 'chalk';
 
 import { getConfig, requireApiKey } from './config.js';
 import { logger } from './utils/logger.js';
-import { getFinancials, resolveSymbol } from './data/yfinance.js';
+import { getFinancials, resolveSymbol, searchByQuery } from './data/yfinance.js';
 import { getNews, getBasicFinancials, getSectorMedians } from './data/finnhub.js';
 import {
   calculateDCF, calculateGraham, calculateRatios,
@@ -43,7 +43,8 @@ program
     'structured bull/bear analysis.',
   )
   .version('1.0.0')
-  .argument('<symbol>', 'Stock ticker symbol (e.g. NOW, AAPL, MSFT, NVDA, FACC)')
+  .argument('[symbol]', 'Stock ticker symbol (e.g. NOW, AAPL, MSFT, NVDA, FACC). Mutually exclusive with --query.')
+  .option('-q, --query <name>', 'Resolve by company name instead of ticker (e.g. "Siemens Energy")')
   .option(
     '-m, --model <id>',
     'Model to use — shortcut or full model ID:\n' +
@@ -74,6 +75,8 @@ program
   .addHelpText('after', `
 Examples:
   $ npx tsx src/cli.ts NOW
+  $ npx tsx src/cli.ts --query "Siemens Energy"
+  $ npx tsx src/cli.ts --query "Airbus" --search brave
   $ npx tsx src/cli.ts FACC --model claude --search brave
   $ npx tsx src/cli.ts AAPL --model claude --search          # native Claude search
   $ npx tsx src/cli.ts MSFT --model openai --search          # native OpenAI search
@@ -91,9 +94,13 @@ Required API keys (set in .env):
   TAVILY_API_KEY        for --search tavily   (https://tavily.com)
   FRED_API_KEY          for live rates        (https://fred.stlouisfed.org — free)
 `)
-  .action(async (symbol: string, opts: Record<string, string | boolean>) => {
+  .action(async (symbol: string | undefined, opts: Record<string, string | boolean>) => {
     try {
-      await run(symbol.toUpperCase(), opts);
+      if (!symbol && !opts.query) {
+        console.error(chalk.red('Error: provide a ticker symbol or --query <company name>'));
+        process.exit(1);
+      }
+      await run(symbol ? symbol.toUpperCase() : undefined, opts);
     } catch (err) {
       logger.error((err as Error).message);
       if (opts.verbose) console.error(err);
@@ -105,7 +112,7 @@ program.parse();
 
 // ─── Main Flow ───────────────────────────────────────────────────────────────
 
-async function run(symbol: string, opts: Record<string, string | boolean | undefined>): Promise<void> {
+async function run(rawSymbol: string | undefined, opts: Record<string, string | boolean | undefined>): Promise<void> {
   if (opts.verbose) process.env.LOG_LEVEL = 'debug';
 
   const { provider, modelId } = resolveModel(String(opts.model ?? 'claude'));
@@ -122,7 +129,13 @@ async function run(symbol: string, opts: Record<string, string | boolean | undef
   const cfg = getConfig();
 
   // ── 0. Resolve ticker → canonical Yahoo Finance symbol ───────────────────
-  symbol = await resolveSymbol(symbol);
+  let symbol: string;
+  if (opts.query) {
+    logger.step(`Searching for "${opts.query}"...`);
+    symbol = await searchByQuery(String(opts.query));
+  } else {
+    symbol = await resolveSymbol(rawSymbol!);
+  }
 
   console.log(chalk.bold.white(`\n  Investment Analysis — ${symbol}\n`));
   logger.info(`Model: ${modelId}  |  Search: ${search}`);

@@ -18,6 +18,14 @@ export const PrevYearSnapshotSchema = z.object({
 });
 export type PrevYearSnapshot = z.infer<typeof PrevYearSnapshotSchema>;
 
+export const EarningsSurpriseSchema = z.object({
+  quarter:     z.string().describe('Period label from Yahoo Finance (e.g. "3Q2024")'),
+  epsEstimate: z.number().nullable().describe('Consensus analyst EPS estimate before the announcement'),
+  epsActual:   z.number().nullable().describe('Actual reported EPS'),
+  surprisePct: z.number().nullable().describe('Beat/miss as decimal (positive = beat, e.g. 0.079 = +7.9%)'),
+});
+export type EarningsSurprise = z.infer<typeof EarningsSurpriseSchema>;
+
 export const StockFinancialsSchema = z.object({
   // ── Identity ────────────────────────────────────────────────────────────────
   symbol:      z.string().describe('Exchange ticker symbol as used by Yahoo Finance (e.g. AAPL, 0QW9.IL)'),
@@ -107,6 +115,8 @@ export const StockFinancialsSchema = z.object({
   employees:    z.number().nullable().describe('Full-time employee count from Yahoo assetProfile'),
   headquarters: z.string().nullable().describe('City, state/region, country composed from Yahoo assetProfile address fields'),
   description:  z.string().nullable().describe('Long business summary from Yahoo assetProfile (up to ~400 chars shown in report)'),
+  isin:         z.string().nullable().describe('International Securities Identification Number (12-char, e.g. DE000ENER6Y0); fetched from Yahoo Finance search'),
+  wkn:          z.string().nullable().describe('Wertpapierkennnummer — 6-char German identifier; derived from ISIN for DE0 stocks'),
 
   // ── Finnhub-enriched ─────────────────────────────────────────────────────────
   roic:                z.number().nullable().describe('Return on invested capital TTM (decimal) from Finnhub /stock/metric roicTTM ÷ 100'),
@@ -123,15 +133,43 @@ export const StockFinancialsSchema = z.object({
 
   // ── Piotroski / Beneish prior-year snapshot ──────────────────────────────────
   prevYear: PrevYearSnapshotSchema.nullable().describe('Prior fiscal year financials; null when fewer than two annual periods are available'),
+
+  // ── Short Interest ───────────────────────────────────────────────────────────
+  shortPercentOfFloat:   z.number().nullable().describe('Fraction of float sold short (decimal, e.g. 0.045 = 4.5%); sourced from Yahoo defaultKeyStatistics'),
+  shortRatio:            z.number().nullable().describe('Days to cover: shares short ÷ avg daily volume; measures how crowded the short is'),
+  sharesShort:           z.number().nullable().describe('Total number of shares currently sold short'),
+  sharesShortPriorMonth: z.number().nullable().describe('Shares short at prior settlement date — compare with sharesShort to see trend'),
+
+  // ── Calendar Events ──────────────────────────────────────────────────────────
+  nextEarningsDate:   z.string().nullable().describe('Next earnings announcement date (YYYY-MM-DD); may be an estimate'),
+  exDividendDate:     z.string().nullable().describe('Ex-dividend date for the next/most-recent dividend (YYYY-MM-DD)'),
+  dividendPayDate:    z.string().nullable().describe('Dividend payment date (YYYY-MM-DD)'),
+  nextDividendAmount: z.number().nullable().describe('Expected dividend per share for the upcoming payment'),
+
+  // ── Ownership ────────────────────────────────────────────────────────────────
+  institutionsPercentHeld: z.number().nullable().describe('Fraction of total shares held by institutional investors (decimal)'),
+  insidersPercentHeld:     z.number().nullable().describe('Fraction of total shares held by company insiders (decimal)'),
+  institutionsCount:       z.number().nullable().describe('Number of institutional shareholders on record'),
+
+  // ── Earnings Surprises (last ≤4 quarters) ────────────────────────────────────
+  earningsSurprises: z.array(EarningsSurpriseSchema).describe('Last up-to-4 quarters of EPS surprise history from Yahoo earningsHistory'),
+
+  // ── Insider Activity (last 6 months) ─────────────────────────────────────────
+  insiderBuyShares:  z.number().nullable().describe('Total shares bought by insiders in the last 6 months'),
+  insiderSellShares: z.number().nullable().describe('Total shares sold by insiders in the last 6 months'),
+  insiderBuyValue:   z.number().nullable().describe('Total dollar value of insider purchases in the last 6 months'),
+  insiderSellValue:  z.number().nullable().describe('Total dollar value of insider sales in the last 6 months'),
+  insiderBuyCount:   z.number().nullable().describe('Number of distinct insider buy transactions in the last 6 months'),
+  insiderSellCount:  z.number().nullable().describe('Number of distinct insider sell transactions in the last 6 months'),
 });
 export type StockFinancials = z.infer<typeof StockFinancialsSchema>;
 
 // ─── Result Types ─────────────────────────────────────────────────────────────
 
 export const DCFResultSchema = z.object({
-  fairValue:          z.number().describe('Central DCF fair value per share'),
-  fairValueLow:       z.number().describe('Bear-case DCF fair value (lower WACC-adjusted scenario)'),
-  fairValueHigh:      z.number().describe('Bull-case DCF fair value (higher growth scenario)'),
+  fairValue:          z.number().nullable().describe('Central DCF fair value per share; null when FCF is negative'),
+  fairValueLow:       z.number().nullable().describe('Bear-case DCF fair value; null when not calculable'),
+  fairValueHigh:      z.number().nullable().describe('Bull-case DCF fair value; null when not calculable'),
   wacc:               z.number().describe('Weighted average cost of capital used (decimal)'),
   terminalGrowthRate: z.number().describe('Perpetual terminal growth rate applied after projection period (decimal)'),
   projectionYears:    z.number().describe('Number of years explicitly projected (default 5)'),

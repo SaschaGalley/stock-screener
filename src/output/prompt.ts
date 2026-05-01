@@ -86,7 +86,7 @@ export function buildAnalysisPrompt(f: StockFinancials, d: PromptData): string {
 - Debt/Equity: ${fmt(f.debtToEquity, 'x')} | Interest Coverage: ${d.interestCoverage.ratio !== null ? `${d.interestCoverage.ratio.toFixed(1)}x (${d.interestCoverage.interpretation})` : d.interestCoverage.interpretation}
 
 ### Intrinsic Value Models
-- DCF Fair Value: $${d.dcf.fairValue.toFixed(2)} (range $${d.dcf.fairValueLow.toFixed(2)}–$${d.dcf.fairValueHigh.toFixed(2)})
+- DCF Fair Value: ${d.dcf.fairValue !== null ? `$${d.dcf.fairValue.toFixed(2)} (range $${d.dcf.fairValueLow!.toFixed(2)}–$${d.dcf.fairValueHigh!.toFixed(2)})` : 'N/A (negative FCF)'}
 - Reverse DCF: ${d.reverseDCF.isPossible && d.reverseDCF.impliedGrowthRate !== null ? `${(d.reverseDCF.impliedGrowthRate * 100).toFixed(1)}% FCF growth implied` : 'N/A'}
 - Graham Number: ${d.grahamNumber.grahamNumber ? `$${d.grahamNumber.grahamNumber.toFixed(2)} (${fmtPct(d.grahamNumber.marginOfSafety)} MoS)` : 'N/A'}
 - Graham Revised (V*): ${d.grahamRevised.fairValue ? `$${d.grahamRevised.fairValue.toFixed(2)} (${fmtPct(d.grahamRevised.marginOfSafety)} MoS)` : 'N/A'}
@@ -100,6 +100,24 @@ export function buildAnalysisPrompt(f: StockFinancials, d: PromptData): string {
 - Rule of 40: ${d.ruleOf40.score !== null ? `${d.ruleOf40.score.toFixed(1)} (${d.ruleOf40.passes ? 'PASSES ✓' : 'FAILS ✗'})` : 'N/A'}
 - Sortino Ratio: ${d.sortino.ratio !== null ? `${d.sortino.ratio.toFixed(2)} (${d.sortino.interpretation}), annual return ${fmtPct(d.sortino.annualReturn)}, downside dev ${fmtPct(d.sortino.downsideDeviation)}` : 'N/A — insufficient price history'}
 - Beneish M-Score: ${d.beneish.score !== null ? `${d.beneish.score.toFixed(2)} — ${d.beneish.probability} (${d.beneish.variablesComputed}/8 variables)` : 'N/A'}
+
+### Earnings Surprises (last ≤4 quarters)
+${f.earningsSurprises.length > 0
+  ? f.earningsSurprises.map((q) =>
+      `- ${q.quarter}: estimate $${q.epsEstimate?.toFixed(2) ?? 'N/A'} → actual $${q.epsActual?.toFixed(2) ?? 'N/A'} (${q.surprisePct !== null ? (q.surprisePct >= 0 ? '+' : '') + (q.surprisePct * 100).toFixed(1) + '% surprise' : 'N/A'})`
+    ).join('\n')
+  : '- No earnings history available'}
+
+### Short Interest & Ownership
+- Short % of Float: ${f.shortPercentOfFloat !== null ? (f.shortPercentOfFloat * 100).toFixed(1) + '%' : 'N/A'}  |  Days to Cover: ${f.shortRatio !== null ? f.shortRatio.toFixed(1) + ' days' : 'N/A'}
+- Institutional Ownership: ${f.institutionsPercentHeld !== null ? (f.institutionsPercentHeld * 100).toFixed(1) + '%' : 'N/A'}  |  Insider Ownership: ${f.insidersPercentHeld !== null ? (f.insidersPercentHeld * 100).toFixed(1) + '%' : 'N/A'}
+- Insider Activity (6M): ${(f.insiderBuyCount ?? 0) > 0 || (f.insiderSellCount ?? 0) > 0
+  ? `${f.insiderBuyCount ?? 0} buys (+${f.insiderBuyShares?.toLocaleString() ?? 0} shares), ${f.insiderSellCount ?? 0} sells (-${f.insiderSellShares?.toLocaleString() ?? 0} shares)`
+  : 'no recent transactions'}
+
+### Key Dates
+- Next Earnings: ${f.nextEarningsDate ?? 'unknown'}
+- Ex-Dividend: ${f.exDividendDate ?? 'N/A'}  |  Pay Date: ${f.dividendPayDate ?? 'N/A'}
 
 ### Recent News
 ${newsBlock}

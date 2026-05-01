@@ -29,11 +29,14 @@ export function formatMarkdown(r: AnalysisResult): string {
 
   const profileRows: string[] = [
     row('Company',       f.companyName),
+    row('Symbol',        f.symbol),
     row('Sector',        [f.sector, f.industry].filter(Boolean).join(' / ') || 'N/A'),
   ];
   if (f.headquarters) profileRows.push(row('Headquarters', f.headquarters));
   if (f.employees)    profileRows.push(row('Employees',    f.employees.toLocaleString()));
   if (f.website)      profileRows.push(row('Website',      f.website));
+  if (f.isin)         profileRows.push(row('ISIN',         f.isin));
+  if (f.wkn)          profileRows.push(row('WKN',          f.wkn));
 
   const lines: string[] = [
     chalk.bold.white(`# ${r.symbol} — Investment Analysis`),
@@ -62,6 +65,8 @@ export function formatMarkdown(r: AnalysisResult): string {
     row('52W High / Low',   `$${fmt(f.fiftyTwoWeekHigh)} / $${fmt(f.fiftyTwoWeekLow)}`),
     row('Beta',             fmt(f.beta)),
     '',
+
+    ...formatKeyDates(f),
 
     ...formatPeerBlock(ratios, ev, f, sm),
     '',
@@ -121,6 +126,8 @@ export function formatMarkdown(r: AnalysisResult): string {
       : '  N/A — missing data',
     '',
 
+    ...formatEarningsSurprises(f),
+
     chalk.bold('## 🏆 Piotroski F-Score'),
     '',
     ...formatPiotroski(piotroski.signals, piotroski.score, piotroski.maxScore, piotroskiBar, piotroski.interpretation),
@@ -173,6 +180,10 @@ export function formatMarkdown(r: AnalysisResult): string {
 
     ...formatAnalystBlock(f),
     '',
+
+    ...formatShortInterest(f),
+    ...formatOwnership(f),
+    ...formatInsiderActivity(f),
 
     chalk.bold('## 🚀 Bull Case'),
     '',
@@ -326,6 +337,107 @@ function formatAnalystBlock(f: AnalysisResult['financials']): string[] {
     );
   }
 
+  return lines;
+}
+
+function formatKeyDates(f: AnalysisResult['financials']): string[] {
+  const items: string[] = [];
+  if (f.nextEarningsDate) items.push(`  Next Earnings:    ${chalk.bold(f.nextEarningsDate)}`);
+  if (f.exDividendDate) {
+    const divLine = `  Ex-Dividend:      ${chalk.bold(f.exDividendDate)}`
+      + (f.nextDividendAmount ? `   $${f.nextDividendAmount.toFixed(2)}/share` : '');
+    items.push(divLine);
+  }
+  if (f.dividendPayDate)  items.push(`  Pay Date:         ${f.dividendPayDate}`);
+  if (items.length === 0) return [];
+  return [chalk.bold('## 📅 Key Dates'), '', ...items, ''];
+}
+
+function formatEarningsSurprises(f: AnalysisResult['financials']): string[] {
+  const es = f.earningsSurprises;
+  if (!es || es.length === 0) return [];
+
+  const lines: string[] = [chalk.bold('## 🎯 Earnings Surprises'), ''];
+  lines.push(`| ${'Quarter'.padEnd(8)} | ${'Estimate'.padEnd(9)} | ${'Actual'.padEnd(9)} | ${'Surprise'.padEnd(10)} |`);
+  lines.push(`|${'-'.repeat(10)}|${'-'.repeat(11)}|${'-'.repeat(11)}|${'-'.repeat(12)}|`);
+
+  for (const q of es) {
+    const est = q.epsEstimate !== null ? `$${q.epsEstimate.toFixed(2)}` : 'N/A';
+    const act = q.epsActual   !== null ? `$${q.epsActual.toFixed(2)}`   : 'N/A';
+    let surp = 'N/A';
+    if (q.surprisePct !== null) {
+      const pct = (q.surprisePct * 100).toFixed(1);
+      surp = q.surprisePct >= 0
+        ? chalk.green(`✓ +${pct}%`)
+        : chalk.red(`✗ ${pct}%`);
+    }
+    lines.push(`| ${q.quarter.padEnd(8)} | ${est.padEnd(9)} | ${act.padEnd(9)} | ${surp.padEnd(10)} |`);
+  }
+  lines.push('');
+  return lines;
+}
+
+function formatShortInterest(f: AnalysisResult['financials']): string[] {
+  if (f.shortPercentOfFloat === null && f.shortRatio === null) return [];
+  const lines: string[] = [chalk.bold('## 🩳 Short Interest'), ''];
+
+  if (f.shortPercentOfFloat !== null) {
+    const pct = (f.shortPercentOfFloat * 100).toFixed(1) + '%';
+    let trend = '';
+    if (f.sharesShort !== null && f.sharesShortPriorMonth !== null && f.sharesShortPriorMonth > 0) {
+      const chg = ((f.sharesShort - f.sharesShortPriorMonth) / f.sharesShortPriorMonth * 100);
+      trend = chg >= 0
+        ? chalk.red(`  ▲ ${chg.toFixed(0)}% vs prior month`)
+        : chalk.green(`  ▼ ${Math.abs(chg).toFixed(0)}% vs prior month`);
+    }
+    const level = f.shortPercentOfFloat > 0.20 ? chalk.red(pct)
+                : f.shortPercentOfFloat > 0.08  ? chalk.yellow(pct)
+                : chalk.green(pct);
+    lines.push(`  Short % of Float:   ${level}${trend}`);
+  }
+  if (f.sharesShort !== null)  lines.push(`  Shares Short:       ${fmtBig(f.sharesShort).replace('$', '')}`);
+  if (f.shortRatio  !== null)  lines.push(`  Days to Cover:      ${f.shortRatio.toFixed(1)} days`);
+  lines.push('');
+  return lines;
+}
+
+function formatOwnership(f: AnalysisResult['financials']): string[] {
+  if (f.institutionsPercentHeld === null && f.insidersPercentHeld === null) return [];
+  const lines: string[] = [chalk.bold('## 🏛️  Ownership'), ''];
+  if (f.institutionsPercentHeld !== null) {
+    const count = f.institutionsCount ? `  (${f.institutionsCount.toLocaleString()} holders)` : '';
+    lines.push(`  Institutional:   ${(f.institutionsPercentHeld * 100).toFixed(1)}%${count}`);
+  }
+  if (f.insidersPercentHeld !== null) {
+    lines.push(`  Insiders:        ${(f.insidersPercentHeld * 100).toFixed(1)}%`);
+  }
+  lines.push('');
+  return lines;
+}
+
+function formatInsiderActivity(f: AnalysisResult['financials']): string[] {
+  const hasBuys  = f.insiderBuyCount  !== null && f.insiderBuyCount  > 0;
+  const hasSells = f.insiderSellCount !== null && f.insiderSellCount > 0;
+  if (!hasBuys && !hasSells) return [];
+
+  const lines: string[] = [chalk.bold('## 👔 Insider Activity  (last 6 months)'), ''];
+  lines.push(`| Direction | Transactions | Shares         | Value          |`);
+  lines.push(`|-----------|-------------|----------------|----------------|`);
+
+  if (hasBuys) {
+    lines.push(`| ${chalk.green('Buy')}       | ${String(f.insiderBuyCount).padEnd(11)} | +${fmtBig(f.insiderBuyShares).replace('$','').padEnd(13)} | +${fmtBig(f.insiderBuyValue).padEnd(14)} |`);
+  }
+  if (hasSells) {
+    lines.push(`| ${chalk.red('Sell')}      | ${String(f.insiderSellCount).padEnd(11)} | -${fmtBig(f.insiderSellShares).replace('$','').padEnd(13)} | -${fmtBig(f.insiderSellValue).padEnd(14)} |`);
+  }
+  if (hasBuys && hasSells) {
+    const netShares = (f.insiderBuyShares ?? 0) - (f.insiderSellShares ?? 0);
+    const netValue  = (f.insiderBuyValue  ?? 0) - (f.insiderSellValue  ?? 0);
+    const sign = netShares >= 0 ? '+' : '-';
+    const col  = netShares >= 0 ? chalk.green : chalk.red;
+    lines.push(`| Net       | ${''.padEnd(11)} | ${col(sign + fmtBig(Math.abs(netShares)).replace('$','').padEnd(13))} | ${col(sign + fmtBig(Math.abs(netValue)).padEnd(14))} |`);
+  }
+  lines.push('');
   return lines;
 }
 

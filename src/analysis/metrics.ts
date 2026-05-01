@@ -56,11 +56,10 @@ export function calculateDCF(financials: StockFinancials, opts: DCFOptions = {})
   const baseFCF = financials.freeCashFlow;
 
   if (!baseFCF || baseFCF <= 0 || !financials.marketCap) {
-    const p = financials.price;
     return {
-      fairValue: p, fairValueLow: p * 0.85, fairValueHigh: p * 1.15,
+      fairValue: null, fairValueLow: null, fairValueHigh: null,
       wacc, terminalGrowthRate: tg, projectionYears: years, projectedFCFs: [],
-      assumptions: 'DCF skipped — no positive FCF. Using price ±15%.',
+      assumptions: 'DCF not applicable — requires positive free cash flow.',
     };
   }
 
@@ -182,6 +181,11 @@ export function calculatePeterLynch(financials: StockFinancials): PeterLynchResu
   }
 
   const gPct = g * 100;
+  if (gPct <= 0) {
+    return { fairValue: null, fairValueWithDividend: null, growthRate: g,
+             isUndervalued: null, marginOfSafety: null };
+  }
+
   const fairValue = eps * gPct;
   const fairValueWithDividend = eps * (gPct + dy * 100);
   const marginOfSafety = (fairValue - price) / price;
@@ -394,7 +398,7 @@ export function calculateDDM(financials: StockFinancials, riskFreeRate = 0.045):
   const beta = financials.beta ?? 1.0;
   const price = financials.price;
 
-  if (!dy || dy <= 0) {
+  if (!dy || dy <= 0 || dy > 0.15) {
     return { fairValue: null, dividendPerShare: null, dividendGrowthRate: null,
              requiredReturn: null, isApplicable: false };
   }
@@ -420,6 +424,11 @@ export function calculateDDM(financials: StockFinancials, riskFreeRate = 0.045):
   // Gordon Growth Model: P = D1 / (r - g)
   const d1 = dividendPerShare * (1 + dividendGrowthRate);
   const fairValue = d1 / (requiredReturn - dividendGrowthRate);
+
+  // Sanity check: result > 15× price is almost certainly a data error
+  if (fairValue > price * 15 || fairValue < 0) {
+    return { fairValue: null, dividendPerShare, dividendGrowthRate, requiredReturn, isApplicable: true };
+  }
 
   return { fairValue, dividendPerShare, dividendGrowthRate, requiredReturn, isApplicable: true };
 }
