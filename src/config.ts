@@ -12,6 +12,7 @@ const ConfigSchema = z.object({
   tavilyApiKey: z.string().optional(),
   braveApiKey: z.string().optional(),
   fredApiKey: z.string().optional(),
+  pplxApiKey: z.string().optional(),
   cacheDir: z.string().default('~/.investment-cli-cache'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
@@ -31,6 +32,7 @@ export function getConfig(): AppConfig {
     tavilyApiKey: process.env.TAVILY_API_KEY,
     braveApiKey: process.env.BRAVE_API_KEY,
     fredApiKey: process.env.FRED_API_KEY,
+    pplxApiKey: process.env.PPLX_API_KEY,
     cacheDir: process.env.CACHE_DIR,
     logLevel: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error' | undefined,
   };
@@ -44,26 +46,28 @@ export function getConfig(): AppConfig {
   return _config;
 }
 
-export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily' | 'brave'): string {
+export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily' | 'brave' | 'perplexity'): string {
   const cfg = getConfig();
   const keyMap: Record<string, string | undefined> = {
-    claude:    cfg.anthropicApiKey, // alias
-    anthropic: cfg.anthropicApiKey,
-    openai:    cfg.openaiApiKey,
-    gemini:    cfg.googleGeminiApiKey,
-    finnhub:   cfg.finnhubApiKey,
-    tavily:    cfg.tavilyApiKey,
-    brave:     cfg.braveApiKey,
+    claude:      cfg.anthropicApiKey, // alias
+    anthropic:   cfg.anthropicApiKey,
+    openai:      cfg.openaiApiKey,
+    gemini:      cfg.googleGeminiApiKey,
+    finnhub:     cfg.finnhubApiKey,
+    tavily:      cfg.tavilyApiKey,
+    brave:       cfg.braveApiKey,
+    perplexity:  cfg.pplxApiKey,
   };
 
   const envMap: Record<string, string> = {
-    claude:    'ANTHROPIC_API_KEY',
-    anthropic: 'ANTHROPIC_API_KEY',
-    openai:    'OPENAI_API_KEY',
-    gemini:    'GOOGLE_GEMINI_API_KEY',
-    finnhub:   'FINNHUB_API_KEY',
-    tavily:    'TAVILY_API_KEY',
-    brave:     'BRAVE_API_KEY',
+    claude:      'ANTHROPIC_API_KEY',
+    anthropic:   'ANTHROPIC_API_KEY',
+    openai:      'OPENAI_API_KEY',
+    gemini:      'GOOGLE_GEMINI_API_KEY',
+    finnhub:     'FINNHUB_API_KEY',
+    tavily:      'TAVILY_API_KEY',
+    brave:       'BRAVE_API_KEY',
+    perplexity:  'PPLX_API_KEY',
   };
 
   const key = keyMap[provider];

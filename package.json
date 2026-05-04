@@ -18,8 +18,10 @@
     "chalk": "^5.3.0",
     "commander": "^12.0.0",
     "dotenv": "^16.4.0",
+    "marked": "^18.0.3",
     "node-fetch": "^3.3.0",
     "openai": "^4.60.0",
+    "puppeteer-core": "^24.42.0",
     "yahoo-finance2": "^3.14.0",
     "zod": "^3.22.0"
   },

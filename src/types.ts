@@ -26,6 +26,19 @@ export const EarningsSurpriseSchema = z.object({
 });
 export type EarningsSurprise = z.infer<typeof EarningsSurpriseSchema>;
 
+export const EarningsEstimateSchema = z.object({
+  period:           z.string().describe('Period key: "0q" = current qtr, "+1q" = next qtr, "0y" = current year, "+1y" = next year'),
+  endDate:          z.string().nullable().describe('Period end date (YYYY-MM-DD)'),
+  epsEstimate:      z.number().nullable().describe('Consensus mean EPS estimate'),
+  epsLow:           z.number().nullable().describe('Lowest analyst EPS estimate'),
+  epsHigh:          z.number().nullable().describe('Highest analyst EPS estimate'),
+  epsGrowth:        z.number().nullable().describe('Expected EPS YoY growth rate (decimal)'),
+  revenueEstimate:  z.number().nullable().describe('Consensus mean revenue estimate'),
+  revenueGrowth:    z.number().nullable().describe('Expected revenue YoY growth rate (decimal)'),
+  numberOfAnalysts: z.number().nullable().describe('Number of analysts providing EPS estimates'),
+});
+export type EarningsEstimate = z.infer<typeof EarningsEstimateSchema>;
+
 export const StockFinancialsSchema = z.object({
   // ── Identity ────────────────────────────────────────────────────────────────
   symbol:      z.string().describe('Exchange ticker symbol as used by Yahoo Finance (e.g. AAPL, 0QW9.IL)'),
@@ -153,6 +166,7 @@ export const StockFinancialsSchema = z.object({
 
   // ── Earnings Surprises (last ≤4 quarters) ────────────────────────────────────
   earningsSurprises: z.array(EarningsSurpriseSchema).describe('Last up-to-4 quarters of EPS surprise history from Yahoo earningsHistory'),
+  earningsEstimates: z.array(EarningsEstimateSchema).describe('Forward EPS & revenue estimates for current qtr, next qtr, current year, next year from Yahoo earningsTrend'),
 
   // ── Insider Activity (last 6 months) ─────────────────────────────────────────
   insiderBuyShares:  z.number().nullable().describe('Total shares bought by insiders in the last 6 months'),
@@ -410,6 +424,12 @@ export const AnalysisResultSchema = z.object({
   sectorMedians:   SectorMediansSchema.nullable().describe('Peer group median metrics; null when Finnhub peer data is unavailable'),
   llmAnalysis:     LLMAnalysisSchema,
   news:            z.array(NewsItemSchema).describe('Up to 10 recent news items from Finnhub'),
+  perplexity:      z.object({
+    model:     z.enum(['sonar', 'sonar-pro']),
+    synthesis: z.string(),
+    citations: z.array(z.string()),
+    fetchedAt: z.string(),
+  }).nullable().optional(),
 });
 export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
 

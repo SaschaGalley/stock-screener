@@ -18,11 +18,20 @@ import {
 import { createProvider } from './providers/factory.js';
 import { TavilySearch } from './search/tavily.js';
 import { BraveSearch } from './search/brave.js';
-import { readCache, writeCache } from './cache.js';
+import {
+  readFinancials,   writeFinancials,
+  readAnalysis,     writeAnalysis,
+  readNews,         writeNews,
+  readPerplexity,   writePerplexity,
+  readSubmissions,  symbolDir,
+} from './cache.js';
+import { fetchEdgarFilings } from './data/edgar.js';
 import { getMarketRates } from './data/fred.js';
+import { fetchPerplexity } from './data/perplexity.js';
 import { buildAnalysisPrompt } from './output/prompt.js';
 import { formatMarkdown } from './output/markdown.js';
-import { AnalysisOptions, AnalysisResult, SearchResult } from './types.js';
+import { saveReports } from './output/report.js';
+import { AnalysisOptions, AnalysisResult, LLMAnalysis, NewsItem, SearchResult } from './types.js';
 
 // ─── Model defaults ───────────────────────────────────────────────────────────
 
@@ -70,7 +79,15 @@ program
     '-o, --output <path>',
     'Save report — format from extension (.md or .json)',
   )
-  .option('-c, --cache <setting>', 'Financial data cache: enable | disable', 'enable')
+  .option(
+    '--fetch [type]',
+    'Download data without running LLM analysis.\n' +
+    '  financials    Refresh market data cache\n' +
+    '  submissions   Download SEC/EDGAR filings\n' +
+    '  (omit value to fetch both)',
+  )
+  .option('--pplx', 'Enrich with Perplexity sonar (fast, cheap — requires PPLX_API_KEY, cached 12h)')
+  .option('--pplx-pro', 'Enrich with Perplexity sonar-pro (better coverage, default when using Perplexity)')
   .option('-v, --verbose', 'Debug logging')
   .addHelpText('after', `
 Examples:
@@ -84,6 +101,10 @@ Examples:
   $ npx tsx src/cli.ts NOW  --model gpt-5.4 --search tavily
   $ npx tsx src/cli.ts NOW  --output report.md
   $ npx tsx src/cli.ts NVDA --model gemini --verbose
+  $ npx tsx src/cli.ts AAPL --fetch                  # refresh financials + download filings
+  $ npx tsx src/cli.ts AAPL --fetch financials        # refresh market data only
+  $ npx tsx src/cli.ts AAPL --fetch submissions       # download SEC 10-K/10-Q/8-K
+  $ npx tsx src/cli.ts AAPL --pplx                   # add Perplexity AI synthesis (12h cache)
 
 Required API keys (set in .env):
   ANTHROPIC_API_KEY     for --model claude / haiku / opus / claude-*
@@ -119,9 +140,16 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
   const search = normalizeSearch(opts.search, provider);
   validateSearch(search, provider);
 
+  const fetchRaw  = opts.fetch;
+  type FetchMode  = 'financials' | 'submissions' | 'all' | false;
+  const fetchMode: FetchMode = fetchRaw === true ? 'all'
+    : fetchRaw === 'financials'   ? 'financials'
+    : fetchRaw === 'submissions'  ? 'submissions'
+    : false;
+
   const options: AnalysisOptions = {
     provider, modelId, search,
-    cache:   opts.cache !== 'disable',
+    cache:   true,
     output:  opts.output as string | undefined,
     verbose: Boolean(opts.verbose),
   };
@@ -140,12 +168,16 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
   console.log(chalk.bold.white(`\n  Investment Analysis — ${symbol}\n`));
   logger.info(`Model: ${modelId}  |  Search: ${search}`);
 
-  // ── 1. Fetch Financials (with cache) ─────────────────────────────────────
+  // ── 1. Fetch Financials ───────────────────────────────────────────────────
   logger.step('Fetching market data...');
 
-  let financials = options.cache ? readCache(cfg.cacheDir, symbol) : null;
+  const bypassFinancials = fetchMode === 'financials' || fetchMode === 'all';
+  let financialsCached   = false;
+  let financials         = bypassFinancials ? null : readFinancials(cfg.cacheDir, symbol);
 
-  if (!financials) {
+  if (financials) {
+    financialsCached = true;
+  } else {
     const [fresh, finnhubMetrics] = await Promise.all([
       getFinancials(symbol),
       cfg.finnhubApiKey ? getBasicFinancials(symbol, cfg.finnhubApiKey) : Promise.resolve(null),
@@ -158,24 +190,55 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     }
 
     financials = fresh;
-    if (options.cache) writeCache(cfg.cacheDir, symbol, financials);
+    writeFinancials(cfg.cacheDir, symbol, financials);
   }
 
-  // Rates + news + peer data are always live (not cached)
-  const [news, marketRates, sectorMedians] = await Promise.all([
-    cfg.finnhubApiKey
+  // ── 1a. Fetch mode: download only, skip LLM ──────────────────────────────
+  if (fetchMode) {
+    if (fetchMode === 'submissions' || fetchMode === 'all') {
+      await fetchEdgarFilings(symbol, cfg.cacheDir);
+    }
+    logger.success(`Data saved → ${symbolDir(cfg.cacheDir, symbol)}`);
+    return;
+  }
+
+  // ── 1b. News (cached 30 min) + Rates + Sector Medians + Perplexity ────────
+  const usePplx   = Boolean(opts.pplx) || Boolean(opts.pplxPro);
+  const pplxModel: 'sonar' | 'sonar-pro' = opts.pplx && !opts.pplxPro ? 'sonar' : 'sonar-pro';
+
+  let news: NewsItem[] = readNews(cfg.cacheDir, symbol) ?? [];
+  let perplexity = usePplx ? readPerplexity(cfg.cacheDir, symbol) : null;
+
+  const [freshNews, marketRates, sectorMedians, freshPerplexity] = await Promise.all([
+    news.length === 0 && cfg.finnhubApiKey
       ? getNews(symbol, cfg.finnhubApiKey).catch((e) => {
           logger.warn(`News unavailable: ${(e as Error).message}`);
-          return [];
+          return [] as NewsItem[];
         })
-      : Promise.resolve([]),
+      : Promise.resolve(null),
     cfg.fredApiKey
       ? getMarketRates(cfg.fredApiKey)
       : Promise.resolve(null),
     cfg.finnhubApiKey
       ? getSectorMedians(symbol, cfg.finnhubApiKey).catch(() => null)
       : Promise.resolve(null),
+    usePplx && !perplexity
+      ? fetchPerplexity(symbol, financials.companyName, requireApiKey('perplexity'), pplxModel)
+          .catch((e) => {
+            logger.warn(`Perplexity unavailable: ${(e as Error).message}`);
+            return null;
+          })
+      : Promise.resolve(null),
   ]);
+
+  if (freshNews && freshNews.length > 0) {
+    news = freshNews;
+    writeNews(cfg.cacheDir, symbol, news);
+  }
+  if (freshPerplexity) {
+    perplexity = freshPerplexity;
+    writePerplexity(cfg.cacheDir, symbol, perplexity);
+  }
 
   logger.success(`${financials.companyName}  $${financials.price.toFixed(2)}  ${fmtBig(financials.marketCap)}`);
 
@@ -222,16 +285,32 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     logger.success(`${searchResults.length} search results`);
   }
 
-  // ── 4. LLM Analysis ───────────────────────────────────────────────────────
-  const llm = createProvider(options);
-  const prompt = buildAnalysisPrompt(financials, {
-    dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
-    ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,
-    sortino, beneish, sectorMedians, news,
-  });
+  // ── 4. LLM Analysis + EDGAR (run in parallel) ────────────────────────────
+  const canUseAnalysisCache = financialsCached && search === 'none' && !usePplx;
+  let llmAnalysis: LLMAnalysis | null = canUseAnalysisCache
+    ? readAnalysis(cfg.cacheDir, symbol)
+    : null;
 
-  const llmAnalysis = await llm.analyze(prompt, searchResults);
-  logger.success('LLM analysis complete');
+  const edgarNeeded = !readSubmissions(cfg.cacheDir, symbol);
+
+  if (!llmAnalysis) {
+    const llm    = createProvider(options);
+    const prompt = buildAnalysisPrompt(financials, {
+      dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
+      ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,
+      sortino, beneish, sectorMedians, news,
+    }, perplexity ?? undefined);
+    const [analysis] = await Promise.all([
+      llm.analyze(prompt, searchResults),
+      edgarNeeded ? fetchEdgarFilings(symbol, cfg.cacheDir) : Promise.resolve(null),
+    ]);
+    llmAnalysis = analysis;
+    writeAnalysis(cfg.cacheDir, symbol, llmAnalysis);
+    logger.success('LLM analysis complete');
+  } else {
+    if (edgarNeeded) await fetchEdgarFilings(symbol, cfg.cacheDir);
+    logger.success('LLM analysis loaded from cache');
+  }
 
   // ── 5. Assemble & Output ──────────────────────────────────────────────────
   const result: AnalysisResult = {
@@ -241,7 +320,8 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     reverseDCF, peterLynch, evMultiples, ruleOf40, grahamRevised,
     piotroski, altmanZ, ddm, epv, interestCoverage,
     sortino, beneish, sectorMedians,
-    llmAnalysis, news,
+    llmAnalysis: llmAnalysis!, news,
+    perplexity: perplexity ?? null,
   };
 
   const isJson = options.output?.endsWith('.json');
@@ -253,6 +333,8 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     writeFileSync(options.output, output, 'utf-8');
     logger.success(`Saved to ${options.output}`);
   }
+
+  await saveReports(symbol, cfg.cacheDir, formatMarkdown(result));
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

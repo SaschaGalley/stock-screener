@@ -3,7 +3,7 @@ import { AnalysisResult, BeneishResult, PiotroskiSignals, SectorMedians } from '
 import { fmt, fmtPct, fmtBig } from '../analysis/metrics.js';
 
 export function formatMarkdown(r: AnalysisResult): string {
-  const { financials: f, dcf, grahamNumber: gn, ratios, llmAnalysis: llm, news } = r;
+  const { financials: f, dcf, grahamNumber: gn, ratios, llmAnalysis: llm, news, perplexity } = r;
   const { reverseDCF: rdcf, peterLynch: pl, evMultiples: ev, ruleOf40: r40,
           grahamRevised: gr, piotroski, altmanZ, ddm, epv, interestCoverage: ic,
           sortino, beneish, sectorMedians: sm } = r;
@@ -185,6 +185,8 @@ export function formatMarkdown(r: AnalysisResult): string {
     ...formatOwnership(f),
     ...formatInsiderActivity(f),
 
+    ...formatPerplexity(perplexity),
+
     chalk.bold('## 🚀 Bull Case'),
     '',
     llm.bullCase,
@@ -355,25 +357,52 @@ function formatKeyDates(f: AnalysisResult['financials']): string[] {
 
 function formatEarningsSurprises(f: AnalysisResult['financials']): string[] {
   const es = f.earningsSurprises;
-  if (!es || es.length === 0) return [];
+  const ee = f.earningsEstimates;
+  if ((!es || es.length === 0) && (!ee || ee.length === 0)) return [];
 
-  const lines: string[] = [chalk.bold('## 🎯 Earnings Surprises'), ''];
-  lines.push(`| ${'Quarter'.padEnd(8)} | ${'Estimate'.padEnd(9)} | ${'Actual'.padEnd(9)} | ${'Surprise'.padEnd(10)} |`);
-  lines.push(`|${'-'.repeat(10)}|${'-'.repeat(11)}|${'-'.repeat(11)}|${'-'.repeat(12)}|`);
+  const lines: string[] = [chalk.bold('## 🎯 Earnings'), ''];
 
-  for (const q of es) {
-    const est = q.epsEstimate !== null ? `$${q.epsEstimate.toFixed(2)}` : 'N/A';
-    const act = q.epsActual   !== null ? `$${q.epsActual.toFixed(2)}`   : 'N/A';
-    let surp = 'N/A';
-    if (q.surprisePct !== null) {
-      const pct = (q.surprisePct * 100).toFixed(1);
-      surp = q.surprisePct >= 0
-        ? chalk.green(`✓ +${pct}%`)
-        : chalk.red(`✗ ${pct}%`);
+  if (es && es.length > 0) {
+    lines.push(chalk.dim('  Past surprises'));
+    lines.push(`| ${'Quarter'.padEnd(8)} | ${'Estimate'.padEnd(9)} | ${'Actual'.padEnd(9)} | ${'Surprise'.padEnd(10)} |`);
+    lines.push(`|${'-'.repeat(10)}|${'-'.repeat(11)}|${'-'.repeat(11)}|${'-'.repeat(12)}|`);
+    for (const q of es) {
+      const est = q.epsEstimate !== null ? `$${q.epsEstimate.toFixed(2)}` : 'N/A';
+      const act = q.epsActual   !== null ? `$${q.epsActual.toFixed(2)}`   : 'N/A';
+      let surp = 'N/A';
+      if (q.surprisePct !== null) {
+        const pct = (q.surprisePct * 100).toFixed(1);
+        surp = q.surprisePct >= 0
+          ? chalk.green(`✓ +${pct}%`)
+          : chalk.red(`✗ ${pct}%`);
+      }
+      lines.push(`| ${q.quarter.padEnd(8)} | ${est.padEnd(9)} | ${act.padEnd(9)} | ${surp.padEnd(10)} |`);
     }
-    lines.push(`| ${q.quarter.padEnd(8)} | ${est.padEnd(9)} | ${act.padEnd(9)} | ${surp.padEnd(10)} |`);
+    lines.push('');
   }
-  lines.push('');
+
+  if (ee && ee.length > 0) {
+    const PERIOD_LABEL: Record<string, string> = { '0q': 'Cur Qtr', '+1q': 'Nxt Qtr', '0y': 'Cur Year', '+1y': 'Nxt Year' };
+    lines.push(chalk.dim('  Forward estimates (analyst consensus)'));
+    lines.push(`| ${'Period'.padEnd(10)} | ${'EPS Est'.padEnd(9)} | ${'Range'.padEnd(15)} | ${'EPS YoY'.padEnd(9)} | ${'Revenue Est'.padEnd(11)} | ${'Rev YoY'.padEnd(9)} |`);
+    lines.push(`|${'-'.repeat(12)}|${'-'.repeat(11)}|${'-'.repeat(17)}|${'-'.repeat(11)}|${'-'.repeat(13)}|${'-'.repeat(11)}|`);
+    for (const e of ee) {
+      const label = (PERIOD_LABEL[e.period] ?? e.period) + (e.endDate ? ` ${e.endDate.slice(0, 7)}` : '');
+      const eps     = e.epsEstimate !== null ? `$${e.epsEstimate.toFixed(2)}` : 'N/A';
+      const range   = e.epsLow !== null && e.epsHigh !== null
+        ? `$${e.epsLow.toFixed(2)}–$${e.epsHigh.toFixed(2)}` : 'N/A';
+      const epsYoY  = e.epsGrowth !== null
+        ? (e.epsGrowth >= 0 ? chalk.green : chalk.red)(`${e.epsGrowth >= 0 ? '+' : ''}${(e.epsGrowth * 100).toFixed(1)}%`)
+        : 'N/A';
+      const rev     = e.revenueEstimate !== null ? fmtBig(e.revenueEstimate) : 'N/A';
+      const revYoY  = e.revenueGrowth !== null
+        ? (e.revenueGrowth >= 0 ? chalk.green : chalk.red)(`${e.revenueGrowth >= 0 ? '+' : ''}${(e.revenueGrowth * 100).toFixed(1)}%`)
+        : 'N/A';
+      lines.push(`| ${label.padEnd(10)} | ${eps.padEnd(9)} | ${range.padEnd(15)} | ${epsYoY.padEnd(9)} | ${rev.padEnd(11)} | ${revYoY.padEnd(9)} |`);
+    }
+    lines.push('');
+  }
+
   return lines;
 }
 
@@ -461,6 +490,21 @@ function fvRow(
   const mosPct = ((fv - price) / price * 100).toFixed(1);
   const arrow  = fv > price ? chalk.green(`▲ ${mosPct}%`) : chalk.red(`▼ ${Math.abs(Number(mosPct))}%`);
   return `| ${label.padEnd(23)} | $${fv.toFixed(2).padEnd(18)} | ${arrow} |`;
+}
+
+function formatPerplexity(p: AnalysisResult['perplexity']): string[] {
+  if (!p) return [];
+  const lines = [
+    chalk.bold('## 🔎 Perplexity Research') + chalk.gray(`  (${new Date(p.fetchedAt).toLocaleString()}  ·  ${p.model})`),
+    '',
+    ...p.synthesis.split('\n').map((l) => `  ${l}`),
+  ];
+  if (p.citations.length > 0) {
+    lines.push('', chalk.dim('  Sources'));
+    p.citations.forEach((url, i) => lines.push(chalk.dim(`  [${i + 1}] ${url}`)));
+  }
+  lines.push('');
+  return lines;
 }
 
 function formatPiotroski(

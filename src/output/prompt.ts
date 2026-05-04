@@ -20,6 +20,7 @@ import {
 } from '../analysis/metrics.js';
 import { getNews } from '../data/finnhub.js';
 import { SectorMedians, StockFinancials } from '../types.js';
+import { PerplexityContext } from '../data/perplexity.js';
 
 export interface PromptData {
   dcf: ReturnType<typeof calculateDCF>;
@@ -41,10 +42,7 @@ export interface PromptData {
   news: Awaited<ReturnType<typeof getNews>>;
 }
 
-export function buildAnalysisPrompt(f: StockFinancials, d: PromptData): string {
-  const newsBlock = d.news.length > 0
-    ? d.news.slice(0, 5).map((n) => `- ${n.headline} (${n.source})`).join('\n')
-    : 'No recent news available.';
+export function buildAnalysisPrompt(f: StockFinancials, d: PromptData, perplexity?: PerplexityContext): string {
 
   const piotroskiLine = `${d.piotroski.score}/${d.piotroski.maxScore} (${d.piotroski.interpretation})`;
   const altmanLine = d.altmanZ.score !== null
@@ -108,6 +106,21 @@ ${f.earningsSurprises.length > 0
     ).join('\n')
   : '- No earnings history available'}
 
+### Forward Earnings Estimates (analyst consensus)
+${f.earningsEstimates.length > 0
+  ? f.earningsEstimates.map((e) => {
+      const label: Record<string, string> = { '0q': 'Current Qtr', '+1q': 'Next Qtr', '0y': 'Current Year', '+1y': 'Next Year' };
+      const period = (label[e.period] ?? e.period) + (e.endDate ? ` (ends ${e.endDate})` : '');
+      const eps = e.epsEstimate !== null ? `EPS $${e.epsEstimate.toFixed(2)}` : 'EPS N/A';
+      const range = e.epsLow !== null && e.epsHigh !== null ? ` [$${e.epsLow.toFixed(2)}–$${e.epsHigh.toFixed(2)}]` : '';
+      const epsGrowth = e.epsGrowth !== null ? ` (${e.epsGrowth >= 0 ? '+' : ''}${(e.epsGrowth * 100).toFixed(1)}% YoY)` : '';
+      const rev = e.revenueEstimate !== null ? `  Rev ${fmtBig(e.revenueEstimate)}` : '';
+      const revGrowth = e.revenueGrowth !== null ? ` (${e.revenueGrowth >= 0 ? '+' : ''}${(e.revenueGrowth * 100).toFixed(1)}% YoY)` : '';
+      const analysts = e.numberOfAnalysts !== null ? `  ${e.numberOfAnalysts} analysts` : '';
+      return `- ${period}: ${eps}${range}${epsGrowth}${rev}${revGrowth}${analysts}`;
+    }).join('\n')
+  : '- No forward estimates available'}
+
 ### Short Interest & Ownership
 - Short % of Float: ${f.shortPercentOfFloat !== null ? (f.shortPercentOfFloat * 100).toFixed(1) + '%' : 'N/A'}  |  Days to Cover: ${f.shortRatio !== null ? f.shortRatio.toFixed(1) + ' days' : 'N/A'}
 - Institutional Ownership: ${f.institutionsPercentHeld !== null ? (f.institutionsPercentHeld * 100).toFixed(1) + '%' : 'N/A'}  |  Insider Ownership: ${f.insidersPercentHeld !== null ? (f.insidersPercentHeld * 100).toFixed(1) + '%' : 'N/A'}
@@ -118,10 +131,11 @@ ${f.earningsSurprises.length > 0
 ### Key Dates
 - Next Earnings: ${f.nextEarningsDate ?? 'unknown'}
 - Ex-Dividend: ${f.exDividendDate ?? 'N/A'}  |  Pay Date: ${f.dividendPayDate ?? 'N/A'}
+${perplexity ? `
+### Additional Context from Perplexity Sonar (web-sourced — use where relevant, not authoritative)
 
-### Recent News
-${newsBlock}
-
+${perplexity.synthesis}
+` : ''}
 ---
 Provide a comprehensive investment analysis as valid JSON.
 Cite specific data points from the models above in your bull/bear cases.

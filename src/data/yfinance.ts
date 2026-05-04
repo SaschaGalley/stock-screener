@@ -3,7 +3,7 @@ import YahooFinance from 'yahoo-finance2';
 import { PrevYearSnapshot, StockFinancials } from '../types.js';
 import { logger } from '../utils/logger.js';
 
-const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] } as any);
+const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'], validation: { logErrors: false, logOptionsErrors: false } } as any);
 
 function num(v: unknown): number | null {
   if (typeof v === 'number' && isFinite(v)) return v;
@@ -29,7 +29,7 @@ async function safeQuote(symbol: string): Promise<any> {
 async function safeSummary(symbol: string): Promise<any> {
   try {
     return await yf.quoteSummary(symbol, {
-      modules: ['financialData', 'defaultKeyStatistics', 'summaryDetail', 'assetProfile', 'price', 'recommendationTrend', 'earningsHistory', 'insiderTransactions', 'calendarEvents', 'majorHoldersBreakdown'],
+      modules: ['financialData', 'defaultKeyStatistics', 'summaryDetail', 'assetProfile', 'price', 'recommendationTrend', 'earningsHistory', 'earningsTrend', 'insiderTransactions', 'calendarEvents', 'majorHoldersBreakdown'],
     } as any);
   } catch (e) { logger.warn(`Summary: ${(e as Error).message}`); return null; }
 }
@@ -163,6 +163,7 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
   const cal = (summary as any)?.calendarEvents ?? {};
   const mhb = (summary as any)?.majorHoldersBreakdown ?? {};
   const eh  = (summary as any)?.earningsHistory?.history ?? [];
+  const et  = (summary as any)?.earningsTrend?.trend ?? [];
   const itx: any[] = (summary as any)?.insiderTransactions?.transactions ?? [];
 
   // Most recent annual period (last element = most recent)
@@ -209,6 +210,21 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
     epsEstimate: num(q.epsEstimate?.raw ?? q.epsEstimate),
     epsActual:   num(q.epsActual?.raw   ?? q.epsActual),
     surprisePct: num(q.surprisePercent?.raw ?? q.surprisePercent),
+  }));
+
+  // ── Forward earnings estimates ────────────────────────────────────────────
+  const earningsEstimates = (et as any[]).slice(0, 4).map((t: any) => ({
+    period:           str(t.period) ?? 'Unknown',
+    endDate:          t.endDate instanceof Date
+                        ? t.endDate.toISOString().slice(0, 10)
+                        : str(t.endDate) ?? null,
+    epsEstimate:      num(t.earningsEstimate?.avg?.raw ?? t.earningsEstimate?.avg),
+    epsLow:           num(t.earningsEstimate?.low?.raw ?? t.earningsEstimate?.low),
+    epsHigh:          num(t.earningsEstimate?.high?.raw ?? t.earningsEstimate?.high),
+    epsGrowth:        num(t.earningsEstimate?.growth?.raw ?? t.earningsEstimate?.growth),
+    revenueEstimate:  num(t.revenueEstimate?.avg?.raw ?? t.revenueEstimate?.avg),
+    revenueGrowth:    num(t.revenueEstimate?.growth?.raw ?? t.revenueEstimate?.growth),
+    numberOfAnalysts: num(t.earningsEstimate?.numberOfAnalysts?.raw ?? t.earningsEstimate?.numberOfAnalysts),
   }));
 
   // ── Insider transactions (last 6 months) ─────────────────────────────────
@@ -262,8 +278,8 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
     price: num(quote?.regularMarketPrice) ?? 0,
     marketCap: num(quote?.marketCap) ?? 0,
 
-    peRatio:     num(quote?.trailingPE),
-    forwardPE:   num(quote?.forwardPE),
+    peRatio:     (() => { const v = num(quote?.trailingPE); return v !== null && v > 0 ? v : null; })(),
+    forwardPE:   (() => { const v = num(quote?.forwardPE);  return v !== null && v > 0 ? v : null; })(),
     pegRatio:    num(ks.pegRatio),
     eps:         num(quote?.epsTrailingTwelveMonths),
     bookValue:   num(ks.bookValue),
@@ -364,6 +380,7 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
     institutionsCount:       num(mhb.institutionsCount),
 
     earningsSurprises,
+    earningsEstimates,
 
     insiderBuyShares:  insiderBuyCount  > 0 ? insiderBuyShares  : null,
     insiderSellShares: insiderSellCount > 0 ? insiderSellShares : null,
