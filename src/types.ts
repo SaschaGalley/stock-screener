@@ -519,18 +519,44 @@ export const CompositeExclusionSchema = z.object({
 });
 export type CompositeExclusion = z.infer<typeof CompositeExclusionSchema>;
 
+export const CompositeTierSchema = z.object({
+  median:         z.number().nullable().describe('Median fair value across this tier'),
+  mean:           z.number().nullable().describe('Mean fair value across this tier'),
+  p25:            z.number().nullable().describe('25th percentile of fair values in this tier'),
+  p75:            z.number().nullable().describe('75th percentile'),
+  min:            z.number().nullable().describe('Min fair value across this tier'),
+  max:            z.number().nullable().describe('Max fair value across this tier'),
+  marginOfSafety: z.number().nullable().describe('(median − price) / price for this tier'),
+  models:         z.array(CompositeContributorSchema).describe('Contributing models in this tier'),
+});
+export type CompositeTier = z.infer<typeof CompositeTierSchema>;
+
 export const CompositeFairValueResultSchema = z.object({
-  median:               z.number().nullable().describe('Median fair value across all applicable models — headline composite intrinsic value'),
-  mean:                 z.number().nullable().describe('Mean fair value across all applicable models'),
-  p25:                  z.number().nullable().describe('25th percentile of fair values'),
-  p75:                  z.number().nullable().describe('75th percentile of fair values'),
-  min:                  z.number().nullable().describe('Lowest fair value across applicable models'),
-  max:                  z.number().nullable().describe('Highest fair value across applicable models'),
-  marginOfSafety:       z.number().nullable().describe('(median − price) / price; positive = composite says undervalued'),
-  pctModelsUndervalued: z.number().nullable().describe('Fraction of applicable models indicating undervaluation (decimal)'),
-  confidence:           z.number().describe('0–10 confidence score: blends number of applicable models, IQR tightness, and Beneish-status'),
-  contributingModels:   z.array(CompositeContributorSchema).describe('All models that produced a fair value'),
-  excludedModels:       z.array(CompositeExclusionSchema).describe('Models that were excluded with reason'),
+  /**
+   * Headline tier — market-aligned, growth-aware models. This is "the" fair value.
+   * Includes: DCF (2-Stage), Peer Multiples median, Peter Lynch, Analyst Consensus.
+   */
+  primary:      CompositeTierSchema,
+  /**
+   * Conservative tier — value-investor lens (no-growth or asset-based assumptions).
+   * Includes: Graham Number, Graham Revised V*, EPV, RIM, DDM. Shown as a
+   * separate "value lens" — typically prints lower than primary for growth firms.
+   */
+  conservative: CompositeTierSchema,
+  excludedModels: z.array(CompositeExclusionSchema).describe('Models that were excluded with reason'),
+  confidence:     z.number().describe('0–10 confidence score (based on primary tier coverage + IQR + Beneish)'),
+  pctPrimaryUndervalued: z.number().nullable().describe('Fraction of primary models indicating undervaluation'),
+
+  // Aliases for backwards-compat with existing readers — same as primary.*
+  median:               z.number().nullable(),
+  mean:                 z.number().nullable(),
+  p25:                  z.number().nullable(),
+  p75:                  z.number().nullable(),
+  min:                  z.number().nullable(),
+  max:                  z.number().nullable(),
+  marginOfSafety:       z.number().nullable(),
+  pctModelsUndervalued: z.number().nullable(),
+  contributingModels:   z.array(CompositeContributorSchema),
 });
 export type CompositeFairValueResult = z.infer<typeof CompositeFairValueResultSchema>;
 

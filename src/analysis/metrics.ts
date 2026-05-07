@@ -4,6 +4,7 @@ import {
   CompositeContributor,
   CompositeExclusion,
   CompositeFairValueResult,
+  CompositeTier,
   DDMResult,
   DCFResult,
   EPVResult,
@@ -964,90 +965,127 @@ export interface CompositeInputs {
 }
 
 /**
- * Combine applicable single-equation valuations into a non-parametric range.
- * Median is the headline; IQR is the uncertainty band.
+ * Tiered composite fair value:
  *
- * Lifecycle-aware filtering (Damodaran):
- *   - Graham Number & EPV are mature-firm models (no-growth assumption); excluded
- *     when revenue growth > 20% to avoid systematic downward bias on growth firms.
- *   - RIM excluded when excessReturn < -3pp (trailing ROE far below cost of equity);
- *     for heavy-investment-phase firms, trailing ROE understates future earning power.
- *   - NCAV is intentionally never included — it's a liquidation floor, not a fair
- *     value estimate; mixing units would corrupt the median.
+ *   PRIMARY (headline):
+ *     Market-aligned, growth-aware models. The median of this tier is THE fair
+ *     value shown in the UI hero.
+ *       • DCF (2-Stage FCFF)         — analyst-forward growth, terminal fade
+ *       • Peer Multiples (median)    — implied price across 5–6 sector medians
+ *       • Peter Lynch                — EPS × growth%
+ *       • Analyst Consensus          — mean of analyst price targets
+ *
+ *   CONSERVATIVE (value lens):
+ *     Backward-looking / no-growth perspective. Useful as a sanity floor and
+ *     for mature firms, but systematically pessimistic for growers.
+ *       • Graham Number              — sqrt(22.5 · EPS · BV)
+ *       • Graham Revised V*          — capped at 15% growth (Graham's own rule)
+ *       • EPV (Greenwald)            — NOPAT capitalised at WACC, no growth
+ *       • RIM (Residual Income)      — book value + excess returns
+ *       • DDM (Gordon Growth)        — dividend-based
+ *
+ * NCAV is excluded entirely — it's a liquidation floor in a different unit.
+ *
+ * The tier split is the right answer to "Graham/EPV always drag the median
+ * down for growth firms" — they're now a separate lens, not part of the
+ * headline. The user sees both in the UI.
  */
-export function calculateCompositeFairValue(financials: StockFinancials, inputs: CompositeInputs): CompositeFairValueResult {
-  const price = financials.price;
-  const revGrowth = financials.revenueGrowth;
-  const isGrowthFirm = revGrowth !== null && revGrowth > 0.20;
-  const rimExcessTooNegative = inputs.rim.excessReturn !== null && inputs.rim.excessReturn < -0.03;
-
-  const contributing: CompositeContributor[] = [];
-  const excluded: CompositeExclusion[] = [];
-
-  function add(name: string, value: number | null, reason: string, override?: { skip: boolean; skipReason: string }) {
-    if (override?.skip) {
-      excluded.push({ name, reason: override.skipReason });
-      return;
-    }
-    if (value !== null && Number.isFinite(value) && value > 0) {
-      contributing.push({ name, fairValue: value });
-    } else {
-      excluded.push({ name, reason });
-    }
-  }
-
-  add('DCF (2-Stage FCFF)',     inputs.dcf.fairValue,           'Negative or missing free cash flow / unstable r vs g');
-  add('Graham Number',          inputs.graham.grahamNumber,     'Requires positive EPS and book value',
-      isGrowthFirm ? { skip: true, skipReason: `Mature-firm model — excluded for growth firms (rev growth ${(revGrowth! * 100).toFixed(0)}%)` } : undefined);
-  add('Graham Revised V*',      inputs.grahamRevised.fairValue, 'Requires positive EPS and growth rate');
-  add('Peter Lynch',            inputs.peterLynch.fairValue,    'Requires positive EPS and growth');
-  add('DDM (Gordon Growth)',    inputs.ddm.isApplicable ? inputs.ddm.fairValue : null,
-      inputs.ddm.isApplicable ? 'g approaches r — model unstable' : 'No dividend');
-  add('EPV (Greenwald)',        inputs.epv.fairValue,           'Requires positive EBIT',
-      isGrowthFirm ? { skip: true, skipReason: `No-growth model (Greenwald) — excluded for growth firms (rev growth ${(revGrowth! * 100).toFixed(0)}%)` } : undefined);
-  add('Residual Income (RIM)',  inputs.rim.fairValue,           'Requires positive book value and ROE',
-      rimExcessTooNegative ? { skip: true, skipReason: `Trailing ROE far below cost of equity (excess ${(inputs.rim.excessReturn! * 100).toFixed(1)}pp) — RIM understates future earning power for firms in heavy investment phase` } : undefined);
-  add('Peer Multiples (median)', inputs.peerMultiples.medianFairPrice,
-      'No peer-group data or no valid multiples');
-
-  const fvs = contributing.map((c) => c.fairValue);
-
+function tierStats(price: number, models: CompositeContributor[]): CompositeTier {
+  const fvs = models.map((m) => m.fairValue);
   if (fvs.length === 0) {
-    return {
-      median: null, mean: null, p25: null, p75: null, min: null, max: null,
-      marginOfSafety: null, pctModelsUndervalued: null, confidence: 0,
-      contributingModels: contributing, excludedModels: excluded,
-    };
+    return { median: null, mean: null, p25: null, p75: null, min: null, max: null, marginOfSafety: null, models };
   }
-
   const med = median(fvs);
   const p25 = percentile(fvs, 0.25);
   const p75 = percentile(fvs, 0.75);
-  const min = Math.min(...fvs);
-  const max = Math.max(...fvs);
-  const mean = fvs.reduce((s, v) => s + v, 0) / fvs.length;
-  const marginOfSafety = med !== null ? (med - price) / price : null;
-  const pctUndervalued = contributing.filter((c) => c.fairValue > price).length / contributing.length;
+  const minV = Math.min(...fvs);
+  const maxV = Math.max(...fvs);
+  const meanV = fvs.reduce((s, v) => s + v, 0) / fvs.length;
+  const mos = med !== null ? (med - price) / price : null;
+  return { median: med, mean: meanV, p25, p75, min: minV, max: maxV, marginOfSafety: mos, models };
+}
 
-  // Confidence: weight (a) coverage, (b) IQR tightness, (c) Beneish penalty.
-  const coverageScore = Math.min(fvs.length / 6, 1) * 5; // 0..5 from count
-  const iqrRel = med && med > 0 && p25 !== null && p75 !== null ? (p75 - p25) / med : 1.0;
+export function calculateCompositeFairValue(financials: StockFinancials, inputs: CompositeInputs): CompositeFairValueResult {
+  const price = financials.price;
+  const rimExcessTooNegative = inputs.rim.excessReturn !== null && inputs.rim.excessReturn < -0.03;
+
+  const primary: CompositeContributor[]      = [];
+  const conservative: CompositeContributor[] = [];
+  const excluded: CompositeExclusion[]       = [];
+
+  function add(tier: 'primary' | 'conservative', name: string, value: number | null, missingReason: string, skipReason?: string) {
+    if (skipReason) {
+      excluded.push({ name, reason: skipReason });
+      return;
+    }
+    if (value !== null && Number.isFinite(value) && value > 0) {
+      (tier === 'primary' ? primary : conservative).push({ name, fairValue: value });
+    } else {
+      excluded.push({ name, reason: missingReason });
+    }
+  }
+
+  // ── PRIMARY tier ──
+  add('primary', 'DCF (2-Stage FCFF)', inputs.dcf.fairValue, 'Negative FCF or unstable r vs g');
+  add('primary', 'Peer Multiples',     inputs.peerMultiples.medianFairPrice, 'No peer-group data');
+  add('primary', 'Peter Lynch',        inputs.peterLynch.fairValue,         'Requires positive EPS and growth');
+  // Analyst target = market consensus, treated as one more "model" for triangulation.
+  if (financials.targetMeanPrice !== null && Number.isFinite(financials.targetMeanPrice) && financials.targetMeanPrice > 0) {
+    primary.push({ name: 'Analyst Consensus', fairValue: financials.targetMeanPrice });
+  } else {
+    excluded.push({ name: 'Analyst Consensus', reason: 'No analyst coverage' });
+  }
+
+  // ── CONSERVATIVE tier ──
+  add('conservative', 'Graham Number',     inputs.graham.grahamNumber,     'Requires positive EPS and book value');
+  add('conservative', 'Graham Revised V*', inputs.grahamRevised.fairValue, 'Requires positive EPS and growth');
+  add('conservative', 'EPV (Greenwald)',   inputs.epv.fairValue,           'Requires positive EBIT');
+  add('conservative', 'Residual Income (RIM)', inputs.rim.fairValue, 'Requires positive book value and ROE',
+    rimExcessTooNegative
+      ? `Trailing ROE far below cost of equity (excess ${(inputs.rim.excessReturn! * 100).toFixed(1)}pp) — RIM understates future earning power for firms in heavy investment phase`
+      : undefined);
+  add('conservative', 'DDM (Gordon)',
+    inputs.ddm.isApplicable ? inputs.ddm.fairValue : null,
+    inputs.ddm.isApplicable ? 'g approaches r — model unstable' : 'No dividend');
+
+  const primaryTier      = tierStats(price, primary);
+  const conservativeTier = tierStats(price, conservative);
+
+  // Confidence (0-10) based on primary tier coverage + IQR tightness + Beneish.
+  const coverageScore = Math.min(primary.length / 4, 1) * 5;
+  const iqrRel = primaryTier.median && primaryTier.median > 0 && primaryTier.p25 !== null && primaryTier.p75 !== null
+    ? (primaryTier.p75 - primaryTier.p25) / primaryTier.median
+    : 1.0;
   const tightnessBonus =
-    iqrRel < 0.20 ? 5 :
-    iqrRel < 0.40 ? 4 :
-    iqrRel < 0.60 ? 3 :
-    iqrRel < 1.00 ? 2 : 1;
+    iqrRel < 0.15 ? 5 :
+    iqrRel < 0.30 ? 4 :
+    iqrRel < 0.50 ? 3 :
+    iqrRel < 0.80 ? 2 : 1;
   let confidence = coverageScore + tightnessBonus;
   if (inputs.beneish.probability === 'likely manipulator') confidence /= 2;
-  if (fvs.length < 2) confidence = 0;
+  if (primary.length < 2) confidence = 0;
   confidence = Math.max(0, Math.min(10, Math.round(confidence * 10) / 10));
 
+  const pctPrimaryUndervalued = primary.length > 0
+    ? primary.filter((c) => c.fairValue > price).length / primary.length
+    : null;
+
   return {
-    median: med, mean, p25, p75, min, max,
-    marginOfSafety,
-    pctModelsUndervalued: pctUndervalued,
-    confidence,
-    contributingModels: contributing,
+    primary:      primaryTier,
+    conservative: conservativeTier,
     excludedModels: excluded,
+    confidence,
+    pctPrimaryUndervalued,
+
+    // Aliases — same as primary.* for backwards compat
+    median:               primaryTier.median,
+    mean:                 primaryTier.mean,
+    p25:                  primaryTier.p25,
+    p75:                  primaryTier.p75,
+    min:                  primaryTier.min,
+    max:                  primaryTier.max,
+    marginOfSafety:       primaryTier.marginOfSafety,
+    pctModelsUndervalued: pctPrimaryUndervalued,
+    contributingModels:   primary,
   };
 }

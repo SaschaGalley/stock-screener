@@ -7,15 +7,8 @@ import { getConfig, requireApiKey } from './config.js';
 import { logger } from './utils/logger.js';
 import { getFinancials, getOptionsSignals, resolveSymbol, searchByQuery } from './data/yfinance.js';
 import { getNews, getBasicFinancials, getSectorMedians } from './data/finnhub.js';
-import {
-  calculateDCF, calculateGraham, calculateRatios,
-  calculateReverseDCF, calculatePeterLynch, calculateEVMultiples,
-  calculateRuleOf40, calculateGrahamRevised, calculatePiotroski,
-  calculateAltmanZ, calculateDDM, calculateEPV, calculateInterestCoverage,
-  calculateSortino, calculateBeneish,
-  calculateRIM, calculateNCAV, calculatePeerMultiples, calculateCompositeFairValue,
-  fmtBig,
-} from './analysis/metrics.js';
+import { fmtBig } from './analysis/metrics.js';
+import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { computeTechnicals, DailyBar } from './analysis/technical.js';
 import { createProvider } from './providers/factory.js';
 import { TavilySearch } from './search/tavily.js';
@@ -27,6 +20,7 @@ import {
   readMarketSignals, writeMarketSignals,
   readPerplexity,    writePerplexity,
   readSubmissions,   symbolDir,
+  AnalysisFlagsKey, analysisHash,
 } from './cache.js';
 import { fetchEdgarFilings } from './data/edgar.js';
 import { getMarketRates } from './data/fred.js';
@@ -136,41 +130,85 @@ Required API keys (set in .env):
     }
   });
 
-program.parse();
+// Only parse argv when this file is the entry point (not when imported by server.ts)
+const invokedDirectly = process.argv[1] && (
+  process.argv[1].endsWith('cli.ts') ||
+  process.argv[1].endsWith('cli.js')
+);
+if (invokedDirectly) program.parse();
 
-// ─── Main Flow ───────────────────────────────────────────────────────────────
+// ─── Public API: runAnalysis ─────────────────────────────────────────────────
 
-async function run(rawSymbol: string | undefined, opts: Record<string, string | boolean | undefined>): Promise<void> {
-  if (opts.verbose) process.env.LOG_LEVEL = 'debug';
+/** Stages emitted by runAnalysis() via onProgress callback. */
+export type ProgressStage =
+  | 'resolve' | 'financials' | 'rates' | 'sector-medians'
+  | 'news' | 'perplexity' | 'market-signals' | 'metrics'
+  | 'search' | 'llm' | 'edgar' | 'reports' | 'done';
 
-  const { provider, modelId } = resolveModel(String(opts.model ?? 'claude'));
-  const search = normalizeSearch(opts.search, provider);
+export interface ProgressEvent {
+  stage:    ProgressStage;
+  message:  string;
+  cached?:  boolean;
+  /** Optional structured payload (e.g. summary stats) — kept loose. */
+  data?:    Record<string, unknown>;
+}
+
+/** Structured input for a stock analysis (used by both CLI and HTTP server). */
+export interface AnalysisRunInput {
+  symbol?:    string;
+  query?:     string;
+  model:      string;                 // shortcut ('claude') or full model id
+  search?:    string;                 // optional search type
+  pplx?:      'sonar' | 'sonar-pro' | null;
+  verbose?:   boolean;
+  onProgress?: (event: ProgressEvent) => void;
+}
+
+/** Resolved high-level meta returned alongside the analysis result. */
+export interface AnalysisRunMeta {
+  symbol:        string;
+  modelId:       string;
+  searchUsed:    AnalysisOptions['search'];
+  pplxUsed:      'sonar' | 'sonar-pro' | null;
+  fromCache:     boolean;             // true when the LLM analysis was served from cache
+  flagsHash:     string;
+}
+
+/**
+ * Run the full analysis pipeline for a stock and return the structured result
+ * + metadata. Reusable from the CLI and the HTTP server. Console output is
+ * still emitted via the shared logger.
+ */
+export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: AnalysisResult; meta: AnalysisRunMeta }> {
+  if (input.verbose) process.env.LOG_LEVEL = 'debug';
+  const emit = input.onProgress ?? (() => {});
+
+  const { provider, modelId } = resolveModel(input.model);
+  const search = normalizeSearch(input.search, provider);
   validateSearch(search, provider);
-
-  const fetchRaw  = opts.fetch;
-  type FetchMode  = 'financials' | 'submissions' | 'all' | false;
-  const fetchMode: FetchMode = fetchRaw === true ? 'all'
-    : fetchRaw === 'financials'   ? 'financials'
-    : fetchRaw === 'submissions'  ? 'submissions'
-    : false;
 
   const options: AnalysisOptions = {
     provider, modelId, search,
     cache:   true,
-    output:  opts.output as string | undefined,
-    verbose: Boolean(opts.verbose),
+    output:  undefined,
+    verbose: Boolean(input.verbose),
   };
 
   const cfg = getConfig();
 
   // ── 0. Resolve ticker → canonical Yahoo Finance symbol ───────────────────
   let symbol: string;
-  if (opts.query) {
-    logger.step(`Searching for "${opts.query}"...`);
-    symbol = await searchByQuery(String(opts.query));
+  if (input.query) {
+    logger.step(`Searching for "${input.query}"...`);
+    emit({ stage: 'resolve', message: `Searching for "${input.query}"…` });
+    symbol = await searchByQuery(input.query);
+  } else if (input.symbol) {
+    emit({ stage: 'resolve', message: `Resolving symbol ${input.symbol}…` });
+    symbol = await resolveSymbol(input.symbol);
   } else {
-    symbol = await resolveSymbol(rawSymbol!);
+    throw new Error('runAnalysis requires either symbol or query');
   }
+  emit({ stage: 'resolve', message: `Resolved → ${symbol}`, data: { symbol } });
 
   console.log(chalk.bold.white(`\n  Investment Analysis — ${symbol}\n`));
   logger.info(`Model: ${modelId}  |  Search: ${search}`);
@@ -178,18 +216,14 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
   // ── 1. Fetch Financials ───────────────────────────────────────────────────
   logger.step('Fetching market data...');
 
-  const bypassFinancials = fetchMode === 'financials' || fetchMode === 'all';
-  let financialsCached   = false;
-  let financials: StockFinancials | null = bypassFinancials ? null : readFinancials(cfg.cacheDir, symbol);
+  let financials: StockFinancials | null = readFinancials(cfg.cacheDir, symbol);
+  let financialsCached = !!financials;
 
-  // Daily bars + revisions live alongside StockFinancials in the bundle from getFinancials.
-  // When financials is cache-hit, we don't have them yet — refetch lazily below if marketSignals is missing.
   let bundleDailyBars: DailyBar[] | null = null;
   let bundleRevisions: EarningsRevisions | null = null;
 
-  if (financials) {
-    financialsCached = true;
-  } else {
+  if (!financials) {
+    emit({ stage: 'financials', message: 'Fetching financials from Yahoo + Finnhub…' });
     const [bundle, finnhubMetrics] = await Promise.all([
       getFinancials(symbol),
       cfg.finnhubApiKey ? getBasicFinancials(symbol, cfg.finnhubApiKey) : Promise.resolve(null),
@@ -206,19 +240,12 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     bundleRevisions  = bundle.revisions;
     writeFinancials(cfg.cacheDir, symbol, financials);
   }
-
-  // ── 1a. Fetch mode: download only, skip LLM ──────────────────────────────
-  if (fetchMode) {
-    if (fetchMode === 'submissions' || fetchMode === 'all') {
-      await fetchEdgarFilings(symbol, cfg.cacheDir);
-    }
-    logger.success(`Data saved → ${symbolDir(cfg.cacheDir, symbol)}`);
-    return;
-  }
+  emit({ stage: 'financials', message: `${financials.companyName} · $${financials.price.toFixed(2)} · ${fmtBig(financials.marketCap)}`, cached: financialsCached });
 
   // ── 1b. News (cached 30 min) + Rates + Sector Medians + Perplexity ────────
-  const usePplx   = Boolean(opts.pplx) || Boolean(opts.pplxPro);
-  const pplxModel: 'sonar' | 'sonar-pro' = opts.pplx && !opts.pplxPro ? 'sonar' : 'sonar-pro';
+  const usePplx   = input.pplx !== null && input.pplx !== undefined;
+  const pplxModel: 'sonar' | 'sonar-pro' = input.pplx === 'sonar' ? 'sonar' : 'sonar-pro';
+  emit({ stage: 'rates', message: 'Fetching macro rates + news + sector medians' + (usePplx ? ' + Perplexity' : '') + '…' });
 
   let news: NewsItem[] = readNews(cfg.cacheDir, symbol) ?? [];
   let perplexity = usePplx ? readPerplexity(cfg.cacheDir, symbol) : null;
@@ -261,6 +288,7 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
 
   if (!marketSignals) {
     logger.step('Computing market signals...');
+    emit({ stage: 'market-signals', message: 'Computing technicals, options & macro…' });
 
     // If financials came from cache, daily bars + revisions weren't fetched yet.
     if (!bundleDailyBars || !bundleRevisions) {
@@ -303,36 +331,26 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
 
   // ── 2. Calculate All Metrics ──────────────────────────────────────────────
   logger.step('Running valuation models...');
-  const rates = marketRates ?? undefined;
-  const dcf              = calculateDCF(financials, rates);
-  const grahamNumber     = calculateGraham(financials);
-  const ratios           = calculateRatios(financials);
-  const reverseDCF       = calculateReverseDCF(financials, rates);
-  const peterLynch       = calculatePeterLynch(financials);
-  const evMultiples      = calculateEVMultiples(financials);
-  const ruleOf40         = calculateRuleOf40(financials);
-  const grahamRevised    = calculateGrahamRevised(financials, marketRates?.aaaBondYield);
-  const piotroski        = calculatePiotroski(financials);
-  const altmanZ          = calculateAltmanZ(financials);
-  const ddm              = calculateDDM(financials, marketRates?.riskFreeRate);
-  const epv              = calculateEPV(financials, rates);
-  const rim              = calculateRIM(financials, rates);
-  const ncav             = calculateNCAV(financials);
-  const peerMultiples    = calculatePeerMultiples(financials, sectorMedians);
-  const interestCoverage = calculateInterestCoverage(financials);
-  const sortino          = calculateSortino(financials, marketRates?.riskFreeRate);
-  const beneish          = calculateBeneish(financials);
-  const composite        = calculateCompositeFairValue(financials, {
-    dcf, graham: grahamNumber, grahamRevised, peterLynch, ddm, epv, rim,
-    peerMultiples, beneish,
-  });
+  emit({ stage: 'metrics', message: 'Running 19 valuation models…' });
+  const metrics = computeAllMetrics(financials, marketRates, sectorMedians);
+  const {
+    dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
+    ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, rim, ncav,
+    peerMultiples, interestCoverage, sortino, beneish, composite,
+  } = metrics;
   logger.success('19 models calculated');
+  emit({
+    stage:   'metrics',
+    message: `Composite fair value: ${composite.median ? '$' + composite.median.toFixed(2) : 'N/A'} across ${composite.contributingModels.length} models`,
+    data:    { compositeMedian: composite.median, contributingCount: composite.contributingModels.length },
+  });
 
   // ── 3. Optional Web Search ────────────────────────────────────────────────
   let searchResults: SearchResult[] = [];
   const name = financials.companyName;
   const year = new Date().getFullYear();
   if (options.search === 'tavily' || options.search === 'openai-tavily') {
+    emit({ stage: 'search', message: 'Running Tavily web search…' });
     const searcher = new TavilySearch(requireApiKey('tavily'));
     logger.step('Running Tavily web search...');
     searchResults = await searcher.searchMultiple([
@@ -341,7 +359,9 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
       `${name} analyst rating price target`,
     ]);
     logger.success(`${searchResults.length} search results`);
+    emit({ stage: 'search', message: `${searchResults.length} Tavily results` });
   } else if (options.search === 'brave') {
+    emit({ stage: 'search', message: 'Running Brave web search…' });
     const searcher = new BraveSearch(requireApiKey('brave'));
     logger.step('Running Brave web search...');
     searchResults = await searcher.searchMultiple([
@@ -350,17 +370,23 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
       `${name} analyst rating price target`,
     ]);
     logger.success(`${searchResults.length} search results`);
+    emit({ stage: 'search', message: `${searchResults.length} Brave results` });
   }
 
   // ── 4. LLM Analysis + EDGAR (run in parallel) ────────────────────────────
-  const canUseAnalysisCache = financialsCached && search === 'none' && !usePplx;
-  let llmAnalysis: LLMAnalysis | null = canUseAnalysisCache
-    ? readAnalysis(cfg.cacheDir, symbol)
-    : null;
+  const flags: AnalysisFlagsKey = {
+    model:  modelId,
+    search,
+    pplx:   usePplx ? pplxModel : null,
+  };
+  const cachedAnalysis = readAnalysis(cfg.cacheDir, symbol, flags);
+  let llmAnalysis: LLMAnalysis | null = cachedAnalysis?.llmAnalysis ?? null;
+  const llmFromCache = llmAnalysis !== null;
 
   const edgarNeeded = !readSubmissions(cfg.cacheDir, symbol);
 
   if (!llmAnalysis) {
+    emit({ stage: 'llm', message: `Calling ${modelId}…`, cached: false });
     const llm    = createProvider(options);
     const prompt = buildAnalysisPrompt(financials, {
       dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
@@ -373,14 +399,20 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
       edgarNeeded ? fetchEdgarFilings(symbol, cfg.cacheDir) : Promise.resolve(null),
     ]);
     llmAnalysis = analysis;
-    writeAnalysis(cfg.cacheDir, symbol, llmAnalysis);
+    writeAnalysis(cfg.cacheDir, symbol, flags, llmAnalysis);
     logger.success('LLM analysis complete');
+    emit({
+      stage:   'llm',
+      message: `${analysis.recommendation} · score ${analysis.score}/10 · fair value ${analysis.fairValueEstimate}`,
+      data:    { recommendation: analysis.recommendation, score: analysis.score },
+    });
   } else {
     if (edgarNeeded) await fetchEdgarFilings(symbol, cfg.cacheDir);
     logger.success('LLM analysis loaded from cache');
+    emit({ stage: 'llm', message: 'LLM analysis loaded from cache', cached: true });
   }
 
-  // ── 5. Assemble & Output ──────────────────────────────────────────────────
+  // ── 5. Assemble Result ────────────────────────────────────────────────────
   const result: AnalysisResult = {
     symbol, timestamp: new Date().toISOString(),
     provider: options.modelId, searchProvider: options.search,
@@ -394,17 +426,84 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     perplexity: perplexity ?? null,
   };
 
-  const isJson = options.output?.endsWith('.json');
+  const meta: AnalysisRunMeta = {
+    symbol,
+    modelId,
+    searchUsed: search,
+    pplxUsed:   usePplx ? pplxModel : null,
+    fromCache:  llmFromCache,
+    flagsHash:  analysisHash(flags),
+  };
+  emit({ stage: 'done', message: 'Analysis complete', data: { fromCache: llmFromCache } });
+
+  return { result, meta };
+}
+
+// ─── CLI Wrapper (calls runAnalysis + handles --output / --fetch / report writing) ─
+
+async function run(rawSymbol: string | undefined, opts: Record<string, string | boolean | undefined>): Promise<void> {
+  if (opts.verbose) process.env.LOG_LEVEL = 'debug';
+
+  const cfg = getConfig();
+
+  // ── --fetch mode: download data only, skip LLM ───────────────────────────
+  const fetchRaw  = opts.fetch;
+  type FetchMode  = 'financials' | 'submissions' | 'all' | false;
+  const fetchMode: FetchMode = fetchRaw === true ? 'all'
+    : fetchRaw === 'financials'   ? 'financials'
+    : fetchRaw === 'submissions'  ? 'submissions'
+    : false;
+
+  if (fetchMode) {
+    const symbol = opts.query
+      ? await searchByQuery(String(opts.query))
+      : await resolveSymbol(rawSymbol!);
+    if (fetchMode === 'financials' || fetchMode === 'all') {
+      const [bundle, finnhubMetrics] = await Promise.all([
+        getFinancials(symbol),
+        cfg.finnhubApiKey ? getBasicFinancials(symbol, cfg.finnhubApiKey) : Promise.resolve(null),
+      ]);
+      if (finnhubMetrics) {
+        bundle.financials.roic                 = finnhubMetrics.roic;
+        bundle.financials.epsGrowth3Y          = finnhubMetrics.epsGrowth3Y;
+        bundle.financials.dividendGrowthRate5Y = finnhubMetrics.dividendGrowthRate5Y;
+      }
+      writeFinancials(cfg.cacheDir, symbol, bundle.financials);
+    }
+    if (fetchMode === 'submissions' || fetchMode === 'all') {
+      await fetchEdgarFilings(symbol, cfg.cacheDir);
+    }
+    logger.success(`Data saved → ${symbolDir(cfg.cacheDir, symbol)}`);
+    return;
+  }
+
+  // ── Normal analysis flow ─────────────────────────────────────────────────
+  const pplx: 'sonar' | 'sonar-pro' | null = opts.pplx && !opts.pplxPro
+    ? 'sonar'
+    : (opts.pplx || opts.pplxPro) ? 'sonar-pro' : null;
+
+  console.log(chalk.bold.white(`\n  Investment Analysis — ${rawSymbol ?? opts.query}\n`));
+
+  const { result } = await runAnalysis({
+    symbol:  rawSymbol,
+    query:   opts.query as string | undefined,
+    model:   String(opts.model ?? 'claude'),
+    search:  opts.search as string | undefined,
+    pplx,
+    verbose: Boolean(opts.verbose),
+  });
+
+  const isJson = typeof opts.output === 'string' && opts.output.endsWith('.json');
   const output = isJson ? JSON.stringify(result, null, 2) : formatMarkdown(result);
 
   console.log('\n' + output);
 
-  if (options.output) {
-    writeFileSync(options.output, output, 'utf-8');
-    logger.success(`Saved to ${options.output}`);
+  if (typeof opts.output === 'string') {
+    writeFileSync(opts.output, output, 'utf-8');
+    logger.success(`Saved to ${opts.output}`);
   }
 
-  await saveReports(symbol, cfg.cacheDir, formatMarkdown(result));
+  await saveReports(result.symbol, cfg.cacheDir, formatMarkdown(result));
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

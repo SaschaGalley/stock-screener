@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, isAbsolute, resolve } from 'path';
 import { homedir } from 'os';
+import { createHash } from 'crypto';
 import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem } from './types.js';
 import { logger } from './utils/logger.js';
 import { PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
@@ -13,7 +14,7 @@ const PERPLEXITY_TTL_MS    = 12 * 60 * 60 * 1000;  // 12 hours
 
 // Bump to invalidate all cached entries of that type
 const FINANCIALS_VERSION     = 12;  // bump when StockFinancials schema changes
-const ANALYSIS_VERSION       = 2;  // bumped — prompt now includes composite IV + RIM/NCAV/peer-multiples
+const ANALYSIS_VERSION       = 3;   // bumped — analyses now hash-keyed by (model, search, pplx)
 const NEWS_VERSION           = 1;
 const MARKET_SIGNALS_VERSION = 1;
 
@@ -72,30 +73,92 @@ export function writeFinancials(rawDir: string, symbol: string, data: StockFinan
   }
 }
 
-// ── LLM Analysis ─────────────────────────────────────────────────────────────
+// ── LLM Analysis (multi, hash-keyed by flag combination) ─────────────────────
 
-export function readAnalysis(rawDir: string, symbol: string): LLMAnalysis | null {
-  const file = join(symbolDir(rawDir, symbol), 'analysis.json');
-  const entry = readEntry<LLMAnalysis>(file);
+/** Flag combination that uniquely identifies a cached LLM analysis. */
+export interface AnalysisFlagsKey {
+  model:  string;            // resolved model id, e.g. 'claude-sonnet-4-6'
+  search: string;            // 'none' | 'brave' | 'tavily' | 'claude' | 'openai' | 'openai-tavily'
+  pplx:   'sonar' | 'sonar-pro' | null;
+}
+
+/** Stable 12-char hash for a flag combination. Used as the analysis filename. */
+export function analysisHash(flags: AnalysisFlagsKey): string {
+  const s = `${flags.model}|${flags.search}|${flags.pplx ?? 'none'}`;
+  return createHash('sha256').update(s).digest('hex').slice(0, 12);
+}
+
+/** Stored analysis blob. */
+export interface CachedAnalysisEntry {
+  flags:       AnalysisFlagsKey;
+  hash:        string;
+  llmAnalysis: LLMAnalysis;
+  generatedAt: string;       // ISO timestamp when LLM was called
+}
+
+/** Manifest entry for one cached analysis (lightweight, no LLM payload). */
+export interface AnalysisManifestEntry {
+  hash:        string;
+  flags:       AnalysisFlagsKey;
+  generatedAt: string;
+  ageMinutes:  number;       // computed at read time
+  expired:     boolean;
+}
+
+function analysesDir(rawDir: string, symbol: string): string {
+  return join(symbolDir(rawDir, symbol), 'analyses');
+}
+
+export function readAnalysis(rawDir: string, symbol: string, flags: AnalysisFlagsKey): CachedAnalysisEntry | null {
+  const file = join(analysesDir(rawDir, symbol), `${analysisHash(flags)}.json`);
+  const entry = readEntry<CachedAnalysisEntry>(file);
   if (!entry) return null;
   if (entry.v !== ANALYSIS_VERSION) return null;
   if (Date.now() - entry.ts > ANALYSIS_TTL_MS) {
-    logger.debug(`Analysis cache expired for ${symbol}`);
+    logger.debug(`Analysis cache expired for ${symbol} (${analysisHash(flags)})`);
     return null;
   }
-  logger.debug(`Analysis cache hit for ${symbol}`);
+  logger.debug(`Analysis cache hit for ${symbol} (${analysisHash(flags)})`);
   return entry.data;
 }
 
-export function writeAnalysis(rawDir: string, symbol: string, data: LLMAnalysis): void {
-  const dir = symbolDir(rawDir, symbol);
+export function writeAnalysis(rawDir: string, symbol: string, flags: AnalysisFlagsKey, llmAnalysis: LLMAnalysis): void {
+  const dir = analysesDir(rawDir, symbol);
+  const hash = analysisHash(flags);
   try {
     ensureDir(dir);
-    writeEntry(join(dir, 'analysis.json'), ANALYSIS_VERSION, data);
-    logger.debug(`Cached analysis for ${symbol}`);
+    const entry: CachedAnalysisEntry = {
+      flags, hash, llmAnalysis,
+      generatedAt: new Date().toISOString(),
+    };
+    writeEntry(join(dir, `${hash}.json`), ANALYSIS_VERSION, entry);
+    logger.debug(`Cached analysis for ${symbol} (${hash})`);
   } catch (e) {
     logger.warn(`Could not write analysis cache: ${(e as Error).message}`);
   }
+}
+
+/** List all cached analysis combinations for a symbol with freshness metadata. */
+export function listAnalyses(rawDir: string, symbol: string): AnalysisManifestEntry[] {
+  const dir = analysesDir(rawDir, symbol);
+  if (!existsSync(dir)) return [];
+  const out: AnalysisManifestEntry[] = [];
+  let files: string[];
+  try { files = readdirSync(dir); } catch { return []; }
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    const entry = readEntry<CachedAnalysisEntry>(join(dir, file));
+    if (!entry || entry.v !== ANALYSIS_VERSION) continue;
+    const ageMs = Date.now() - entry.ts;
+    out.push({
+      hash:        entry.data.hash,
+      flags:       entry.data.flags,
+      generatedAt: entry.data.generatedAt,
+      ageMinutes:  Math.round(ageMs / 60000),
+      expired:     ageMs > ANALYSIS_TTL_MS,
+    });
+  }
+  return out;
 }
 
 // ── News ──────────────────────────────────────────────────────────────────────

@@ -1,0 +1,146 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   THEME — edit any of these to retheme the app. Colors are RGB triplets
+   (no commas) so Tailwind can apply alpha modifiers like `bg-ink-900/50`.
+
+   Inspiration: Zed Coder + Claude Code — warm graphite with amber accents.
+   To go cooler/more blue, push the bg/border greens-of-grey ratios up.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Background ramp (deepest → highest elevation)
+     Nearly neutral graphite with a barely-perceptible warm cast — just enough
+     to feel "not cold" without going tobacco-brown. */
+  --color-bg-deep:     13 13 12;    /* #0d0d0c — outermost (window bg) */
+  --color-bg-base:     21 21 20;    /* #151514 — sidebars, cards */
+  --color-bg-elevated: 31 30 28;    /* #1f1e1c — popovers */
+  --color-bg-hover:    42 40 37;    /* #2a2825 */
+
+  /* Borders — mostly neutral grey, very subtle warm undertone */
+  --color-border:        54 51 47;  /* #36332f */
+  --color-border-soft:   38 36 33;  /* #262421 */
+  --color-border-strong: 76 72 67;  /* #4c4843 */
+
+  /* Text — soft cream, less saturated than before */
+  --color-text:        226 222 214; /* #e2ded6 — primary body */
+  --color-text-strong: 242 238 230; /* #f2eee6 — headings */
+  --color-text-muted:  162 155 142; /* #a29b8e — secondary */
+  --color-text-faint:  108 102 92;  /* #6c665c — labels */
+
+  /* Accent — muted copper, calm not screaming.
+     Was 212/137/76 saturated orange → now 165/132/95 desaturated bronze. */
+  --color-accent:       165 132 95;  /* #a5845f */
+  --color-accent-hover: 138 108 76;  /* #8a6c4c */
+  --color-accent-soft:  44 36 28;    /* #2c241c — for tinted backgrounds */
+
+  /* Semantic — desaturated so they read as confident, not neon */
+  --color-success:      72 168 124; /* #48a87c — calmer emerald */
+  --color-success-soft: 22 56 42;
+  --color-danger:       212 96 92;  /* #d4605c — calmer red */
+  --color-danger-soft:  64 26 24;
+  --color-warning:      200 156 78; /* #c89c4e — calmer amber */
+  --color-warning-soft: 58 42 18;
+
+  /* Chart palette — coordinated, neutral where possible */
+  --chart-blue:   105 142 170;      /* steel blue, low saturation */
+  --chart-amber:  180 145 85;
+  --chart-purple: 145 122 152;
+
+  /* ─── Typography ─── */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Monaco, "Cascadia Mono", monospace;
+  --font-display: var(--font-sans);
+
+  --text-xs:   0.7rem;
+  --text-sm:   0.8rem;
+  --text-base: 0.875rem;
+  --text-lg:   1.05rem;
+  --text-xl:   1.25rem;
+  --text-2xl:  1.5rem;
+
+  /* ─── Sizing & motion ─── */
+  --radius-sm: 0.25rem;
+  --radius:    0.4rem;
+  --radius-lg: 0.6rem;
+  --transition: 150ms ease-out;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: rgb(var(--color-bg-deep));
+  color: rgb(var(--color-text));
+}
+
+/* Tabular numbers for financial values */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Markdown content styling */
+.prose-stock {
+  color: rgb(var(--color-text));
+}
+.prose-stock h1 { font-size: 1.4rem; font-weight: 700; margin: 1rem 0 0.5rem; color: rgb(var(--color-text-strong)); }
+.prose-stock h2 {
+  font-size: 1rem; font-weight: 600;
+  margin: 1.25rem 0 0.5rem; padding-bottom: 0.2rem;
+  border-bottom: 1px solid rgb(var(--color-border-soft));
+  color: rgb(var(--color-text-strong));
+}
+.prose-stock h3 { font-size: 0.9rem; font-weight: 600; margin: 0.7rem 0 0.3rem; color: rgb(var(--color-text-muted)); }
+.prose-stock p  { margin: 0.3rem 0; color: rgb(var(--color-text-muted)); }
+.prose-stock ul, .prose-stock ol { margin: 0.3rem 0 0.3rem 1.2rem; }
+.prose-stock li { margin: 0.1rem 0; color: rgb(var(--color-text-muted)); }
+.prose-stock table {
+  border-collapse: collapse; width: 100%;
+  margin: 0.5rem 0; font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.prose-stock th, .prose-stock td {
+  border: 1px solid rgb(var(--color-border-soft));
+  padding: 0.3rem 0.55rem; text-align: left;
+}
+.prose-stock th { background: rgb(var(--color-bg-base)); color: rgb(var(--color-text-strong)); font-weight: 600; }
+.prose-stock tr:nth-child(even) td { background: rgb(var(--color-bg-deep)); }
+.prose-stock code {
+  background: rgb(var(--color-bg-elevated)); color: rgb(var(--color-text));
+  padding: 0.05rem 0.3rem; border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+.prose-stock pre {
+  background: rgb(var(--color-bg-base)); padding: 0.7rem;
+  border-radius: var(--radius); overflow-x: auto;
+  border: 1px solid rgb(var(--color-border-soft));
+}
+.prose-stock pre code { background: none; padding: 0; }
+.prose-stock blockquote {
+  border-left: 3px solid rgb(var(--color-border));
+  padding-left: 0.7rem;
+  color: rgb(var(--color-text-muted));
+  margin: 0.4rem 0;
+}
+.prose-stock strong { color: rgb(var(--color-text-strong)); font-weight: 600; }
+.prose-stock hr { border: none; border-top: 1px solid rgb(var(--color-border-soft)); margin: 0.8rem 0; }
+.prose-stock a { color: rgb(var(--color-accent)); text-decoration: underline; }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(var(--color-border)); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--color-border-strong)); }
+
+/* Focus ring (matches accent) */
+*:focus-visible {
+  outline: 2px solid rgb(var(--color-accent));
+  outline-offset: 1px;
+}
