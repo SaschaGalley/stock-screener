@@ -31,8 +31,8 @@ export interface CachedAnalysisEntry {
   hash: string;
   generatedAt: string;
   llmAnalysis: {
-    bullCase: string;
-    bearCase: string;
+    bullCase: string[];
+    bearCase: string[];
     keyRisks: string[];
     thesis: string;
     score: number;
@@ -140,6 +140,31 @@ export interface ComputedMetrics {
   beneish: any;
 }
 
+export type SignalDirection = 'buy' | 'sell' | 'neutral';
+
+export interface SignalItem {
+  name: string;
+  value: number | null;
+  signal: SignalDirection;
+  hint: string;
+}
+
+export interface SignalGroup {
+  items: SignalItem[];
+  buy: number;
+  sell: number;
+  neutral: number;
+  /** −1 (Strong Sell) to +1 (Strong Buy) */
+  score: number;
+  verdict: 'STRONG BUY' | 'BUY' | 'NEUTRAL' | 'SELL' | 'STRONG SELL';
+}
+
+export interface TechnicalSignals {
+  movingAverages: SignalGroup;
+  oscillators:    SignalGroup;
+  overall:        SignalGroup;
+}
+
 export interface StockBundle {
   summary: StockSummary;
   financials: any;
@@ -149,6 +174,7 @@ export interface StockBundle {
   metrics: ComputedMetrics;
   sectorMedians: any;
   marketRates: any;
+  technicalSignals: TechnicalSignals | null;
 }
 
 export interface ProgressEvent {

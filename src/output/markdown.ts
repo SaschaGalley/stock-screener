@@ -212,11 +212,11 @@ export function formatMarkdown(r: AnalysisResult): string {
 
     chalk.bold('## 🚀 Bull Case'),
     '',
-    llm.bullCase,
+    ...llm.bullCase.map((b) => `  • ${b}`),
     '',
     chalk.bold('## 🐻 Bear Case'),
     '',
-    llm.bearCase,
+    ...llm.bearCase.map((b) => `  • ${b}`),
     '',
     chalk.bold('## ⚠️  Key Risks'),
     '',

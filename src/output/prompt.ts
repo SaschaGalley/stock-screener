@@ -163,14 +163,20 @@ export function buildAnalysisPrompt(f: StockFinancials, d: PromptData, perplexit
 
 ### Composite Intrinsic Value (headline anchor)
 - Median fair value across ${d.composite.contributingModels.length} applicable models: ${d.composite.median !== null ? `$${d.composite.median.toFixed(2)} (${fmtPct(d.composite.marginOfSafety)} MoS)` : 'N/A'}
-- IQR (25–75%): ${d.composite.p25 !== null && d.composite.p75 !== null ? `$${d.composite.p25.toFixed(2)} – $${d.composite.p75.toFixed(2)}` : 'N/A'}  |  Min/Max: ${d.composite.min !== null ? `$${d.composite.min.toFixed(2)} / $${d.composite.max!.toFixed(2)}` : 'N/A'}
+- IQR (25–75%): ${d.composite.p25 !== null && d.composite.p75 !== null ? `$${d.composite.p25.toFixed(2)} – $${d.composite.p75.toFixed(2)}` : 'N/A'}  |  Min/Max: ${d.composite.min !== null && d.composite.max !== null ? `$${d.composite.min.toFixed(2)} / $${d.composite.max.toFixed(2)}` : 'N/A'}
 - Confidence: ${d.composite.confidence}/10 (based on coverage, IQR tightness, and Beneish status)
 - ${d.composite.pctModelsUndervalued !== null ? `${(d.composite.pctModelsUndervalued * 100).toFixed(0)}% of models indicate undervaluation` : ''}
 - Contributing: ${d.composite.contributingModels.map((c) => `${c.name} $${c.fairValue.toFixed(2)}`).join(' | ') || 'none'}
 - Excluded: ${d.composite.excludedModels.map((e) => `${e.name} (${e.reason})`).join(' | ') || 'none'}
 
 ### Single-Equation Intrinsic Value Models
-- DCF (2-Stage FCFF): ${d.dcf.fairValue !== null ? `$${d.dcf.fairValue.toFixed(2)} [bear $${d.dcf.fairValueBear!.toFixed(2)} – bull $${d.dcf.fairValueBull!.toFixed(2)}] · r=${(d.dcf.discountRate * 100).toFixed(1)}% (CAPM, β=${fmt(d.dcf.beta)}) · g_stage1=${(d.dcf.stage1Growth * 100).toFixed(1)}% fading to ${(d.dcf.terminalGrowthRate * 100).toFixed(1)}%` : `N/A — ${d.dcf.assumptions}`}
+- DCF (2-Stage FCFF): ${d.dcf.fairValue !== null
+  ? `$${d.dcf.fairValue.toFixed(2)}` +
+    (d.dcf.fairValueBear !== null && d.dcf.fairValueBull !== null
+      ? ` [bear $${d.dcf.fairValueBear.toFixed(2)} – bull $${d.dcf.fairValueBull.toFixed(2)}]`
+      : '') +
+    ` · r=${(d.dcf.discountRate * 100).toFixed(1)}% (CAPM, β=${fmt(d.dcf.beta)}) · g_stage1=${(d.dcf.stage1Growth * 100).toFixed(1)}% fading to ${(d.dcf.terminalGrowthRate * 100).toFixed(1)}%`
+  : `N/A — ${d.dcf.assumptions}`}
 - Reverse DCF: ${d.reverseDCF.isPossible && d.reverseDCF.impliedGrowthRate !== null ? `${(d.reverseDCF.impliedGrowthRate * 100).toFixed(1)}%/yr stage-1 FCF growth implied at r=${(d.reverseDCF.discountRate * 100).toFixed(1)}%` : 'N/A'}
 - Graham Number: ${d.grahamNumber.grahamNumber ? `$${d.grahamNumber.grahamNumber.toFixed(2)} (${fmtPct(d.grahamNumber.marginOfSafety)} MoS)` : 'N/A'}
 - Graham Revised (V*): ${d.grahamRevised.fairValue ? `$${d.grahamRevised.fairValue.toFixed(2)} (${fmtPct(d.grahamRevised.marginOfSafety)} MoS, AAA yield ${(d.grahamRevised.bondYield * 100).toFixed(2)}%)` : 'N/A'}
@@ -179,7 +185,7 @@ export function buildAnalysisPrompt(f: StockFinancials, d: PromptData, perplexit
 - Residual Income (RIM): ${d.rim.isApplicable && d.rim.fairValue ? `$${d.rim.fairValue.toFixed(2)} (${fmtPct(d.rim.marginOfSafety)} MoS, ROE−r excess ${fmtPct(d.rim.excessReturn)})` : 'N/A — requires positive book value and ROE'}
 - DDM: ${d.ddm.isApplicable && d.ddm.fairValue ? `$${d.ddm.fairValue.toFixed(2)}` : d.ddm.isApplicable ? 'Model constraint (g≥r)' : 'No dividend'}
 - Peer Multiples (median fair price across ${d.peerMultiples.count} multiples): ${d.peerMultiples.medianFairPrice ? `$${d.peerMultiples.medianFairPrice.toFixed(2)} (${fmtPct(d.peerMultiples.marginOfSafety)} MoS)` : 'N/A — no peer-group data'}
-- NCAV (Graham floor): ${d.ncav.isApplicable && d.ncav.ncavPerShare ? `$${d.ncav.ncavPerShare.toFixed(2)}/sh, buy below $${d.ncav.buyThreshold!.toFixed(2)}` : 'N/A — current assets ≤ total liabilities (typical for healthy firms)'}
+- NCAV (Graham floor): ${d.ncav.isApplicable && d.ncav.ncavPerShare !== null && d.ncav.buyThreshold !== null ? `$${d.ncav.ncavPerShare.toFixed(2)}/sh, buy below $${d.ncav.buyThreshold.toFixed(2)}` : 'N/A — current assets ≤ total liabilities (typical for healthy firms)'}
 
 ### Quality Scores
 - Piotroski F-Score: ${piotroskiLine}
@@ -234,8 +240,20 @@ ${perplexity ? `
 ${perplexity.synthesis}
 ` : ''}
 ---
-Provide a comprehensive investment analysis as valid JSON.
-Cite specific data points from the models above in your bull/bear cases.
-Focus on: competitive moat, valuation vs. intrinsic value, growth quality, financial health.
-Weight technical posture (trend, RSI/MACD, drawdown, relative strength) and earnings-revision momentum against fundamental valuation when forming bull/bear cases. Note when options-implied volatility or macro conditions (VIX regime, yield curve, HY spreads) materially shift risk/reward.`;
+Provide a comprehensive investment analysis as valid JSON matching this schema:
+- "bullCase":  array of EXACTLY 3 short bullet points (each ~15–25 words). Each bullet must cite a specific concrete data point from the analysis above (e.g. "FCF growth 34% YoY accelerating, 5x peer median").
+- "bearCase":  array of EXACTLY 3 short bullet points, same format.
+- "keyRisks":  array of EXACTLY 3 risks, same format.
+- "thesis":    one sentence summarising the overall view.
+- "score":     0–10.
+- "recommendation": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL".
+- "fairValueEstimate": price range as string (e.g. "$120–$145").
+
+Bullet writing rules — Alphaspread-style:
+- Lead with the strongest single fact, not setup or hedging.
+- Cite a number (margin, growth, ratio, target) in every bullet.
+- No filler verbs like "appears", "may", "could potentially". Be direct.
+- Each bullet is independent — no "first … second … finally" connectors.
+
+Focus on: competitive moat, valuation vs. intrinsic value, growth quality, financial health, technical posture (trend, RSI/MACD, relative strength), earnings-revision momentum, and macro context (VIX regime, yield curve, HY spreads) when material.`;
 }

@@ -28,7 +28,7 @@ import { getMacroBundle } from './data/macro.js';
 import { fetchPerplexity } from './data/perplexity.js';
 import { buildAnalysisPrompt } from './output/prompt.js';
 import { formatMarkdown } from './output/markdown.js';
-import { saveReports } from './output/report.js';
+// import { saveReports } from './output/report.js';  // disabled — see comment in run()
 import {
   AnalysisOptions, AnalysisResult, EarningsRevisions, LLMAnalysis,
   MarketSignals, NewsItem, OptionsSignals, SearchResult, StockFinancials,
@@ -554,7 +554,10 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     logger.success(`Saved to ${opts.output}`);
   }
 
-  await saveReports(result.symbol, cfg.cacheDir, formatMarkdown(result));
+  // Markdown/HTML/PDF report generation (saveReports) intentionally skipped —
+  // PDF via puppeteer adds 5–10s per analysis with little benefit when the
+  // web UI is the primary consumer. Pass --output report.md if you need a
+  // standalone file, or call saveReports() manually from a script.
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

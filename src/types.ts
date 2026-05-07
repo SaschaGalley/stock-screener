@@ -148,6 +148,19 @@ export const StockFinancialsSchema = z.object({
   // ── Piotroski / Beneish prior-year snapshot ──────────────────────────────────
   prevYear: PrevYearSnapshotSchema.nullable().describe('Prior fiscal year financials; null when fewer than two annual periods are available'),
 
+  // ── Multi-year fundamentals history (≤5y annual, oldest first) ──────────────
+  fundamentalsHistory: z.object({
+    revenue:           z.array(z.object({ year: z.number(), value: z.number() })),
+    grossProfit:       z.array(z.object({ year: z.number(), value: z.number() })),
+    operatingIncome:   z.array(z.object({ year: z.number(), value: z.number() })),
+    netIncome:         z.array(z.object({ year: z.number(), value: z.number() })),
+    eps:               z.array(z.object({ year: z.number(), value: z.number() })),
+    freeCashFlow:      z.array(z.object({ year: z.number(), value: z.number() })),
+    operatingCashFlow: z.array(z.object({ year: z.number(), value: z.number() })),
+    totalAssets:       z.array(z.object({ year: z.number(), value: z.number() })),
+    stockholdersEquity:z.array(z.object({ year: z.number(), value: z.number() })),
+  }).describe('Last ~5 fiscal years of headline metrics for trend charts'),
+
   // ── Short Interest ───────────────────────────────────────────────────────────
   shortPercentOfFloat:   z.number().nullable().describe('Fraction of float sold short (decimal, e.g. 0.045 = 4.5%); sourced from Yahoo defaultKeyStatistics'),
   shortRatio:            z.number().nullable().describe('Days to cover: shares short ÷ avg daily volume; measures how crowded the short is'),
@@ -194,8 +207,19 @@ export type TechnicalReturns = z.infer<typeof TechnicalReturnsSchema>;
 
 export const TechnicalIndicatorsSchema = z.object({
   returns:           TechnicalReturnsSchema.describe('Trailing total returns over standard horizons'),
-  sma50:             z.number().nullable().describe('50-day simple moving average'),
-  sma200:            z.number().nullable().describe('200-day simple moving average'),
+  // Moving averages — full ladder for the technicals gauge
+  sma10:             z.number().nullable().describe('10-day SMA'),
+  sma20:             z.number().nullable().describe('20-day SMA'),
+  sma30:             z.number().nullable().describe('30-day SMA'),
+  sma50:             z.number().nullable().describe('50-day SMA'),
+  sma100:            z.number().nullable().describe('100-day SMA'),
+  sma200:            z.number().nullable().describe('200-day SMA'),
+  ema10:             z.number().nullable().describe('10-day EMA'),
+  ema20:             z.number().nullable().describe('20-day EMA'),
+  ema30:             z.number().nullable().describe('30-day EMA'),
+  ema50:             z.number().nullable().describe('50-day EMA'),
+  ema100:            z.number().nullable().describe('100-day EMA'),
+  ema200:            z.number().nullable().describe('200-day EMA'),
   distFromSMA50Pct:  z.number().nullable().describe('(price − SMA50) / SMA50 (decimal); positive = above the average'),
   distFromSMA200Pct: z.number().nullable().describe('(price − SMA200) / SMA200 (decimal); positive = above the average'),
   goldenCross:       z.boolean().nullable().describe('True when SMA50 > SMA200 (medium-term uptrend)'),
@@ -203,6 +227,11 @@ export const TechnicalIndicatorsSchema = z.object({
   macdLine:          z.number().nullable().describe('MACD line (12-EMA − 26-EMA)'),
   macdSignal:        z.number().nullable().describe('MACD signal line (9-EMA of MACD)'),
   macdHistogram:     z.number().nullable().describe('MACD histogram (line − signal); sign indicates momentum direction'),
+  stochK14:          z.number().nullable().describe('Stochastic %K (14, smoothed 3) — 0–100; >80 overbought, <20 oversold'),
+  stochD14:          z.number().nullable().describe('Stochastic %D (SMA-3 of %K)'),
+  williamsR14:       z.number().nullable().describe('Williams %R (14) — −100 to 0; ≤−80 oversold, ≥−20 overbought'),
+  cci20:             z.number().nullable().describe('Commodity Channel Index (20); >100 overbought, <−100 oversold'),
+  momentum10:        z.number().nullable().describe('Price momentum (latest close − close 10 sessions ago)'),
   bollingerUpper:    z.number().nullable().describe('Bollinger upper band (20-SMA + 2σ)'),
   bollingerMid:      z.number().nullable().describe('Bollinger middle band (20-SMA)'),
   bollingerLower:    z.number().nullable().describe('Bollinger lower band (20-SMA − 2σ)'),
@@ -299,6 +328,36 @@ export const MarketSignalsSchema = z.object({
   macro:      MacroContextSchema,
 });
 export type MarketSignals = z.infer<typeof MarketSignalsSchema>;
+
+// ─── Technical Signals (TradingView-style aggregate) ─────────────────────────
+
+export const SignalDirectionSchema = z.enum(['buy', 'sell', 'neutral']);
+export type SignalDirection = z.infer<typeof SignalDirectionSchema>;
+
+export const SignalItemSchema = z.object({
+  name:      z.string().describe('Indicator name (e.g. "RSI 14", "EMA 50")'),
+  value:     z.number().nullable().describe('Numeric value of the indicator'),
+  signal:    SignalDirectionSchema,
+  hint:      z.string().describe('Why this indicator votes the way it does (e.g. "RSI 72 > 70 → overbought")'),
+});
+export type SignalItem = z.infer<typeof SignalItemSchema>;
+
+export const SignalGroupSchema = z.object({
+  items:   z.array(SignalItemSchema),
+  buy:     z.number().describe('Number of indicators voting buy'),
+  sell:    z.number().describe('Number voting sell'),
+  neutral: z.number().describe('Number voting neutral'),
+  score:   z.number().describe('(buy − sell) / total — range −1 (Strong Sell) to +1 (Strong Buy)'),
+  verdict: z.enum(['STRONG BUY', 'BUY', 'NEUTRAL', 'SELL', 'STRONG SELL']),
+});
+export type SignalGroup = z.infer<typeof SignalGroupSchema>;
+
+export const TechnicalSignalsSchema = z.object({
+  movingAverages: SignalGroupSchema,
+  oscillators:    SignalGroupSchema,
+  overall:        SignalGroupSchema,
+});
+export type TechnicalSignals = z.infer<typeof TechnicalSignalsSchema>;
 
 // ─── Result Types ─────────────────────────────────────────────────────────────
 
@@ -610,9 +669,9 @@ export type SearchResult = z.infer<typeof SearchResultSchema>;
 // ─── LLM Output ───────────────────────────────────────────────────────────────
 
 export const LLMAnalysisSchema = z.object({
-  bullCase:          z.string().describe('Detailed bull case: specific catalysts, competitive advantages, and valuation support'),
-  bearCase:          z.string().describe('Detailed bear case: key risks, valuation concerns, and downside scenarios'),
-  keyRisks:          z.array(z.string()).describe('Top 3 most important risks cited with specific data points'),
+  bullCase:          z.array(z.string()).min(2).max(5).describe('3 short bullet points making the bull case — each ~20 words, specific catalyst or strength with a concrete data point'),
+  bearCase:          z.array(z.string()).min(2).max(5).describe('3 short bullet points making the bear case — same format'),
+  keyRisks:          z.array(z.string()).min(2).max(5).describe('Top 3 risks with specific data points'),
   thesis:            z.string().describe('Single 1–2 sentence investment thesis summarising the overall view'),
   score:             z.number().min(0).max(10).describe('Overall investment attractiveness score from 0 (avoid) to 10 (strong conviction buy)'),
   recommendation:    z.enum(['STRONG BUY', 'BUY', 'HOLD', 'SELL', 'STRONG SELL']).describe('Structured recommendation label'),

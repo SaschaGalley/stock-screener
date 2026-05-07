@@ -21,6 +21,8 @@ import { PerplexityContext } from './data/perplexity.js';
 import { getMarketRates } from './data/fred.js';
 import { getSectorMedians } from './data/finnhub.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
+import { deriveTechnicalSignals } from './analysis/signals.js';
+import { refreshStockData } from './refresh.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
@@ -35,15 +37,29 @@ function resolveCacheRoot(rawDir: string): string {
   return resolve(process.cwd(), rawDir);
 }
 
-function readJsonEntry<T>(file: string): T | null {
+/**
+ * Read a versioned cache file. Returns null on missing, parse error, OR
+ * version mismatch — the latter happens after a cache schema bump and serves
+ * the same purpose as forcing a refetch (don't expose stale-shape data
+ * downstream that would then crash on missing fields).
+ */
+function readJsonEntry<T>(file: string, expectedVersion?: number): T | null {
   if (!existsSync(file)) return null;
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf-8')) as { v?: unknown; data?: T };
+    if (expectedVersion !== undefined && parsed.v !== expectedVersion) {
+      logger.debug(`Cache version mismatch for ${file} (got ${parsed.v}, want ${expectedVersion})`);
+      return null;
+    }
     return parsed.data ?? null;
   } catch {
     return null;
   }
 }
+
+// Schema versions — kept in sync with cache.ts. Bump matching constant there.
+const FINANCIALS_VERSION_SERVER     = 13;
+const MARKET_SIGNALS_VERSION_SERVER = 2;
 
 function listCachedSymbols(cacheDir: string): string[] {
   const root = resolveCacheRoot(cacheDir);
@@ -140,6 +156,19 @@ export function createApp() {
     res.json({ stocks: summaries });
   });
 
+  // ── POST /api/stocks/:symbol/refresh-data ──────────────────────────────────
+  // Force-refresh the data layer (Yahoo + Finnhub + FRED + macro + technicals)
+  // for a symbol without touching cached LLM analyses, Perplexity, or reports.
+  app.post('/api/stocks/:symbol/refresh-data', async (req, res, next) => {
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      const data = await refreshStockData(symbol);
+      res.json({ ok: true, ...data });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // ── DELETE /api/stocks/:symbol ─────────────────────────────────────────────
   // Removes the entire cache directory for a symbol (financials, analyses,
   // market signals, news, perplexity, reports). Use with care.
@@ -195,12 +224,14 @@ export function createApp() {
         res.status(404).json({ error: `No cached data for ${symbol}` });
         return;
       }
-      const financials = readJsonEntry<StockFinancials>(join(dir, 'financials.json'));
+      const financials = readJsonEntry<StockFinancials>(join(dir, 'financials.json'), FINANCIALS_VERSION_SERVER);
       if (!financials) {
-        res.status(404).json({ error: `No financials cached for ${symbol}` });
+        res.status(404).json({
+          error: `No fresh financials cached for ${symbol} — hit "↻ Refresh" or run a new analysis to fetch the latest schema.`,
+        });
         return;
       }
-      const marketSignals = readJsonEntry<MarketSignals>(join(dir, 'market-signals.json'));
+      const marketSignals = readJsonEntry<MarketSignals>(join(dir, 'market-signals.json'), MARKET_SIGNALS_VERSION_SERVER);
       const news          = readJsonEntry<NewsItem[]>(join(dir, 'news.json')) ?? [];
       const perplexity    = readJsonEntry<PerplexityContext>(join(dir, 'perplexity.json'));
       const summary       = buildStockSummary(cacheDir, symbol);
@@ -214,6 +245,11 @@ export function createApp() {
 
       const metrics = computeAllMetrics(financials, marketRates, sectorMedians);
 
+      // Derive TradingView-style buy/sell aggregate from technicals + price.
+      const technicalSignals = marketSignals?.technicals
+        ? deriveTechnicalSignals(marketSignals.technicals, financials.price)
+        : null;
+
       res.json({
         summary,
         financials,
@@ -223,6 +259,7 @@ export function createApp() {
         metrics,
         sectorMedians,
         marketRates,
+        technicalSignals,
       });
     } catch (e) {
       next(e);

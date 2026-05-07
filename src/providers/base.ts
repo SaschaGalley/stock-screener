@@ -31,21 +31,32 @@ export function parseJsonFromResponse(text: string): LLMAnalysis {
   const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) ?? text.match(/\{[\s\S]*\}/);
   const raw = jsonMatch ? (jsonMatch[1] ?? jsonMatch[0]) : text;
 
+  // Coerce a Bull/Bear case to a string array. Tolerates legacy string output
+  // by splitting on bullet markers or sentence boundaries.
+  function toBullets(v: unknown): string[] {
+    if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+    if (typeof v === 'string') {
+      const lines = v.split(/\n[•\-*]\s|^\s*[•\-*]\s/m).map((s) => s.trim()).filter((s) => s.length > 5);
+      return lines.length >= 2 ? lines : [v.trim()];
+    }
+    return ['Not provided'];
+  }
+
   try {
-    const parsed = JSON.parse(raw.trim()) as Partial<LLMAnalysis>;
+    const parsed = JSON.parse(raw.trim()) as Partial<LLMAnalysis> & Record<string, unknown>;
     return {
-      bullCase:          parsed.bullCase          ?? 'Not provided',
-      bearCase:          parsed.bearCase          ?? 'Not provided',
+      bullCase:          toBullets(parsed.bullCase),
+      bearCase:          toBullets(parsed.bearCase),
       keyRisks:          Array.isArray(parsed.keyRisks) ? parsed.keyRisks : ['Not provided'],
-      thesis:            parsed.thesis            ?? 'Not provided',
+      thesis:            (parsed.thesis as string)            ?? 'Not provided',
       score:             typeof parsed.score === 'number' ? Math.min(10, Math.max(0, parsed.score)) : 5,
-      recommendation:    parsed.recommendation    ?? 'HOLD',
-      fairValueEstimate: parsed.fairValueEstimate ?? 'Not provided',
+      recommendation:    (parsed.recommendation as LLMAnalysis['recommendation']) ?? 'HOLD',
+      fairValueEstimate: (parsed.fairValueEstimate as string) ?? 'Not provided',
     };
   } catch {
     return {
-      bullCase:          text.substring(0, 500),
-      bearCase:          'Could not parse structured response.',
+      bullCase:          [text.substring(0, 300)],
+      bearCase:          ['Could not parse structured response.'],
       keyRisks:          ['Unable to parse LLM response'],
       thesis:            'Parse error — check verbose output.',
       score:             5,

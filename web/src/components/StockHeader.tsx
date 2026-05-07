@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { StockSummary } from '../types';
 import { fmtBig, fmtPrice, fmt, relativeTime } from '../format';
 import { api } from '../api';
@@ -5,9 +6,24 @@ import { api } from '../api';
 interface Props {
   summary: StockSummary;
   financials: any;
+  onRefreshed?: () => void;
 }
 
-export default function StockHeader({ summary, financials: f }: Props) {
+export default function StockHeader({ summary, financials: f, onRefreshed }: Props) {
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await api.refreshData(summary.symbol);
+      onRefreshed?.();
+    } catch (e) {
+      alert(`Refresh failed: ${(e as Error).message}`);
+    } finally {
+      setRefreshing(false);
+    }
+  }
   const logoUrl = summary.logoDomain
     ? `https://www.google.com/s2/favicons?domain=${summary.logoDomain}&sz=128`
     : null;
@@ -33,6 +49,14 @@ export default function StockHeader({ summary, financials: f }: Props) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Refresh raw data (Yahoo, Finnhub, FRED, technicals) — does not call LLM or Perplexity"
+          >
+            {refreshing ? '⟳ Refreshing…' : '↻ Refresh'}
+          </button>
           <a
             href={api.reportPdfUrl(summary.symbol)}
             target="_blank"

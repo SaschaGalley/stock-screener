@@ -14,9 +14,12 @@ import QualityScores from './sections/QualityScores';
 import FundamentalsGrid from './sections/FundamentalsGrid';
 import PeerCompare from './sections/PeerCompare';
 import MarketSignalsPanel from './sections/MarketSignalsPanel';
+import TechnicalSignalsPanel from './sections/TechnicalSignalsPanel';
 import OwnershipFlow from './sections/OwnershipFlow';
 import EarningsBlock from './sections/EarningsBlock';
 import NewsAndResearch from './sections/NewsAndResearch';
+import CompanyInfo from './sections/CompanyInfo';
+import FundamentalsHistoryChart from './charts/FundamentalsHistoryChart';
 
 interface Props {
   symbol: string;
@@ -31,6 +34,7 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
   // bundleLoading only flips on symbol change; flag-toggling never triggers a full reload.
   const [bundleLoading, setBundleLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [localRefresh, setLocalRefresh] = useState(0);
 
   // Stock bundle (financials, market signals, computed metrics, news) depends
   // only on the symbol — not on which LLM flags are selected.
@@ -41,7 +45,7 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
       .then(setBundle)
       .catch((e) => setError((e as Error).message))
       .finally(() => setBundleLoading(false));
-  }, [symbol, refreshKey]);
+  }, [symbol, refreshKey, localRefresh]);
 
   // Cached LLM analysis depends on the flag combination. Cheap cache lookup —
   // no loading state, just swap the result silently when the user toggles flags.
@@ -61,10 +65,28 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
     );
   }
 
+  // Error state — render a minimal header with a Refresh button so the user
+  // can recover (e.g., after a cache schema bump invalidated the data).
   if (error || !bundle) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-red-400">
-        {error || 'No data'}
+      <div className="flex h-full flex-col">
+        <header className="flex shrink-0 items-center justify-between border-b border-ink-700 bg-ink-900 px-6 py-4">
+          <div>
+            <h1 className="text-xl font-bold text-ink-50">
+              {summary?.companyName ?? symbol}
+            </h1>
+            <span className="font-mono text-xs text-ink-400">{symbol}</span>
+          </div>
+          <RefreshOnlyButton symbol={symbol} onRefreshed={() => setLocalRefresh((x) => x + 1)} />
+        </header>
+        <div className="flex flex-1 items-center justify-center p-8 text-center">
+          <div className="max-w-md">
+            <p className="mb-2 text-sm text-amber-400">{error || 'No data'}</p>
+            <p className="text-xs text-ink-500">
+              Click <span className="font-mono">↻ Refresh</span> above to re-fetch from Yahoo &amp; Finnhub.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -75,10 +97,21 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <StockHeader summary={bundle.summary ?? summary!} financials={f} />
+      <StockHeader
+        summary={bundle.summary ?? summary!}
+        financials={f}
+        onRefreshed={() => setLocalRefresh((x) => x + 1)}
+      />
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-7xl space-y-4 px-6 py-5">
+          {/* TIER 0: Company info — restored after refactor */}
+          {(f.description || f.employees || f.website || f.isin || f.industry) && (
+            <Section title="About the Company" defaultOpen={false}>
+              <CompanyInfo financials={f} />
+            </Section>
+          )}
+
           {/* TIER 1: AT-A-GLANCE VERDICT */}
           <VerdictHero
             price={f.price}
@@ -134,6 +167,15 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
             </Section>
           )}
 
+          {/* TIER 6b: 5y Fundamentals History (overlay charts) */}
+          {f.fundamentalsHistory && (f.fundamentalsHistory.revenue?.length > 0
+            || f.fundamentalsHistory.netIncome?.length > 0
+            || f.fundamentalsHistory.eps?.length > 0) && (
+            <Section title="Fundamentals History" subtitle="last ~5 fiscal years">
+              <FundamentalsHistoryChart history={f.fundamentalsHistory} />
+            </Section>
+          )}
+
           {/* TIER 7: PEER COMPARISON */}
           {bundle.sectorMedians && (
             <Section title="Peer Group Comparison">
@@ -150,6 +192,16 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
           <Section title="Fundamentals" defaultOpen={false}>
             <FundamentalsGrid financials={f} ratios={m.ratios} evMultiples={m.evMultiples} />
           </Section>
+
+          {/* TIER 8b: TECHNICAL SIGNALS GAUGE (TradingView-style) */}
+          {bundle.technicalSignals && (
+            <Section
+              title="Technical Signals"
+              subtitle={`Overall: ${bundle.technicalSignals.overall.verdict.toLowerCase()}`}
+            >
+              <TechnicalSignalsPanel signals={bundle.technicalSignals} />
+            </Section>
+          )}
 
           {/* TIER 9: PRICE ACTION & MARKET SIGNALS */}
           {bundle.marketSignals && (
@@ -186,5 +238,31 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
         </div>
       </div>
     </div>
+  );
+}
+
+/** Standalone Refresh button used in the error fallback header. */
+function RefreshOnlyButton({ symbol, onRefreshed }: { symbol: string; onRefreshed: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function handle() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.refreshData(symbol);
+      onRefreshed();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      onClick={handle}
+      disabled={busy}
+      className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {busy ? '⟳ Refreshing…' : '↻ Refresh'}
+    </button>
   );
 }

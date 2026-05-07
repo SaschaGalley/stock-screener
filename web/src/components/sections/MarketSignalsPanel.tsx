@@ -65,10 +65,10 @@ function OptionsPanel({ o }: { o: any }) {
           <Row label="Put/Call Volume" value={fmt(o.putCallVolumeRatio, '', 2)}
             accentColor={o.putCallVolumeRatio > 1.2 ? 'text-red-400' : o.putCallVolumeRatio < 0.7 ? 'text-emerald-400' : 'text-ink-100'} />
           <Row label="P/C Open Interest" value={fmt(o.putCallOIRatio, '', 2)} />
-          {o.nextEarningsImpliedMove && (
+          {o.nextEarningsImpliedMove?.pct != null && Number.isFinite(o.nextEarningsImpliedMove.pct) && (
             <Row label="Earnings move"
               value={`±${(o.nextEarningsImpliedMove.pct * 100).toFixed(1)}%`}
-              accent={`expiry ${o.nextEarningsImpliedMove.expirationDate}`} />
+              accent={`expiry ${o.nextEarningsImpliedMove.expirationDate ?? '—'}`} />
           )}
         </tbody>
       </table>

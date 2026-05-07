@@ -13,15 +13,41 @@ const DEFAULT_SETTINGS: Settings = {
   pplx:     null,
 };
 
+// Hash-based routing: `#AAPL` → selected = 'AAPL'. Survives reload, supports
+// browser back/forward, no server config needed (works in dev + prod).
+function readSymbolFromHash(): string | null {
+  const h = window.location.hash.replace(/^#\/?/, '').toUpperCase();
+  return h || null;
+}
+function writeSymbolToHash(symbol: string | null): void {
+  const next = symbol ? `#${symbol}` : window.location.pathname + window.location.search;
+  if (next !== window.location.hash && next !== window.location.pathname + window.location.search) {
+    window.history.replaceState(null, '', next);
+  }
+}
+
 export default function App() {
   const [stocks, setStocks] = useState<StockSummary[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelectedRaw] = useState<string | null>(() => readSymbolFromHash());
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
   const [progress, setProgress] = useState<ProgressEvent[]>([]);
   const closeStreamRef = useRef<(() => void) | null>(null);
+
+  // Wrap setSelected to keep URL hash in sync
+  const setSelected = useCallback((s: string | null) => {
+    setSelectedRaw(s);
+    writeSymbolToHash(s);
+  }, []);
+
+  // React to back/forward navigation
+  useEffect(() => {
+    const onHashChange = () => setSelectedRaw(readSymbolFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   const reloadStockList = useCallback(async () => {
     try {
@@ -50,28 +76,35 @@ export default function App() {
     pplx:   settings.pplx,
   };
 
-  // When the user clicks a different symbol in the sidebar, automatically
-  // switch settings to the most recently cached analysis for that symbol so
-  // the AI Verdict has content to show. If nothing is cached, keep current
-  // settings (user will see "Not cached yet" and can hit Run Analysis).
-  const handleSelectSymbol = useCallback(async (s: string) => {
+  const handleSelectSymbol = useCallback((s: string) => {
     setSelected(s);
     setProgress([]);
-    try {
-      const { analyses } = await api.listAnalyses(s);
-      if (analyses.length === 0) return;
-      const newest = [...analyses].sort(
-        (a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime(),
-      )[0];
-      setSettings({
-        model:    newest.flags.model,
-        searches: newest.flags.search === 'none'
-          ? []
-          : (newest.flags.search.split(',') as SearchChoice[]),
-        pplx:     newest.flags.pplx,
-      });
-    } catch { /* keep current settings on error */ }
-  }, []);
+  }, [setSelected]);
+
+  // Whenever the selected symbol changes (sidebar click, hash change, page
+  // load with hash) auto-switch settings to the most recently cached analysis
+  // so the AI Verdict has content to show. If nothing is cached, settings
+  // stay as-is and the user sees "Not cached yet" with a Run button.
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    api.listAnalyses(selected)
+      .then(({ analyses }) => {
+        if (cancelled || analyses.length === 0) return;
+        const newest = [...analyses].sort(
+          (a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime(),
+        )[0];
+        setSettings({
+          model:    newest.flags.model,
+          searches: newest.flags.search === 'none'
+            ? []
+            : (newest.flags.search.split(',') as SearchChoice[]),
+          pplx:     newest.flags.pplx,
+        });
+      })
+      .catch(() => { /* keep current settings on error */ });
+    return () => { cancelled = true; };
+  }, [selected]);
 
   function startAnalyze(input: string) {
     setLoading(true);

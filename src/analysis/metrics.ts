@@ -91,6 +91,25 @@ function percentile(xs: number[], p: number): number | null {
  * pipeline, contracts, and capacity. Historical CAGR is rear-view-only and
  * deserves more skepticism.
  */
+/**
+ * Sanity check: a model's fair value is plausible only if it sits in
+ * [price × 0.02, price × 30]. Outside that range almost always signals a
+ * data-quality issue rather than a real valuation insight — most commonly
+ * dual-class share unit mismatches (e.g., Yahoo reports BRK-A book value
+ * for BRK-B shares, making BV-based models explode by 100×–1000×).
+ *
+ * The bounds are deliberately wide: a legitimately pessimistic model output
+ * (e.g., RIM saying a buyback-heavy firm with tiny book value is worth $13
+ * when it trades at $287) should pass through — that's signal, not noise.
+ * Only filter clear unit/data anomalies.
+ */
+function isPlausibleFairValue(fv: number | null | undefined, price: number): boolean {
+  if (fv === null || fv === undefined || !Number.isFinite(fv) || fv <= 0) return false;
+  if (!Number.isFinite(price) || price <= 0) return false;
+  const r = fv / price;
+  return r >= 0.02 && r <= 30;
+}
+
 function deriveStage1Growth(f: StockFinancials): number {
   const fwd = (f.earningsEstimates ?? [])
     .filter((e) => (e.period === '+0y' || e.period === '+1y') && e.epsGrowth !== null && e.epsGrowth > 0)
@@ -220,10 +239,14 @@ export function calculateDCF(
 
   const assumptions = `Stage-1 ${(baseG * 100).toFixed(1)}% × ${stage1Years}y → fade × ${fadeYears}y → terminal ${(terminalG * 100).toFixed(1)}% · CAPM r ${(r * 100).toFixed(1)}% (β ${financials.beta?.toFixed(2) ?? '1.0'} capped, rfr ${(rfr * 100).toFixed(1)}%, ERP ${(ERP * 100).toFixed(1)}%)`;
 
+  if (!isPlausibleFairValue(baseFV, financials.price)) {
+    return empty(`DCF base value implausible vs price — likely a per-share data anomaly.`);
+  }
+
   return {
     fairValue: baseFV,
-    fairValueBear: bearFV,
-    fairValueBull: bullFV,
+    fairValueBear: isPlausibleFairValue(bearFV, financials.price) ? bearFV : null,
+    fairValueBull: isPlausibleFairValue(bullFV, financials.price) ? bullFV : null,
     discountRate: r,
     beta: financials.beta,
     riskFreeRate: rfr,
@@ -246,6 +269,10 @@ export function calculateGraham(financials: StockFinancials): GrahamResult {
     return { grahamNumber: null, marginOfSafety: null, isUndervalued: false };
   }
   const grahamNumber = Math.sqrt(22.5 * eps * bookValue);
+  if (!isPlausibleFairValue(grahamNumber, price)) {
+    // Outlier — usually a per-share unit mismatch (e.g., dual-class shares).
+    return { grahamNumber: null, marginOfSafety: null, isUndervalued: false };
+  }
   const marginOfSafety = (grahamNumber - price) / price;
   return { grahamNumber, marginOfSafety, isUndervalued: grahamNumber > price };
 }
@@ -380,6 +407,10 @@ export function calculatePeterLynch(financials: StockFinancials): PeterLynchResu
 
   const fairValue = eps * gPct;
   const fairValueWithDividend = eps * (gPct + dy * 100);
+  if (!isPlausibleFairValue(fairValue, price)) {
+    return { fairValue: null, fairValueWithDividend: null, growthRate: g,
+             isUndervalued: null, marginOfSafety: null };
+  }
   const marginOfSafety = (fairValue - price) / price;
 
   return {
@@ -460,6 +491,9 @@ export function calculateGrahamRevised(
   const gPct     = g * 100;
   const yieldPct = bondYield * 100;
   const fairValue = (eps * (8.5 + 2 * gPct) * 4.4) / yieldPct;
+  if (!isPlausibleFairValue(fairValue, price)) {
+    return { fairValue: null, bondYield, growthRate: g, marginOfSafety: null, isUndervalued: null };
+  }
   const marginOfSafety = (fairValue - price) / price;
 
   return { fairValue, bondYield, growthRate: g, marginOfSafety, isUndervalued: fairValue > price };
@@ -642,6 +676,9 @@ export function calculateEPV(financials: StockFinancials, marketRates?: MarketRa
   const equityValue = epv + cash - debt;
   const fairValue = equityValue / shares;
 
+  if (!isPlausibleFairValue(fairValue, price)) {
+    return { fairValue: null, normalizedEbit, taxRate, wacc: r, marginOfSafety: null };
+  }
   const marginOfSafety = (fairValue - price) / price;
 
   return { fairValue, normalizedEbit, taxRate, wacc: r, marginOfSafety };
@@ -681,6 +718,13 @@ export function calculateRIM(financials: StockFinancials, marketRates?: MarketRa
 
   // Terminal residual income assumed = 0 (excess returns fade to zero in the long run).
   const fairValue = bv0 + pvExcess;
+  if (!isPlausibleFairValue(fairValue, price)) {
+    // Outlier — typically per-share book-value unit mismatch (dual-class shares).
+    return {
+      fairValue: null, costOfEquity: r, excessReturn: roe - r,
+      bookValuePerShare: bv0, marginOfSafety: null, isApplicable: false,
+    };
+  }
   const marginOfSafety = (fairValue - price) / price;
 
   return {
@@ -707,6 +751,9 @@ export function calculateNCAV(financials: StockFinancials): NCAVResult {
 
   const ncavPerShare = (ca - tl) / shares;
   const buyThreshold = (2 / 3) * ncavPerShare;
+  if (!isPlausibleFairValue(ncavPerShare, price)) {
+    return { ncavPerShare: null, buyThreshold: null, marginOfSafety: null, isApplicable: false };
+  }
   const marginOfSafety = (ncavPerShare - price) / price;
 
   return { ncavPerShare, buyThreshold, marginOfSafety, isApplicable: true };
@@ -786,6 +833,12 @@ export function calculatePeerMultiples(
   const pbPeer = sectorMedians.pb;
   if (bv !== null && bv > 0 && pbPeer !== null && pbPeer > 0) {
     entries.push({ metric: 'pb', ownMetric: bv, sectorMedian: pbPeer, fairPrice: pbPeer * bv });
+  }
+
+  // Drop per-multiple outliers (e.g., P/B based fair value when book value is in
+  // wrong share-class units).
+  for (const e of entries) {
+    if (!isPlausibleFairValue(e.fairPrice, price)) e.fairPrice = null;
   }
 
   if (entries.length === 0) return empty();

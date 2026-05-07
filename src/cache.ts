@@ -13,10 +13,10 @@ const MARKET_SIGNALS_TTL_MS = 30 * 60 * 1000;      // 30 min (technicals + optio
 const PERPLEXITY_TTL_MS    = 12 * 60 * 60 * 1000;  // 12 hours
 
 // Bump to invalidate all cached entries of that type
-const FINANCIALS_VERSION     = 12;  // bump when StockFinancials schema changes
-const ANALYSIS_VERSION       = 3;   // bumped — analyses now hash-keyed by (model, search, pplx)
+const FINANCIALS_VERSION     = 13;  // bumped — added fundamentalsHistory (5y annual series)
+const ANALYSIS_VERSION       = 4;   // bumped — bull/bear are now string[] of 3 bullets each
 const NEWS_VERSION           = 1;
-const MARKET_SIGNALS_VERSION = 1;
+const MARKET_SIGNALS_VERSION = 2;  // bumped — technicals expanded with EMAs, Stoch, CCI, WilliamsR, Momentum
 
 function resolveCacheRoot(rawDir: string): string {
   if (rawDir.startsWith('~')) return join(homedir(), rawDir.slice(1));

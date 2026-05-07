@@ -1,5 +1,5 @@
 import type { ComputedMetrics, PeerMultiplesEntry } from '../../types';
-import { fmtPrice, fmtSignedPct, mosColor, fmtPct, fmt } from '../../format';
+import { fmtPrice, fmtSignedPct, mosColor, fmt } from '../../format';
 
 interface Props {
   metrics: ComputedMetrics;
@@ -14,15 +14,30 @@ const METRIC_LABEL: Record<string, string> = {
 export default function ValuationDetail({ metrics, price }: Props) {
   const { dcf, grahamNumber, grahamRevised, peterLynch, epv, ddm, rim, ncav, peerMultiples, reverseDCF } = metrics;
 
+  // Build inline notes defensively — every property might be null/undefined
+  // depending on whether a stock has the input data the model needs.
+  const stage1Pct = Number.isFinite(dcf.stage1Growth) ? (dcf.stage1Growth * 100).toFixed(1) : '—';
+  const dcfBearBullNote = dcf.fairValue !== null
+    ? `bear ${fmtPrice(dcf.fairValueBear)} · bull ${fmtPrice(dcf.fairValueBull)}`
+    : dcf.assumptions;
+  const grNote     = grahamRevised.bondYield ? `AAA yield ${(grahamRevised.bondYield * 100).toFixed(1)}%` : null;
+  const lynchNote  = peterLynch.growthRate ? `g=${(peterLynch.growthRate * 100).toFixed(1)}%` : null;
+  const epvNote    = epv.wacc ? `r=${(epv.wacc * 100).toFixed(1)}%` : null;
+  const rimNote    = rim.isApplicable
+    ? (rim.excessReturn !== null && rim.excessReturn !== undefined
+        ? `excess ${(rim.excessReturn * 100).toFixed(1)}pp`
+        : null)
+    : 'no positive book/ROE';
+
   const rows = [
-    { label: `DCF (2-Stage, g=${(dcf.stage1Growth * 100).toFixed(1)}%)`, value: dcf.fairValue, note: dcf.fairValue ? `bear $${dcf.fairValueBear?.toFixed(2)} · bull $${dcf.fairValueBull?.toFixed(2)}` : dcf.assumptions },
-    { label: 'Graham Number',           value: grahamNumber.grahamNumber, note: grahamNumber.grahamNumber === null ? 'requires +EPS & book value' : null },
-    { label: 'Graham Revised V*',       value: grahamRevised.fairValue, note: grahamRevised.bondYield ? `AAA yield ${(grahamRevised.bondYield * 100).toFixed(1)}%` : null },
-    { label: 'Peter Lynch',             value: peterLynch.fairValue, note: peterLynch.growthRate ? `g=${(peterLynch.growthRate * 100).toFixed(1)}%` : null },
-    { label: 'EPV (Greenwald)',         value: epv.fairValue, note: epv.wacc ? `r=${(epv.wacc * 100).toFixed(1)}%` : null },
-    { label: 'DDM (Gordon)',            value: ddm.isApplicable ? ddm.fairValue : null, note: ddm.isApplicable ? null : 'no dividend' },
-    { label: 'Residual Income (RIM)',   value: rim.isApplicable ? rim.fairValue : null, note: rim.isApplicable ? `excess ${(rim.excessReturn * 100).toFixed(1)}pp` : 'no positive book/ROE' },
-    { label: 'NCAV (Graham floor)',     value: ncav.isApplicable ? ncav.ncavPerShare : null, note: ncav.isApplicable ? null : 'CA ≤ liabilities' },
+    { label: `DCF (2-Stage, g=${stage1Pct}%)`, value: dcf.fairValue, note: dcfBearBullNote },
+    { label: 'Graham Number',         value: grahamNumber.grahamNumber, note: grahamNumber.grahamNumber === null ? 'requires +EPS & book value' : null },
+    { label: 'Graham Revised V*',     value: grahamRevised.fairValue,   note: grNote },
+    { label: 'Peter Lynch',           value: peterLynch.fairValue,      note: lynchNote },
+    { label: 'EPV (Greenwald)',       value: epv.fairValue,             note: epvNote },
+    { label: 'DDM (Gordon)',          value: ddm.isApplicable ? ddm.fairValue : null, note: ddm.isApplicable ? null : 'no dividend' },
+    { label: 'Residual Income (RIM)', value: rim.isApplicable ? rim.fairValue : null, note: rimNote },
+    { label: 'NCAV (Graham floor)',   value: ncav.isApplicable ? ncav.ncavPerShare : null, note: ncav.isApplicable ? null : 'CA ≤ liabilities' },
   ];
 
   return (

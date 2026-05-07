@@ -596,6 +596,42 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     };
   }
 
+  // ── Multi-year fundamentals history (oldest first) ───────────────────────
+  // Extracts headline metrics from the annual time-series for trend charts.
+  // Yahoo's fundamentalsTimeSeries puts the period end in `date` (sometimes
+  // also `asOfDate` on older shapes), so we try both.
+  function asYear(entry: any): number | null {
+    const raw = entry?.date ?? entry?.asOfDate;
+    const d: Date | null = raw instanceof Date ? raw : typeof raw === 'string' ? new Date(raw) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.getFullYear() : null;
+  }
+  function series(rows: any[], pick: (row: any) => number | null): { year: number; value: number }[] {
+    const out: { year: number; value: number }[] = [];
+    for (const r of rows) {
+      const yr = asYear(r);
+      const v = pick(r);
+      if (yr === null || v === null || !Number.isFinite(v)) continue;
+      out.push({ year: yr, value: v });
+    }
+    // De-dupe by year (keep last entry — Yahoo sometimes returns TTM alongside annual)
+    const byYear = new Map<number, number>();
+    for (const p of out) byYear.set(p.year, p.value);
+    return [...byYear.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([year, value]) => ({ year, value }));
+  }
+  const fundamentalsHistory = {
+    revenue:            series(finData, (r) => num(r.totalRevenue)),
+    grossProfit:        series(finData, (r) => num(r.grossProfit)),
+    operatingIncome:    series(finData, (r) => num(r.operatingIncome) ?? num((r as any).EBIT)),
+    netIncome:          series(finData, (r) => num((r as any).netIncome) ?? num((r as any).netIncomeCommonStockholders)),
+    eps:                series(finData, (r) => num((r as any).dilutedEPS) ?? num((r as any).basicEPS)),
+    freeCashFlow:       series(cfData,  (r) => num((r as any).freeCashFlow)),
+    operatingCashFlow:  series(cfData,  (r) => num((r as any).operatingCashFlow) ?? num((r as any).cashFlowFromContinuingOperatingActivities)),
+    totalAssets:        series(bsData,  (r) => num(r.totalAssets)),
+    stockholdersEquity: series(bsData,  (r) => num((r as any).stockholdersEquity) ?? num((r as any).totalEquityGrossMinorityInterest)),
+  };
+
   // ── 5-year average trailing P/E ──────────────────────────────────────────
   const avgPE5Y = (() => {
     const pes: number[] = [];
@@ -708,6 +744,7 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     monthlyReturns,
 
     prevYear,
+    fundamentalsHistory,
 
     shortPercentOfFloat:   num(ks.shortPercentOfFloat),
     shortRatio:            num(ks.shortRatio),

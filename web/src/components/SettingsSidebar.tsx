@@ -101,6 +101,21 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
   const resolveModel = (s: string): string => SHORTCUT_TO_RESOLVED[s.toLowerCase()] ?? s;
   const cachedMatch = analyses.find((a) => flagsMatch(a, settings, resolveModel));
 
+  /**
+   * Switch the model — and drop any native search options that no longer
+   * match the new provider (e.g. removing 'claude' when switching to a GPT
+   * model, otherwise the request would fail validation).
+   */
+  function setModel(modelId: string) {
+    const newProvider = modelToProvider(resolveModel(modelId));
+    const filtered = settings.searches.filter((s) => {
+      if (s === 'claude' && newProvider !== 'claude') return false;
+      if (s === 'openai' && newProvider !== 'openai') return false;
+      return true;
+    });
+    onChange({ ...settings, model: modelId, searches: filtered });
+  }
+
   const allModelOptions: { value: string; label: string; sublabel?: string; deletable: boolean }[] = [];
   if (models) {
     // 1. Shortcuts (built-in, not deletable, sorted as defined by server)
@@ -130,14 +145,14 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
     const id = newModelInput.trim();
     if (!id) return;
     if (!customModels.includes(id)) setCustomModels([...customModels, id]);
-    onChange({ ...settings, model: id });
+    setModel(id);
     setNewModelInput('');
     setAdding(false);
   }
 
   function deleteCustomModel(id: string) {
     setCustomModels(customModels.filter((m) => m !== id));
-    if (settings.model === id) onChange({ ...settings, model: 'claude' });
+    if (settings.model === id) setModel('claude');
   }
 
   async function deleteCachedAnalysis(hash: string) {
@@ -166,7 +181,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
                 key={opt.value}
                 option={opt}
                 selected={settings.model === opt.value}
-                onSelect={() => onChange({ ...settings, model: opt.value })}
+                onSelect={() => setModel(opt.value)}
                 onDelete={opt.deletable ? () => deleteCustomModel(opt.value) : undefined}
               />
             ))}
@@ -200,7 +215,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
         </Section>
 
         <Section title="Web Search">
-          <SearchCheckboxGroup
+          <SearchButtonGroup
             selected={settings.searches}
             modelProvider={modelToProvider(resolveModel(settings.model))}
             onToggle={(value) => {
@@ -214,7 +229,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
         </Section>
 
         <Section title="Perplexity">
-          <RadioGroup
+          <SingleButtonGroup
             value={settings.pplx ?? 'none'}
             onChange={(v) => onChange({
               ...settings,
@@ -233,7 +248,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
                 {analyses.map((a) => {
                   const isCurrent = cachedMatch?.hash === a.hash;
                   return (
-                    <li key={a.hash} className="flex gap-1">
+                    <li key={a.hash} className="group relative">
                       <button
                         onClick={() => onChange({
                           model: a.flags.model,
@@ -242,13 +257,14 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
                             : (a.flags.search.split(',') as SearchChoice[]),
                           pplx: a.flags.pplx,
                         })}
-                        className={`flex-1 rounded border px-2 py-1.5 text-left text-[11px] transition ${
+                        className={`block w-full overflow-hidden rounded border pl-2 pr-9 py-1.5 text-left text-[11px] transition ${
                           isCurrent
                             ? 'border-accent bg-accent-soft text-ink-100'
                             : 'border-ink-700 bg-ink-950 text-ink-300 hover:bg-ink-800'
                         }`}
+                        title={`${a.flags.model} · search=${a.flags.search} · pplx=${a.flags.pplx ?? 'none'}`}
                       >
-                        <div className="font-mono truncate">
+                        <div className="truncate font-mono">
                           {a.flags.model.split('-').slice(0, 2).join('-')} · {a.flags.search} · {a.flags.pplx ?? 'no-pplx'}
                         </div>
                         <div className="mt-0.5 text-[10px] text-ink-500">
@@ -257,9 +273,9 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
                       </button>
                       <button
                         onClick={() => deleteCachedAnalysis(a.hash)}
-                        className="shrink-0 rounded border border-ink-700 bg-ink-950 px-2 text-xs text-ink-500 transition hover:border-red-700 hover:text-red-400"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-600 opacity-0 transition hover:bg-red-900 hover:text-red-400 group-hover:opacity-100"
                         title="Delete this cached analysis"
-                      >×</button>
+                      >🗑</button>
                     </li>
                   );
                 })}
@@ -343,7 +359,13 @@ function ModelOption({ option, selected, onSelect, onDelete }: {
   );
 }
 
-function SearchCheckboxGroup({ selected, modelProvider, onToggle }: {
+/**
+ * Multi-select button group for Web Search. Same look as the model selector:
+ * just a clickable button card per option, no radio/checkbox glyph. Click
+ * toggles selection. Native options auto-disable when the model provider
+ * doesn't match.
+ */
+function SearchButtonGroup({ selected, modelProvider, onToggle }: {
   selected: SearchChoice[];
   modelProvider: 'claude' | 'openai' | 'gemini' | 'unknown';
   onToggle: (value: SearchChoice) => void;
@@ -352,38 +374,30 @@ function SearchCheckboxGroup({ selected, modelProvider, onToggle }: {
     <div className="space-y-1">
       {SEARCH_OPTIONS.map((o) => {
         const checked = selected.includes(o.value);
-        // Native search is disabled when the active model isn't from the same provider
         const disabled = o.requires !== undefined && o.requires !== modelProvider;
         const disabledHint = disabled ? `requires ${o.requires} model` : null;
         return (
-          <label
+          <button
             key={o.value}
-            className={`flex cursor-pointer items-start gap-2 rounded border px-2 py-1.5 text-xs transition ${
+            disabled={disabled}
+            onClick={() => !disabled && onToggle(o.value)}
+            className={`block w-full rounded border px-2 py-1.5 text-left text-xs transition ${
               disabled
-                ? 'border-ink-700 bg-ink-950 text-ink-500 cursor-not-allowed opacity-50'
+                ? 'cursor-not-allowed border-ink-700 bg-ink-950 text-ink-500 opacity-50'
                 : checked
                   ? 'border-accent bg-accent-soft text-ink-100'
                   : 'border-ink-700 bg-ink-950 text-ink-300 hover:bg-ink-800'
             }`}
           >
-            <input
-              type="checkbox"
-              checked={checked}
-              disabled={disabled}
-              onChange={() => !disabled && onToggle(o.value)}
-              className="mt-0.5 accent-accent"
-            />
-            <span className="flex-1">
-              <span className="block font-medium">{o.label}</span>
-              <span className="block text-[10px] text-ink-500">
-                {disabledHint ?? o.help}
-              </span>
+            <span className="block font-medium">{o.label}</span>
+            <span className="block text-[10px] text-ink-500">
+              {disabledHint ?? o.help}
             </span>
-          </label>
+          </button>
         );
       })}
       {selected.length === 0 && (
-        <div className="px-2 py-1 text-[10px] text-ink-500 italic">
+        <div className="px-2 py-1 text-[10px] italic text-ink-500">
           No web search — LLM relies on training data only.
         </div>
       )}
@@ -391,35 +405,34 @@ function SearchCheckboxGroup({ selected, modelProvider, onToggle }: {
   );
 }
 
-function RadioGroup({ value, onChange, options }: {
+/**
+ * Single-select button group (Perplexity). Clicking another option deselects
+ * the previous. Same visual language as the model selector.
+ */
+function SingleButtonGroup({ value, onChange, options }: {
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string; help?: string }[];
 }) {
   return (
     <div className="space-y-1">
-      {options.map((o) => (
-        <label
-          key={o.value}
-          className={`flex cursor-pointer items-start gap-2 rounded border px-2 py-1.5 text-xs transition ${
-            value === o.value
-              ? 'border-accent bg-accent-soft text-ink-100'
-              : 'border-ink-700 bg-ink-950 text-ink-300 hover:bg-ink-800'
-          }`}
-        >
-          <input
-            type="radio"
-            value={o.value}
-            checked={value === o.value}
-            onChange={() => onChange(o.value)}
-            className="mt-0.5 accent-accent"
-          />
-          <span>
+      {options.map((o) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            className={`block w-full rounded border px-2 py-1.5 text-left text-xs transition ${
+              active
+                ? 'border-accent bg-accent-soft text-ink-100'
+                : 'border-ink-700 bg-ink-950 text-ink-300 hover:bg-ink-800'
+            }`}
+          >
             <span className="block font-medium">{o.label}</span>
             {o.help && <span className="block text-[10px] text-ink-500">{o.help}</span>}
-          </span>
-        </label>
-      ))}
+          </button>
+        );
+      })}
     </div>
   );
 }

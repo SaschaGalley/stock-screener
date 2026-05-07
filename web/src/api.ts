@@ -42,6 +42,12 @@ export const api = {
       method: 'DELETE',
     }),
 
+  /** Force-refresh raw data (Yahoo + Finnhub + FRED + macro). No LLM call. */
+  refreshData: (symbol: string) =>
+    jsonFetch<{ ok: boolean; symbol: string }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/refresh-data`, {
+      method: 'POST',
+    }),
+
   deleteAnalysis: (symbol: string, hash: string) =>
     jsonFetch<{ ok: boolean; symbol: string; hash: string }>(
       `${BASE}/stocks/${encodeURIComponent(symbol)}/analyses/${hash}`,

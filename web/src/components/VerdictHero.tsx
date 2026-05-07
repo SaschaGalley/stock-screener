@@ -91,8 +91,8 @@ export default function VerdictHero({ price, composite, llm, analyst }: Props) {
             )}
 
             <div className="mt-auto pt-2 flex items-center gap-1.5 text-[11px] text-ink-500">
-              <span>conf {composite.confidence.toFixed(1)}/10</span>
-              {composite.pctPrimaryUndervalued !== null && (
+              <span>conf {Number.isFinite(composite.confidence) ? composite.confidence.toFixed(1) : '—'}/10</span>
+              {composite.pctPrimaryUndervalued !== null && composite.pctPrimaryUndervalued !== undefined && (
                 <>
                   <span>·</span>
                   <span>{(composite.pctPrimaryUndervalued * 100).toFixed(0)}% of primary bullish</span>
