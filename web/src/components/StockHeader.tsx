@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { StockSummary } from '../types';
 import { fmtBig, fmtPrice, fmt, relativeTime } from '../format';
-import { api } from '../api';
+import { api } from '../api';  // refresh endpoint (PDF/MD endpoints unused since report generation is skipped)
 
 interface Props {
   summary: StockSummary;
@@ -57,24 +57,6 @@ export default function StockHeader({ summary, financials: f, onRefreshed }: Pro
           >
             {refreshing ? '⟳ Refreshing…' : '↻ Refresh'}
           </button>
-          <a
-            href={api.reportPdfUrl(summary.symbol)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700"
-            title="Download PDF report"
-          >
-            PDF
-          </a>
-          <a
-            href={api.reportMarkdownUrl(summary.symbol)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700"
-            title="View Markdown"
-          >
-            MD
-          </a>
         </div>
       </div>
 
