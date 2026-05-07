@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type ModelInfo } from '../api';
-import type { AnalysisManifestEntry, Settings } from '../types';
+import type { AnalysisManifestEntry, SearchChoice, Settings } from '../types';
+import { searchesKey } from '../types';
 
 interface Props {
   symbol: string | null;
@@ -11,13 +12,19 @@ interface Props {
   loading: boolean;
 }
 
-const SEARCH_OPTIONS: { value: string; label: string; help: string }[] = [
-  { value: 'none',          label: 'None',            help: 'No web search' },
-  { value: 'brave',         label: 'Brave',           help: 'Brave Search API' },
-  { value: 'tavily',        label: 'Tavily',          help: 'Tavily API' },
-  { value: 'claude',        label: 'Claude (native)', help: 'Built-in Claude search (requires Claude model)' },
-  { value: 'openai',        label: 'OpenAI (native)', help: 'Built-in OpenAI search (requires OpenAI model)' },
-  { value: 'openai-tavily', label: 'OpenAI + Tavily', help: 'OpenAI with Tavily fallback' },
+interface SearchOption {
+  value: SearchChoice;
+  label: string;
+  help: string;
+  /** Native searches require a specific model provider. */
+  requires?: 'claude' | 'openai';
+}
+
+const SEARCH_OPTIONS: SearchOption[] = [
+  { value: 'brave',  label: 'Brave',           help: 'Brave Search API (external)' },
+  { value: 'tavily', label: 'Tavily',          help: 'Tavily API (external)' },
+  { value: 'claude', label: 'Claude (native)', help: 'Built-in Claude search', requires: 'claude' },
+  { value: 'openai', label: 'OpenAI (native)', help: 'Built-in OpenAI search', requires: 'openai' },
 ];
 
 const PPLX_OPTIONS: { value: 'none' | 'sonar' | 'sonar-pro'; label: string }[] = [
@@ -37,10 +44,18 @@ const SHORTCUT_TO_RESOLVED: Record<string, string> = {
 
 const CUSTOM_MODELS_KEY = 'stockcli:custom-models';
 
+function modelToProvider(modelId: string): 'claude' | 'openai' | 'gemini' | 'unknown' {
+  const lc = modelId.toLowerCase();
+  if (['claude', 'sonnet', 'haiku', 'opus'].includes(lc) || lc.startsWith('claude-')) return 'claude';
+  if (lc === 'openai' || /^(gpt|o1|o3|o4)/.test(lc)) return 'openai';
+  if (lc === 'gemini' || lc.startsWith('gemini-')) return 'gemini';
+  return 'unknown';
+}
+
 function flagsMatch(a: AnalysisManifestEntry, settings: Settings, resolveModel: (s: string) => string): boolean {
   return (
     a.flags.model === resolveModel(settings.model)
-    && a.flags.search === settings.search
+    && a.flags.search === searchesKey(settings.searches)
     && (a.flags.pplx ?? null) === (settings.pplx ?? null)
   );
 }
@@ -185,10 +200,16 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
         </Section>
 
         <Section title="Web Search">
-          <RadioGroup
-            value={settings.search}
-            onChange={(v) => onChange({ ...settings, search: v as Settings['search'] })}
-            options={SEARCH_OPTIONS}
+          <SearchCheckboxGroup
+            selected={settings.searches}
+            modelProvider={modelToProvider(resolveModel(settings.model))}
+            onToggle={(value) => {
+              const has = settings.searches.includes(value);
+              const next = has
+                ? settings.searches.filter((s) => s !== value)
+                : [...settings.searches, value];
+              onChange({ ...settings, searches: next });
+            }}
           />
         </Section>
 
@@ -216,7 +237,9 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
                       <button
                         onClick={() => onChange({
                           model: a.flags.model,
-                          search: a.flags.search as Settings['search'],
+                          searches: a.flags.search === 'none'
+                            ? []
+                            : (a.flags.search.split(',') as SearchChoice[]),
                           pplx: a.flags.pplx,
                         })}
                         className={`flex-1 rounded border px-2 py-1.5 text-left text-[11px] transition ${
@@ -250,7 +273,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
         <div className="space-y-2 border-t border-ink-700 p-3">
           {cachedMatch ? (
             <>
-              <div className="rounded border border-emerald-700/50 bg-emerald-900/30 px-2.5 py-2 text-[11px] text-emerald-400">
+              <div className="rounded border border-emerald-700 bg-emerald-900 px-2.5 py-2 text-[11px] text-emerald-400">
                 ✓ Cached ({cachedMatch.expired ? 'expired' : `${cachedMatch.ageMinutes}m old`})
               </div>
               <button
@@ -263,7 +286,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
             </>
           ) : (
             <>
-              <div className="rounded border border-amber-700/50 bg-amber-900/30 px-2.5 py-2 text-[11px] text-amber-400">
+              <div className="rounded border border-amber-700 bg-amber-900 px-2.5 py-2 text-[11px] text-amber-400">
                 ○ Not cached yet
               </div>
               <button
@@ -315,6 +338,54 @@ function ModelOption({ option, selected, onSelect, onDelete }: {
           className="shrink-0 rounded border border-ink-700 bg-ink-950 px-2 text-xs text-ink-500 transition hover:border-red-700 hover:text-red-400"
           title="Remove from list"
         >×</button>
+      )}
+    </div>
+  );
+}
+
+function SearchCheckboxGroup({ selected, modelProvider, onToggle }: {
+  selected: SearchChoice[];
+  modelProvider: 'claude' | 'openai' | 'gemini' | 'unknown';
+  onToggle: (value: SearchChoice) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      {SEARCH_OPTIONS.map((o) => {
+        const checked = selected.includes(o.value);
+        // Native search is disabled when the active model isn't from the same provider
+        const disabled = o.requires !== undefined && o.requires !== modelProvider;
+        const disabledHint = disabled ? `requires ${o.requires} model` : null;
+        return (
+          <label
+            key={o.value}
+            className={`flex cursor-pointer items-start gap-2 rounded border px-2 py-1.5 text-xs transition ${
+              disabled
+                ? 'border-ink-700 bg-ink-950 text-ink-500 cursor-not-allowed opacity-50'
+                : checked
+                  ? 'border-accent bg-accent-soft text-ink-100'
+                  : 'border-ink-700 bg-ink-950 text-ink-300 hover:bg-ink-800'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={disabled}
+              onChange={() => !disabled && onToggle(o.value)}
+              className="mt-0.5 accent-accent"
+            />
+            <span className="flex-1">
+              <span className="block font-medium">{o.label}</span>
+              <span className="block text-[10px] text-ink-500">
+                {disabledHint ?? o.help}
+              </span>
+            </span>
+          </label>
+        );
+      })}
+      {selected.length === 0 && (
+        <div className="px-2 py-1 text-[10px] text-ink-500 italic">
+          No web search — LLM relies on training data only.
+        </div>
       )}
     </div>
   );

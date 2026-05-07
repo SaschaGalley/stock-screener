@@ -87,7 +87,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
 
 function Row({ label, value, accent, accentColor }: { label: string; value: string; accent?: string; accentColor?: string }) {
   return (
-    <tr className="border-b border-ink-800/60">
+    <tr className="border-b border-ink-800">
       <td className="py-1 pr-2 text-ink-400">{label}</td>
       <td className={`py-1 text-right font-mono ${accentColor ?? 'text-ink-100'}`}>{value}</td>
       {accent !== undefined && <td className="py-1 pl-2 text-right text-[10px] text-ink-500">{accent}</td>}

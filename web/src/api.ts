@@ -81,7 +81,7 @@ export const api = {
       body: JSON.stringify({
         input,
         model: settings.model,
-        search: settings.search,
+        search: settings.searches,         // array goes through as-is
         pplx: settings.pplx,
       }),
     }),
@@ -100,12 +100,12 @@ export const api = {
       onDone?:     () => void;
     },
   ): (() => void) => {
-    const params = new URLSearchParams({
-      input,
-      model:  settings.model,
-      search: settings.search,
-      ...(settings.pplx ? { pplx: settings.pplx } : {}),
-    });
+    const params = new URLSearchParams();
+    params.set('input', input);
+    params.set('model', settings.model);
+    if (settings.pplx) params.set('pplx', settings.pplx);
+    // Multi-search: append one ?search=… per provider; backend collects them.
+    for (const s of settings.searches) params.append('search', s);
     const url = `${BASE}/analyze/stream?${params}`;
     const es  = new EventSource(url);
 

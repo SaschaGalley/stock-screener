@@ -61,7 +61,7 @@ export default function PeerCompare({ ratios, evMultiples: ev, financials: f, se
             const color = pct === null ? 'text-ink-500' : isGood ? 'text-emerald-400' : isBad ? 'text-red-400' : 'text-amber-400';
             const fmtVal = (v: number | null) => v === null ? '—' : r.isPercent ? fmtPct(v) : fmt(v, 'x', 1);
             return (
-              <tr key={r.label} className="border-b border-ink-800/60">
+              <tr key={r.label} className="border-b border-ink-800">
                 <td className="py-1.5 pr-2 text-ink-300">{r.label}</td>
                 <td className="py-1.5 px-2 text-right font-mono text-ink-100">{fmtVal(r.value)}</td>
                 <td className="py-1.5 px-2 text-right font-mono text-ink-400">{fmtVal(r.median)}</td>

@@ -42,10 +42,10 @@ export function mosColor(mos: number | null | undefined): string {
 
 export function mosBgColor(mos: number | null | undefined): string {
   if (mos === null || mos === undefined || !Number.isFinite(mos)) return 'bg-ink-800';
-  if (mos > 0.20)  return 'bg-emerald-900/30 border-emerald-700/50';
-  if (mos > 0)     return 'bg-emerald-950/30 border-emerald-800/50';
-  if (mos > -0.20) return 'bg-amber-950/30 border-amber-800/50';
-  return 'bg-red-950/30 border-red-800/50';
+  if (mos > 0.20)  return 'bg-emerald-900 border-emerald-700';
+  if (mos > 0)     return 'bg-emerald-950 border-emerald-800';
+  if (mos > -0.20) return 'bg-amber-950 border-amber-800';
+  return 'bg-red-950 border-red-800';
 }
 
 /** Color for a recommendation token. */

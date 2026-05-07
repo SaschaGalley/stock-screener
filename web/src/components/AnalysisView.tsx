@@ -28,25 +28,32 @@ interface Props {
 export default function AnalysisView({ symbol, summary, flags, refreshKey }: Props) {
   const [bundle, setBundle] = useState<StockBundle | null>(null);
   const [analysis, setAnalysis] = useState<CachedAnalysisEntry | null>(null);
-  const [loading, setLoading] = useState(true);
+  // bundleLoading only flips on symbol change; flag-toggling never triggers a full reload.
+  const [bundleLoading, setBundleLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Stock bundle (financials, market signals, computed metrics, news) depends
+  // only on the symbol — not on which LLM flags are selected.
   useEffect(() => {
-    setLoading(true);
+    setBundleLoading(true);
     setError(null);
-    Promise.all([
-      api.getStock(symbol),
-      api.getAnalysisByFlags(symbol, flags).catch(() => null),
-    ])
-      .then(([b, a]) => {
-        setBundle(b);
-        setAnalysis(a);
-      })
+    api.getStock(symbol)
+      .then(setBundle)
       .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false));
+      .finally(() => setBundleLoading(false));
+  }, [symbol, refreshKey]);
+
+  // Cached LLM analysis depends on the flag combination. Cheap cache lookup —
+  // no loading state, just swap the result silently when the user toggles flags.
+  useEffect(() => {
+    let cancelled = false;
+    api.getAnalysisByFlags(symbol, flags)
+      .then((a) => { if (!cancelled) setAnalysis(a); })
+      .catch(() => { if (!cancelled) setAnalysis(null); });
+    return () => { cancelled = true; };
   }, [symbol, flags.model, flags.search, flags.pplx, refreshKey]);
 
-  if (loading) {
+  if (bundleLoading && !bundle) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-ink-500">
         Loading {symbol}…
@@ -101,8 +108,8 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
               subtitle={`Primary $${m.composite.primary.median?.toFixed(0) ?? '—'} · Conservative $${m.composite.conservative.median?.toFixed(0) ?? '—'}`}
             >
               <div className="mb-2 text-[11px] text-ink-500">
-                <span className="mr-3"><span className="inline-block h-2 w-3 rounded-sm bg-emerald-500/70 align-middle"></span> Primary (filled) · market-aligned</span>
-                <span><span className="inline-block h-2 w-3 rounded-sm border border-emerald-500/70 align-middle"></span> Conservative (outlined) · value lens</span>
+                <span className="mr-3"><span className="inline-block h-2 w-3 rounded-sm bg-emerald-500 align-middle"></span> Primary (filled) · market-aligned</span>
+                <span><span className="inline-block h-2 w-3 rounded-sm border border-emerald-500 align-middle"></span> Conservative (outlined) · value lens</span>
               </div>
               <div style={{ height: Math.max(180, (m.composite.primary.models.length + m.composite.conservative.models.length) * 28 + 80) }}>
                 <CompositeChart composite={m.composite} price={f.price} />
@@ -172,7 +179,7 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
           )}
 
           {!llm && (
-            <div className="rounded-lg border border-amber-700/50 bg-amber-950/30 p-4 text-center text-sm text-amber-200">
+            <div className="rounded-lg border border-amber-700 bg-amber-950 p-4 text-center text-sm text-amber-200">
               No LLM analysis cached for the current settings. Open the right sidebar and click <strong>Run Analysis</strong> to generate one.
             </div>
           )}

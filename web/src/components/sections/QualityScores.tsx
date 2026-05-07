@@ -53,7 +53,7 @@ function PiotroskiCard({ p }: { p: any }) {
             <div
               key={i}
               className={`h-2 flex-1 rounded-sm ${
-                v === null ? 'bg-ink-700' : v ? 'bg-emerald-500' : 'bg-red-500/60'
+                v === null ? 'bg-ink-700' : v ? 'bg-emerald-500' : 'bg-red-500'
               }`}
               title={`F${i + 1}`}
             />

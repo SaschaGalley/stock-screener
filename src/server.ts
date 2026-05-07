@@ -302,12 +302,12 @@ export function createApp() {
   });
 
   // ── POST /api/analyze ──────────────────────────────────────────────────────
-  // Trigger a new analysis. Body: { input, model, search, pplx, force? }
-  // input is auto-detected as symbol vs query.
+  // Trigger a new analysis. Body: { input, model, search, pplx }
+  // `search` accepts: single string | comma-separated string | array of strings.
   app.post('/api/analyze', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { input, model, search, pplx } = req.body as {
-        input?: string; model?: string; search?: string;
+        input?: string; model?: string; search?: string | string[];
         pplx?: 'sonar' | 'sonar-pro' | null;
       };
       if (!input || typeof input !== 'string') {
@@ -317,7 +317,7 @@ export function createApp() {
 
       const isSymbol = looksLikeSymbol(input);
       const opts = isSymbol ? { symbol: input.toUpperCase() } : { query: input };
-      logger.info(`Analyze ${isSymbol ? 'symbol' : 'query'}=${input} model=${model ?? 'claude'} search=${search ?? 'none'} pplx=${pplx ?? 'none'}`);
+      logger.info(`Analyze ${isSymbol ? 'symbol' : 'query'}=${input} model=${model ?? 'claude'} search=${JSON.stringify(search ?? 'none')} pplx=${pplx ?? 'none'}`);
 
       const { result, meta } = await runAnalysis({
         ...opts,
@@ -339,7 +339,11 @@ export function createApp() {
   app.get('/api/analyze/stream', async (req: Request, res: Response) => {
     const input  = String(req.query.input ?? '');
     const model  = String(req.query.model ?? 'claude');
-    const search = String(req.query.search ?? 'none');
+    // search query param can be repeated (?search=brave&search=tavily) or comma-joined.
+    const rawSearch = req.query.search;
+    const search: string[] = Array.isArray(rawSearch)
+      ? rawSearch.map(String)
+      : rawSearch ? String(rawSearch).split(',').map((s) => s.trim()).filter(Boolean) : [];
     const pplxQ  = String(req.query.pplx ?? '');
     const pplx: 'sonar' | 'sonar-pro' | null =
       pplxQ === 'sonar' || pplxQ === 'sonar-pro' ? pplxQ : null;

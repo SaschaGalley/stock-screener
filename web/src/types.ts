@@ -169,11 +169,17 @@ export interface AnalysisRunMeta {
 
 // Selectable settings on the right sidebar
 export type ModelChoice = 'claude' | 'haiku' | 'opus' | 'openai' | 'gemini';
-export type SearchChoice = 'none' | 'brave' | 'tavily' | 'claude' | 'openai' | 'openai-tavily';
+export type SearchChoice = 'brave' | 'tavily' | 'claude' | 'openai';
 export type PplxChoice = null | 'sonar' | 'sonar-pro';
 
 export interface Settings {
   model: ModelChoice | string;
-  search: SearchChoice;
+  /** Multi-select. Empty array = no search. */
+  searches: SearchChoice[];
   pplx: PplxChoice;
+}
+
+/** Stable joined form for cache lookup ('brave,tavily' or 'none'). */
+export function searchesKey(searches: SearchChoice[]): string {
+  return searches.length === 0 ? 'none' : [...searches].sort().join(',');
 }

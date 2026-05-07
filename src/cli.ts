@@ -158,10 +158,33 @@ export interface AnalysisRunInput {
   symbol?:    string;
   query?:     string;
   model:      string;                 // shortcut ('claude') or full model id
-  search?:    string;                 // optional search type
+  /** Search providers — accepts:
+   *   • single string: 'brave', 'tavily', 'claude', 'openai', 'none'
+   *   • comma-separated: 'brave,tavily'
+   *   • array: ['brave', 'tavily']
+   * The list is normalised to a sorted, deduped joined string for the cache key. */
+  search?:    string | string[];
   pplx?:      'sonar' | 'sonar-pro' | null;
   verbose?:   boolean;
   onProgress?: (event: ProgressEvent) => void;
+}
+
+/** Parse a search input (string | string[] | comma-separated) into a clean list. */
+function parseSearchList(input: AnalysisRunInput['search']): string[] {
+  if (!input) return [];
+  const raw = Array.isArray(input) ? input : String(input).split(',');
+  const out: string[] = [];
+  for (const s of raw) {
+    const t = s.trim().toLowerCase();
+    if (!t || t === 'none') continue;
+    if (!out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+/** Stable, sorted, joined form for cache hashing. Empty list → 'none'. */
+function searchKey(list: string[]): string {
+  return list.length === 0 ? 'none' : [...list].sort().join(',');
 }
 
 /** Resolved high-level meta returned alongside the analysis result. */
@@ -184,11 +207,38 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   const emit = input.onProgress ?? (() => {});
 
   const { provider, modelId } = resolveModel(input.model);
-  const search = normalizeSearch(input.search, provider);
-  validateSearch(search, provider);
+
+  // Multi-select search resolution:
+  //   - Parse input into a clean list (e.g. ['brave', 'tavily', 'claude'])
+  //   - Validate native-search compatibility with the selected provider
+  //   - Pick a single value for `options.search` (used by the LLM provider for
+  //     native-search routing); always prefer the matching native option if
+  //     present so the LLM can call its built-in web search.
+  //   - External searches (Brave/Tavily) run independently before the LLM call.
+  const requested = parseSearchList(input.search);
+  if (provider !== 'claude' && requested.includes('claude')) {
+    throw new Error('search "claude" requires a Claude model');
+  }
+  if (provider !== 'openai' && (requested.includes('openai') || requested.includes('openai-tavily'))) {
+    throw new Error('search "openai" requires an OpenAI model');
+  }
+  // Resolve `options.search` (single value the provider sees):
+  //   • 'openai' + 'tavily'  → 'openai-tavily' (special routing)
+  //   • 'openai'             → 'openai'
+  //   • 'claude'             → 'claude'
+  //   • 'brave'/'tavily' alone → that value (no native search)
+  //   • else                 → 'none'
+  let optionsSearch: AnalysisOptions['search'] = 'none';
+  if (requested.includes('openai-tavily')) optionsSearch = 'openai-tavily';
+  else if (requested.includes('openai') && requested.includes('tavily')) optionsSearch = 'openai-tavily';
+  else if (requested.includes('openai')) optionsSearch = 'openai';
+  else if (requested.includes('claude')) optionsSearch = 'claude';
+  else if (requested.includes('brave'))  optionsSearch = 'brave';
+  else if (requested.includes('tavily')) optionsSearch = 'tavily';
+  validateSearch(optionsSearch, provider);
 
   const options: AnalysisOptions = {
-    provider, modelId, search,
+    provider, modelId, search: optionsSearch,
     cache:   true,
     output:  undefined,
     verbose: Boolean(input.verbose),
@@ -211,7 +261,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   emit({ stage: 'resolve', message: `Resolved → ${symbol}`, data: { symbol } });
 
   console.log(chalk.bold.white(`\n  Investment Analysis — ${symbol}\n`));
-  logger.info(`Model: ${modelId}  |  Search: ${search}`);
+  logger.info(`Model: ${modelId}  |  Search: ${searchKey(requested)}`);
 
   // ── 1. Fetch Financials ───────────────────────────────────────────────────
   logger.step('Fetching market data...');
@@ -345,38 +395,39 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     data:    { compositeMedian: composite.median, contributingCount: composite.contributingModels.length },
   });
 
-  // ── 3. Optional Web Search ────────────────────────────────────────────────
+  // ── 3. Optional Web Search (multi-provider — run all selected externals) ─
   let searchResults: SearchResult[] = [];
   const name = financials.companyName;
   const year = new Date().getFullYear();
-  if (options.search === 'tavily' || options.search === 'openai-tavily') {
+  const queries = [
+    `${name} stock analysis ${year}`,
+    `${name} earnings outlook`,
+    `${name} analyst rating price target`,
+  ];
+  // Brave and Tavily can both be requested at once; merge their results.
+  const wantsTavily = requested.includes('tavily') || requested.includes('openai-tavily');
+  const wantsBrave  = requested.includes('brave');
+  if (wantsTavily) {
     emit({ stage: 'search', message: 'Running Tavily web search…' });
-    const searcher = new TavilySearch(requireApiKey('tavily'));
     logger.step('Running Tavily web search...');
-    searchResults = await searcher.searchMultiple([
-      `${name} stock analysis ${year}`,
-      `${name} earnings outlook`,
-      `${name} analyst rating price target`,
-    ]);
-    logger.success(`${searchResults.length} search results`);
-    emit({ stage: 'search', message: `${searchResults.length} Tavily results` });
-  } else if (options.search === 'brave') {
+    const tav = await new TavilySearch(requireApiKey('tavily')).searchMultiple(queries);
+    searchResults.push(...tav);
+    logger.success(`${tav.length} Tavily results`);
+    emit({ stage: 'search', message: `${tav.length} Tavily results` });
+  }
+  if (wantsBrave) {
     emit({ stage: 'search', message: 'Running Brave web search…' });
-    const searcher = new BraveSearch(requireApiKey('brave'));
     logger.step('Running Brave web search...');
-    searchResults = await searcher.searchMultiple([
-      `${name} stock analysis ${year}`,
-      `${name} earnings outlook`,
-      `${name} analyst rating price target`,
-    ]);
-    logger.success(`${searchResults.length} search results`);
-    emit({ stage: 'search', message: `${searchResults.length} Brave results` });
+    const br = await new BraveSearch(requireApiKey('brave')).searchMultiple(queries);
+    searchResults.push(...br);
+    logger.success(`${br.length} Brave results`);
+    emit({ stage: 'search', message: `${br.length} Brave results` });
   }
 
   // ── 4. LLM Analysis + EDGAR (run in parallel) ────────────────────────────
   const flags: AnalysisFlagsKey = {
     model:  modelId,
-    search,
+    search: searchKey(requested),
     pplx:   usePplx ? pplxModel : null,
   };
   const cachedAnalysis = readAnalysis(cfg.cacheDir, symbol, flags);
@@ -429,7 +480,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   const meta: AnalysisRunMeta = {
     symbol,
     modelId,
-    searchUsed: search,
+    searchUsed: optionsSearch,
     pplxUsed:   usePplx ? pplxModel : null,
     fromCache:  llmFromCache,
     flagsHash:  analysisHash(flags),

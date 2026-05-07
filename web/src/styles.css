@@ -1,49 +1,45 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   THEME — edit any of these to retheme the app. Colors are RGB triplets
-   (no commas) so Tailwind can apply alpha modifiers like `bg-ink-900/50`.
-
-   Inspiration: Zed Coder + Claude Code — warm graphite with amber accents.
-   To go cooler/more blue, push the bg/border greens-of-grey ratios up.
+   THEME — edit any HEX value below. Your editor (Zed/WebStorm/VS Code)
+   shows a color swatch and opens a picker when you click the value.
+   Inspired by Zed One Dark — pastel blue-grey with calm accents.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Background ramp (deepest → highest elevation)
-     Nearly neutral graphite with a barely-perceptible warm cast — just enough
-     to feel "not cold" without going tobacco-brown. */
-  --color-bg-deep:     13 13 12;    /* #0d0d0c — outermost (window bg) */
-  --color-bg-base:     21 21 20;    /* #151514 — sidebars, cards */
-  --color-bg-elevated: 31 30 28;    /* #1f1e1c — popovers */
-  --color-bg-hover:    42 40 37;    /* #2a2825 */
+  /* Background ramp (deepest → highest elevation) */
+  --color-bg-deep:     #11151c;  /* outermost (window bg) */
+  --color-bg-base:     #181c25;  /* sidebars, cards */
+  --color-bg-elevated: #21262f;  /* popovers, hovers */
+  --color-bg-hover:    #2a303a;
 
-  /* Borders — mostly neutral grey, very subtle warm undertone */
-  --color-border:        54 51 47;  /* #36332f */
-  --color-border-soft:   38 36 33;  /* #262421 */
-  --color-border-strong: 76 72 67;  /* #4c4843 */
+  /* Borders */
+  --color-border:        #2d323d;
+  --color-border-soft:   #1f242e;
+  --color-border-strong: #404757;
 
-  /* Text — soft cream, less saturated than before */
-  --color-text:        226 222 214; /* #e2ded6 — primary body */
-  --color-text-strong: 242 238 230; /* #f2eee6 — headings */
-  --color-text-muted:  162 155 142; /* #a29b8e — secondary */
-  --color-text-faint:  108 102 92;  /* #6c665c — labels */
+  /* Text — soft pastel cream-blue */
+  --color-text:        #cad1da;  /* body */
+  --color-text-strong: #e6ebf2;  /* headings */
+  --color-text-muted:  #7d8693;  /* secondary */
+  --color-text-faint:  #555c69;  /* labels */
 
-  /* Accent — muted copper, calm not screaming.
-     Was 212/137/76 saturated orange → now 165/132/95 desaturated bronze. */
-  --color-accent:       165 132 95;  /* #a5845f */
-  --color-accent-hover: 138 108 76;  /* #8a6c4c */
-  --color-accent-soft:  44 36 28;    /* #2c241c — for tinted backgrounds */
+  /* Accent — pastel steel blue (was bright #3b82f6 originally) */
+  --color-accent:       #7da4d4;  /* main */
+  --color-accent-hover: #6388bd;  /* hover state */
+  --color-accent-soft:  #1e2a3d;  /* tinted background */
 
-  /* Semantic — desaturated so they read as confident, not neon */
-  --color-success:      72 168 124; /* #48a87c — calmer emerald */
-  --color-success-soft: 22 56 42;
-  --color-danger:       212 96 92;  /* #d4605c — calmer red */
-  --color-danger-soft:  64 26 24;
-  --color-warning:      200 156 78; /* #c89c4e — calmer amber */
-  --color-warning-soft: 58 42 18;
+  /* Semantic — solid soft variants replace what was alpha-blended.
+     `*-soft` is a pre-tinted dark background; `*` is the readable foreground. */
+  --color-success:      #6cb892;  /* readable green */
+  --color-success-soft: #1a3025;  /* card background tint */
+  --color-danger:       #d77279;
+  --color-danger-soft:  #34191c;
+  --color-warning:      #d6a865;
+  --color-warning-soft: #32261a;
 
-  /* Chart palette — coordinated, neutral where possible */
-  --chart-blue:   105 142 170;      /* steel blue, low saturation */
-  --chart-amber:  180 145 85;
-  --chart-purple: 145 122 152;
+  /* Chart palette — coordinated with theme */
+  --chart-blue:   #7da4d4;
+  --chart-amber:  #d6a865;
+  --chart-purple: #a386c1;
 
   /* ─── Typography ─── */
   --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
@@ -76,8 +72,8 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: rgb(var(--color-bg-deep));
-  color: rgb(var(--color-text));
+  background: var(--color-bg-deep);
+  color: var(--color-text);
 }
 
 /* Tabular numbers for financial values */
@@ -87,60 +83,60 @@ body {
 
 /* Markdown content styling */
 .prose-stock {
-  color: rgb(var(--color-text));
+  color: var(--color-text);
 }
-.prose-stock h1 { font-size: 1.4rem; font-weight: 700; margin: 1rem 0 0.5rem; color: rgb(var(--color-text-strong)); }
+.prose-stock h1 { font-size: 1.4rem; font-weight: 700; margin: 1rem 0 0.5rem; color: var(--color-text-strong); }
 .prose-stock h2 {
   font-size: 1rem; font-weight: 600;
   margin: 1.25rem 0 0.5rem; padding-bottom: 0.2rem;
-  border-bottom: 1px solid rgb(var(--color-border-soft));
-  color: rgb(var(--color-text-strong));
+  border-bottom: 1px solid var(--color-border-soft);
+  color: var(--color-text-strong);
 }
-.prose-stock h3 { font-size: 0.9rem; font-weight: 600; margin: 0.7rem 0 0.3rem; color: rgb(var(--color-text-muted)); }
-.prose-stock p  { margin: 0.3rem 0; color: rgb(var(--color-text-muted)); }
+.prose-stock h3 { font-size: 0.9rem; font-weight: 600; margin: 0.7rem 0 0.3rem; color: var(--color-text-muted); }
+.prose-stock p  { margin: 0.3rem 0; color: var(--color-text-muted); }
 .prose-stock ul, .prose-stock ol { margin: 0.3rem 0 0.3rem 1.2rem; }
-.prose-stock li { margin: 0.1rem 0; color: rgb(var(--color-text-muted)); }
+.prose-stock li { margin: 0.1rem 0; color: var(--color-text-muted); }
 .prose-stock table {
   border-collapse: collapse; width: 100%;
   margin: 0.5rem 0; font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
 .prose-stock th, .prose-stock td {
-  border: 1px solid rgb(var(--color-border-soft));
+  border: 1px solid var(--color-border-soft);
   padding: 0.3rem 0.55rem; text-align: left;
 }
-.prose-stock th { background: rgb(var(--color-bg-base)); color: rgb(var(--color-text-strong)); font-weight: 600; }
-.prose-stock tr:nth-child(even) td { background: rgb(var(--color-bg-deep)); }
+.prose-stock th { background: var(--color-bg-base); color: var(--color-text-strong); font-weight: 600; }
+.prose-stock tr:nth-child(even) td { background: var(--color-bg-deep); }
 .prose-stock code {
-  background: rgb(var(--color-bg-elevated)); color: rgb(var(--color-text));
+  background: var(--color-bg-elevated); color: var(--color-text);
   padding: 0.05rem 0.3rem; border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: 0.8rem;
 }
 .prose-stock pre {
-  background: rgb(var(--color-bg-base)); padding: 0.7rem;
+  background: var(--color-bg-base); padding: 0.7rem;
   border-radius: var(--radius); overflow-x: auto;
-  border: 1px solid rgb(var(--color-border-soft));
+  border: 1px solid var(--color-border-soft);
 }
 .prose-stock pre code { background: none; padding: 0; }
 .prose-stock blockquote {
-  border-left: 3px solid rgb(var(--color-border));
+  border-left: 3px solid var(--color-border);
   padding-left: 0.7rem;
-  color: rgb(var(--color-text-muted));
+  color: var(--color-text-muted);
   margin: 0.4rem 0;
 }
-.prose-stock strong { color: rgb(var(--color-text-strong)); font-weight: 600; }
-.prose-stock hr { border: none; border-top: 1px solid rgb(var(--color-border-soft)); margin: 0.8rem 0; }
-.prose-stock a { color: rgb(var(--color-accent)); text-decoration: underline; }
+.prose-stock strong { color: var(--color-text-strong); font-weight: 600; }
+.prose-stock hr { border: none; border-top: 1px solid var(--color-border-soft); margin: 0.8rem 0; }
+.prose-stock a { color: var(--color-accent); text-decoration: underline; }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgb(var(--color-border)); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgb(var(--color-border-strong)); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
 
 /* Focus ring (matches accent) */
 *:focus-visible {
-  outline: 2px solid rgb(var(--color-accent));
+  outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }

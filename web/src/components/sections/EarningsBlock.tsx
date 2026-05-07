@@ -28,7 +28,7 @@ export default function EarningsBlock({ financials: f }: Props) {
             </thead>
             <tbody>
               {f.earningsSurprises.map((q: any, i: number) => (
-                <tr key={i} className="border-b border-ink-800/60">
+                <tr key={i} className="border-b border-ink-800">
                   <td className="py-1 pr-2 text-ink-300">{q.quarter}</td>
                   <td className="py-1 px-2 text-right font-mono text-ink-100">{fmt(q.epsEstimate, '', 2)}</td>
                   <td className="py-1 px-2 text-right font-mono text-ink-100">{fmt(q.epsActual, '', 2)}</td>
@@ -64,7 +64,7 @@ export default function EarningsBlock({ financials: f }: Props) {
               {f.earningsEstimates.map((e: any, i: number) => {
                 const map: Record<string, string> = { '0q': 'Cur Q', '+1q': 'Nxt Q', '0y': 'Cur Y', '+1y': 'Nxt Y' };
                 return (
-                  <tr key={i} className="border-b border-ink-800/60">
+                  <tr key={i} className="border-b border-ink-800">
                     <td className="py-1 pr-2 text-ink-300">{map[e.period] ?? e.period}</td>
                     <td className="py-1 px-2 text-right font-mono text-ink-100">{e.epsEstimate ? `$${e.epsEstimate.toFixed(2)}` : '—'}</td>
                     <td className={`py-1 px-2 text-right font-mono ${e.epsGrowth > 0 ? 'text-emerald-400' : e.epsGrowth < 0 ? 'text-red-400' : 'text-ink-400'}`}>

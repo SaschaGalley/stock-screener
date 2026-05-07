@@ -5,12 +5,12 @@ import AnalyzeForm from './components/AnalyzeForm';
 import SettingsSidebar from './components/SettingsSidebar';
 import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
-import type { Settings, StockSummary, ProgressEvent } from './types';
+import type { Settings, StockSummary, ProgressEvent, SearchChoice } from './types';
 
 const DEFAULT_SETTINGS: Settings = {
-  model:  'claude',
-  search: 'none',
-  pplx:   null,
+  model:    'claude',
+  searches: [],
+  pplx:     null,
 };
 
 export default function App() {
@@ -46,9 +46,32 @@ export default function App() {
   // doing exact-match — user sees "not cached" until the analysis runs once.
   const flags = {
     model:  resolveClientModel(settings.model),
-    search: settings.search,
+    search: settings.searches.length === 0 ? 'none' : [...settings.searches].sort().join(','),
     pplx:   settings.pplx,
   };
+
+  // When the user clicks a different symbol in the sidebar, automatically
+  // switch settings to the most recently cached analysis for that symbol so
+  // the AI Verdict has content to show. If nothing is cached, keep current
+  // settings (user will see "Not cached yet" and can hit Run Analysis).
+  const handleSelectSymbol = useCallback(async (s: string) => {
+    setSelected(s);
+    setProgress([]);
+    try {
+      const { analyses } = await api.listAnalyses(s);
+      if (analyses.length === 0) return;
+      const newest = [...analyses].sort(
+        (a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime(),
+      )[0];
+      setSettings({
+        model:    newest.flags.model,
+        searches: newest.flags.search === 'none'
+          ? []
+          : (newest.flags.search.split(',') as SearchChoice[]),
+        pplx:     newest.flags.pplx,
+      });
+    } catch { /* keep current settings on error */ }
+  }, []);
 
   function startAnalyze(input: string) {
     setLoading(true);
@@ -81,7 +104,7 @@ export default function App() {
         <StockSidebar
           stocks={stocks}
           selectedSymbol={selected}
-          onSelect={(s) => { setSelected(s); setProgress([]); }}
+          onSelect={handleSelectSymbol}
           onDeleted={(s) => {
             if (selected === s) setSelected(null);
             reloadStockList();
@@ -90,7 +113,7 @@ export default function App() {
 
         <main className="flex flex-1 flex-col overflow-hidden">
           {error && (
-            <div className="border-b border-red-900/50 bg-red-950/40 px-4 py-2 text-sm text-red-300">
+            <div className="border-b border-red-700 bg-red-950 px-4 py-2 text-sm text-red-400">
               ⚠ {error}
               <button
                 onClick={() => setError(null)}

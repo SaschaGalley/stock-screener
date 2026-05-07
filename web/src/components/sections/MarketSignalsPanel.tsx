@@ -95,7 +95,7 @@ function Revisions({ r }: { r: any }) {
             const drift = p.epsChange30dPct;
             const net = p.netRevision30d;
             return (
-              <tr key={p.period} className="border-b border-ink-800/60">
+              <tr key={p.period} className="border-b border-ink-800">
                 <td className="py-1 pr-2 text-ink-300">{PERIOD_LABEL[p.period] ?? p.period}</td>
                 <td className="py-1 px-2 text-right font-mono text-ink-100">{fmt(p.epsTrend.current)}</td>
                 <td className={`py-1 px-2 text-right font-mono ${drift > 0 ? 'text-emerald-400' : drift < 0 ? 'text-red-400' : 'text-ink-400'}`}>
@@ -140,7 +140,7 @@ function Macro({ m }: { m: any }) {
 
 function Row({ label, value, accent, accentColor }: { label: string; value: string; accent?: string; accentColor?: string }) {
   return (
-    <tr className="border-b border-ink-800/60">
+    <tr className="border-b border-ink-800">
       <td className="py-1 pr-2 text-ink-400">{label}</td>
       <td className={`py-1 text-right font-mono ${accentColor ?? 'text-ink-100'}`}>{value}</td>
       {accent !== undefined && (

@@ -44,7 +44,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
             {rows.map((r) => {
               const mos = r.value !== null ? (r.value - price) / price : null;
               return (
-                <tr key={r.label} className="border-b border-ink-800/60">
+                <tr key={r.label} className="border-b border-ink-800">
                   <td className="py-1.5 pr-2 text-ink-200">
                     <div>{r.label}</div>
                     {r.note && <div className="text-[10px] text-ink-500">{r.note}</div>}
@@ -87,7 +87,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
                 {peerMultiples.byMultiple.map((e: PeerMultiplesEntry) => {
                   const mos = e.fairPrice !== null ? (e.fairPrice - price) / price : null;
                   return (
-                    <tr key={e.metric} className="border-b border-ink-800/60">
+                    <tr key={e.metric} className="border-b border-ink-800">
                       <td className="py-1.5 pr-2 text-ink-200">{METRIC_LABEL[e.metric] ?? e.metric}</td>
                       <td className="py-1.5 px-2 text-right font-mono text-ink-300">
                         {e.sectorMedian !== null ? `${e.sectorMedian.toFixed(2)}x` : '—'}

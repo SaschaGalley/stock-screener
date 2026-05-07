@@ -23,9 +23,12 @@ export default function AnalyzeForm({ settings, loading, onAnalyze }: Props) {
     onAnalyze(input.trim());
   }
 
+  const searchLabel = settings.searches.length === 0
+    ? 'none'
+    : [...settings.searches].sort().join('+');
   const flagsLabel = [
     `model=${settings.model}`,
-    `search=${settings.search}`,
+    `search=${searchLabel}`,
     settings.pplx ? `pplx=${settings.pplx}` : 'pplx=none',
   ].join(' · ');
 

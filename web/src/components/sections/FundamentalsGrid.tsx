@@ -75,7 +75,7 @@ function Row({ label, value, accentByPct }: { label: string; value: string; acce
     valueColor = accentByPct > 0 ? 'text-emerald-400' : accentByPct < 0 ? 'text-red-400' : 'text-ink-100';
   }
   return (
-    <tr className="border-b border-ink-800/60">
+    <tr className="border-b border-ink-800">
       <td className="py-1 pr-2 text-ink-400">{label}</td>
       <td className={`py-1 text-right font-mono ${valueColor}`}>{value}</td>
     </tr>
