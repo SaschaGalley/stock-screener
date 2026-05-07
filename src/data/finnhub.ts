@@ -93,18 +93,18 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
 
     // 3. Collect valid values per metric
     const buckets: Record<string, number[]> = {
-      pe: [], evToEbitda: [], evToRevenue: [], priceToFCF: [], pb: [],
+      pe: [], evToEbitda: [], evToRevenue: [], priceToFCF: [], priceToSales: [], pb: [],
       operatingMargin: [], netMargin: [], roe: [], roic: [], revenueGrowthYoY: [],
     };
 
     const caps: Record<string, number> = {
-      pe: 500, evToEbitda: 300, evToRevenue: 100, priceToFCF: 500, pb: 100,
+      pe: 500, evToEbitda: 300, evToRevenue: 100, priceToFCF: 500, priceToSales: 100, pb: 100,
       operatingMargin: 1, netMargin: 1, roe: 5, roic: 5, revenueGrowthYoY: 2,
     };
 
     const fieldMap: Record<string, string> = {
       pe: 'peTTM', evToEbitda: 'evEbitdaTTM', evToRevenue: 'evRevenueTTM',
-      priceToFCF: 'pfcfShareTTM', pb: 'pb',
+      priceToFCF: 'pfcfShareTTM', priceToSales: 'psTTM', pb: 'pb',
       operatingMargin: 'operatingMarginTTM', netMargin: 'netProfitMarginTTM',
       roe: 'roeTTM', roic: 'roicTTM', revenueGrowthYoY: 'revenueGrowthTTMYoy',
     };
@@ -132,18 +132,28 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
       return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
     };
 
+    const psMedian   = median(buckets.priceToSales);
+    const revGrMedian = median(buckets.revenueGrowthYoY);
+    // Approximation: peer median forward P/S ≈ peer median P/S TTM / (1 + peer median revenue growth).
+    // Exact would require fetching each peer's forward revenue (one extra API call per peer).
+    const forwardPSMedian = psMedian !== null && revGrMedian !== null && (1 + revGrMedian) > 0
+      ? psMedian / (1 + revGrMedian)
+      : null;
+
     return {
-      pe:               median(buckets.pe),
-      evToEbitda:       median(buckets.evToEbitda),
-      evToRevenue:      median(buckets.evToRevenue),
-      priceToFCF:       median(buckets.priceToFCF),
-      pb:               median(buckets.pb),
-      operatingMargin:  median(buckets.operatingMargin),
-      netMargin:        median(buckets.netMargin),
-      roe:              median(buckets.roe),
-      roic:             median(buckets.roic),
-      revenueGrowthYoY: median(buckets.revenueGrowthYoY),
-      peerCount:        peers.length,
+      pe:                  median(buckets.pe),
+      evToEbitda:          median(buckets.evToEbitda),
+      evToRevenue:         median(buckets.evToRevenue),
+      priceToFCF:          median(buckets.priceToFCF),
+      priceToSales:        psMedian,
+      forwardPriceToSales: forwardPSMedian,
+      pb:                  median(buckets.pb),
+      operatingMargin:     median(buckets.operatingMargin),
+      netMargin:           median(buckets.netMargin),
+      roe:                 median(buckets.roe),
+      roic:                median(buckets.roic),
+      revenueGrowthYoY:    revGrMedian,
+      peerCount:           peers.length,
       peers,
     };
   } catch (e) {

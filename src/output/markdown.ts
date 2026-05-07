@@ -256,8 +256,8 @@ function formatPeerBlock(
       `| Forward P/E    | ${fmt(ratios.forwardPE, 'x').padEnd(8)} |  | EV/Revenue     | ${fmt(ev.evToRevenue, 'x').padEnd(8)} |`,
       `| Avg P/E (5Y)   | ${fmt(f.avgPE5Y, 'x').padEnd(8)} |  | EV/FCF         | ${fmt(ev.evToFCF, 'x').padEnd(8)} |`,
       `| PEG            | ${fmt(ratios.peg).padEnd(8)} |  | P/FCF          | ${fmt(ev.priceToFCF, 'x').padEnd(8)} |`,
-      `| P/B            | ${fmt(ratios.pb, 'x').padEnd(8)} |  | P/S            | ${fmt(ev.priceToSales, 'x').padEnd(8)} |`,
-      `| Div. Yield     | ${fmtPct(f.dividendYield).padEnd(8)} |  |                |          |`,
+      `| P/B            | ${fmt(ratios.pb, 'x').padEnd(8)} |  | P/S (TTM)      | ${fmt(ev.priceToSales, 'x').padEnd(8)} |`,
+      `| Div. Yield     | ${fmtPct(f.dividendYield).padEnd(8)} |  | Forward P/S    | ${fmt(ev.forwardPriceToSales, 'x').padEnd(8)} |`,
     ];
   }
 
@@ -299,6 +299,8 @@ function formatPeerBlock(
     row('Avg P/E (5Y)',     fmt(f.avgPE5Y,          'x', 1), '—'.padEnd(18)),
     row('EV/EBITDA',        fmt(ev.evToEbitda,      'x', 1), vsCol(ev.evToEbitda,      sm.evToEbitda,       true)),
     row('EV/Revenue',       fmt(ev.evToRevenue,     'x', 1), vsCol(ev.evToRevenue,     sm.evToRevenue,      true)),
+    row('P/S (TTM)',        fmt(ev.priceToSales,    'x', 1), vsCol(ev.priceToSales,    sm.priceToSales,     true)),
+    row('Forward P/S',      fmt(ev.forwardPriceToSales, 'x', 1), vsCol(ev.forwardPriceToSales, sm.forwardPriceToSales, true)),
     row('P/FCF',            fmt(ev.priceToFCF,      'x', 1), vsCol(ev.priceToFCF,      sm.priceToFCF,       true)),
     row('P/B',              fmt(ratios.pb,          'x', 1), vsCol(ratios.pb,          sm.pb,               true)),
     // ── Profitability ──
@@ -552,7 +554,7 @@ function formatPeerMultiples(pm: PeerMultiplesResult, price: number): string[] {
 
   const METRIC_LABEL: Record<string, string> = {
     pe: 'P/E', evEbitda: 'EV/EBITDA', evRevenue: 'EV/Revenue',
-    priceFCF: 'P/FCF', pb: 'P/B',
+    priceFCF: 'P/FCF', priceSales: 'P/S', pb: 'P/B',
   };
 
   const lines: string[] = [

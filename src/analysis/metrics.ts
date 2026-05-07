@@ -399,6 +399,11 @@ export function calculateEVMultiples(financials: StockFinancials): EVMultiplesRe
   const fcf = financials.freeCashFlow;
   const mc  = financials.marketCap;
 
+  // Forward revenue: prefer +1y (next FY), fall back to +0y (current FY)
+  const fwdRev1y = financials.earningsEstimates.find((e) => e.period === '+1y')?.revenueEstimate ?? null;
+  const fwdRev0y = financials.earningsEstimates.find((e) => e.period === '+0y')?.revenueEstimate ?? null;
+  const fwdRev   = fwdRev1y && fwdRev1y > 0 ? fwdRev1y : (fwdRev0y && fwdRev0y > 0 ? fwdRev0y : null);
+
   return {
     enterpriseValue: ev,
     evToEbitda: ev && ebitda && ebitda > 0 ? ev / ebitda : null,
@@ -406,6 +411,7 @@ export function calculateEVMultiples(financials: StockFinancials): EVMultiplesRe
     evToFCF:    ev && fcf && fcf > 0        ? ev / fcf   : null,
     priceToFCF: mc && fcf && fcf > 0        ? mc / fcf   : null,
     priceToSales: mc && rev && rev > 0      ? mc / rev   : null,
+    forwardPriceToSales: mc && fwdRev      ? mc / fwdRev : null,
   };
 }
 
@@ -762,6 +768,15 @@ export function calculatePeerMultiples(
     entries.push({
       metric: 'priceFCF', ownMetric: fcf, sectorMedian: pFcfPeer,
       fairPrice: (pFcfPeer * fcf) / shares,
+    });
+  }
+
+  // P/S — equity-side analogue of EV/Revenue (no equity bridge applied since P/S is already a market-cap-based multiple)
+  const psPeer = sectorMedians.priceToSales;
+  if (rev !== null && rev > 0 && psPeer !== null && psPeer > 0) {
+    entries.push({
+      metric: 'priceSales', ownMetric: rev, sectorMedian: psPeer,
+      fairPrice: (psPeer * rev) / shares,
     });
   }
 

@@ -366,12 +366,13 @@ export const PeterLynchResultSchema = z.object({
 export type PeterLynchResult = z.infer<typeof PeterLynchResultSchema>;
 
 export const EVMultiplesResultSchema = z.object({
-  enterpriseValue: z.number().nullable().describe('Enterprise value in reporting currency'),
-  evToEbitda:      z.number().nullable().describe('EV / EBITDA — most widely used EV multiple'),
-  evToRevenue:     z.number().nullable().describe('EV / Revenue — useful for pre-profit or low-margin businesses'),
-  evToFCF:         z.number().nullable().describe('EV / Free Cash Flow'),
-  priceToFCF:      z.number().nullable().describe('Market cap / Free cash flow (equity-level FCF multiple)'),
-  priceToSales:    z.number().nullable().describe('Market cap / Revenue (Price-to-Sales)'),
+  enterpriseValue:     z.number().nullable().describe('Enterprise value in reporting currency'),
+  evToEbitda:          z.number().nullable().describe('EV / EBITDA — most widely used EV multiple'),
+  evToRevenue:         z.number().nullable().describe('EV / Revenue — useful for pre-profit or low-margin businesses'),
+  evToFCF:             z.number().nullable().describe('EV / Free Cash Flow'),
+  priceToFCF:          z.number().nullable().describe('Market cap / Free cash flow (equity-level FCF multiple)'),
+  priceToSales:        z.number().nullable().describe('Trailing Market cap / Revenue (Price-to-Sales TTM)'),
+  forwardPriceToSales: z.number().nullable().describe('Forward P/S: Market cap / consensus forward revenue (FY+1 if available, else FY+0); reveals NTM multiple compression for growth firms'),
 });
 export type EVMultiplesResult = z.infer<typeof EVMultiplesResultSchema>;
 
@@ -490,7 +491,7 @@ export const NCAVResultSchema = z.object({
 export type NCAVResult = z.infer<typeof NCAVResultSchema>;
 
 export const PeerMultiplesEntrySchema = z.object({
-  metric:       z.enum(['pe', 'evEbitda', 'evRevenue', 'priceFCF', 'pb']).describe('Multiple identifier'),
+  metric:       z.enum(['pe', 'evEbitda', 'evRevenue', 'priceFCF', 'priceSales', 'pb']).describe('Multiple identifier'),
   ownMetric:    z.number().nullable().describe('Own value of the underlying input (eps, ebitda, revenue, fcf, bookValue)'),
   sectorMedian: z.number().nullable().describe('Peer-group median multiple (from Finnhub sectorMedians)'),
   fairPrice:    z.number().nullable().describe('Fair price per share implied by applying sector median to own input'),
@@ -541,11 +542,13 @@ export type InterestCoverageResult = z.infer<typeof InterestCoverageResultSchema
 
 export const SectorMediansSchema = z.object({
   // Valuation multiples
-  pe:          z.number().nullable().describe('Median trailing P/E of the peer group (outliers beyond ±500 removed)'),
-  evToEbitda:  z.number().nullable().describe('Median EV/EBITDA of the peer group'),
-  evToRevenue: z.number().nullable().describe('Median EV/Revenue of the peer group'),
-  priceToFCF:  z.number().nullable().describe('Median Price/FCF of the peer group'),
-  pb:          z.number().nullable().describe('Median Price/Book of the peer group'),
+  pe:           z.number().nullable().describe('Median trailing P/E of the peer group (outliers beyond ±500 removed)'),
+  evToEbitda:   z.number().nullable().describe('Median EV/EBITDA of the peer group'),
+  evToRevenue:  z.number().nullable().describe('Median EV/Revenue of the peer group'),
+  priceToFCF:   z.number().nullable().describe('Median Price/FCF of the peer group'),
+  priceToSales: z.number().nullable().describe('Median Price/Sales (P/S) TTM of the peer group — equity-side analogue of EV/Revenue'),
+  forwardPriceToSales: z.number().nullable().describe('Median forward P/S of the peer group — approximated as median(P/S TTM) / (1 + median revenue growth)'),
+  pb:           z.number().nullable().describe('Median Price/Book of the peer group'),
   // Profitability
   operatingMargin:  z.number().nullable().describe('Median operating margin of the peer group (decimal)'),
   netMargin:        z.number().nullable().describe('Median net profit margin of the peer group (decimal)'),
