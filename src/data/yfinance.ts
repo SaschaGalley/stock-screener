@@ -1,6 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import YahooFinance from 'yahoo-finance2';
-import { PrevYearSnapshot, StockFinancials } from '../types.js';
+import {
+  AnalystRatingDelta,
+  EarningsRevisions,
+  ImpliedMove,
+  OptionsSignals,
+  PrevYearSnapshot,
+  RevisionPeriod,
+  StockFinancials,
+} from '../types.js';
+import { DailyBar } from '../analysis/technical.js';
 import { logger } from '../utils/logger.js';
 
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'], validation: { logErrors: false, logOptionsErrors: false } } as any);
@@ -34,35 +43,89 @@ async function safeSummary(symbol: string): Promise<any> {
   } catch (e) { logger.warn(`Summary: ${(e as Error).message}`); return null; }
 }
 
-async function safeHistorical(symbol: string): Promise<number[]> {
+interface HistoricalData {
+  monthlyReturns: number[];
+  monthlyPrices: Record<string, number>;  // "YYYY-MM" → price
+  dailyBars: DailyBar[];
+}
+
+async function safeHistoricalData(symbol: string): Promise<HistoricalData> {
   try {
-    const from = new Date();
-    from.setFullYear(from.getFullYear() - 1);
-    const data = await (yf as any).chart(symbol, {
-      period1: from.toISOString().slice(0, 10),
-      period2: new Date().toISOString().slice(0, 10),
-      interval: '1mo',
-    });
-    const quotes: any[] = data?.quotes ?? [];
-    const closes = quotes
-      .map((q: any) => q.adjclose ?? q.close)
-      .filter((v: any) => typeof v === 'number' && isFinite(v));
-    if (closes.length < 2) return [];
-    const returns: number[] = [];
-    for (let i = 1; i < closes.length; i++) {
-      returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+    const fromMonthly = new Date();
+    fromMonthly.setFullYear(fromMonthly.getFullYear() - 5);
+    const fromDaily = new Date();
+    fromDaily.setDate(fromDaily.getDate() - 380);  // ~1Y of daily bars + buffer for SMA200 + 3M lookback
+
+    const [monthly, daily] = await Promise.all([
+      (yf as any).chart(symbol, {
+        period1: fromMonthly.toISOString().slice(0, 10),
+        period2: new Date().toISOString().slice(0, 10),
+        interval: '1mo',
+      }),
+      (yf as any).chart(symbol, {
+        period1: fromDaily.toISOString().slice(0, 10),
+        period2: new Date().toISOString().slice(0, 10),
+        interval: '1d',
+      }),
+    ]);
+
+    // Monthly: build returns + price-by-yearmonth
+    const monthlyQuotes: any[] = monthly?.quotes ?? [];
+    const priceList: Array<{ ym: string; price: number }> = [];
+    for (const q of monthlyQuotes) {
+      const price = q.adjclose ?? q.close;
+      if (typeof price !== 'number' || !isFinite(price)) continue;
+      const d: Date = q.date instanceof Date ? q.date : new Date(typeof q.date === 'number' ? q.date * 1000 : q.date);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      priceList.push({ ym, price });
     }
-    return returns;
+
+    const recent = priceList.slice(-13);
+    const monthlyReturns: number[] = [];
+    for (let i = 1; i < recent.length; i++) {
+      monthlyReturns.push((recent[i].price - recent[i - 1].price) / recent[i - 1].price);
+    }
+
+    const monthlyPrices: Record<string, number> = {};
+    for (const { ym, price } of priceList) {
+      monthlyPrices[ym] = price;
+    }
+
+    // Daily: build bars
+    const dailyQuotes: any[] = daily?.quotes ?? [];
+    const dailyBars: DailyBar[] = [];
+    for (const q of dailyQuotes) {
+      const close = q.adjclose ?? q.close;
+      if (typeof close !== 'number' || !isFinite(close)) continue;
+      const d: Date = q.date instanceof Date ? q.date : new Date(typeof q.date === 'number' ? q.date * 1000 : q.date);
+      dailyBars.push({
+        date:   d,
+        open:   typeof q.open   === 'number' ? q.open   : close,
+        high:   typeof q.high   === 'number' ? q.high   : close,
+        low:    typeof q.low    === 'number' ? q.low    : close,
+        close,
+        volume: typeof q.volume === 'number' ? q.volume : 0,
+      });
+    }
+
+    return { monthlyReturns, monthlyPrices, dailyBars };
   } catch (e) {
     logger.warn(`Historical: ${(e as Error).message}`);
-    return [];
+    return { monthlyReturns: [], monthlyPrices: {}, dailyBars: [] };
   }
+}
+
+function ymShift(ym: string, delta: number): string {
+  const year = parseInt(ym.slice(0, 4));
+  const month = parseInt(ym.slice(5, 7)) - 1;
+  const d = new Date(year, month + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 async function safeTimeSeries(symbol: string, module: 'balance-sheet' | 'financials' | 'cash-flow'): Promise<any[]> {
   try {
     const from = new Date();
-    from.setFullYear(from.getFullYear() - 3);
+    from.setFullYear(from.getFullYear() - 5);
     const data = await yf.fundamentalsTimeSeries(symbol, {
       period1: from.toISOString().slice(0, 10),
       type: 'annual',
@@ -137,20 +200,272 @@ async function fetchIsin(symbol: string): Promise<string | null> {
   } catch { return null; }
 }
 
+// ─── Earnings revisions / analyst MoM extraction ──────────────────────────────
+
+function extractRevisions(earningsTrend: any[]): RevisionPeriod[] {
+  const out: RevisionPeriod[] = [];
+  for (const t of earningsTrend.slice(0, 4)) {
+    const period = str(t?.period) ?? 'Unknown';
+    const epsTrend = t?.epsTrend ?? {};
+    const revisions = t?.epsRevisions ?? {};
+    const current  = num(epsTrend?.current);
+    const ago30d   = num(epsTrend?.['30daysAgo']);
+    const up30d    = num(revisions?.upLast30days);
+    const down30d  = num(revisions?.downLast30days);
+
+    out.push({
+      period,
+      epsTrend: {
+        current,
+        ago7d:  num(epsTrend?.['7daysAgo']),
+        ago30d,
+        ago60d: num(epsTrend?.['60daysAgo']),
+        ago90d: num(epsTrend?.['90daysAgo']),
+      },
+      revisions: {
+        up7d:    num(revisions?.upLast7days),
+        up30d,
+        up90d:   num(revisions?.upLast90days),
+        down7d:  num(revisions?.downLast7Days),
+        down30d,
+        down90d: num(revisions?.downLast90days),
+      },
+      netRevision30d: up30d !== null && down30d !== null ? up30d - down30d : null,
+      epsChange30dPct: current !== null && ago30d !== null && ago30d !== 0
+        ? (current - ago30d) / Math.abs(ago30d)
+        : null,
+    });
+  }
+  return out;
+}
+
+function extractAnalystRatingMoMDelta(recommendationTrend: any[]): AnalystRatingDelta | null {
+  const cur = recommendationTrend?.[0];
+  const prev = recommendationTrend?.[1];
+  if (!cur || !prev) return null;
+  return {
+    strongBuy:  (num(cur.strongBuy)  ?? 0) - (num(prev.strongBuy)  ?? 0),
+    buy:        (num(cur.buy)        ?? 0) - (num(prev.buy)        ?? 0),
+    hold:       (num(cur.hold)       ?? 0) - (num(prev.hold)       ?? 0),
+    sell:       (num(cur.sell)       ?? 0) - (num(prev.sell)       ?? 0),
+    strongSell: (num(cur.strongSell) ?? 0) - (num(prev.strongSell) ?? 0),
+  };
+}
+
+// ─── Options chain ────────────────────────────────────────────────────────────
+
+interface OptionsInputs {
+  symbol: string;
+  spot: number;
+  nextEarningsDate: string | null;
+  hv90: number | null;
+}
+
+export async function getOptionsSignals(input: OptionsInputs): Promise<OptionsSignals | null> {
+  const { symbol, spot, nextEarningsDate, hv90 } = input;
+  if (!spot || spot <= 0) return null;
+
+  try {
+    // 1. First call: get the full list of expiration dates (yf.options returns only one chain by default).
+    const initial = await (yf as any).options(symbol);
+    const allExpDates: Date[] = (initial?.expirationDates ?? []).filter((d: any) => d instanceof Date);
+    if (allExpDates.length === 0) return null;
+
+    const now = Date.now();
+    const daysTo = (d: Date) => Math.round((d.getTime() - now) / (24 * 60 * 60 * 1000));
+
+    // 2. Pick an expiry close to 30d (skip 0DTE — IV is meaningless there).
+    const ivExpDate = pickClosestExpiry(allExpDates, 30, 14);
+
+    // 3. Find the first expiry strictly after the next earnings date (for implied move).
+    const earningsTime = nextEarningsDate ? new Date(nextEarningsDate).getTime() : null;
+    const postEarningsExpDate = earningsTime !== null
+      ? allExpDates.find((d) => d.getTime() > earningsTime) ?? null
+      : null;
+
+    // 4. Fetch the chain(s) we need. Reuse `initial` if it happens to match.
+    const initialDate: Date | null = initial?.options?.[0]?.expirationDate ?? null;
+    const same = (a: Date | null, b: Date | null) => a !== null && b !== null && a.getTime() === b.getTime();
+
+    const dateChainPromises: Array<Promise<{ date: Date; chain: any } | null>> = [];
+    const seen = new Set<number>();
+
+    const addFetch = (d: Date | null) => {
+      if (!d || seen.has(d.getTime())) return;
+      seen.add(d.getTime());
+      if (same(d, initialDate)) {
+        dateChainPromises.push(Promise.resolve({ date: d, chain: initial.options[0] }));
+      } else {
+        dateChainPromises.push(
+          (yf as any).options(symbol, { date: d })
+            .then((res: any) => res?.options?.[0] ? { date: d, chain: res.options[0] } : null)
+            .catch(() => null),
+        );
+      }
+    };
+
+    addFetch(ivExpDate);
+    addFetch(postEarningsExpDate);
+
+    const chains = (await Promise.all(dateChainPromises)).filter((x): x is { date: Date; chain: any } => x !== null);
+    const ivChainEntry      = chains.find((c) => same(c.date, ivExpDate));
+    const postEarningsEntry = chains.find((c) => same(c.date, postEarningsExpDate));
+
+    const ivAtm30d = ivChainEntry ? computeAtmIv(ivChainEntry.chain, spot) : null;
+    const pc       = ivChainEntry ? computePutCallRatios(ivChainEntry.chain, spot) : { volRatio: null, oiRatio: null };
+
+    let impliedMove: ImpliedMove | null = null;
+    if (postEarningsEntry) {
+      const movePct = computeImpliedMove(postEarningsEntry.chain, spot);
+      if (movePct !== null) {
+        impliedMove = {
+          pct: movePct,
+          expirationDate: postEarningsEntry.date.toISOString().slice(0, 10),
+        };
+      }
+    }
+
+    logger.debug(`Options[${symbol}]: IV-expiry=${ivExpDate ? ivExpDate.toISOString().slice(0,10) : 'N/A'} (${ivExpDate ? daysTo(ivExpDate) : 'N/A'}d), post-earnings=${postEarningsExpDate ? postEarningsExpDate.toISOString().slice(0,10) : 'N/A'}`);
+
+    return {
+      ivAtm30d,
+      putCallVolumeRatio: pc.volRatio,
+      putCallOIRatio:     pc.oiRatio,
+      nextEarningsImpliedMove: impliedMove,
+      ivVsHv90Ratio: ivAtm30d !== null && hv90 !== null && hv90 > 0 ? ivAtm30d / hv90 : null,
+    };
+  } catch (e) {
+    logger.warn(`Options[${symbol}]: ${(e as Error).message}`);
+    return null;
+  }
+}
+
+function pickClosestExpiry(dates: Date[], targetDays: number, minDays: number): Date | null {
+  const now = Date.now();
+  const eligible = dates.filter((d) => Math.round((d.getTime() - now) / (24 * 60 * 60 * 1000)) >= minDays);
+  if (eligible.length === 0) return null;
+  return eligible.reduce<{ d: Date; diff: number } | null>((best, d) => {
+    const days = Math.round((d.getTime() - now) / (24 * 60 * 60 * 1000));
+    const diff = Math.abs(days - targetDays);
+    return best === null || diff < best.diff ? { d, diff } : best;
+  }, null)!.d;
+}
+
+/**
+ * Estimate ATM implied volatility from the option chain.
+ *
+ * Yahoo's `impliedVolatility` field is frequently stale or garbage (zeros, near-zeros,
+ * inconsistent across nearby strikes). We derive IV from the ATM straddle mid-price using
+ * the Brenner–Subrahmanyam approximation:
+ *
+ *   straddle / spot ≈ 0.8 × σ × √T   →   σ ≈ straddle / spot / (0.8 × √T)
+ *
+ * Fall back to Yahoo's reported IV (averaged across ATM call+put) only when straddle pricing
+ * is missing.
+ */
+function computeAtmIv(expiration: any, spot: number): number | null {
+  const calls: any[] = expiration?.calls ?? [];
+  const puts:  any[] = expiration?.puts  ?? [];
+  if (calls.length === 0 && puts.length === 0) return null;
+
+  const nearest = (arr: any[]) => arr.reduce<{ s: any; d: number } | null>((best, c) => {
+    const strike = num(c.strike);
+    if (strike === null) return best;
+    const d = Math.abs(strike - spot);
+    if (best === null || d < best.d) return { s: c, d };
+    return best;
+  }, null);
+
+  const cAtm = nearest(calls);
+  const pAtm = nearest(puts);
+
+  // Time to expiry in years
+  const expDate: Date | undefined = expiration?.expirationDate;
+  const tYears = expDate ? Math.max(1, (expDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) / 365 : null;
+
+  // Preferred path: derive IV from ATM straddle mid-price.
+  if (cAtm && pAtm && tYears !== null && tYears > 0) {
+    const cMid = midPrice(cAtm.s);
+    const pMid = midPrice(pAtm.s);
+    if (cMid !== null && pMid !== null && cMid > 0 && pMid > 0) {
+      const straddle = cMid + pMid;
+      const sigma = (straddle / spot) / (0.8 * Math.sqrt(tYears));
+      if (isFinite(sigma) && sigma > 0.02 && sigma < 5) return sigma;  // sane range: 2% – 500%
+    }
+  }
+
+  // Fallback: average Yahoo's reported IV from the ATM call+put, if it looks plausible.
+  const ivs: number[] = [];
+  const cIv = cAtm ? num(cAtm.s.impliedVolatility) : null;
+  const pIv = pAtm ? num(pAtm.s.impliedVolatility) : null;
+  if (cIv !== null && cIv > 0.02 && cIv < 5) ivs.push(cIv);
+  if (pIv !== null && pIv > 0.02 && pIv < 5) ivs.push(pIv);
+  if (ivs.length === 0) return null;
+  return ivs.reduce((a, b) => a + b, 0) / ivs.length;
+}
+
+function computePutCallRatios(expiration: any, spot: number): { volRatio: number | null; oiRatio: number | null } {
+  const within = (s: number) => Math.abs(s - spot) / spot <= 0.15;
+  const calls: any[] = (expiration?.calls ?? []).filter((c: any) => num(c.strike) !== null && within(c.strike));
+  const puts:  any[] = (expiration?.puts  ?? []).filter((p: any) => num(p.strike) !== null && within(p.strike));
+  const sumCallVol = calls.reduce((a, c) => a + (num(c.volume)       ?? 0), 0);
+  const sumPutVol  = puts.reduce ((a, p) => a + (num(p.volume)       ?? 0), 0);
+  const sumCallOI  = calls.reduce((a, c) => a + (num(c.openInterest) ?? 0), 0);
+  const sumPutOI   = puts.reduce ((a, p) => a + (num(p.openInterest) ?? 0), 0);
+  return {
+    volRatio: sumCallVol > 0 ? sumPutVol / sumCallVol : null,
+    oiRatio:  sumCallOI  > 0 ? sumPutOI  / sumCallOI  : null,
+  };
+}
+
+function computeImpliedMove(expiration: any, spot: number): number | null {
+  const calls: any[] = expiration?.calls ?? [];
+  const puts:  any[] = expiration?.puts  ?? [];
+  const nearest = (arr: any[]) => arr.reduce<{ o: any; d: number } | null>((best, c) => {
+    const strike = num(c.strike);
+    if (strike === null) return best;
+    const d = Math.abs(strike - spot);
+    if (best === null || d < best.d) return { o: c, d };
+    return best;
+  }, null);
+  const c = nearest(calls);
+  const p = nearest(puts);
+  if (!c || !p) return null;
+  const cMid = midPrice(c.o);
+  const pMid = midPrice(p.o);
+  if (cMid === null || pMid === null) return null;
+  return (cMid + pMid) / spot;
+}
+
+function midPrice(opt: any): number | null {
+  const bid = num(opt?.bid);
+  const ask = num(opt?.ask);
+  if (bid !== null && ask !== null && bid > 0 && ask > 0) return (bid + ask) / 2;
+  return num(opt?.lastPrice);
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export async function getFinancials(symbol: string): Promise<StockFinancials> {
+export interface FinancialsBundle {
+  financials: StockFinancials;
+  dailyBars:  DailyBar[];
+  revisions:  EarningsRevisions;
+}
+
+export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   logger.step(`Fetching financials for ${symbol}...`);
 
-  const [quote, summary, bsData, finData, cfData, monthlyReturns, isin] = await Promise.all([
+  const [quote, summary, bsData, finData, cfData, historicalData, isin] = await Promise.all([
     safeQuote(symbol),
     safeSummary(symbol),
     safeTimeSeries(symbol, 'balance-sheet'),
     safeTimeSeries(symbol, 'financials'),
     safeTimeSeries(symbol, 'cash-flow'),
-    safeHistorical(symbol),
+    safeHistoricalData(symbol),
     fetchIsin(symbol),
   ]);
+
+  const { monthlyReturns, monthlyPrices, dailyBars } = historicalData;
 
   if (!quote && !summary) throw new Error(`No data found for: ${symbol}`);
 
@@ -159,7 +474,8 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
   const sd = summary?.summaryDetail        ?? {};
   const ap = summary?.assetProfile         ?? {};
   const pr = summary?.price                ?? {};
-  const rt  = (summary as any)?.recommendationTrend?.trend?.[0] ?? {};
+  const rtTrend: any[] = (summary as any)?.recommendationTrend?.trend ?? [];
+  const rt  = rtTrend?.[0] ?? {};
   const cal = (summary as any)?.calendarEvents ?? {};
   const mhb = (summary as any)?.majorHoldersBreakdown ?? {};
   const eh  = (summary as any)?.earningsHistory?.history ?? [];
@@ -227,6 +543,14 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
     numberOfAnalysts: num(t.earningsEstimate?.numberOfAnalysts?.raw ?? t.earningsEstimate?.numberOfAnalysts),
   }));
 
+  // ── Earnings revisions (epsTrend + epsRevisions per period) ──────────────
+  const revisionPeriods = extractRevisions(et);
+  const analystRatingMoMDelta = extractAnalystRatingMoMDelta(rtTrend);
+  const revisions: EarningsRevisions = {
+    perPeriod: revisionPeriods,
+    analystRatingMoMDelta,
+  };
+
   // ── Insider transactions (last 6 months) ─────────────────────────────────
   const sixMonthsAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
   let insiderBuyShares = 0, insiderBuyValue = 0, insiderBuyCount = 0;
@@ -272,7 +596,26 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
     };
   }
 
-  return {
+  // ── 5-year average trailing P/E ──────────────────────────────────────────
+  const avgPE5Y = (() => {
+    const pes: number[] = [];
+    for (const entry of finData) {
+      const eps = num((entry as any).dilutedEPS);
+      if (eps === null || eps <= 0) continue;
+      const raw = (entry as any).asOfDate;
+      const endDate: Date | null = raw instanceof Date ? raw
+        : typeof raw === 'string' ? new Date(raw) : null;
+      if (!endDate || isNaN(endDate.getTime())) continue;
+      const ym = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`;
+      const price = monthlyPrices[ym] ?? monthlyPrices[ymShift(ym, -1)] ?? monthlyPrices[ymShift(ym, 1)];
+      if (!price) continue;
+      const pe = price / eps;
+      if (pe > 0 && pe < 500) pes.push(pe);
+    }
+    return pes.length >= 2 ? pes.reduce((a, b) => a + b, 0) / pes.length : null;
+  })();
+
+  const financials: StockFinancials = {
     symbol: symbol.toUpperCase(),
     companyName: str(pr.longName) ?? str(pr.shortName) ?? symbol,
     price: num(quote?.regularMarketPrice) ?? 0,
@@ -280,6 +623,7 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
 
     peRatio:     (() => { const v = num(quote?.trailingPE); return v !== null && v > 0 ? v : null; })(),
     forwardPE:   (() => { const v = num(quote?.forwardPE);  return v !== null && v > 0 ? v : null; })(),
+    avgPE5Y,
     pegRatio:    num(ks.pegRatio),
     eps:         num(quote?.epsTrailingTwelveMonths),
     bookValue:   num(ks.bookValue),
@@ -389,4 +733,6 @@ export async function getFinancials(symbol: string): Promise<StockFinancials> {
     insiderBuyCount:   insiderBuyCount  > 0 ? insiderBuyCount   : null,
     insiderSellCount:  insiderSellCount > 0 ? insiderSellCount  : null,
   };
+
+  return { financials, dailyBars, revisions };
 }

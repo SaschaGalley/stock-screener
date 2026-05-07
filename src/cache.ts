@@ -1,19 +1,21 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, isAbsolute, resolve } from 'path';
 import { homedir } from 'os';
-import { StockFinancials, LLMAnalysis, NewsItem } from './types.js';
+import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem } from './types.js';
 import { logger } from './utils/logger.js';
 import { PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
 
-const FINANCIALS_TTL_MS   = 60 * 60 * 1000;       // 1 hour
-const ANALYSIS_TTL_MS     = 6 * 60 * 60 * 1000;   // 6 hours
-const NEWS_TTL_MS         = 30 * 60 * 1000;        // 30 min
-const PERPLEXITY_TTL_MS = 12 * 60 * 60 * 1000;  // 12 hours
+const FINANCIALS_TTL_MS    = 60 * 60 * 1000;       // 1 hour
+const ANALYSIS_TTL_MS      = 6 * 60 * 60 * 1000;   // 6 hours
+const NEWS_TTL_MS          = 30 * 60 * 1000;       // 30 min
+const MARKET_SIGNALS_TTL_MS = 30 * 60 * 1000;      // 30 min (technicals + options change fast)
+const PERPLEXITY_TTL_MS    = 12 * 60 * 60 * 1000;  // 12 hours
 
 // Bump to invalidate all cached entries of that type
-const FINANCIALS_VERSION   = 10;  // bump when StockFinancials schema changes
-const ANALYSIS_VERSION     = 1;
-const NEWS_VERSION         = 1;
+const FINANCIALS_VERSION     = 12;  // bump when StockFinancials schema changes
+const ANALYSIS_VERSION       = 2;  // bumped — prompt now includes composite IV + RIM/NCAV/peer-multiples
+const NEWS_VERSION           = 1;
+const MARKET_SIGNALS_VERSION = 1;
 
 function resolveCacheRoot(rawDir: string): string {
   if (rawDir.startsWith('~')) return join(homedir(), rawDir.slice(1));
@@ -118,6 +120,32 @@ export function writeNews(rawDir: string, symbol: string, data: NewsItem[]): voi
     logger.debug(`Cached news for ${symbol}`);
   } catch (e) {
     logger.warn(`Could not write news cache: ${(e as Error).message}`);
+  }
+}
+
+// ── Market Signals (technicals + revisions + options + macro) ────────────────
+
+export function readMarketSignals(rawDir: string, symbol: string): MarketSignals | null {
+  const file = join(symbolDir(rawDir, symbol), 'market-signals.json');
+  const entry = readEntry<MarketSignals>(file);
+  if (!entry) return null;
+  if (entry.v !== MARKET_SIGNALS_VERSION) return null;
+  if (Date.now() - entry.ts > MARKET_SIGNALS_TTL_MS) {
+    logger.debug(`Market signals cache expired for ${symbol}`);
+    return null;
+  }
+  logger.debug(`Market signals cache hit for ${symbol} (${Math.round((Date.now() - entry.ts) / 60000)}m old)`);
+  return entry.data;
+}
+
+export function writeMarketSignals(rawDir: string, symbol: string, data: MarketSignals): void {
+  const dir = symbolDir(rawDir, symbol);
+  try {
+    ensureDir(dir);
+    writeEntry(join(dir, 'market-signals.json'), MARKET_SIGNALS_VERSION, data);
+    logger.debug(`Cached market signals for ${symbol}`);
+  } catch (e) {
+    logger.warn(`Could not write market-signals cache: ${(e as Error).message}`);
   }
 }
 

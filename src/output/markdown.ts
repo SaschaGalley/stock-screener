@@ -1,12 +1,17 @@
 import chalk from 'chalk';
-import { AnalysisResult, BeneishResult, PiotroskiSignals, SectorMedians } from '../types.js';
+import {
+  AnalysisResult, BeneishResult, CompositeFairValueResult, MarketSignals,
+  PeerMultiplesResult, PiotroskiSignals, SectorMedians,
+} from '../types.js';
 import { fmt, fmtPct, fmtBig } from '../analysis/metrics.js';
 
 export function formatMarkdown(r: AnalysisResult): string {
   const { financials: f, dcf, grahamNumber: gn, ratios, llmAnalysis: llm, news, perplexity } = r;
   const { reverseDCF: rdcf, peterLynch: pl, evMultiples: ev, ruleOf40: r40,
-          grahamRevised: gr, piotroski, altmanZ, ddm, epv, interestCoverage: ic,
-          sortino, beneish, sectorMedians: sm } = r;
+          grahamRevised: gr, piotroski, altmanZ, ddm, epv, rim, ncav,
+          peerMultiples: pm, composite,
+          interestCoverage: ic,
+          sortino, beneish, sectorMedians: sm, marketSignals: ms } = r;
 
   const recColor = (rec: string) =>
     rec.includes('STRONG BUY') ? chalk.green.bold(rec) :
@@ -93,17 +98,30 @@ export function formatMarkdown(r: AnalysisResult): string {
     `| Debt / Equity      | ${fmt(f.debtToEquity, 'x').padEnd(12)} |  | Interest Coverage  | ${ic.ratio ? `${ic.ratio.toFixed(1)}x`.padEnd(12) : `${ic.interpretation}`.padEnd(12)} |`,
     '',
 
-    chalk.bold('## 📐 Intrinsic Value Models'),
+    ...formatComposite(composite, f.price),
+
+    chalk.bold('## 📐 Single-Equation Intrinsic Value Models'),
     '',
-    `| Model                   | Fair Value          | vs. Price            |`,
-    `|-------------------------|---------------------|----------------------|`,
-    fvRow('DCF (5yr, 10% growth)',  dcf.fairValue,       f.price),
+    `| Model                       | Fair Value          | vs. Price            |`,
+    `|-----------------------------|---------------------|----------------------|`,
+    fvRow(`DCF (2-Stage, g=${(dcf.stage1Growth * 100).toFixed(1)}%)`, dcf.fairValue, f.price),
     fvRow('Graham Number',          gn.grahamNumber,     f.price),
-    fvRow('Graham Revised (V*)',     gr.fairValue,        f.price),
+    fvRow('Graham Revised (V*)',    gr.fairValue,        f.price),
     fvRow('Peter Lynch',            pl.fairValue,        f.price),
-    fvRow('EPV (Greenwald)',         epv.fairValue,       f.price),
-    fvRow('DDM (Gordon Growth)',     ddm.isApplicable ? ddm.fairValue ?? null : null, f.price, ddm.isApplicable ? undefined : 'no dividend'),
+    fvRow('EPV (Greenwald)',        epv.fairValue,       f.price),
+    fvRow('DDM (Gordon Growth)',    ddm.isApplicable ? ddm.fairValue ?? null : null, f.price, ddm.isApplicable ? undefined : 'no dividend'),
+    fvRow('Residual Income (RIM)',  rim.isApplicable ? rim.fairValue : null, f.price, rim.isApplicable ? undefined : 'no positive book/ROE'),
+    fvRow('NCAV (Graham floor)',    ncav.isApplicable ? ncav.ncavPerShare : null, f.price, ncav.isApplicable ? undefined : 'CA ≤ liabilities'),
     '',
+    dcf.fairValue !== null
+      ? chalk.gray(`  DCF assumptions: ${dcf.assumptions}`)
+      : chalk.gray(`  DCF: ${dcf.assumptions}`),
+    dcf.fairValueBear !== null && dcf.fairValueBull !== null
+      ? chalk.gray(`  DCF bear/base/bull: $${dcf.fairValueBear.toFixed(2)} / $${dcf.fairValue!.toFixed(2)} / $${dcf.fairValueBull.toFixed(2)}`)
+      : '',
+    '',
+
+    ...formatPeerMultiples(pm, f.price),
 
     chalk.bold('## 🔄 Reverse DCF'),
     '',
@@ -127,6 +145,11 @@ export function formatMarkdown(r: AnalysisResult): string {
     '',
 
     ...formatEarningsSurprises(f),
+
+    ...formatTechnicals(ms),
+    ...formatRevisions(ms),
+    ...formatOptions(ms),
+    ...formatMacro(ms),
 
     chalk.bold('## 🏆 Piotroski F-Score'),
     '',
@@ -210,14 +233,6 @@ export function formatMarkdown(r: AnalysisResult): string {
     `  Fair Value Est: ${llm.fairValueEstimate}`,
   ];
 
-  if (news.length > 0) {
-    lines.push('', chalk.bold('## 📰 Recent News'), '');
-    news.slice(0, 5).forEach((n) => {
-      const date = new Date(n.datetime * 1000).toLocaleDateString('de-DE');
-      lines.push(`  [${date}] ${n.headline} — ${chalk.gray(n.source)}`);
-    });
-  }
-
   lines.push('', chalk.gray('───────────────────────────────────────────'));
   lines.push(chalk.gray('Data: Yahoo Finance · Finnhub'));
 
@@ -239,9 +254,10 @@ function formatPeerBlock(
       `|----------------|----------|--|----------------|----------|`,
       `| P/E            | ${fmt(ratios.pe, 'x').padEnd(8)} |  | EV/EBITDA      | ${fmt(ev.evToEbitda, 'x').padEnd(8)} |`,
       `| Forward P/E    | ${fmt(ratios.forwardPE, 'x').padEnd(8)} |  | EV/Revenue     | ${fmt(ev.evToRevenue, 'x').padEnd(8)} |`,
-      `| PEG            | ${fmt(ratios.peg).padEnd(8)} |  | EV/FCF         | ${fmt(ev.evToFCF, 'x').padEnd(8)} |`,
-      `| P/B            | ${fmt(ratios.pb, 'x').padEnd(8)} |  | P/FCF          | ${fmt(ev.priceToFCF, 'x').padEnd(8)} |`,
-      `| P/S            | ${fmt(ev.priceToSales, 'x').padEnd(8)} |  | Div. Yield     | ${fmtPct(f.dividendYield).padEnd(8)} |`,
+      `| Avg P/E (5Y)   | ${fmt(f.avgPE5Y, 'x').padEnd(8)} |  | EV/FCF         | ${fmt(ev.evToFCF, 'x').padEnd(8)} |`,
+      `| PEG            | ${fmt(ratios.peg).padEnd(8)} |  | P/FCF          | ${fmt(ev.priceToFCF, 'x').padEnd(8)} |`,
+      `| P/B            | ${fmt(ratios.pb, 'x').padEnd(8)} |  | P/S            | ${fmt(ev.priceToSales, 'x').padEnd(8)} |`,
+      `| Div. Yield     | ${fmtPct(f.dividendYield).padEnd(8)} |  |                |          |`,
     ];
   }
 
@@ -280,6 +296,7 @@ function formatPeerBlock(
     // ── Valuation ──
     row('P/E',              fmt(ratios.pe,          'x', 1), vsCol(ratios.pe,          sm.pe,               true)),
     row('Forward P/E',      fmt(ratios.forwardPE,   'x', 1), '—'.padEnd(18)),
+    row('Avg P/E (5Y)',     fmt(f.avgPE5Y,          'x', 1), '—'.padEnd(18)),
     row('EV/EBITDA',        fmt(ev.evToEbitda,      'x', 1), vsCol(ev.evToEbitda,      sm.evToEbitda,       true)),
     row('EV/Revenue',       fmt(ev.evToRevenue,     'x', 1), vsCol(ev.evToRevenue,     sm.evToRevenue,      true)),
     row('P/FCF',            fmt(ev.priceToFCF,      'x', 1), vsCol(ev.priceToFCF,      sm.priceToFCF,       true)),
@@ -470,6 +487,105 @@ function formatInsiderActivity(f: AnalysisResult['financials']): string[] {
   return lines;
 }
 
+function formatComposite(c: CompositeFairValueResult, price: number): string[] {
+  const lines: string[] = [chalk.bold('## 🎯 Composite Intrinsic Value'), ''];
+
+  if (c.median === null) {
+    lines.push(chalk.gray('  No applicable models — composite cannot be computed.'));
+    if (c.excludedModels.length > 0) {
+      lines.push('');
+      lines.push(chalk.gray('  Excluded models:'));
+      for (const ex of c.excludedModels) {
+        lines.push(chalk.gray(`    • ${ex.name} — ${ex.reason}`));
+      }
+    }
+    lines.push('');
+    return lines;
+  }
+
+  const mosPct = c.marginOfSafety !== null ? c.marginOfSafety * 100 : null;
+  const mosLabel = mosPct === null ? 'N/A' :
+    mosPct >= 20  ? chalk.green.bold(`▲ ${mosPct.toFixed(1)}% upside (undervalued)`) :
+    mosPct >= 0   ? chalk.green(`▲ ${mosPct.toFixed(1)}% upside`) :
+    mosPct >= -20 ? chalk.yellow(`▼ ${Math.abs(mosPct).toFixed(1)}% downside (fairly valued)`) :
+                    chalk.red(`▼ ${Math.abs(mosPct).toFixed(1)}% downside (overvalued)`);
+
+  const confColor = c.confidence >= 7 ? chalk.green : c.confidence >= 4 ? chalk.yellow : chalk.red;
+  const confBar = '█'.repeat(Math.round(c.confidence)) + '░'.repeat(10 - Math.round(c.confidence));
+
+  lines.push(`  Median Fair Value:  ${chalk.bold('$' + c.median.toFixed(2))}   ${mosLabel}`);
+  if (c.p25 !== null && c.p75 !== null) {
+    lines.push(`  IQR (25–75%):       $${c.p25.toFixed(2)} – $${c.p75.toFixed(2)}` +
+      (c.min !== null && c.max !== null ? `   (full range $${c.min.toFixed(2)} – $${c.max.toFixed(2)})` : ''));
+  }
+  lines.push(`  Mean Fair Value:    $${c.mean!.toFixed(2)}   |   Current Price: $${price.toFixed(2)}`);
+  if (c.pctModelsUndervalued !== null) {
+    const pctU = (c.pctModelsUndervalued * 100).toFixed(0);
+    lines.push(`  Models bullish:     ${pctU}% of ${c.contributingModels.length} applicable models say undervalued`);
+  }
+  lines.push(`  Confidence:         ${confColor(`${c.confidence}/10`)}  [${confBar}]`);
+  lines.push('');
+
+  if (c.contributingModels.length > 0) {
+    lines.push(chalk.gray('  Contributing models:'));
+    const sorted = [...c.contributingModels].sort((a, b) => a.fairValue - b.fairValue);
+    for (const m of sorted) {
+      const delta = ((m.fairValue - price) / price) * 100;
+      const arrow = m.fairValue > price ? chalk.green(`▲ ${delta.toFixed(1)}%`) : chalk.red(`▼ ${Math.abs(delta).toFixed(1)}%`);
+      lines.push(chalk.gray(`    • ${m.name.padEnd(28)} $${m.fairValue.toFixed(2).padStart(8)}   ${arrow}`));
+    }
+  }
+
+  if (c.excludedModels.length > 0) {
+    lines.push('');
+    lines.push(chalk.gray('  Excluded:'));
+    for (const ex of c.excludedModels) {
+      lines.push(chalk.gray(`    • ${ex.name.padEnd(28)} (${ex.reason})`));
+    }
+  }
+  lines.push('');
+  return lines;
+}
+
+function formatPeerMultiples(pm: PeerMultiplesResult, price: number): string[] {
+  if (pm.count === 0) return [];
+
+  const METRIC_LABEL: Record<string, string> = {
+    pe: 'P/E', evEbitda: 'EV/EBITDA', evRevenue: 'EV/Revenue',
+    priceFCF: 'P/FCF', pb: 'P/B',
+  };
+
+  const lines: string[] = [
+    chalk.bold('## 🔬 Peer-Multiples Fair Value'),
+    '',
+    `| Multiple    | Sector Median | Own Metric    | Implied Fair Price | vs. Price   |`,
+    `|-------------|---------------|---------------|---------------------|-------------|`,
+  ];
+
+  for (const e of pm.byMultiple) {
+    if (e.fairPrice === null) continue;
+    const delta = ((e.fairPrice - price) / price) * 100;
+    const arrow = delta >= 0 ? chalk.green(`▲ ${delta.toFixed(1)}%`) : chalk.red(`▼ ${Math.abs(delta).toFixed(1)}%`);
+    const ownLabel = e.metric === 'pe' ? `EPS $${e.ownMetric?.toFixed(2)}`
+                   : e.metric === 'pb' ? `BV $${e.ownMetric?.toFixed(2)}`
+                   : fmtBig(e.ownMetric);
+    const medianLabel = (e.metric === 'pe' || e.metric === 'pb' || e.metric === 'priceFCF' || e.metric === 'evEbitda' || e.metric === 'evRevenue')
+      ? `${e.sectorMedian!.toFixed(2)}x`
+      : `${e.sectorMedian!.toFixed(2)}`;
+    lines.push(`| ${METRIC_LABEL[e.metric].padEnd(11)} | ${medianLabel.padEnd(13)} | ${ownLabel.padEnd(13)} | $${e.fairPrice.toFixed(2).padStart(18)} | ${arrow.padEnd(11)} |`);
+  }
+
+  if (pm.medianFairPrice !== null) {
+    const mosPct = pm.marginOfSafety !== null ? pm.marginOfSafety * 100 : null;
+    const mosLabel = mosPct === null ? '' :
+      mosPct >= 0 ? chalk.green(`▲ ${mosPct.toFixed(1)}%`) : chalk.red(`▼ ${Math.abs(mosPct).toFixed(1)}%`);
+    lines.push('');
+    lines.push(`  Median fair price across ${pm.count} multiples: ${chalk.bold('$' + pm.medianFairPrice.toFixed(2))}   ${mosLabel}`);
+  }
+  lines.push('');
+  return lines;
+}
+
 function formatBeneishProbability(p: BeneishResult['probability']): string {
   if (p === 'likely manipulator')   return chalk.red.bold('⚠  likely manipulator  (M > −1.78)');
   if (p === 'grey zone')            return chalk.yellow('~  grey zone  (−2.22 < M < −1.78)');
@@ -503,6 +619,173 @@ function formatPerplexity(p: AnalysisResult['perplexity']): string[] {
     lines.push('', chalk.dim('  Sources'));
     p.citations.forEach((url, i) => lines.push(chalk.dim(`  [${i + 1}] ${url}`)));
   }
+  lines.push('');
+  return lines;
+}
+
+function signedPctColor(n: number | null, goodIfPositive = true): string {
+  if (n === null) return 'N/A'.padEnd(8);
+  const v = n * 100;
+  const label = `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+  const goodTone = goodIfPositive ? v > 0 : v < 0;
+  return goodTone ? chalk.green(label) : v === 0 ? label : chalk.red(label);
+}
+
+function plain(n: number | null, suffix = '', decimals = 2): string {
+  return n === null ? 'N/A' : `${n.toFixed(decimals)}${suffix}`;
+}
+
+function formatTechnicals(ms: MarketSignals): string[] {
+  const t = ms.technicals;
+  const lines: string[] = [chalk.bold('## 📈 Price Action & Technicals'), ''];
+
+  // Returns row
+  lines.push(`  Returns:  1M ${signedPctColor(t.returns.m1)}  3M ${signedPctColor(t.returns.m3)}  6M ${signedPctColor(t.returns.m6)}  YTD ${signedPctColor(t.returns.ytd)}  1Y ${signedPctColor(t.returns.y1)}`);
+
+  // Trend / cross
+  const cross = t.goldenCross === null
+    ? 'N/A'
+    : t.goldenCross ? chalk.green('golden cross (SMA50 > SMA200)') : chalk.red('death cross (SMA50 < SMA200)');
+  lines.push(`  Trend:    SMA50 ${plain(t.sma50)}  (${signedPctColor(t.distFromSMA50Pct)})  |  SMA200 ${plain(t.sma200)}  (${signedPctColor(t.distFromSMA200Pct)})  |  ${cross}`);
+
+  // Momentum
+  const rsi = t.rsi14;
+  const rsiLabel = rsi === null ? 'N/A' :
+    rsi >= 70 ? chalk.red(rsi.toFixed(1) + ' (overbought)') :
+    rsi <= 30 ? chalk.green(rsi.toFixed(1) + ' (oversold)') :
+    rsi.toFixed(1);
+  const macdHist = t.macdHistogram;
+  const macdLabel = macdHist === null ? 'N/A' :
+    macdHist > 0 ? chalk.green(`+${macdHist.toFixed(2)} (bullish)`) :
+    chalk.red(`${macdHist.toFixed(2)} (bearish)`);
+  const pctB = t.bollingerPercentB;
+  const pctBLabel = pctB === null ? 'N/A' :
+    pctB > 1 ? chalk.red(pctB.toFixed(2) + ' (above upper band)') :
+    pctB < 0 ? chalk.green(pctB.toFixed(2) + ' (below lower band)') :
+    pctB.toFixed(2);
+  lines.push(`  Momentum: RSI14 ${rsiLabel}  |  MACD-Hist ${macdLabel}  |  %B ${pctBLabel}`);
+
+  // Volatility
+  lines.push(`  Vola:     ATR14 ${fmtPct(t.atr14Pct)}  |  HV30 ${fmtPct(t.hv30)}  |  HV90 ${fmtPct(t.hv90)}`);
+
+  // Drawdown / position
+  const dd = t.drawdownFromHighPct;
+  const ddLabel = dd === null ? 'N/A' :
+    dd <= -0.20 ? chalk.red((dd * 100).toFixed(1) + '%') :
+    dd <= -0.10 ? chalk.yellow((dd * 100).toFixed(1) + '%') :
+    chalk.green((dd * 100).toFixed(1) + '%');
+  lines.push(`  Position: 1Y drawdown ${ddLabel}  |  52W range ${fmtPct(t.position52WPct)}  |  Vol ratio ${plain(t.currentVolRatio, 'x')}`);
+
+  // Relative strength
+  lines.push(`  RS 3M:    vs SPY ${signedPctColor(t.rsVsSPY3M)}  |  vs Sector ETF ${signedPctColor(t.rsVsSector3M)}`);
+
+  lines.push('');
+  return lines;
+}
+
+function formatRevisions(ms: MarketSignals): string[] {
+  const r = ms.revisions;
+  if (r.perPeriod.length === 0 && !r.analystRatingMoMDelta) return [];
+  const lines: string[] = [chalk.bold('## 🔁 Earnings Revisions Momentum'), ''];
+
+  if (r.perPeriod.length > 0) {
+    const PERIOD_LABEL: Record<string, string> = { '0q': 'Cur Qtr', '+1q': 'Nxt Qtr', '0y': 'Cur Year', '+1y': 'Nxt Year' };
+    lines.push(`| ${'Period'.padEnd(10)} | ${'Estimate'.padEnd(9)} | ${'30d ago'.padEnd(9)} | ${'90d ago'.padEnd(9)} | ${'Drift 30d'.padEnd(11)} | ${'Up30d'.padEnd(7)} | ${'Down30d'.padEnd(8)} | ${'Net'.padEnd(7)} |`);
+    lines.push(`|${'-'.repeat(12)}|${'-'.repeat(11)}|${'-'.repeat(11)}|${'-'.repeat(11)}|${'-'.repeat(13)}|${'-'.repeat(9)}|${'-'.repeat(10)}|${'-'.repeat(9)}|`);
+    for (const p of r.perPeriod) {
+      const label = PERIOD_LABEL[p.period] ?? p.period;
+      const drift = p.epsChange30dPct === null ? 'N/A' :
+        p.epsChange30dPct > 0 ? chalk.green((p.epsChange30dPct * 100).toFixed(1) + '%') :
+        p.epsChange30dPct < 0 ? chalk.red((p.epsChange30dPct * 100).toFixed(1) + '%') :
+        '0.0%';
+      const up = p.revisions.up30d ?? 0;
+      const down = p.revisions.down30d ?? 0;
+      const net = p.netRevision30d === null ? 'N/A' :
+        p.netRevision30d > 0 ? chalk.green(`+${p.netRevision30d}`) :
+        p.netRevision30d < 0 ? chalk.red(`${p.netRevision30d}`) :
+        '0';
+      lines.push(`| ${label.padEnd(10)} | ${plain(p.epsTrend.current).padEnd(9)} | ${plain(p.epsTrend.ago30d).padEnd(9)} | ${plain(p.epsTrend.ago90d).padEnd(9)} | ${drift.padEnd(11)} | ${String(up).padEnd(7)} | ${String(down).padEnd(8)} | ${net.padEnd(7)} |`);
+    }
+    lines.push('');
+  }
+
+  if (r.analystRatingMoMDelta) {
+    const d = r.analystRatingMoMDelta;
+    const fmtDelta = (n: number) => n > 0 ? chalk.green(`+${n}`) : n < 0 ? chalk.red(`${n}`) : '0';
+    lines.push(`  Rating MoM Δ:  StrongBuy ${fmtDelta(d.strongBuy)}  |  Buy ${fmtDelta(d.buy)}  |  Hold ${fmtDelta(d.hold)}  |  Sell ${fmtDelta(d.sell)}  |  StrongSell ${fmtDelta(d.strongSell)}`);
+    lines.push('');
+  }
+
+  return lines;
+}
+
+function formatOptions(ms: MarketSignals): string[] {
+  const o = ms.options;
+  if (!o) return [];
+  const lines: string[] = [chalk.bold('## ⚡ Options Market Signals'), ''];
+
+  const ivLabel = o.ivAtm30d === null ? 'N/A' : (o.ivAtm30d * 100).toFixed(1) + '%';
+  const ivHv = o.ivVsHv90Ratio;
+  const ivHvLabel = ivHv === null ? 'N/A' :
+    ivHv > 1.3 ? chalk.red(ivHv.toFixed(2) + 'x (rich)') :
+    ivHv < 0.8 ? chalk.green(ivHv.toFixed(2) + 'x (cheap)') :
+    ivHv.toFixed(2) + 'x';
+  lines.push(`  ATM IV (~30d):     ${ivLabel}  |  IV / HV90: ${ivHvLabel}`);
+
+  const pcVol = o.putCallVolumeRatio;
+  const pcOI  = o.putCallOIRatio;
+  const pcVolLabel = pcVol === null ? 'N/A' :
+    pcVol > 1.2 ? chalk.red(pcVol.toFixed(2) + ' (bearish skew)') :
+    pcVol < 0.7 ? chalk.green(pcVol.toFixed(2) + ' (bullish skew)') :
+    pcVol.toFixed(2);
+  const pcOILabel = pcOI === null ? 'N/A' :
+    pcOI > 1.2 ? chalk.red(pcOI.toFixed(2)) :
+    pcOI < 0.7 ? chalk.green(pcOI.toFixed(2)) :
+    pcOI.toFixed(2);
+  lines.push(`  Put/Call Volume:   ${pcVolLabel}  |  P/C OI: ${pcOILabel}`);
+
+  if (o.nextEarningsImpliedMove) {
+    const m = o.nextEarningsImpliedMove;
+    lines.push(`  Implied Move:      ${chalk.bold('±' + (m.pct * 100).toFixed(1) + '%')} at next earnings (expiry ${m.expirationDate})`);
+  } else {
+    lines.push(`  Implied Move:      N/A (no earnings date or post-earnings expiry)`);
+  }
+
+  lines.push('');
+  return lines;
+}
+
+function formatMacro(ms: MarketSignals): string[] {
+  const m = ms.macro;
+  const lines: string[] = [chalk.bold('## 🌍 Macro Context'), ''];
+
+  const vix = m.vix;
+  const vixLabel = vix === null ? 'N/A' :
+    m.vixRegime === 'high'     ? chalk.red(`${vix.toFixed(1)} (high)`) :
+    m.vixRegime === 'elevated' ? chalk.yellow(`${vix.toFixed(1)} (elevated)`) :
+    m.vixRegime === 'low'      ? chalk.green(`${vix.toFixed(1)} (low)`) :
+    `${vix.toFixed(1)} (${m.vixRegime})`;
+  lines.push(`  VIX:               ${vixLabel}  |  SPY 3M: ${signedPctColor(m.spy3MReturn)}`);
+
+  const yc = m.yieldCurve2Y10Y;
+  const ycLabel = yc === null ? 'N/A' :
+    yc < 0  ? chalk.red(`${yc.toFixed(0)}bps (inverted)`) :
+    yc < 50 ? chalk.yellow(`${yc.toFixed(0)}bps (flat)`) :
+    chalk.green(`${yc.toFixed(0)}bps`);
+  const hy = m.hySpreadBps;
+  const hyLabel = hy === null ? 'N/A' :
+    hy > 600 ? chalk.red(`${hy.toFixed(0)}bps (stress)`) :
+    hy > 400 ? chalk.yellow(`${hy.toFixed(0)}bps`) :
+    chalk.green(`${hy.toFixed(0)}bps`);
+  lines.push(`  Yield curve 10Y-2Y: ${ycLabel}  |  HY spread: ${hyLabel}`);
+
+  lines.push(`  DXY:               ${plain(m.dxyLevel, '', 1)}  (3M ${signedPctColor(m.dxyChange3MPct)})`);
+
+  const sectorLabel = m.sectorEtfSymbol
+    ? `${m.sectorEtfSymbol} 3M ${signedPctColor(m.sectorEtfReturn3M)}`
+    : chalk.gray('not mapped');
+  lines.push(`  Sector ETF:        ${sectorLabel}`);
+
   lines.push('');
   return lines;
 }

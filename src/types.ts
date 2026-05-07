@@ -49,6 +49,7 @@ export const StockFinancialsSchema = z.object({
   // ── Valuation ───────────────────────────────────────────────────────────────
   peRatio:   z.number().nullable().describe('Trailing 12-month P/E ratio (price / EPS TTM)'),
   forwardPE: z.number().nullable().describe('Forward P/E ratio based on next-12-month consensus EPS estimate'),
+  avgPE5Y:   z.number().nullable().describe('Simple average of trailing P/E at fiscal year-end for each of the last 3-4 profitable years (loss years excluded)'),
   pegRatio:  z.number().nullable().describe('Price/Earnings-to-Growth ratio: P/E divided by expected earnings growth rate'),
   eps:       z.number().nullable().describe('Trailing 12-month earnings per share (diluted)'),
   bookValue: z.number().nullable().describe('Book value per share: (total equity) / shares outstanding'),
@@ -178,17 +179,145 @@ export const StockFinancialsSchema = z.object({
 });
 export type StockFinancials = z.infer<typeof StockFinancialsSchema>;
 
+// ─── Market Signals (Technicals / Revisions / Options / Macro) ───────────────
+
+export const TechnicalReturnsSchema = z.object({
+  d1:  z.number().nullable().describe('1-day price return (decimal, e.g. 0.012 = +1.2%)'),
+  w1:  z.number().nullable().describe('1-week price return (decimal)'),
+  m1:  z.number().nullable().describe('1-month price return (decimal)'),
+  m3:  z.number().nullable().describe('3-month price return (decimal)'),
+  m6:  z.number().nullable().describe('6-month price return (decimal)'),
+  ytd: z.number().nullable().describe('Year-to-date price return (decimal)'),
+  y1:  z.number().nullable().describe('1-year price return (decimal)'),
+});
+export type TechnicalReturns = z.infer<typeof TechnicalReturnsSchema>;
+
+export const TechnicalIndicatorsSchema = z.object({
+  returns:           TechnicalReturnsSchema.describe('Trailing total returns over standard horizons'),
+  sma50:             z.number().nullable().describe('50-day simple moving average'),
+  sma200:            z.number().nullable().describe('200-day simple moving average'),
+  distFromSMA50Pct:  z.number().nullable().describe('(price − SMA50) / SMA50 (decimal); positive = above the average'),
+  distFromSMA200Pct: z.number().nullable().describe('(price − SMA200) / SMA200 (decimal); positive = above the average'),
+  goldenCross:       z.boolean().nullable().describe('True when SMA50 > SMA200 (medium-term uptrend)'),
+  rsi14:             z.number().nullable().describe('14-day Wilder RSI (0–100); >70 overbought, <30 oversold'),
+  macdLine:          z.number().nullable().describe('MACD line (12-EMA − 26-EMA)'),
+  macdSignal:        z.number().nullable().describe('MACD signal line (9-EMA of MACD)'),
+  macdHistogram:     z.number().nullable().describe('MACD histogram (line − signal); sign indicates momentum direction'),
+  bollingerUpper:    z.number().nullable().describe('Bollinger upper band (20-SMA + 2σ)'),
+  bollingerMid:      z.number().nullable().describe('Bollinger middle band (20-SMA)'),
+  bollingerLower:    z.number().nullable().describe('Bollinger lower band (20-SMA − 2σ)'),
+  bollingerPercentB: z.number().nullable().describe('%B = (price − lower) / (upper − lower); 0 = lower band, 1 = upper band'),
+  atr14:             z.number().nullable().describe('14-day Average True Range (absolute price units)'),
+  atr14Pct:          z.number().nullable().describe('ATR14 / price (decimal); volatility relative to price'),
+  hv30:              z.number().nullable().describe('30-day annualised historical volatility from log returns (decimal)'),
+  hv90:              z.number().nullable().describe('90-day annualised historical volatility from log returns (decimal)'),
+  drawdownFromHighPct: z.number().nullable().describe('(price − 1Y high) / 1Y high (decimal, ≤0); current drawdown vs 252-day high'),
+  position52WPct:    z.number().nullable().describe('(price − 52W low) / (52W high − 52W low); 0 = at low, 1 = at high'),
+  avgVolume30:       z.number().nullable().describe('Average daily volume over the last 30 sessions'),
+  currentVolRatio:   z.number().nullable().describe('Latest session volume / 30-day average volume'),
+  rsVsSPY3M:         z.number().nullable().describe('3-month outperformance vs S&P 500 (stockReturn − spyReturn, decimal)'),
+  rsVsSector3M:      z.number().nullable().describe('3-month outperformance vs sector ETF (decimal); null when sector mapping unavailable'),
+});
+export type TechnicalIndicators = z.infer<typeof TechnicalIndicatorsSchema>;
+
+export const EpsTrendSnapshotSchema = z.object({
+  current: z.number().nullable().describe('Current consensus EPS estimate'),
+  ago7d:   z.number().nullable().describe('Estimate as of ~7 days ago'),
+  ago30d:  z.number().nullable().describe('Estimate as of ~30 days ago'),
+  ago60d:  z.number().nullable().describe('Estimate as of ~60 days ago'),
+  ago90d:  z.number().nullable().describe('Estimate as of ~90 days ago'),
+});
+export type EpsTrendSnapshot = z.infer<typeof EpsTrendSnapshotSchema>;
+
+export const EpsRevisionCountsSchema = z.object({
+  up7d:    z.number().nullable().describe('Analyst upward EPS revisions in the last 7 days'),
+  up30d:   z.number().nullable().describe('Analyst upward EPS revisions in the last 30 days'),
+  up90d:   z.number().nullable().describe('Analyst upward EPS revisions in the last 90 days'),
+  down7d:  z.number().nullable().describe('Analyst downward EPS revisions in the last 7 days'),
+  down30d: z.number().nullable().describe('Analyst downward EPS revisions in the last 30 days'),
+  down90d: z.number().nullable().describe('Analyst downward EPS revisions in the last 90 days'),
+});
+export type EpsRevisionCounts = z.infer<typeof EpsRevisionCountsSchema>;
+
+export const RevisionPeriodSchema = z.object({
+  period:           z.string().describe('Period key: "0q" | "+1q" | "0y" | "+1y"'),
+  epsTrend:         EpsTrendSnapshotSchema.describe('Estimate value at multiple lookback points'),
+  revisions:        EpsRevisionCountsSchema.describe('Analyst revision counts (up/down) over 7/30/90 days'),
+  netRevision30d:   z.number().nullable().describe('up30d − down30d; positive = bullish revision flow'),
+  epsChange30dPct:  z.number().nullable().describe('(current − ago30d) / |ago30d| (decimal); estimate drift over 30 days'),
+});
+export type RevisionPeriod = z.infer<typeof RevisionPeriodSchema>;
+
+export const AnalystRatingDeltaSchema = z.object({
+  strongBuy:  z.number().describe('Δ in Strong Buy count vs prior month'),
+  buy:        z.number().describe('Δ in Buy count vs prior month'),
+  hold:       z.number().describe('Δ in Hold count vs prior month'),
+  sell:       z.number().describe('Δ in Sell count vs prior month'),
+  strongSell: z.number().describe('Δ in Strong Sell count vs prior month'),
+});
+export type AnalystRatingDelta = z.infer<typeof AnalystRatingDeltaSchema>;
+
+export const EarningsRevisionsSchema = z.object({
+  perPeriod:             z.array(RevisionPeriodSchema).describe('Per-period revision data (up to 4 entries: 0q, +1q, 0y, +1y)'),
+  analystRatingMoMDelta: AnalystRatingDeltaSchema.nullable().describe('Month-over-month change in analyst rating buckets, null when no prior period'),
+});
+export type EarningsRevisions = z.infer<typeof EarningsRevisionsSchema>;
+
+export const ImpliedMoveSchema = z.object({
+  pct:            z.number().describe('Implied one-period move (decimal): ATM straddle / spot'),
+  expirationDate: z.string().describe('Expiry used for the calculation (YYYY-MM-DD), first one after next earnings'),
+});
+export type ImpliedMove = z.infer<typeof ImpliedMoveSchema>;
+
+export const OptionsSignalsSchema = z.object({
+  ivAtm30d:               z.number().nullable().describe('ATM implied volatility (annualised, decimal) for the nearest expiry > ~21 days'),
+  putCallVolumeRatio:     z.number().nullable().describe('Σ put volume / Σ call volume across strikes within ±15% of spot'),
+  putCallOIRatio:         z.number().nullable().describe('Σ put open interest / Σ call open interest (same window)'),
+  nextEarningsImpliedMove: ImpliedMoveSchema.nullable().describe('Implied move (straddle / spot) for first expiry after the next earnings date'),
+  ivVsHv90Ratio:          z.number().nullable().describe('ivAtm30d / hv90; >1 = options expensive vs realised volatility, <1 = cheap'),
+});
+export type OptionsSignals = z.infer<typeof OptionsSignalsSchema>;
+
+export const MacroContextSchema = z.object({
+  vix:                z.number().nullable().describe('Latest CBOE VIX level (^VIX)'),
+  vixRegime:          z.enum(['low', 'normal', 'elevated', 'high', 'unknown']).describe('low <15, normal 15–20, elevated 20–30, high >30'),
+  spy3MReturn:        z.number().nullable().describe('S&P 500 (^GSPC) 3-month total return (decimal)'),
+  yieldCurve2Y10Y:    z.number().nullable().describe('FRED T10Y2Y spread (10Y − 2Y) in basis points'),
+  hySpreadBps:        z.number().nullable().describe('FRED BAMLH0A0HYM2 high-yield option-adjusted spread in basis points'),
+  dxyLevel:           z.number().nullable().describe('US Dollar Index latest level (DX-Y.NYB)'),
+  dxyChange3MPct:     z.number().nullable().describe('DXY 3-month change (decimal)'),
+  sectorEtfSymbol:    z.string().nullable().describe('Mapped sector ETF symbol (e.g. XLK for Technology); null when no mapping exists'),
+  sectorEtfReturn3M:  z.number().nullable().describe('Sector ETF 3-month return (decimal); null when sector ETF not fetched'),
+  fetchedAt:          z.string().describe('ISO timestamp when this macro snapshot was fetched (used by cache)'),
+});
+export type MacroContext = z.infer<typeof MacroContextSchema>;
+
+export const MarketSignalsSchema = z.object({
+  technicals: TechnicalIndicatorsSchema,
+  revisions:  EarningsRevisionsSchema,
+  options:    OptionsSignalsSchema.nullable().describe('Null when no liquid options chain is available'),
+  macro:      MacroContextSchema,
+});
+export type MarketSignals = z.infer<typeof MarketSignalsSchema>;
+
 // ─── Result Types ─────────────────────────────────────────────────────────────
 
 export const DCFResultSchema = z.object({
-  fairValue:          z.number().nullable().describe('Central DCF fair value per share; null when FCF is negative'),
-  fairValueLow:       z.number().nullable().describe('Bear-case DCF fair value; null when not calculable'),
-  fairValueHigh:      z.number().nullable().describe('Bull-case DCF fair value; null when not calculable'),
-  wacc:               z.number().describe('Weighted average cost of capital used (decimal)'),
-  terminalGrowthRate: z.number().describe('Perpetual terminal growth rate applied after projection period (decimal)'),
-  projectionYears:    z.number().describe('Number of years explicitly projected (default 5)'),
-  projectedFCFs:      z.array(z.number()).describe('Year-by-year projected free cash flows'),
-  assumptions:        z.string().describe('Human-readable summary of the key DCF assumptions'),
+  fairValue:          z.number().nullable().describe('Base-case 2-stage DCF fair value per share (FCFF discounted at cost of equity, equity-bridge applied: + cash − debt)'),
+  fairValueBear:      z.number().nullable().describe('Bear-case fair value: stage-1 growth −2pp, discount rate +1pp'),
+  fairValueBull:      z.number().nullable().describe('Bull-case fair value: stage-1 growth +2pp, discount rate −1pp'),
+  discountRate:       z.number().describe('Discount rate used (cost of equity from CAPM: rf + βcapped × ERP)'),
+  beta:               z.number().nullable().describe('Beta used for CAPM (capped at [0.8, 2.0] per SWS convention)'),
+  riskFreeRate:       z.number().describe('Risk-free rate used (10Y Treasury from FRED, decimal)'),
+  stage1Growth:       z.number().describe('Stage-1 (years 1–5) FCF growth rate (decimal)'),
+  terminalGrowthRate: z.number().describe('Stable terminal growth rate after fade (decimal)'),
+  stage1Years:        z.number().describe('Number of years in stage 1 (high-growth, default 5)'),
+  fadeYears:          z.number().describe('Number of years for linear growth fade (default 5)'),
+  projectedFCFs:      z.array(z.number()).describe('Year-by-year projected free cash flows over the full horizon (stage1 + fade)'),
+  terminalValue:      z.number().nullable().describe('Terminal value at end of fade period: FCF_n × (1+g_t) / (r − g_t)'),
+  enterpriseValue:    z.number().nullable().describe('Sum of PV(FCFs) + PV(terminal) — pre-equity-bridge enterprise value'),
+  netDebt:            z.number().nullable().describe('Total debt − total cash; subtracted from EV to get equity value'),
+  assumptions:        z.string().describe('Human-readable summary of key DCF assumptions'),
 });
 export type DCFResult = z.infer<typeof DCFResultSchema>;
 
@@ -212,14 +341,16 @@ export const RatioResultSchema = z.object({
   netMargin:      z.number().nullable().describe('Net profit margin (decimal)'),
   revenueGrowth:  z.number().nullable().describe('YoY revenue growth (decimal)'),
   dividendYield:  z.number().nullable().describe('Trailing dividend yield (decimal)'),
+  ownerEarningsYield: z.number().nullable().describe('Buffett-style owner earnings yield: (netIncome + depreciation − capex) / marketCap (decimal); higher = cheaper'),
 });
 export type RatioResult = z.infer<typeof RatioResultSchema>;
 
 export const ReverseDCFResultSchema = z.object({
-  impliedGrowthRate: z.number().nullable().describe('FCF growth rate (decimal) implied by the current market price, solved by inverting the DCF model'),
-  wacc:              z.number().describe('WACC assumption used in the reverse solve (decimal)'),
+  impliedGrowthRate: z.number().nullable().describe('Stage-1 FCF growth rate (decimal) implied by the current market price, solved by inverting the 2-stage DCF model'),
+  discountRate:      z.number().describe('CAPM-based cost of equity used (decimal)'),
   terminalGrowthRate: z.number().describe('Terminal growth rate assumption used (decimal)'),
-  years:             z.number().describe('Projection horizon in years'),
+  stage1Years:       z.number().describe('Stage-1 horizon in years (default 5)'),
+  fadeYears:         z.number().describe('Fade horizon in years (default 5)'),
   interpretation:    z.string().describe('Plain-English verdict on whether the implied growth rate is realistic'),
   isPossible:        z.boolean().describe('False when the reverse solve has no valid solution (e.g. negative FCF)'),
 });
@@ -332,13 +463,75 @@ export const BeneishResultSchema = z.object({
 export type BeneishResult = z.infer<typeof BeneishResultSchema>;
 
 export const EPVResultSchema = z.object({
-  fairValue:       z.number().nullable().describe('Earnings Power Value per share (Greenwald method): normalizedEbit × (1 − taxRate) / WACC / sharesOutstanding'),
-  normalizedEbit:  z.number().nullable().describe('EBIT adjusted for D&A to approximate maintainable earnings power'),
+  fairValue:       z.number().nullable().describe('Earnings Power Value per share (Greenwald method): NOPAT / discountRate, plus cash − debt bridge'),
+  normalizedEbit:  z.number().nullable().describe('Sustainable EBIT used as input (= reported EBIT; no D&A boost — true Greenwald uses cycle-averaged EBIT which we approximate with latest annual)'),
   taxRate:         z.number().describe('Effective tax rate applied (decimal); uses computed taxRate or defaults to 21%'),
-  wacc:            z.number().describe('WACC used to capitalise normalised earnings (decimal; defaults to 8%)'),
+  wacc:            z.number().describe('Discount rate used to capitalise NOPAT (decimal); cost of equity from CAPM'),
   marginOfSafety:  z.number().nullable().describe('(fairValue − price) / price'),
 });
 export type EPVResult = z.infer<typeof EPVResultSchema>;
+
+export const RIMResultSchema = z.object({
+  fairValue:      z.number().nullable().describe('Residual Income Model value per share: BV₀ + Σ PV(excess returns over cost of equity), 5-year horizon with terminal RI = 0'),
+  costOfEquity:   z.number().describe('CAPM cost of equity used as required return (decimal)'),
+  excessReturn:   z.number().nullable().describe('Current ROE minus cost of equity (decimal); positive = value-creating'),
+  bookValuePerShare: z.number().nullable().describe('Starting book value per share (BV₀)'),
+  marginOfSafety: z.number().nullable().describe('(fairValue − price) / price'),
+  isApplicable:   z.boolean().describe('False when bookValue ≤ 0 or ROE ≤ 0 (model not meaningful)'),
+});
+export type RIMResult = z.infer<typeof RIMResultSchema>;
+
+export const NCAVResultSchema = z.object({
+  ncavPerShare:   z.number().nullable().describe('Net Current Asset Value per share: (currentAssets − totalLiabilities) / shares; Graham-style liquidation floor'),
+  buyThreshold:   z.number().nullable().describe('Graham buy threshold: (2/3) × NCAV — only buy below this'),
+  marginOfSafety: z.number().nullable().describe('(ncavPerShare − price) / price; usually negative (NCAV below price for healthy firms)'),
+  isApplicable:   z.boolean().describe('False when current assets ≤ total liabilities (no positive NCAV; deep-value floor model not applicable)'),
+});
+export type NCAVResult = z.infer<typeof NCAVResultSchema>;
+
+export const PeerMultiplesEntrySchema = z.object({
+  metric:       z.enum(['pe', 'evEbitda', 'evRevenue', 'priceFCF', 'pb']).describe('Multiple identifier'),
+  ownMetric:    z.number().nullable().describe('Own value of the underlying input (eps, ebitda, revenue, fcf, bookValue)'),
+  sectorMedian: z.number().nullable().describe('Peer-group median multiple (from Finnhub sectorMedians)'),
+  fairPrice:    z.number().nullable().describe('Fair price per share implied by applying sector median to own input'),
+});
+export type PeerMultiplesEntry = z.infer<typeof PeerMultiplesEntrySchema>;
+
+export const PeerMultiplesResultSchema = z.object({
+  byMultiple:      z.array(PeerMultiplesEntrySchema).describe('Per-multiple fair price estimates'),
+  medianFairPrice: z.number().nullable().describe('Median fair price across all applicable multiples'),
+  meanFairPrice:   z.number().nullable().describe('Mean fair price across all applicable multiples'),
+  count:           z.number().describe('Number of multiples that produced a valid fair price'),
+  marginOfSafety:  z.number().nullable().describe('(medianFairPrice − price) / price'),
+});
+export type PeerMultiplesResult = z.infer<typeof PeerMultiplesResultSchema>;
+
+export const CompositeContributorSchema = z.object({
+  name:      z.string().describe('Model name (e.g. "DCF (2-Stage)", "Graham Revised", "Peer Multiples")'),
+  fairValue: z.number().describe('Fair value contributed by this model'),
+});
+export type CompositeContributor = z.infer<typeof CompositeContributorSchema>;
+
+export const CompositeExclusionSchema = z.object({
+  name:   z.string().describe('Model name that was excluded'),
+  reason: z.string().describe('Why this model is not applicable for this stock'),
+});
+export type CompositeExclusion = z.infer<typeof CompositeExclusionSchema>;
+
+export const CompositeFairValueResultSchema = z.object({
+  median:               z.number().nullable().describe('Median fair value across all applicable models — headline composite intrinsic value'),
+  mean:                 z.number().nullable().describe('Mean fair value across all applicable models'),
+  p25:                  z.number().nullable().describe('25th percentile of fair values'),
+  p75:                  z.number().nullable().describe('75th percentile of fair values'),
+  min:                  z.number().nullable().describe('Lowest fair value across applicable models'),
+  max:                  z.number().nullable().describe('Highest fair value across applicable models'),
+  marginOfSafety:       z.number().nullable().describe('(median − price) / price; positive = composite says undervalued'),
+  pctModelsUndervalued: z.number().nullable().describe('Fraction of applicable models indicating undervaluation (decimal)'),
+  confidence:           z.number().describe('0–10 confidence score: blends number of applicable models, IQR tightness, and Beneish-status'),
+  contributingModels:   z.array(CompositeContributorSchema).describe('All models that produced a fair value'),
+  excludedModels:       z.array(CompositeExclusionSchema).describe('Models that were excluded with reason'),
+});
+export type CompositeFairValueResult = z.infer<typeof CompositeFairValueResultSchema>;
 
 export const InterestCoverageResultSchema = z.object({
   ratio:          z.number().nullable().describe('EBIT / interest expense; measures how many times operating profit covers interest payments'),
@@ -418,10 +611,15 @@ export const AnalysisResultSchema = z.object({
   altmanZ:         AltmanZResultSchema,
   ddm:             DDMResultSchema,
   epv:             EPVResultSchema,
+  rim:             RIMResultSchema,
+  ncav:            NCAVResultSchema,
+  peerMultiples:   PeerMultiplesResultSchema,
+  composite:       CompositeFairValueResultSchema,
   interestCoverage: InterestCoverageResultSchema,
   sortino:         SortinoResultSchema,
   beneish:         BeneishResultSchema,
   sectorMedians:   SectorMediansSchema.nullable().describe('Peer group median metrics; null when Finnhub peer data is unavailable'),
+  marketSignals:   MarketSignalsSchema.describe('Technicals, earnings revisions, options market data, and macro context'),
   llmAnalysis:     LLMAnalysisSchema,
   news:            z.array(NewsItemSchema).describe('Up to 10 recent news items from Finnhub'),
   perplexity:      z.object({

@@ -5,7 +5,7 @@ import chalk from 'chalk';
 
 import { getConfig, requireApiKey } from './config.js';
 import { logger } from './utils/logger.js';
-import { getFinancials, resolveSymbol, searchByQuery } from './data/yfinance.js';
+import { getFinancials, getOptionsSignals, resolveSymbol, searchByQuery } from './data/yfinance.js';
 import { getNews, getBasicFinancials, getSectorMedians } from './data/finnhub.js';
 import {
   calculateDCF, calculateGraham, calculateRatios,
@@ -13,25 +13,32 @@ import {
   calculateRuleOf40, calculateGrahamRevised, calculatePiotroski,
   calculateAltmanZ, calculateDDM, calculateEPV, calculateInterestCoverage,
   calculateSortino, calculateBeneish,
+  calculateRIM, calculateNCAV, calculatePeerMultiples, calculateCompositeFairValue,
   fmtBig,
 } from './analysis/metrics.js';
+import { computeTechnicals, DailyBar } from './analysis/technical.js';
 import { createProvider } from './providers/factory.js';
 import { TavilySearch } from './search/tavily.js';
 import { BraveSearch } from './search/brave.js';
 import {
-  readFinancials,   writeFinancials,
-  readAnalysis,     writeAnalysis,
-  readNews,         writeNews,
-  readPerplexity,   writePerplexity,
-  readSubmissions,  symbolDir,
+  readFinancials,    writeFinancials,
+  readAnalysis,      writeAnalysis,
+  readNews,          writeNews,
+  readMarketSignals, writeMarketSignals,
+  readPerplexity,    writePerplexity,
+  readSubmissions,   symbolDir,
 } from './cache.js';
 import { fetchEdgarFilings } from './data/edgar.js';
 import { getMarketRates } from './data/fred.js';
+import { getMacroBundle } from './data/macro.js';
 import { fetchPerplexity } from './data/perplexity.js';
 import { buildAnalysisPrompt } from './output/prompt.js';
 import { formatMarkdown } from './output/markdown.js';
 import { saveReports } from './output/report.js';
-import { AnalysisOptions, AnalysisResult, LLMAnalysis, NewsItem, SearchResult } from './types.js';
+import {
+  AnalysisOptions, AnalysisResult, EarningsRevisions, LLMAnalysis,
+  MarketSignals, NewsItem, OptionsSignals, SearchResult, StockFinancials,
+} from './types.js';
 
 // ─── Model defaults ───────────────────────────────────────────────────────────
 
@@ -173,23 +180,30 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
 
   const bypassFinancials = fetchMode === 'financials' || fetchMode === 'all';
   let financialsCached   = false;
-  let financials         = bypassFinancials ? null : readFinancials(cfg.cacheDir, symbol);
+  let financials: StockFinancials | null = bypassFinancials ? null : readFinancials(cfg.cacheDir, symbol);
+
+  // Daily bars + revisions live alongside StockFinancials in the bundle from getFinancials.
+  // When financials is cache-hit, we don't have them yet — refetch lazily below if marketSignals is missing.
+  let bundleDailyBars: DailyBar[] | null = null;
+  let bundleRevisions: EarningsRevisions | null = null;
 
   if (financials) {
     financialsCached = true;
   } else {
-    const [fresh, finnhubMetrics] = await Promise.all([
+    const [bundle, finnhubMetrics] = await Promise.all([
       getFinancials(symbol),
       cfg.finnhubApiKey ? getBasicFinancials(symbol, cfg.finnhubApiKey) : Promise.resolve(null),
     ]);
 
     if (finnhubMetrics) {
-      fresh.roic                 = finnhubMetrics.roic;
-      fresh.epsGrowth3Y          = finnhubMetrics.epsGrowth3Y;
-      fresh.dividendGrowthRate5Y = finnhubMetrics.dividendGrowthRate5Y;
+      bundle.financials.roic                 = finnhubMetrics.roic;
+      bundle.financials.epsGrowth3Y          = finnhubMetrics.epsGrowth3Y;
+      bundle.financials.dividendGrowthRate5Y = finnhubMetrics.dividendGrowthRate5Y;
     }
 
-    financials = fresh;
+    financials       = bundle.financials;
+    bundleDailyBars  = bundle.dailyBars;
+    bundleRevisions  = bundle.revisions;
     writeFinancials(cfg.cacheDir, symbol, financials);
   }
 
@@ -242,12 +256,58 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
 
   logger.success(`${financials.companyName}  $${financials.price.toFixed(2)}  ${fmtBig(financials.marketCap)}`);
 
+  // ── 1c. Market Signals (technicals + revisions + options + macro) ────────
+  let marketSignals: MarketSignals | null = readMarketSignals(cfg.cacheDir, symbol);
+
+  if (!marketSignals) {
+    logger.step('Computing market signals...');
+
+    // If financials came from cache, daily bars + revisions weren't fetched yet.
+    if (!bundleDailyBars || !bundleRevisions) {
+      const refresh = await getFinancials(symbol);
+      bundleDailyBars = refresh.dailyBars;
+      bundleRevisions = refresh.revisions;
+    }
+
+    const [macro, optionsRaw] = await Promise.all([
+      getMacroBundle(financials.sector, cfg.fredApiKey ?? null),
+      getOptionsSignals({
+        symbol,
+        spot: financials.price,
+        nextEarningsDate: financials.nextEarningsDate,
+        hv90: null,
+      }),
+    ]);
+
+    const technicals = computeTechnicals({
+      bars:       bundleDailyBars,
+      spyBars:    macro.spyBars,
+      sectorBars: macro.sectorBars ?? undefined,
+    });
+
+    // Backfill IV/HV90 ratio now that hv90 is known.
+    let options: OptionsSignals | null = optionsRaw;
+    if (options && options.ivAtm30d !== null && technicals.hv90 !== null && technicals.hv90 > 0) {
+      options = { ...options, ivVsHv90Ratio: options.ivAtm30d / technicals.hv90 };
+    }
+
+    marketSignals = {
+      technicals,
+      revisions: bundleRevisions,
+      options,
+      macro: macro.context,
+    };
+    writeMarketSignals(cfg.cacheDir, symbol, marketSignals);
+    logger.success('Market signals ready');
+  }
+
   // ── 2. Calculate All Metrics ──────────────────────────────────────────────
   logger.step('Running valuation models...');
-  const dcf              = calculateDCF(financials);
+  const rates = marketRates ?? undefined;
+  const dcf              = calculateDCF(financials, rates);
   const grahamNumber     = calculateGraham(financials);
   const ratios           = calculateRatios(financials);
-  const reverseDCF       = calculateReverseDCF(financials);
+  const reverseDCF       = calculateReverseDCF(financials, rates);
   const peterLynch       = calculatePeterLynch(financials);
   const evMultiples      = calculateEVMultiples(financials);
   const ruleOf40         = calculateRuleOf40(financials);
@@ -255,11 +315,18 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
   const piotroski        = calculatePiotroski(financials);
   const altmanZ          = calculateAltmanZ(financials);
   const ddm              = calculateDDM(financials, marketRates?.riskFreeRate);
-  const epv              = calculateEPV(financials);
+  const epv              = calculateEPV(financials, rates);
+  const rim              = calculateRIM(financials, rates);
+  const ncav             = calculateNCAV(financials);
+  const peerMultiples    = calculatePeerMultiples(financials, sectorMedians);
   const interestCoverage = calculateInterestCoverage(financials);
   const sortino          = calculateSortino(financials, marketRates?.riskFreeRate);
   const beneish          = calculateBeneish(financials);
-  logger.success('15 models calculated');
+  const composite        = calculateCompositeFairValue(financials, {
+    dcf, graham: grahamNumber, grahamRevised, peterLynch, ddm, epv, rim,
+    peerMultiples, beneish,
+  });
+  logger.success('19 models calculated');
 
   // ── 3. Optional Web Search ────────────────────────────────────────────────
   let searchResults: SearchResult[] = [];
@@ -298,7 +365,8 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     const prompt = buildAnalysisPrompt(financials, {
       dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
       ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,
-      sortino, beneish, sectorMedians, news,
+      sortino, beneish, rim, ncav, peerMultiples, composite,
+      sectorMedians, news, marketSignals,
     }, perplexity ?? undefined);
     const [analysis] = await Promise.all([
       llm.analyze(prompt, searchResults),
@@ -318,8 +386,10 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     provider: options.modelId, searchProvider: options.search,
     financials, dcf, grahamNumber, ratios,
     reverseDCF, peterLynch, evMultiples, ruleOf40, grahamRevised,
-    piotroski, altmanZ, ddm, epv, interestCoverage,
+    piotroski, altmanZ, ddm, epv, rim, ncav, peerMultiples, composite,
+    interestCoverage,
     sortino, beneish, sectorMedians,
+    marketSignals,
     llmAnalysis: llmAnalysis!, news,
     perplexity: perplexity ?? null,
   };
