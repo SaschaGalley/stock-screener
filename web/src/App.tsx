@@ -35,6 +35,10 @@ export default function App() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [progress, setProgress] = useState<ProgressEvent[]>([]);
   const closeStreamRef = useRef<(() => void) | null>(null);
+  // Below `lg` (1024px) one of the two side panels can slide in as a drawer.
+  // Above `lg` both panels are always visible in the flex flow and this state
+  // is irrelevant.
+  const [mobileMenu, setMobileMenu] = useState<'stocks' | 'settings' | null>(null);
 
   // Wrap setSelected to keep URL hash in sync
   const setSelected = useCallback((s: string | null) => {
@@ -131,18 +135,58 @@ export default function App() {
     closeStreamRef.current = close;
   }
 
+  // Auto-close the stock drawer after picking a symbol on mobile.
+  const handleSelectAndClose = useCallback((s: string) => {
+    handleSelectSymbol(s);
+    setMobileMenu(null);
+  }, [handleSelectSymbol]);
+
   return (
     <div className="flex h-full flex-col bg-ink-950 text-ink-100">
-      <div className="flex flex-1 overflow-hidden">
-        <StockSidebar
-          stocks={stocks}
-          selectedSymbol={selected}
-          onSelect={handleSelectSymbol}
-          onDeleted={(s) => {
-            if (selected === s) setSelected(null);
-            reloadStockList();
-          }}
+      {/* Mobile-only top bar with sidebar toggles. Hidden on lg+ where both
+          sidebars are always visible in the flex flow. */}
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-ink-700 bg-ink-900 px-3 py-2 lg:hidden">
+        <button
+          onClick={() => setMobileMenu(mobileMenu === 'stocks' ? null : 'stocks')}
+          className="rounded p-1.5 text-lg leading-none text-ink-200 hover:bg-ink-800"
+          aria-label="Toggle stock list"
+        >☰</button>
+        <span className="truncate font-mono text-xs text-ink-300">
+          {selected ?? 'pick a stock below'}
+        </span>
+        <button
+          onClick={() => setMobileMenu(mobileMenu === 'settings' ? null : 'settings')}
+          className="rounded p-1.5 text-base leading-none text-ink-200 hover:bg-ink-800"
+          aria-label="Toggle settings"
+        >⚙</button>
+      </header>
+
+      {/* Backdrop while a mobile drawer is open. Clicking it closes the drawer. */}
+      {mobileMenu && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 lg:hidden"
+          onClick={() => setMobileMenu(null)}
+          aria-hidden
         />
+      )}
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Stock sidebar — slide-in drawer on mobile, regular column on lg+ */}
+        <div
+          className={`fixed inset-y-0 left-0 z-40 transition-transform duration-200 ease-out
+            ${mobileMenu === 'stocks' ? 'translate-x-0' : '-translate-x-full'}
+            lg:relative lg:inset-auto lg:translate-x-0 lg:transition-none`}
+        >
+          <StockSidebar
+            stocks={stocks}
+            selectedSymbol={selected}
+            onSelect={handleSelectAndClose}
+            onDeleted={(s) => {
+              if (selected === s) setSelected(null);
+              reloadStockList();
+            }}
+          />
+        </div>
 
         <main className="flex flex-1 flex-col overflow-hidden">
           {error && (
@@ -179,14 +223,21 @@ export default function App() {
           />
         </main>
 
-        <SettingsSidebar
-          symbol={selected}
-          settings={settings}
-          onChange={setSettings}
-          onLoad={() => selected && startAnalyze(selected)}
-          onReload={() => selected && startAnalyze(selected)}
-          loading={loading}
-        />
+        {/* Settings sidebar — slide-in drawer on mobile, regular column on lg+ */}
+        <div
+          className={`fixed inset-y-0 right-0 z-40 transition-transform duration-200 ease-out
+            ${mobileMenu === 'settings' ? 'translate-x-0' : 'translate-x-full'}
+            lg:relative lg:inset-auto lg:translate-x-0 lg:transition-none`}
+        >
+          <SettingsSidebar
+            symbol={selected}
+            settings={settings}
+            onChange={setSettings}
+            onLoad={() => selected && startAnalyze(selected)}
+            onReload={() => selected && startAnalyze(selected)}
+            loading={loading}
+          />
+        </div>
       </div>
     </div>
   );

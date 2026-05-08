@@ -37,17 +37,17 @@ export default function AnalyzeForm({ settings, loading, onAnalyze }: Props) {
       onSubmit={submit}
       className="border-t border-ink-800 bg-ink-900 px-4 py-3"
     >
-      <div className="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-wider text-ink-500">
-        <span>Analyze stock</span>
-        <span className="font-mono">{flagsLabel}</span>
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-ink-500">
+        <span className="shrink-0">Analyze stock</span>
+        <span className="truncate font-mono" title={flagsLabel}>{flagsLabel}</span>
       </div>
       <div className="flex gap-2">
-        <div className="relative flex-1">
+        <div className="relative min-w-0 flex-1">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ticker (AAPL, NVDA, FACC) or company name (Siemens Energy)…"
-            className="w-full rounded border border-ink-700 bg-ink-950 px-3 py-2 pr-20 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent focus:outline-none"
+            placeholder="Ticker or company name…"
+            className="w-full rounded border border-ink-700 bg-ink-950 px-3 py-2 pr-16 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent focus:outline-none"
             disabled={loading}
           />
           {inputType && (
@@ -59,7 +59,7 @@ export default function AnalyzeForm({ settings, loading, onAnalyze }: Props) {
         <button
           type="submit"
           disabled={!input.trim() || loading}
-          className="rounded bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:bg-ink-700 disabled:text-ink-500"
+          className="shrink-0 rounded bg-accent px-3 py-2 text-sm font-medium text-white transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:bg-ink-700 disabled:text-ink-500 sm:px-4"
         >
           {loading ? 'Analyzing…' : 'Analyze'}
         </button>

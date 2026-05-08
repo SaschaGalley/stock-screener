@@ -45,7 +45,7 @@ export default function Section({ title, subtitle, defaultOpen = true, children,
         </div>
         {rightHeader && <div className="flex items-center gap-2">{rightHeader}</div>}
       </button>
-      {open && <div className="p-4">{children}</div>}
+      {open && <div className="overflow-x-auto p-3 sm:p-4">{children}</div>}
     </section>
   );
 }
