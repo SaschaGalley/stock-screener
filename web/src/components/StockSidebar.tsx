@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { StockSummary } from '../types';
 import { api } from '../api';
+import StockLogo, { initialsFromName } from './StockLogo';
 
 interface Props {
   stocks: StockSummary[];
@@ -15,42 +16,6 @@ function fmtMcap(n: number | null): string {
   if (n >= 1e9)  return `$${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6)  return `$${(n / 1e6).toFixed(0)}M`;
   return `$${n.toFixed(0)}`;
-}
-
-function logoUrl(stock: StockSummary, size = 32): string | null {
-  if (!stock.logoDomain) return null;
-  const sz = size <= 16 ? 32 : size <= 32 ? 64 : size <= 64 ? 128 : 256;
-  return `https://www.google.com/s2/favicons?domain=${stock.logoDomain}&sz=${sz}`;
-}
-
-function StockLogo({ stock, size = 24 }: { stock: StockSummary; size?: number }) {
-  const [errored, setErrored] = useState(false);
-  const url = logoUrl(stock, size * 2);
-  if (!url || errored) {
-    const initials = stock.companyName
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase() ?? '')
-      .join('');
-    return (
-      <div
-        className="flex shrink-0 items-center justify-center rounded bg-ink-700 font-mono text-[10px] font-semibold text-ink-100"
-        style={{ width: size, height: size }}
-      >
-        {initials || '·'}
-      </div>
-    );
-  }
-  return (
-    <img
-      src={url}
-      alt={stock.companyName}
-      className="shrink-0 rounded"
-      style={{ width: size, height: size, objectFit: 'contain', background: '#fff' }}
-      onError={() => setErrored(true)}
-    />
-  );
 }
 
 export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDeleted }: Props) {
@@ -117,7 +82,12 @@ export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDelet
                         : 'border-l-2 border-l-transparent hover:bg-ink-800'
                     }`}
                   >
-                    <StockLogo stock={s} size={28} />
+                    <StockLogo
+                      domain={s.logoDomain}
+                      symbol={s.symbol}
+                      fallbackInitials={initialsFromName(s.companyName)}
+                      size={28}
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className={`truncate text-sm font-medium ${active ? 'text-ink-50' : 'text-ink-200'}`}>

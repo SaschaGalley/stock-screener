@@ -1,25 +1,28 @@
-import { useEffect, useState } from 'react';
-import { api } from '../api';
+import { useEffect, useState } from "react";
+import { api } from "../api";
 import type {
-  StockBundle, StockSummary, AnalysisFlagsKey, CachedAnalysisEntry,
-} from '../types';
-import VerdictHero from './VerdictHero';
-import BullBearRisks from './BullBearRisks';
-import StockHeader from './StockHeader';
-import Section from './Section';
-import CompositeChart from './charts/CompositeChart';
-import ReturnsChart from './charts/ReturnsChart';
-import ValuationDetail from './sections/ValuationDetail';
-import QualityScores from './sections/QualityScores';
-import FundamentalsGrid from './sections/FundamentalsGrid';
-import PeerCompare from './sections/PeerCompare';
-import MarketSignalsPanel from './sections/MarketSignalsPanel';
-import TechnicalSignalsPanel from './sections/TechnicalSignalsPanel';
-import OwnershipFlow from './sections/OwnershipFlow';
-import EarningsBlock from './sections/EarningsBlock';
-import NewsAndResearch from './sections/NewsAndResearch';
-import CompanyInfo from './sections/CompanyInfo';
-import FundamentalsHistoryChart from './charts/FundamentalsHistoryChart';
+  StockBundle,
+  StockSummary,
+  AnalysisFlagsKey,
+  CachedAnalysisEntry,
+} from "../types";
+import VerdictHero from "./VerdictHero";
+import BullBearRisks from "./BullBearRisks";
+import StockHeader from "./StockHeader";
+import Section from "./Section";
+import CompositeChart from "./charts/CompositeChart";
+import ValuationDetail from "./sections/ValuationDetail";
+import QualityScores from "./sections/QualityScores";
+import FundamentalsGrid from "./sections/FundamentalsGrid";
+import PeerCompare from "./sections/PeerCompare";
+import TechnicalSignalsPanel from "./sections/TechnicalSignalsPanel";
+import PriceAction from "./sections/PriceAction";
+import MarketContext from "./sections/MarketContext";
+import OwnershipFlow from "./sections/OwnershipFlow";
+import EarningsBlock from "./sections/EarningsBlock";
+import NewsAndResearch from "./sections/NewsAndResearch";
+import CompanyInfo from "./sections/CompanyInfo";
+import FundamentalsHistoryChart from "./charts/FundamentalsHistoryChart";
 
 interface Props {
   symbol: string;
@@ -28,7 +31,12 @@ interface Props {
   refreshKey: number;
 }
 
-export default function AnalysisView({ symbol, summary, flags, refreshKey }: Props) {
+export default function AnalysisView({
+  symbol,
+  summary,
+  flags,
+  refreshKey,
+}: Props) {
   const [bundle, setBundle] = useState<StockBundle | null>(null);
   const [analysis, setAnalysis] = useState<CachedAnalysisEntry | null>(null);
   // bundleLoading only flips on symbol change; flag-toggling never triggers a full reload.
@@ -41,7 +49,8 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
   useEffect(() => {
     setBundleLoading(true);
     setError(null);
-    api.getStock(symbol)
+    api
+      .getStock(symbol)
       .then(setBundle)
       .catch((e) => setError((e as Error).message))
       .finally(() => setBundleLoading(false));
@@ -51,10 +60,17 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
   // no loading state, just swap the result silently when the user toggles flags.
   useEffect(() => {
     let cancelled = false;
-    api.getAnalysisByFlags(symbol, flags)
-      .then((a) => { if (!cancelled) setAnalysis(a); })
-      .catch(() => { if (!cancelled) setAnalysis(null); });
-    return () => { cancelled = true; };
+    api
+      .getAnalysisByFlags(symbol, flags)
+      .then((a) => {
+        if (!cancelled) setAnalysis(a);
+      })
+      .catch(() => {
+        if (!cancelled) setAnalysis(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [symbol, flags.model, flags.search, flags.pplx, refreshKey]);
 
   if (bundleLoading && !bundle) {
@@ -77,13 +93,17 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
             </h1>
             <span className="font-mono text-xs text-ink-400">{symbol}</span>
           </div>
-          <RefreshOnlyButton symbol={symbol} onRefreshed={() => setLocalRefresh((x) => x + 1)} />
+          <RefreshOnlyButton
+            symbol={symbol}
+            onRefreshed={() => setLocalRefresh((x) => x + 1)}
+          />
         </header>
         <div className="flex flex-1 items-center justify-center p-8 text-center">
           <div className="max-w-md">
-            <p className="mb-2 text-sm text-amber-400">{error || 'No data'}</p>
+            <p className="mb-2 text-sm text-amber-400">{error || "No data"}</p>
             <p className="text-xs text-ink-500">
-              Click <span className="font-mono">↻ Refresh</span> above to re-fetch from Yahoo &amp; Finnhub.
+              Click <span className="font-mono">↻ Refresh</span> above to
+              re-fetch from Yahoo &amp; Finnhub.
             </p>
           </div>
         </div>
@@ -106,7 +126,11 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-7xl space-y-4 px-6 py-5">
           {/* TIER 0: Company info — restored after refactor */}
-          {(f.description || f.employees || f.website || f.isin || f.industry) && (
+          {(f.description ||
+            f.employees ||
+            f.website ||
+            f.isin ||
+            f.industry) && (
             <Section title="About the Company" defaultOpen={false}>
               <CompanyInfo financials={f} />
             </Section>
@@ -118,16 +142,16 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
             composite={m.composite}
             llm={llm}
             analyst={{
-              targetMeanPrice:    f.targetMeanPrice,
-              analystTargetLow:   f.analystTargetLow,
-              analystTargetHigh:  f.analystTargetHigh,
+              targetMeanPrice: f.targetMeanPrice,
+              analystTargetLow: f.analystTargetLow,
+              analystTargetHigh: f.analystTargetHigh,
               analystTargetMedian: f.analystTargetMedian,
-              analystCount:       f.analystCount,
-              analystStrongBuy:   f.analystStrongBuy,
-              analystBuy:         f.analystBuy,
-              analystHold:        f.analystHold,
-              analystSell:        f.analystSell,
-              analystStrongSell:  f.analystStrongSell,
+              analystCount: f.analystCount,
+              analystStrongBuy: f.analystStrongBuy,
+              analystBuy: f.analystBuy,
+              analystHold: f.analystHold,
+              analystSell: f.analystSell,
+              analystStrongSell: f.analystStrongSell,
             }}
           />
 
@@ -135,23 +159,43 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
           {llm && <BullBearRisks llm={llm} />}
 
           {/* TIER 3: COMPOSITE BAR CHART (Primary + Conservative tiers) */}
-          {(m.composite.primary.models.length > 0 || m.composite.conservative.models.length > 0) && (
+          {(m.composite.primary.models.length > 0 ||
+            m.composite.conservative.models.length > 0) && (
             <Section
               title="Fair Value Distribution"
-              subtitle={`Primary $${m.composite.primary.median?.toFixed(0) ?? '—'} · Conservative $${m.composite.conservative.median?.toFixed(0) ?? '—'}`}
+              subtitle={`Primary $${m.composite.primary.median?.toFixed(0) ?? "—"} · Conservative $${m.composite.conservative.median?.toFixed(0) ?? "—"}`}
             >
               <div className="mb-2 text-[11px] text-ink-500">
-                <span className="mr-3"><span className="inline-block h-2 w-3 rounded-sm bg-emerald-500 align-middle"></span> Primary (filled) · market-aligned</span>
-                <span><span className="inline-block h-2 w-3 rounded-sm border border-emerald-500 align-middle"></span> Conservative (outlined) · value lens</span>
+                <span className="mr-3">
+                  <span className="inline-block h-2 w-3 rounded-sm bg-emerald-500 align-middle"></span>{" "}
+                  Primary (filled) · market-aligned
+                </span>
+                <span>
+                  <span className="inline-block h-2 w-3 rounded-sm border border-emerald-500 align-middle"></span>{" "}
+                  Conservative (outlined) · value lens
+                </span>
               </div>
-              <div style={{ height: Math.max(180, (m.composite.primary.models.length + m.composite.conservative.models.length) * 28 + 80) }}>
+              <div
+                style={{
+                  height: Math.max(
+                    180,
+                    (m.composite.primary.models.length +
+                      m.composite.conservative.models.length) *
+                      28 +
+                      80,
+                  ),
+                }}
+              >
                 <CompositeChart composite={m.composite} price={f.price} />
               </div>
             </Section>
           )}
 
           {/* TIER 4: VALUATION DETAILS */}
-          <Section title="Valuation Models" subtitle="DCF, peer multiples, reverse DCF">
+          <Section
+            title="Valuation Models"
+            subtitle="DCF, peer multiples, reverse DCF"
+          >
             <ValuationDetail metrics={m} price={f.price} />
           </Section>
 
@@ -161,20 +205,34 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
           </Section>
 
           {/* TIER 6: EARNINGS (history + forward) */}
-          {(f.earningsSurprises?.length > 0 || f.earningsEstimates?.length > 0) && (
+          {(f.earningsSurprises?.length > 0 ||
+            f.earningsEstimates?.length > 0) && (
             <Section title="Earnings">
               <EarningsBlock financials={f} />
             </Section>
           )}
 
+          {/* TIER 8: FUNDAMENTALS */}
+          <Section title="Fundamentals" defaultOpen={false}>
+            <FundamentalsGrid
+              financials={f}
+              ratios={m.ratios}
+              evMultiples={m.evMultiples}
+            />
+          </Section>
+
           {/* TIER 6b: 5y Fundamentals History (overlay charts) */}
-          {f.fundamentalsHistory && (f.fundamentalsHistory.revenue?.length > 0
-            || f.fundamentalsHistory.netIncome?.length > 0
-            || f.fundamentalsHistory.eps?.length > 0) && (
-            <Section title="Fundamentals History" subtitle="last ~5 fiscal years">
-              <FundamentalsHistoryChart history={f.fundamentalsHistory} />
-            </Section>
-          )}
+          {f.fundamentalsHistory &&
+            (f.fundamentalsHistory.revenue?.length > 0 ||
+              f.fundamentalsHistory.netIncome?.length > 0 ||
+              f.fundamentalsHistory.eps?.length > 0) && (
+              <Section
+                title="Fundamentals History"
+                subtitle="last ~5 fiscal years"
+              >
+                <FundamentalsHistoryChart history={f.fundamentalsHistory} />
+              </Section>
+            )}
 
           {/* TIER 7: PEER COMPARISON */}
           {bundle.sectorMedians && (
@@ -188,11 +246,6 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
             </Section>
           )}
 
-          {/* TIER 8: FUNDAMENTALS */}
-          <Section title="Fundamentals" defaultOpen={false}>
-            <FundamentalsGrid financials={f} ratios={m.ratios} evMultiples={m.evMultiples} />
-          </Section>
-
           {/* TIER 8b: TECHNICAL SIGNALS GAUGE (TradingView-style) */}
           {bundle.technicalSignals && (
             <Section
@@ -203,18 +256,25 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
             </Section>
           )}
 
-          {/* TIER 9: PRICE ACTION & MARKET SIGNALS */}
+          {/* TIER 9a: PRICE ACTION — what HAS the stock done (returns, vol, RS) */}
           {bundle.marketSignals && (
-            <Section title="Price Action & Market Signals" defaultOpen={false}>
-              {bundle.marketSignals.technicals?.returns && (
-                <div className="mb-4">
-                  <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Trailing Returns</h3>
-                  <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 180 }}>
-                    <ReturnsChart returns={bundle.marketSignals.technicals.returns} />
-                  </div>
-                </div>
-              )}
-              <MarketSignalsPanel marketSignals={bundle.marketSignals} />
+            <Section
+              title="Price Action"
+              subtitle="returns, volatility, position, relative strength"
+              defaultOpen={false}
+            >
+              <PriceAction marketSignals={bundle.marketSignals} />
+            </Section>
+          )}
+
+          {/* TIER 9b: MARKET CONTEXT — what's around the stock (options, revisions, macro) */}
+          {bundle.marketSignals && (
+            <Section
+              title="Market Context"
+              subtitle="options, analyst revisions, macro"
+              defaultOpen={false}
+            >
+              <MarketContext marketSignals={bundle.marketSignals} />
             </Section>
           )}
 
@@ -226,13 +286,17 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
           {/* TIER 11: PERPLEXITY + NEWS */}
           {(bundle.perplexity || bundle.news.length > 0) && (
             <Section title="Research & News" defaultOpen={false}>
-              <NewsAndResearch news={bundle.news} perplexity={bundle.perplexity} />
+              <NewsAndResearch
+                news={bundle.news}
+                perplexity={bundle.perplexity}
+              />
             </Section>
           )}
 
           {!llm && (
             <div className="rounded-lg border border-amber-700 bg-amber-950 p-4 text-center text-sm text-amber-200">
-              No LLM analysis cached for the current settings. Open the right sidebar and click <strong>Run Analysis</strong> to generate one.
+              No LLM analysis cached for the current settings. Open the right
+              sidebar and click <strong>Run Analysis</strong> to generate one.
             </div>
           )}
         </div>
@@ -242,7 +306,13 @@ export default function AnalysisView({ symbol, summary, flags, refreshKey }: Pro
 }
 
 /** Standalone Refresh button used in the error fallback header. */
-function RefreshOnlyButton({ symbol, onRefreshed }: { symbol: string; onRefreshed: () => void }) {
+function RefreshOnlyButton({
+  symbol,
+  onRefreshed,
+}: {
+  symbol: string;
+  onRefreshed: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   async function handle() {
     if (busy) return;
@@ -262,7 +332,7 @@ function RefreshOnlyButton({ symbol, onRefreshed }: { symbol: string; onRefreshe
       disabled={busy}
       className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {busy ? '⟳ Refreshing…' : '↻ Refresh'}
+      {busy ? "⟳ Refreshing…" : "↻ Refresh"}
     </button>
   );
 }
