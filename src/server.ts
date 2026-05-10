@@ -60,7 +60,7 @@ function readJsonEntry<T>(file: string, expectedVersion?: number): CacheRead<T> 
 }
 
 // Schema versions — kept in sync with cache.ts. Bump matching constant there.
-const FINANCIALS_VERSION_SERVER     = 14;
+const FINANCIALS_VERSION_SERVER     = 15;
 const MARKET_SIGNALS_VERSION_SERVER = 2;
 
 function listCachedSymbols(cacheDir: string): string[] {

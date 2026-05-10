@@ -214,12 +214,66 @@ export async function searchByQuery(query: string): Promise<string> {
   throw new Error(`No equity found for query "${query}" — try a more specific name or use the ticker directly`);
 }
 
-async function fetchIsin(symbol: string): Promise<string | null> {
+/**
+ * Fetch the ISIN from Wikidata.
+ *
+ * Background: Yahoo Finance silently dropped the `isin` field from
+ * /v1/finance/search at some point — empirically empty for US, FR, and DE
+ * tickers. Google Finance only embeds ISINs as part of news-article URLs in
+ * its rendered HTML, which makes scraping prone to picking up *unrelated*
+ * companies' ISINs (verified e.g. for JPM where Commerzbank news links yielded
+ * DE000CBK1001). Wikidata, on the other hand, has a curated `P946` claim
+ * (ISIN) on every major listed company — globally, multilingual, free, and
+ * available as a structured JSON API.
+ *
+ * Lookup flow:
+ *   1) wbsearchentities by company longName → up to 5 candidate Q-ids.
+ *   2) For each candidate, fetch the entity JSON and read claims.P946.
+ *   3) Return the first ISIN that matches the canonical 12-char shape.
+ *
+ * Edge cases:
+ * - The longName from Yahoo (`pr.longName`) is what we feed in. If only the
+ *   ticker is available, search falls back to that — works for some symbols
+ *   but is less reliable.
+ * - Tested across AAPL, MSFT, NVDA, JPM, BAC, BRK-B, AIR.PA (NL parent),
+ *   BMW.DE, ENR.DE, NESN.SW, ASML.AS, SAP.DE, TM, TSM — all resolved when
+ *   given the proper company name.
+ */
+async function fetchIsin(symbol: string, longName: string | null): Promise<string | null> {
+  const queryName = longName ?? symbol;
+  const ua = 'stock-cli/0.1 (research-tool; xashmedia@gmail.com)';
   try {
-    const quotes = await yahooSearch(symbol, 3);
-    const match = quotes.find((q) => q.symbol === symbol && q.isin) ?? quotes.find((q) => q.isin);
-    return match?.isin ?? null;
-  } catch { return null; }
+    const searchUrl =
+      `https://www.wikidata.org/w/api.php?action=wbsearchentities` +
+      `&search=${encodeURIComponent(queryName)}` +
+      `&language=en&format=json&limit=5&type=item`;
+    const sr = await fetch(searchUrl, {
+      headers: { 'User-Agent': ua },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!sr.ok) return null;
+    const sd = await sr.json() as { search?: Array<{ id: string }> };
+    const candidates = (sd.search ?? []).slice(0, 5).map((s) => s.id);
+
+    for (const qid of candidates) {
+      const er = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${qid}.json`, {
+        headers: { 'User-Agent': ua },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!er.ok) continue;
+      const ed = await er.json() as { entities?: Record<string, { claims?: Record<string, any[]> }> };
+      const isinClaims = ed.entities?.[qid]?.claims?.P946 ?? [];
+      for (const c of isinClaims) {
+        const v = c?.mainsnak?.datavalue?.value;
+        if (typeof v === 'string' && /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(v)) {
+          return v;
+        }
+      }
+    }
+  } catch (e) {
+    logger.warn(`Wikidata ISIN lookup failed for ${symbol}: ${(e as Error).message}`);
+  }
+  return null;
 }
 
 // ─── Earnings revisions / analyst MoM extraction ──────────────────────────────
@@ -477,7 +531,7 @@ export interface FinancialsBundle {
 export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   logger.step(`Fetching financials for ${symbol}...`);
 
-  const [quote, summary, bsData, finData, cfData, finQData, historicalData, isin] = await Promise.all([
+  const [quote, summary, bsData, finData, cfData, finQData, historicalData] = await Promise.all([
     safeQuote(symbol),
     safeSummary(symbol),
     safeTimeSeries(symbol, 'balance-sheet'),
@@ -485,7 +539,6 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     safeTimeSeries(symbol, 'cash-flow'),
     safeQuarterlyFinancials(symbol),
     safeHistoricalData(symbol),
-    fetchIsin(symbol),
   ]);
 
   const { monthlyReturns, monthlyPrices, dailyBars } = historicalData;
@@ -497,6 +550,14 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   const sd = summary?.summaryDetail        ?? {};
   const ap = summary?.assetProfile         ?? {};
   const pr = summary?.price                ?? {};
+
+  // ISIN: kicked off as soon as we have the company longName from Yahoo's
+  // price module. Wikidata's wbsearchentities works best with the canonical
+  // company name (not the ticker), e.g. "ASML Holding" rather than "ASML.AS".
+  // Run in parallel with the rest of the parsing below — usually finishes
+  // before the function returns.
+  const longNameForIsin = str(pr.longName) ?? str(pr.shortName) ?? null;
+  const isinPromise = fetchIsin(symbol, longNameForIsin);
   const rtTrend: any[] = (summary as any)?.recommendationTrend?.trend ?? [];
   const rt  = rtTrend?.[0] ?? {};
   const cal = (summary as any)?.calendarEvents ?? {};
@@ -693,6 +754,10 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     }
     return pes.length >= 2 ? pes.reduce((a, b) => a + b, 0) / pes.length : null;
   })();
+
+  // Resolve the parallel ISIN lookup. By the time we get here the parsing
+  // above has been doing its work in parallel, so this rarely blocks.
+  const isin = await isinPromise;
 
   const financials: StockFinancials = {
     symbol: symbol.toUpperCase(),

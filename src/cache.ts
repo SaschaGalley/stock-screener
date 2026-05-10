@@ -15,7 +15,7 @@ const MARKET_SIGNALS_TTL_MS = 30 * 60 * 1000;      // 30 min (technicals + optio
 const PERPLEXITY_TTL_MS    = 12 * 60 * 60 * 1000;  // 12 hours
 
 // Bump to invalidate all cached entries of that type
-const FINANCIALS_VERSION     = 14;  // bumped — added quarterlyRevenues (run-rate P/S aka Simple Valuation Ratio)
+const FINANCIALS_VERSION     = 15;  // bumped — ISIN now sourced from Wikidata (Yahoo dropped the field); old caches have null ISIN
 const ANALYSIS_VERSION       = 4;   // bumped — bull/bear are now string[] of 3 bullets each
 const NEWS_VERSION           = 1;
 const MARKET_SIGNALS_VERSION = 2;  // bumped — technicals expanded with EMAs, Stoch, CCI, WilliamsR, Momentum
