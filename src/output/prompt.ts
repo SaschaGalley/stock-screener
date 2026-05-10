@@ -111,6 +111,80 @@ function optionsSection(s: MarketSignals): string {
 - Implied Move at next earnings: ${move}`;
 }
 
+/**
+ * Wall Street consensus distilled to a single directional verdict + score.
+ * Designed to be hard for the LLM to ignore: a one-line verdict label, the
+ * weighted score (Strong Buy = +2 down to Strong Sell = −2, normalized to
+ * [−1, +1]), and the upside vs the mean target. Sits as its own section
+ * rather than buried in Market Overview, so the model treats it as a
+ * first-class signal alongside DCF/Composite — not an afterthought.
+ */
+function analystConsensusSection(f: StockFinancials): string {
+  const sb = f.analystStrongBuy  ?? 0;
+  const b  = f.analystBuy        ?? 0;
+  const h  = f.analystHold       ?? 0;
+  const s  = f.analystSell       ?? 0;
+  const ss = f.analystStrongSell ?? 0;
+  const total = sb + b + h + s + ss;
+
+  if (total === 0 && f.targetMeanPrice === null) {
+    return `### Analyst Consensus (Wall Street view — independent signal)\n- No analyst coverage available.`;
+  }
+
+  // Weighted score: Strong Buy = +2, Buy = +1, Hold = 0, Sell = −1, Strong Sell = −2.
+  // Normalize by (total × 2) so range is [−1, +1].
+  const score = total > 0
+    ? (sb * 2 + b * 1 + h * 0 + s * -1 + ss * -2) / (total * 2)
+    : null;
+
+  const verdict = score === null ? 'N/A'
+    : score >=  0.6 ? 'STRONG BULLISH'
+    : score >=  0.2 ? 'BULLISH'
+    : score >= -0.2 ? 'NEUTRAL'
+    : score >= -0.6 ? 'BEARISH'
+    :                 'STRONG BEARISH';
+
+  // Buy-side share = (StrongBuy + Buy) / total.
+  const buySharePct = total > 0 ? ((sb + b) / total) * 100 : null;
+  const sellSharePct = total > 0 ? ((s + ss) / total) * 100 : null;
+
+  // Upside vs current price.
+  const upside = f.targetMeanPrice !== null && f.price > 0
+    ? (f.targetMeanPrice - f.price) / f.price
+    : null;
+
+  const breakdown = [
+    sb ? `${sb} Strong Buy`   : '',
+    b  ? `${b} Buy`            : '',
+    h  ? `${h} Hold`           : '',
+    s  ? `${s} Sell`           : '',
+    ss ? `${ss} Strong Sell`   : '',
+  ].filter(Boolean).join(' + ');
+
+  const targetLine = f.targetMeanPrice !== null
+    ? `$${f.targetMeanPrice.toFixed(2)} mean${upside !== null ? ` (${signedPct(upside)} vs current $${f.price.toFixed(2)})` : ''}${
+        f.analystTargetLow !== null && f.analystTargetHigh !== null
+          ? ` · range $${f.analystTargetLow.toFixed(2)}–$${f.analystTargetHigh.toFixed(2)}`
+          : ''
+      }`
+    : 'no consensus target';
+
+  const scoreLine = score !== null
+    ? `${score >= 0 ? '+' : ''}${score.toFixed(2)} (range −1 to +1)`
+    : 'N/A';
+
+  const shareLine = buySharePct !== null && sellSharePct !== null
+    ? `${buySharePct.toFixed(0)}% buy-rated · ${sellSharePct.toFixed(0)}% sell-rated`
+    : 'no breakdown';
+
+  return `### Analyst Consensus (Wall Street view — independent signal)
+- Verdict: **${verdict}** — weighted score ${scoreLine}
+- Coverage: ${total} analysts → ${breakdown || 'no rating breakdown'}
+- ${shareLine}
+- Mean price target: ${targetLine}
+- Note: this is the aggregated view of sell-side equity research — independent from our DCF/Composite/multiples. Triangulate against them; don't ignore a strong directional consensus just because intrinsic models disagree.`;
+}
+
 function macroSection(s: MarketSignals): string {
   const m = s.macro;
   return `### Macro Context
@@ -134,14 +208,7 @@ export function buildAnalysisPrompt(f: StockFinancials, d: PromptData, perplexit
 - Sector: ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}
 - 52W Range: $${fmt(f.fiftyTwoWeekLow)} – $${fmt(f.fiftyTwoWeekHigh)}
 - Beta: ${fmt(f.beta)}
-- Analyst Price Target: ${f.targetMeanPrice ? `$${f.targetMeanPrice.toFixed(2)} avg` : 'N/A'}${f.analystTargetLow !== null && f.analystTargetHigh !== null ? ` | Range $${f.analystTargetLow}–$${f.analystTargetHigh}` : ''}${f.analystCount ? ` | ${f.analystCount} analysts` : ''}
-- Analyst Ratings: ${[
-    f.analystStrongBuy  ? `Strong Buy: ${f.analystStrongBuy}`  : '',
-    f.analystBuy        ? `Buy: ${f.analystBuy}`               : '',
-    f.analystHold       ? `Hold: ${f.analystHold}`             : '',
-    f.analystSell       ? `Sell: ${f.analystSell}`             : '',
-    f.analystStrongSell ? `Strong Sell: ${f.analystStrongSell}` : '',
-  ].filter(Boolean).join(' | ') || 'N/A'}
+  (Wall Street consensus — see dedicated section below.)
 
 ### Traditional Valuation
 - P/E: ${fmt(d.ratios.pe, 'x')} | Forward P/E: ${fmt(d.ratios.forwardPE, 'x')} | Avg P/E 5Y: ${fmt(f.avgPE5Y, 'x')} | PEG: ${fmt(d.ratios.peg)}
@@ -168,6 +235,8 @@ export function buildAnalysisPrompt(f: StockFinancials, d: PromptData, perplexit
 - ${d.composite.pctModelsUndervalued !== null ? `${(d.composite.pctModelsUndervalued * 100).toFixed(0)}% of models indicate undervaluation` : ''}
 - Contributing: ${d.composite.contributingModels.map((c) => `${c.name} $${c.fairValue.toFixed(2)}`).join(' | ') || 'none'}
 - Excluded: ${d.composite.excludedModels.map((e) => `${e.name} (${e.reason})`).join(' | ') || 'none'}
+
+${analystConsensusSection(f)}
 
 ### Single-Equation Intrinsic Value Models
 - DCF (2-Stage FCFF): ${d.dcf.fairValue !== null
@@ -255,5 +324,11 @@ Bullet writing rules — Alphaspread-style:
 - No filler verbs like "appears", "may", "could potentially". Be direct.
 - Each bullet is independent — no "first … second … finally" connectors.
 
-Focus on: competitive moat, valuation vs. intrinsic value, growth quality, financial health, technical posture (trend, RSI/MACD, relative strength), earnings-revision momentum, and macro context (VIX regime, yield curve, HY spreads) when material.`;
+Focus on: competitive moat, valuation vs. intrinsic value (Composite + single-equation models), **Wall Street analyst consensus and price target as an independent triangulation signal — do not let it be drowned out by the calculated models**, growth quality, financial health, technical posture (trend, RSI/MACD, relative strength), earnings-revision momentum, and macro context (VIX regime, yield curve, HY spreads) when material.
+
+Weighting guidance for the recommendation:
+- The Composite and single-equation models are *one* input class (intrinsic-value lens).
+- The Analyst Consensus section is a *second* input class (market-aligned, sell-side lens).
+- A strong divergence between the two is itself a signal — flag it in the bull or bear case.
+- Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken).`;
 }

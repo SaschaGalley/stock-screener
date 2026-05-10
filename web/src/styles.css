@@ -5,138 +5,210 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
-  /* Background ramp (deepest → highest elevation) */
-  --color-bg-deep:     #11151c;  /* outermost (window bg) */
-  --color-bg-base:     #181c25;  /* sidebars, cards */
-  --color-bg-elevated: #21262f;  /* popovers, hovers */
-  --color-bg-hover:    #2a303a;
+    /* Background ramp (deepest → highest elevation) */
+    --color-bg-deep: #11151c; /* outermost (window bg) */
+    --color-bg-base: #181c25; /* sidebars, cards */
+    --color-bg-elevated: #21262f; /* popovers, hovers */
+    --color-bg-hover: #2a303a;
 
-  /* Borders */
-  --color-border:        #2d323d;
-  --color-border-soft:   #1f242e;
-  --color-border-strong: #404757;
+    /* Borders */
+    --color-border: #2d323d;
+    --color-border-soft: #1f242e;
+    --color-border-strong: #404757;
 
-  /* Text — soft pastel cream-blue */
-  --color-text:        #cad1da;  /* body */
-  --color-text-strong: #e6ebf2;  /* headings */
-  --color-text-muted:  #7d8693;  /* secondary */
-  --color-text-faint:  #555c69;  /* labels */
+    /* Text — soft pastel cream-blue */
+    --color-text: #cad1da; /* body */
+    --color-text-strong: #e6ebf2; /* headings */
+    --color-text-muted: #7d8693; /* secondary */
+    --color-text-faint: #555c69; /* labels */
 
-  /* Accent — pastel steel blue (was bright #3b82f6 originally) */
-  --color-accent:       #7da4d4;  /* main */
-  --color-accent-hover: #6388bd;  /* hover state */
-  --color-accent-soft:  #1e2a3d;  /* tinted background */
+    /* Accent — pastel steel blue (was bright #3b82f6 originally) */
+    --color-accent: #7da4d4; /* main */
+    --color-accent-hover: #6388bd; /* hover state */
+    --color-accent-soft: #1e2a3d; /* tinted background */
 
-  /* Semantic — solid soft variants replace what was alpha-blended.
+    /* Semantic — solid soft variants replace what was alpha-blended.
      `*-soft` is a pre-tinted dark background; `*` is the readable foreground. */
-  --color-success:      #6cb892;  /* readable green */
-  --color-success-soft: #1a3025;  /* card background tint */
-  --color-danger:       #d77279;
-  --color-danger-soft:  #34191c;
-  --color-warning:      #d6a865;
-  --color-warning-soft: #32261a;
+    --color-success: #6cb892; /* readable green */
+    --color-success-soft: #1a3025; /* card background tint */
+    --color-danger: #d77279;
+    --color-danger-soft: #34191c;
+    --color-warning: #d6a865;
+    --color-warning-soft: #32261a;
 
-  /* Chart palette — coordinated with theme */
-  --chart-blue:   #7da4d4;
-  --chart-amber:  #d6a865;
-  --chart-purple: #a386c1;
+    /* Consensus bar — the 3-segment buy/hold/sell stripe on each sidebar entry.
+     Tuned darker than --color-success/warning/danger so the bar recedes into
+     the dark sidebar, but with maximally separated hues so the segments stay
+     distinguishable at 3px width. Click a hex to open the color picker. */
+    --color-consensus-buy: #30a752; /* darker than --color-success */
+    --color-consensus-hold: #b78715; /* warm orange — distinct from green */
+    --color-consensus-sell: #a42019; /* deep rose-red — distinct from warning */
 
-  /* ─── Typography ─── */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Monaco, "Cascadia Mono", monospace;
-  --font-display: var(--font-sans);
+    /* Chart palette — coordinated with theme */
+    --chart-blue: #7da4d4;
+    --chart-amber: #d6a865;
+    --chart-purple: #a386c1;
 
-  --text-xs:   0.7rem;
-  --text-sm:   0.8rem;
-  --text-base: 0.875rem;
-  --text-lg:   1.05rem;
-  --text-xl:   1.25rem;
-  --text-2xl:  1.5rem;
+    /* ─── Typography ─── */
+    --font-sans:
+        -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto,
+        system-ui, sans-serif;
+    --font-mono:
+        ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Monaco,
+        "Cascadia Mono", monospace;
+    --font-display: var(--font-sans);
 
-  /* ─── Sizing & motion ─── */
-  --radius-sm: 0.25rem;
-  --radius:    0.4rem;
-  --radius-lg: 0.6rem;
-  --transition: 150ms ease-out;
+    --text-xs: 0.7rem;
+    --text-sm: 0.8rem;
+    --text-base: 0.875rem;
+    --text-lg: 1.05rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+
+    /* ─── Sizing & motion ─── */
+    --radius-sm: 0.25rem;
+    --radius: 0.4rem;
+    --radius-lg: 0.6rem;
+    --transition: 150ms ease-out;
 }
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
-  height: 100%;
+html,
+body,
+#root {
+    height: 100%;
 }
 
 body {
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background: var(--color-bg-deep);
-  color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--color-bg-deep);
+    color: var(--color-text);
 }
 
 /* Tabular numbers for financial values */
 .tabular {
-  font-variant-numeric: tabular-nums;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Markdown content styling */
 .prose-stock {
-  color: var(--color-text);
+    color: var(--color-text);
 }
-.prose-stock h1 { font-size: 1.4rem; font-weight: 700; margin: 1rem 0 0.5rem; color: var(--color-text-strong); }
+.prose-stock h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin: 1rem 0 0.5rem;
+    color: var(--color-text-strong);
+}
 .prose-stock h2 {
-  font-size: 1rem; font-weight: 600;
-  margin: 1.25rem 0 0.5rem; padding-bottom: 0.2rem;
-  border-bottom: 1px solid var(--color-border-soft);
-  color: var(--color-text-strong);
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 1.25rem 0 0.5rem;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid var(--color-border-soft);
+    color: var(--color-text-strong);
 }
-.prose-stock h3 { font-size: 0.9rem; font-weight: 600; margin: 0.7rem 0 0.3rem; color: var(--color-text-muted); }
-.prose-stock p  { margin: 0.3rem 0; color: var(--color-text-muted); }
-.prose-stock ul, .prose-stock ol { margin: 0.3rem 0 0.3rem 1.2rem; }
-.prose-stock li { margin: 0.1rem 0; color: var(--color-text-muted); }
+.prose-stock h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0.7rem 0 0.3rem;
+    color: var(--color-text-muted);
+}
+.prose-stock p {
+    margin: 0.3rem 0;
+    color: var(--color-text-muted);
+}
+.prose-stock ul,
+.prose-stock ol {
+    margin: 0.3rem 0 0.3rem 1.2rem;
+}
+.prose-stock li {
+    margin: 0.1rem 0;
+    color: var(--color-text-muted);
+}
 .prose-stock table {
-  border-collapse: collapse; width: 100%;
-  margin: 0.5rem 0; font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.5rem 0;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
 }
-.prose-stock th, .prose-stock td {
-  border: 1px solid var(--color-border-soft);
-  padding: 0.3rem 0.55rem; text-align: left;
+.prose-stock th,
+.prose-stock td {
+    border: 1px solid var(--color-border-soft);
+    padding: 0.3rem 0.55rem;
+    text-align: left;
 }
-.prose-stock th { background: var(--color-bg-base); color: var(--color-text-strong); font-weight: 600; }
-.prose-stock tr:nth-child(even) td { background: var(--color-bg-deep); }
+.prose-stock th {
+    background: var(--color-bg-base);
+    color: var(--color-text-strong);
+    font-weight: 600;
+}
+.prose-stock tr:nth-child(even) td {
+    background: var(--color-bg-deep);
+}
 .prose-stock code {
-  background: var(--color-bg-elevated); color: var(--color-text);
-  padding: 0.05rem 0.3rem; border-radius: var(--radius-sm);
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
+    background: var(--color-bg-elevated);
+    color: var(--color-text);
+    padding: 0.05rem 0.3rem;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
 }
 .prose-stock pre {
-  background: var(--color-bg-base); padding: 0.7rem;
-  border-radius: var(--radius); overflow-x: auto;
-  border: 1px solid var(--color-border-soft);
+    background: var(--color-bg-base);
+    padding: 0.7rem;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    border: 1px solid var(--color-border-soft);
 }
-.prose-stock pre code { background: none; padding: 0; }
+.prose-stock pre code {
+    background: none;
+    padding: 0;
+}
 .prose-stock blockquote {
-  border-left: 3px solid var(--color-border);
-  padding-left: 0.7rem;
-  color: var(--color-text-muted);
-  margin: 0.4rem 0;
+    border-left: 3px solid var(--color-border);
+    padding-left: 0.7rem;
+    color: var(--color-text-muted);
+    margin: 0.4rem 0;
 }
-.prose-stock strong { color: var(--color-text-strong); font-weight: 600; }
-.prose-stock hr { border: none; border-top: 1px solid var(--color-border-soft); margin: 0.8rem 0; }
-.prose-stock a { color: var(--color-accent); text-decoration: underline; }
+.prose-stock strong {
+    color: var(--color-text-strong);
+    font-weight: 600;
+}
+.prose-stock hr {
+    border: none;
+    border-top: 1px solid var(--color-border-soft);
+    margin: 0.8rem 0;
+}
+.prose-stock a {
+    color: var(--color-accent);
+    text-decoration: underline;
+}
 
 /* Scrollbar styling */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--color-border-strong);
+}
 
 /* Focus ring (matches accent) */
 *:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
 }

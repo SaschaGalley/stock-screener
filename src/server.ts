@@ -37,28 +37,30 @@ function resolveCacheRoot(rawDir: string): string {
   return resolve(process.cwd(), rawDir);
 }
 
-/**
- * Read a versioned cache file. Returns null on missing, parse error, OR
- * version mismatch — the latter happens after a cache schema bump and serves
- * the same purpose as forcing a refetch (don't expose stale-shape data
- * downstream that would then crash on missing fields).
- */
-function readJsonEntry<T>(file: string, expectedVersion?: number): T | null {
-  if (!existsSync(file)) return null;
+interface CacheRead<T> {
+  data:  T | null;
+  /** True when the file exists but its version doesn't match the expected
+   *  schema version. The data is still returned so the UI can render what
+   *  it has (frontend components handle missing fields defensively). */
+  stale: boolean;
+}
+
+/** Read a versioned cache file. Always returns the data when present, plus
+ *  a `stale` flag so the caller can display a "refresh me" banner. */
+function readJsonEntry<T>(file: string, expectedVersion?: number): CacheRead<T> {
+  if (!existsSync(file)) return { data: null, stale: false };
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf-8')) as { v?: unknown; data?: T };
-    if (expectedVersion !== undefined && parsed.v !== expectedVersion) {
-      logger.debug(`Cache version mismatch for ${file} (got ${parsed.v}, want ${expectedVersion})`);
-      return null;
-    }
-    return parsed.data ?? null;
+    const stale = expectedVersion !== undefined && parsed.v !== expectedVersion;
+    if (stale) logger.debug(`Cache version mismatch for ${file} (got ${parsed.v}, want ${expectedVersion})`);
+    return { data: parsed.data ?? null, stale };
   } catch {
-    return null;
+    return { data: null, stale: false };
   }
 }
 
 // Schema versions — kept in sync with cache.ts. Bump matching constant there.
-const FINANCIALS_VERSION_SERVER     = 13;
+const FINANCIALS_VERSION_SERVER     = 14;
 const MARKET_SIGNALS_VERSION_SERVER = 2;
 
 function listCachedSymbols(cacheDir: string): string[] {
@@ -73,6 +75,22 @@ function listCachedSymbols(cacheDir: string): string[] {
   }
 }
 
+/**
+ * Combined buy/hold/sell consensus shown as a thin band on the stock list.
+ * Aggregates two sources with AI-leaning weights:
+ *   - All cached LLM analyses for this symbol (each one votes its recommendation)
+ *   - Analyst recommendation counts from Yahoo (strong-buy through strong-sell)
+ * AI carries 0.6 weight, analysts 0.4. If only one source is available it
+ * gets 1.0 weight (so the bar still shows something useful).
+ */
+interface ConsensusBand {
+  buy:  number;   // 0–1
+  hold: number;   // 0–1
+  sell: number;   // 0–1
+  /** Number of vote sources that contributed (≥1 for the band to render). */
+  sources: number;
+}
+
 interface StockSummary {
   symbol:        string;
   companyName:   string;
@@ -84,6 +102,63 @@ interface StockSummary {
   logoDomain:    string | null;       // domain for clearbit-style lookup
   cachedAt:      string;              // ISO timestamp of financials.json mtime
   analysisCount: number;              // how many cached LLM analyses exist
+  consensus:     ConsensusBand | null; // for the sidebar buy/hold/sell band
+}
+
+function recommendationToVote(rec: string): 'buy' | 'hold' | 'sell' {
+  if (rec.includes('BUY')) return 'buy';
+  if (rec.includes('SELL')) return 'sell';
+  return 'hold';
+}
+
+function computeConsensus(f: StockFinancials, cacheDir: string, symbol: string): ConsensusBand | null {
+  // ── AI source: aggregate ALL cached LLM analyses (each combo votes once) ──
+  let aiBuy = 0, aiHold = 0, aiSell = 0, aiCount = 0;
+  for (const entry of listAnalyses(cacheDir, symbol)) {
+    const cached = readAnalysis(cacheDir, symbol, entry.flags);
+    if (!cached) continue;
+    const v = recommendationToVote(cached.llmAnalysis.recommendation);
+    if (v === 'buy')  aiBuy++;
+    else if (v === 'sell') aiSell++;
+    else aiHold++;
+    aiCount++;
+  }
+  const aiPresent = aiCount > 0;
+  const aiBuyP  = aiPresent ? aiBuy  / aiCount : 0;
+  const aiHoldP = aiPresent ? aiHold / aiCount : 0;
+  const aiSellP = aiPresent ? aiSell / aiCount : 0;
+
+  // ── Analyst source: Yahoo's recommendation breakdown ──────────────────────
+  const sb = f.analystStrongBuy  ?? 0;
+  const b  = f.analystBuy        ?? 0;
+  const h  = f.analystHold       ?? 0;
+  const s  = f.analystSell       ?? 0;
+  const ss = f.analystStrongSell ?? 0;
+  const aTotal = sb + b + h + s + ss;
+  const analystPresent = aTotal > 0;
+  const aBuyP  = analystPresent ? (sb + b) / aTotal : 0;
+  const aHoldP = analystPresent ? h / aTotal        : 0;
+  const aSellP = analystPresent ? (s + ss) / aTotal : 0;
+
+  if (!aiPresent && !analystPresent) return null;
+
+  // Weights: AI dominates when present, analysts fill in. If only one source
+  // is available it gets full weight on its own.
+  const aiW       = aiPresent && analystPresent ? 0.6 : aiPresent ? 1 : 0;
+  const analystW  = aiPresent && analystPresent ? 0.4 : analystPresent ? 1 : 0;
+
+  const buy  = aiBuyP  * aiW + aBuyP  * analystW;
+  const hold = aiHoldP * aiW + aHoldP * analystW;
+  const sell = aiSellP * aiW + aSellP * analystW;
+  const sum  = buy + hold + sell;
+  if (sum === 0) return null;
+
+  return {
+    buy:  buy  / sum,
+    hold: hold / sum,
+    sell: sell / sum,
+    sources: (aiPresent ? 1 : 0) + (analystPresent ? 1 : 0),
+  };
 }
 
 function logoDomainFromWebsite(url: string | null): string | null {
@@ -101,7 +176,7 @@ function buildStockSummary(cacheDir: string, symbol: string): StockSummary | nul
   const financialsFile = join(dir, 'financials.json');
   if (!existsSync(financialsFile)) return null;
 
-  const f = readJsonEntry<StockFinancials>(financialsFile);
+  const { data: f } = readJsonEntry<StockFinancials>(financialsFile);
   if (!f) return null;
 
   const stat = statSync(financialsFile);
@@ -118,6 +193,7 @@ function buildStockSummary(cacheDir: string, symbol: string): StockSummary | nul
     logoDomain:    logoDomainFromWebsite(f.website ?? null),
     cachedAt:      stat.mtime.toISOString(),
     analysisCount: analyses.length,
+    consensus:     computeConsensus(f, cacheDir, symbol),
   };
 }
 
@@ -224,16 +300,19 @@ export function createApp() {
         res.status(404).json({ error: `No cached data for ${symbol}` });
         return;
       }
-      const financials = readJsonEntry<StockFinancials>(join(dir, 'financials.json'), FINANCIALS_VERSION_SERVER);
+      const fRead   = readJsonEntry<StockFinancials>(join(dir, 'financials.json'), FINANCIALS_VERSION_SERVER);
+      const financials = fRead.data;
       if (!financials) {
-        res.status(404).json({
-          error: `No fresh financials cached for ${symbol} — hit "↻ Refresh" or run a new analysis to fetch the latest schema.`,
-        });
+        // truly missing — only true 404 case
+        res.status(404).json({ error: `No financials cached for ${symbol} yet` });
         return;
       }
-      const marketSignals = readJsonEntry<MarketSignals>(join(dir, 'market-signals.json'), MARKET_SIGNALS_VERSION_SERVER);
-      const news          = readJsonEntry<NewsItem[]>(join(dir, 'news.json')) ?? [];
-      const perplexity    = readJsonEntry<PerplexityContext>(join(dir, 'perplexity.json'));
+      const msRead     = readJsonEntry<MarketSignals>(join(dir, 'market-signals.json'), MARKET_SIGNALS_VERSION_SERVER);
+      const newsRead   = readJsonEntry<NewsItem[]>(join(dir, 'news.json'));
+      const pplxRead   = readJsonEntry<PerplexityContext>(join(dir, 'perplexity.json'));
+      const marketSignals = msRead.data;
+      const news          = newsRead.data ?? [];
+      const perplexity    = pplxRead.data;
       const summary       = buildStockSummary(cacheDir, symbol);
 
       // Try to fetch fresh rates + sector medians for richer metrics, but don't block
@@ -250,6 +329,25 @@ export function createApp() {
         ? deriveTechnicalSignals(marketSignals.technicals, financials.price)
         : null;
 
+      // ── Cache freshness summary for the UI's "stale data" banner ────────
+      // financials.cachedAt comes from the file mtime; LLM analyses know their
+      // own generatedAt. If the most-recent analysis was generated before the
+      // most recent data refresh, it's "based on older data".
+      const financialsMtime = statSync(join(dir, 'financials.json')).mtime.getTime();
+      const newestAnalysis  = listAnalyses(cacheDir, symbol)
+        .map((a) => new Date(a.generatedAt).getTime())
+        .sort((a, b) => b - a)[0];
+      const cacheStatus = {
+        financials:    fRead.stale ? 'stale' : 'fresh',
+        marketSignals: !msRead.data ? 'missing' : msRead.stale ? 'stale' : 'fresh',
+        // 'older-than-data' means financials were refreshed AFTER the analysis ran.
+        analysis: newestAnalysis === undefined
+          ? 'missing'
+          : newestAnalysis < financialsMtime - 60_000  // 60s tolerance
+            ? 'older-than-data'
+            : 'fresh',
+      };
+
       res.json({
         summary,
         financials,
@@ -260,6 +358,7 @@ export function createApp() {
         sectorMedians,
         marketRates,
         technicalSignals,
+        cacheStatus,
       });
     } catch (e) {
       next(e);
@@ -267,11 +366,24 @@ export function createApp() {
   });
 
   // ── GET /api/stocks/:symbol/analyses ───────────────────────────────────────
-  // List all cached LLM-analysis combinations
+  // List all cached LLM-analysis combinations. Each entry is augmented with
+  // `olderThanData`: true when the cached LLM result was generated BEFORE the
+  // most recent data refresh (financials.json mtime). The frontend uses this
+  // to render a warning marker so the user can still pick the entry — the
+  // detail view's StaleBanner takes over from there.
   app.get('/api/stocks/:symbol/analyses', (req, res) => {
     const symbol = req.params.symbol.toUpperCase();
     const entries = listAnalyses(cacheDir, symbol);
-    res.json({ symbol, analyses: entries });
+    const financialsFile = join(symbolDir(cacheDir, symbol), 'financials.json');
+    const financialsMtime = existsSync(financialsFile)
+      ? statSync(financialsFile).mtime.getTime()
+      : 0;
+    const augmented = entries.map((e) => ({
+      ...e,
+      olderThanData: financialsMtime > 0
+        && new Date(e.generatedAt).getTime() < financialsMtime - 60_000,  // 60s tolerance
+    }));
+    res.json({ symbol, analyses: augmented });
   });
 
   // ── GET /api/stocks/:symbol/analyses/:hash ─────────────────────────────────
@@ -287,7 +399,7 @@ export function createApp() {
     }
     const cached = readAnalysis(cacheDir, symbol, target.flags);
     if (!cached) {
-      res.status(404).json({ error: `Analysis expired or missing` });
+      res.status(404).json({ error: `Analysis missing or schema-incompatible` });
       return;
     }
     res.json(cached);

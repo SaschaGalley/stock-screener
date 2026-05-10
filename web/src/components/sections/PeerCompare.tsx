@@ -13,6 +13,7 @@ interface RowSpec {
   median: number | null;
   lowerIsBetter: boolean;
   isPercent?: boolean;
+  hint?: string;
 }
 
 export default function PeerCompare({ ratios, evMultiples: ev, financials: f, sectorMedians: sm }: Props) {
@@ -27,6 +28,13 @@ export default function PeerCompare({ ratios, evMultiples: ev, financials: f, se
     { label: 'EV/EBITDA',      value: ev.evToEbitda,                median: sm.evToEbitda,          lowerIsBetter: true  },
     { label: 'EV/Revenue',     value: ev.evToRevenue,               median: sm.evToRevenue,         lowerIsBetter: true  },
     { label: 'P/S (TTM)',      value: ev.priceToSales,              median: sm.priceToSales,        lowerIsBetter: true  },
+    {
+      label: 'P/S Run-Rate',
+      value: ev.simpleValuationRatio,
+      median: sm.priceToSales,  // peers don't expose run-rate; compare to sector P/S TTM
+      lowerIsBetter: true,
+      hint: 'Own value: market cap ÷ (latest quarter revenue × 4). Compared against sector P/S TTM (peers don\'t expose run-rate). For accelerating revenue this row goes greener earlier than P/S TTM; for decelerating revenue it goes redder earlier.',
+    },
     { label: 'Forward P/S',    value: ev.forwardPriceToSales,       median: sm.forwardPriceToSales, lowerIsBetter: true  },
     { label: 'P/FCF',          value: ev.priceToFCF,                median: sm.priceToFCF,          lowerIsBetter: true  },
     { label: 'P/B',            value: ratios.pb,                    median: sm.pb,                  lowerIsBetter: true  },
@@ -61,8 +69,11 @@ export default function PeerCompare({ ratios, evMultiples: ev, financials: f, se
             const color = pct === null ? 'text-ink-500' : isGood ? 'text-emerald-400' : isBad ? 'text-red-400' : 'text-amber-400';
             const fmtVal = (v: number | null) => v === null ? '—' : r.isPercent ? fmtPct(v) : fmt(v, 'x', 1);
             return (
-              <tr key={r.label} className="border-b border-ink-800">
-                <td className="py-1.5 pr-2 text-ink-300">{r.label}</td>
+              <tr key={r.label} className="border-b border-ink-800" title={r.hint}>
+                <td className="py-1.5 pr-2 text-ink-300">
+                  {r.label}
+                  {r.hint && <span className="ml-1 cursor-help text-ink-600">ⓘ</span>}
+                </td>
                 <td className="py-1.5 px-2 text-right font-mono text-ink-100">{fmtVal(r.value)}</td>
                 <td className="py-1.5 px-2 text-right font-mono text-ink-400">{fmtVal(r.median)}</td>
                 <td className={`py-1.5 pl-2 text-right font-mono ${color}`}>

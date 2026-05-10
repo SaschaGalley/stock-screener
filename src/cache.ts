@@ -7,13 +7,15 @@ import { logger } from './utils/logger.js';
 import { PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
 
 const FINANCIALS_TTL_MS    = 60 * 60 * 1000;       // 1 hour
-const ANALYSIS_TTL_MS      = 6 * 60 * 60 * 1000;   // 6 hours
+// Analyses do NOT expire on a clock — invalidation is purely hash-based:
+// same flag combination ⇒ same hash ⇒ same cache file. Bumping ANALYSIS_VERSION
+// or deleting the file are the only ways to invalidate.
 const NEWS_TTL_MS          = 30 * 60 * 1000;       // 30 min
 const MARKET_SIGNALS_TTL_MS = 30 * 60 * 1000;      // 30 min (technicals + options change fast)
 const PERPLEXITY_TTL_MS    = 12 * 60 * 60 * 1000;  // 12 hours
 
 // Bump to invalidate all cached entries of that type
-const FINANCIALS_VERSION     = 13;  // bumped — added fundamentalsHistory (5y annual series)
+const FINANCIALS_VERSION     = 14;  // bumped — added quarterlyRevenues (run-rate P/S aka Simple Valuation Ratio)
 const ANALYSIS_VERSION       = 4;   // bumped — bull/bear are now string[] of 3 bullets each
 const NEWS_VERSION           = 1;
 const MARKET_SIGNALS_VERSION = 2;  // bumped — technicals expanded with EMAs, Stoch, CCI, WilliamsR, Momentum
@@ -101,23 +103,24 @@ export interface AnalysisManifestEntry {
   hash:        string;
   flags:       AnalysisFlagsKey;
   generatedAt: string;
-  ageMinutes:  number;       // computed at read time
-  expired:     boolean;
+  ageMinutes:  number;       // computed at read time — purely informational, not a freshness gate
 }
 
 function analysesDir(rawDir: string, symbol: string): string {
   return join(symbolDir(rawDir, symbol), 'analyses');
 }
 
+/**
+ * Read a cached analysis. Hash-based — same flag combination ⇒ same cache file.
+ * No TTL: the cache is invalidated only by (a) bumping ANALYSIS_VERSION, which
+ * makes old entries schema-incompatible, or (b) deleting the file. The
+ * "older-than-data" case is detected at the bundle layer and surfaced via the
+ * StaleBanner so the user can decide whether to re-run.
+ */
 export function readAnalysis(rawDir: string, symbol: string, flags: AnalysisFlagsKey): CachedAnalysisEntry | null {
   const file = join(analysesDir(rawDir, symbol), `${analysisHash(flags)}.json`);
   const entry = readEntry<CachedAnalysisEntry>(file);
-  if (!entry) return null;
-  if (entry.v !== ANALYSIS_VERSION) return null;
-  if (Date.now() - entry.ts > ANALYSIS_TTL_MS) {
-    logger.debug(`Analysis cache expired for ${symbol} (${analysisHash(flags)})`);
-    return null;
-  }
+  if (!entry || entry.v !== ANALYSIS_VERSION) return null;
   logger.debug(`Analysis cache hit for ${symbol} (${analysisHash(flags)})`);
   return entry.data;
 }
@@ -155,7 +158,6 @@ export function listAnalyses(rawDir: string, symbol: string): AnalysisManifestEn
       flags:       entry.data.flags,
       generatedAt: entry.data.generatedAt,
       ageMinutes:  Math.round(ageMs / 60000),
-      expired:     ageMs > ANALYSIS_TTL_MS,
     });
   }
   return out;

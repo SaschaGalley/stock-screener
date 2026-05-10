@@ -205,6 +205,8 @@ export default function App() {
               summary={summary}
               flags={flags}
               refreshKey={refreshTick}
+              onRunAnalysis={() => startAnalyze(selected)}
+              analyzing={loading}
             />
           ) : (
             <div className="flex flex-1 items-center justify-center p-8 text-center text-ink-400">

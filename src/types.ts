@@ -26,6 +26,12 @@ export const EarningsSurpriseSchema = z.object({
 });
 export type EarningsSurprise = z.infer<typeof EarningsSurpriseSchema>;
 
+export const QuarterlyRevenueSchema = z.object({
+  endDate: z.string().describe('Quarter end date (YYYY-MM-DD)'),
+  revenue: z.number().describe('Total revenue for the fiscal quarter'),
+});
+export type QuarterlyRevenue = z.infer<typeof QuarterlyRevenueSchema>;
+
 export const EarningsEstimateSchema = z.object({
   period:           z.string().describe('Period key: "0q" = current qtr, "+1q" = next qtr, "0y" = current year, "+1y" = next year'),
   endDate:          z.string().nullable().describe('Period end date (YYYY-MM-DD)'),
@@ -181,6 +187,9 @@ export const StockFinancialsSchema = z.object({
   // ── Earnings Surprises (last ≤4 quarters) ────────────────────────────────────
   earningsSurprises: z.array(EarningsSurpriseSchema).describe('Last up-to-4 quarters of EPS surprise history from Yahoo earningsHistory'),
   earningsEstimates: z.array(EarningsEstimateSchema).describe('Forward EPS & revenue estimates for current qtr, next qtr, current year, next year from Yahoo earningsTrend'),
+
+  // ── Quarterly Revenue (run-rate basis for Simple Valuation Ratio) ────────────
+  quarterlyRevenues: z.array(QuarterlyRevenueSchema).describe('Last ≤8 fiscal quarters of total revenue, oldest first. The most recent quarter × 4 is the SVR (run-rate P/S) denominator — more responsive to YoY changes than TTM P/S'),
 
   // ── Insider Activity (last 6 months) ─────────────────────────────────────────
   insiderBuyShares:  z.number().nullable().describe('Total shares bought by insiders in the last 6 months'),
@@ -432,6 +441,9 @@ export const EVMultiplesResultSchema = z.object({
   priceToFCF:          z.number().nullable().describe('Market cap / Free cash flow (equity-level FCF multiple)'),
   priceToSales:        z.number().nullable().describe('Trailing Market cap / Revenue (Price-to-Sales TTM)'),
   forwardPriceToSales: z.number().nullable().describe('Forward P/S: Market cap / consensus forward revenue (FY+1 if available, else FY+0); reveals NTM multiple compression for growth firms'),
+  simpleValuationRatio: z.number().nullable().describe('Run-rate P/S = Market cap / (latest quarter revenue × 4). Drops the older 3 quarters from the TTM denominator so it reacts immediately to acceleration or deceleration; useful for sector peer comparison among fast-moving names. Caveat: noisy for highly seasonal businesses.'),
+  latestQuarterRevenue: z.number().nullable().describe('Most recent fiscal quarter revenue used as the SVR denominator (annualized × 4)'),
+  latestQuarterEndDate: z.string().nullable().describe('End date of the quarter used for SVR (YYYY-MM-DD)'),
 });
 export type EVMultiplesResult = z.infer<typeof EVMultiplesResultSchema>;
 

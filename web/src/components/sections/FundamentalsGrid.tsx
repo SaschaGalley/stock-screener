@@ -48,6 +48,15 @@ export default function FundamentalsGrid({ financials: f, ratios, evMultiples: e
         <Row label="P/B"           value={fmt(ratios.pb, 'x')} />
         <Row label="P/S TTM"       value={fmt(ev.priceToSales, 'x')} />
         <Row label="Forward P/S"   value={fmt(ev.forwardPriceToSales, 'x')} />
+        <Row
+          label="P/S Run-Rate"
+          value={fmt(ev.simpleValuationRatio, 'x')}
+          hint={
+            ev.latestQuarterEndDate
+              ? `Market cap ÷ (${formatQEnd(ev.latestQuarterEndDate)} revenue × 4). Run-rate P/S — reacts to the latest quarter, not the trailing 12-month average. Caveat: noisy for highly seasonal businesses.`
+              : 'Market cap ÷ (latest quarter revenue × 4). Run-rate P/S — reacts to the latest quarter, not the trailing 12-month average.'
+          }
+        />
         <Row label="EV/EBITDA"     value={fmt(ev.evToEbitda, 'x')} />
         <Row label="EV/Revenue"    value={fmt(ev.evToRevenue, 'x')} />
         <Row label="EV/FCF"        value={fmt(ev.evToFCF, 'x')} />
@@ -69,15 +78,38 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function Row({ label, value, accentByPct }: { label: string; value: string; accentByPct?: number | null }) {
+function Row({
+  label,
+  value,
+  accentByPct,
+  hint,
+}: {
+  label: string;
+  value: string;
+  accentByPct?: number | null;
+  hint?: string;
+}) {
   let valueColor = 'text-ink-100';
   if (accentByPct !== undefined && accentByPct !== null && Number.isFinite(accentByPct)) {
     valueColor = accentByPct > 0 ? 'text-emerald-400' : accentByPct < 0 ? 'text-red-400' : 'text-ink-100';
   }
   return (
-    <tr className="border-b border-ink-800">
-      <td className="py-1 pr-2 text-ink-400">{label}</td>
+    <tr className="border-b border-ink-800" title={hint}>
+      <td className="py-1 pr-2 text-ink-400">
+        {label}
+        {hint && <span className="ml-1 cursor-help text-ink-600">ⓘ</span>}
+      </td>
       <td className={`py-1 text-right font-mono ${valueColor}`}>{value}</td>
     </tr>
   );
+}
+
+/** Format a YYYY-MM-DD quarter end into a short fiscal label like "Q1'26". */
+function formatQEnd(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const m = d.getMonth() + 1;
+  const q = m <= 3 ? 'Q1' : m <= 6 ? 'Q2' : m <= 9 ? 'Q3' : 'Q4';
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${q}'${yy}`;
 }

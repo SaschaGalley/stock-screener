@@ -436,6 +436,20 @@ export function calculateEVMultiples(financials: StockFinancials): EVMultiplesRe
   const fwdRev0y = financials.earningsEstimates.find((e) => e.period === '+0y')?.revenueEstimate ?? null;
   const fwdRev   = fwdRev1y && fwdRev1y > 0 ? fwdRev1y : (fwdRev0y && fwdRev0y > 0 ? fwdRev0y : null);
 
+  // Simple Valuation Ratio (run-rate P/S): drops the older 3 quarters from the
+  // TTM denominator and annualizes the latest one. Reacts immediately to growth
+  // inflections — TTM lags by 6+ months for fast movers. Caveat: distorted for
+  // highly seasonal businesses (retail Q4, etc.).
+  // Defensive: stale caches from before FINANCIALS_VERSION 14 won't have this
+  // field at all, and the StaleBanner pipeline still serves them.
+  const qRevs = Array.isArray(financials.quarterlyRevenues) ? financials.quarterlyRevenues : [];
+  const latestQ = qRevs.length > 0 ? qRevs[qRevs.length - 1] : null;
+  const latestQuarterRevenue = latestQ?.revenue ?? null;
+  const latestQuarterEndDate = latestQ?.endDate ?? null;
+  const simpleValuationRatio = mc && latestQuarterRevenue && latestQuarterRevenue > 0
+    ? mc / (latestQuarterRevenue * 4)
+    : null;
+
   return {
     enterpriseValue: ev,
     evToEbitda: ev && ebitda && ebitda > 0 ? ev / ebitda : null,
@@ -444,6 +458,9 @@ export function calculateEVMultiples(financials: StockFinancials): EVMultiplesRe
     priceToFCF: mc && fcf && fcf > 0        ? mc / fcf   : null,
     priceToSales: mc && rev && rev > 0      ? mc / rev   : null,
     forwardPriceToSales: mc && fwdRev      ? mc / fwdRev : null,
+    simpleValuationRatio,
+    latestQuarterRevenue,
+    latestQuarterEndDate,
   };
 }
 

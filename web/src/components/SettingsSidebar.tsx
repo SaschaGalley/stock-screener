@@ -260,15 +260,29 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
                         className={`block w-full overflow-hidden rounded border pl-2 pr-9 py-1.5 text-left text-[11px] transition ${
                           isCurrent
                             ? 'border-accent bg-accent-soft text-ink-100'
-                            : 'border-ink-700 bg-ink-950 text-ink-300 hover:bg-ink-800'
+                            : a.olderThanData
+                              ? 'border-amber-700/60 bg-ink-950 text-ink-300 hover:bg-ink-800'
+                              : 'border-ink-700 bg-ink-950 text-ink-300 hover:bg-ink-800'
                         }`}
-                        title={`${a.flags.model} · search=${a.flags.search} · pplx=${a.flags.pplx ?? 'none'}`}
+                        title={
+                          (a.olderThanData
+                            ? '⚠ Generated before the latest data refresh — re-run to update.\n'
+                            : '')
+                          + `${a.flags.model} · search=${a.flags.search} · pplx=${a.flags.pplx ?? 'none'}`
+                        }
                       >
-                        <div className="truncate font-mono">
-                          {a.flags.model.split('-').slice(0, 2).join('-')} · {a.flags.search} · {a.flags.pplx ?? 'no-pplx'}
+                        <div className="flex items-center gap-1 truncate font-mono">
+                          {a.olderThanData && (
+                            <span className="shrink-0 text-amber-400" aria-label="Older than latest data">⚠</span>
+                          )}
+                          <span className="truncate">
+                            {a.flags.model.split('-').slice(0, 2).join('-')} · {a.flags.search} · {a.flags.pplx ?? 'no-pplx'}
+                          </span>
                         </div>
                         <div className="mt-0.5 text-[10px] text-ink-500">
-                          {a.expired ? <span className="text-amber-400">expired</span> : `${a.ageMinutes}m old`}
+                          {a.olderThanData
+                            ? <span className="text-amber-400/80">{a.ageMinutes}m old · pre-refresh</span>
+                            : `${a.ageMinutes}m old`}
                         </div>
                       </button>
                       <button
@@ -289,9 +303,15 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
         <div className="space-y-2 border-t border-ink-700 p-3">
           {cachedMatch ? (
             <>
-              <div className="rounded border border-emerald-700 bg-emerald-900 px-2.5 py-2 text-[11px] text-emerald-400">
-                ✓ Cached ({cachedMatch.expired ? 'expired' : `${cachedMatch.ageMinutes}m old`})
-              </div>
+              {cachedMatch.olderThanData ? (
+                <div className="rounded border border-amber-700 bg-amber-950 px-2.5 py-2 text-[11px] text-amber-300">
+                  ⚠ Cached but pre-refresh — re-run to update with latest data
+                </div>
+              ) : (
+                <div className="rounded border border-emerald-700 bg-emerald-900 px-2.5 py-2 text-[11px] text-emerald-400">
+                  ✓ Cached ({cachedMatch.ageMinutes}m old)
+                </div>
+              )}
               <button
                 onClick={onReload}
                 disabled={loading}

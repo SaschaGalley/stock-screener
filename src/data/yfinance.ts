@@ -138,6 +138,28 @@ async function safeTimeSeries(symbol: string, module: 'balance-sheet' | 'financi
   }
 }
 
+/**
+ * Fetch quarterly income-statement series (last ~2 years of fiscal quarters).
+ * Used for the Simple Valuation Ratio = Market Cap / (latest quarter revenue × 4),
+ * which is more responsive to growth/decline inflections than the TTM-based
+ * priceToSales because it drops the older 3 quarters from the denominator.
+ */
+async function safeQuarterlyFinancials(symbol: string): Promise<any[]> {
+  try {
+    const from = new Date();
+    from.setFullYear(from.getFullYear() - 2);
+    const data = await yf.fundamentalsTimeSeries(symbol, {
+      period1: from.toISOString().slice(0, 10),
+      type: 'quarterly',
+      module: 'financials',
+    } as any);
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    logger.warn(`TimeSeries[financials,quarterly]: ${(e as Error).message}`);
+    return [];
+  }
+}
+
 // ─── Symbol resolution ────────────────────────────────────────────────────────
 
 type YFSearchQuote = {
@@ -455,12 +477,13 @@ export interface FinancialsBundle {
 export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   logger.step(`Fetching financials for ${symbol}...`);
 
-  const [quote, summary, bsData, finData, cfData, historicalData, isin] = await Promise.all([
+  const [quote, summary, bsData, finData, cfData, finQData, historicalData, isin] = await Promise.all([
     safeQuote(symbol),
     safeSummary(symbol),
     safeTimeSeries(symbol, 'balance-sheet'),
     safeTimeSeries(symbol, 'financials'),
     safeTimeSeries(symbol, 'cash-flow'),
+    safeQuarterlyFinancials(symbol),
     safeHistoricalData(symbol),
     fetchIsin(symbol),
   ]);
@@ -542,6 +565,26 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     revenueGrowth:    num(t.revenueEstimate?.growth?.raw ?? t.revenueEstimate?.growth),
     numberOfAnalysts: num(t.earningsEstimate?.numberOfAnalysts?.raw ?? t.earningsEstimate?.numberOfAnalysts),
   }));
+
+  // ── Quarterly revenues (run-rate basis for SVR) ───────────────────────────
+  // Yahoo's fundamentalsTimeSeries returns the period end in `date`. Sort
+  // ascending and keep the last ≤8 quarters. The most recent quarter is the
+  // SVR denominator: marketCap / (latestQuarterRevenue × 4).
+  const quarterlyRevenues = (finQData as any[])
+    .map((q: any) => {
+      const rawDate: any = q.date ?? q.asOfDate ?? q.endDate;
+      const d: Date | null = rawDate instanceof Date
+        ? rawDate
+        : typeof rawDate === 'string' ? new Date(rawDate)
+        : typeof rawDate === 'number' ? new Date(rawDate * 1000)
+        : null;
+      const rev = num(q.totalRevenue) ?? num(q.revenue);
+      if (!d || isNaN(d.getTime()) || rev === null || rev <= 0) return null;
+      return { endDate: d.toISOString().slice(0, 10), revenue: rev };
+    })
+    .filter((x): x is { endDate: string; revenue: number } => x !== null)
+    .sort((a, b) => a.endDate.localeCompare(b.endDate))
+    .slice(-8);
 
   // ── Earnings revisions (epsTrend + epsRevisions per period) ──────────────
   const revisionPeriods = extractRevisions(et);
@@ -762,6 +805,7 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
 
     earningsSurprises,
     earningsEstimates,
+    quarterlyRevenues,
 
     insiderBuyShares:  insiderBuyCount  > 0 ? insiderBuyShares  : null,
     insiderSellShares: insiderSellCount > 0 ? insiderSellShares : null,

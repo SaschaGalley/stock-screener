@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import type { StockSummary } from '../types';
 import { api } from '../api';
 import StockLogo, { initialsFromName } from './StockLogo';
+import ConsensusBar from './ConsensusBar';
 
 interface Props {
   stocks: StockSummary[];
@@ -76,12 +77,13 @@ export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDelet
                   <button
                     onClick={() => onSelect(s.symbol)}
                     disabled={isDeleting}
-                    className={`flex w-full items-center gap-2.5 px-3 py-2 pr-9 text-left transition disabled:opacity-50 ${
+                    className={`flex w-full items-center gap-2 px-3 py-2 pr-9 text-left transition disabled:opacity-50 ${
                       active
                         ? 'bg-accent-soft border-l-2 border-l-accent'
                         : 'border-l-2 border-l-transparent hover:bg-ink-800'
                     }`}
                   >
+                    <ConsensusBar consensus={s.consensus} height={36} />
                     <StockLogo
                       domain={s.logoDomain}
                       symbol={s.symbol}

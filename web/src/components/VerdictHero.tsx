@@ -196,11 +196,15 @@ function RatingBar({ a }: { a: Props['analyst'] }) {
   return (
     <div className="space-y-1">
       <div className="flex h-2 w-full overflow-hidden rounded bg-ink-800">
+        {/* Tailwind -700 maps to *-soft tint (invisible against the bar bg).
+            All visible segments must stay in the -400/500/600 foreground band.
+            Strong vs regular collapses visually here, but the count labels
+            below ("SB 1 · B 5 · …") carry the breakdown. */}
         {sb > 0 && <div style={{ width: `${(sb / total) * 100}%` }} className="bg-emerald-500" />}
-        {b  > 0 && <div style={{ width: `${(b  / total) * 100}%` }} className="bg-emerald-600" />}
+        {b  > 0 && <div style={{ width: `${(b  / total) * 100}%`, opacity: 0.7 }} className="bg-emerald-500" />}
         {h  > 0 && <div style={{ width: `${(h  / total) * 100}%` }} className="bg-amber-500" />}
-        {s  > 0 && <div style={{ width: `${(s  / total) * 100}%` }} className="bg-red-500" />}
-        {ss > 0 && <div style={{ width: `${(ss / total) * 100}%` }} className="bg-red-700" />}
+        {s  > 0 && <div style={{ width: `${(s  / total) * 100}%`, opacity: 0.7 }} className="bg-red-500" />}
+        {ss > 0 && <div style={{ width: `${(ss / total) * 100}%` }} className="bg-red-500" />}
       </div>
       <div className="flex justify-between text-[10px] text-ink-500">
         <span>SB {sb} · B {b} · H {h} · S {s} · SS {ss}</span>

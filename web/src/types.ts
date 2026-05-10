@@ -1,3 +1,10 @@
+export interface ConsensusBand {
+  buy:  number;
+  hold: number;
+  sell: number;
+  sources: number;
+}
+
 // Mirrors the server-side StockSummary returned by /api/stocks
 export interface StockSummary {
   symbol: string;
@@ -10,6 +17,15 @@ export interface StockSummary {
   logoDomain: string | null;
   cachedAt: string;
   analysisCount: number;
+  consensus: ConsensusBand | null;
+}
+
+export type CacheFreshness = 'fresh' | 'stale' | 'missing' | 'older-than-data';
+
+export interface CacheStatus {
+  financials:    CacheFreshness;
+  marketSignals: CacheFreshness;
+  analysis:      CacheFreshness;
 }
 
 export interface AnalysisFlagsKey {
@@ -23,7 +39,9 @@ export interface AnalysisManifestEntry {
   flags: AnalysisFlagsKey;
   generatedAt: string;
   ageMinutes: number;
-  expired: boolean;
+  /** True when this analysis was generated before the most recent data refresh —
+   *  user can still select it but the detail view's StaleBanner will warn. */
+  olderThanData?: boolean;
 }
 
 export interface CachedAnalysisEntry {
@@ -175,6 +193,7 @@ export interface StockBundle {
   sectorMedians: any;
   marketRates: any;
   technicalSignals: TechnicalSignals | null;
+  cacheStatus: CacheStatus;
 }
 
 export interface ProgressEvent {
