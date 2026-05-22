@@ -32,6 +32,7 @@ import { formatMarkdown } from './output/markdown.js';
 import {
   AnalysisOptions, AnalysisResult, EarningsRevisions, LLMAnalysis,
   MarketSignals, NewsItem, OptionsSignals, SearchResult, StockFinancials,
+  SearchTrace, SearchProviderTrace,
 } from './types.js';
 
 // ─── Model defaults ───────────────────────────────────────────────────────────
@@ -166,6 +167,14 @@ export interface AnalysisRunInput {
   search?:    string | string[];
   pplx?:      'sonar' | 'sonar-pro' | null;
   verbose?:   boolean;
+  /**
+   * Bypass the LLM cache and force a fresh call. The cached entry for this
+   * flag combo (if any) gets *overwritten* with the new result. Used by the
+   * web UI's "Re-run (without cache)" button — without this the analysis
+   * would silently hit the still-valid cache (since we removed TTL gating)
+   * and "Re-run" would be a no-op.
+   */
+  force?:     boolean;
   onProgress?: (event: ProgressEvent) => void;
 }
 
@@ -397,6 +406,10 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
 
   // ── 3. Optional Web Search (multi-provider — run all selected externals) ─
   let searchResults: SearchResult[] = [];
+  // Trace of every provider invocation — gets persisted alongside the LLM
+  // verdict so the web UI's Research & News section can show what each engine
+  // returned (debug / provenance / sanity-check the LLM's input).
+  const searchTrace: SearchProviderTrace[] = [];
   const name = financials.companyName;
   const year = new Date().getFullYear();
   const queries = [
@@ -412,6 +425,9 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     logger.step('Running Tavily web search...');
     const tav = await new TavilySearch(requireApiKey('tavily')).searchMultiple(queries);
     searchResults.push(...tav);
+    searchTrace.push({
+      provider: 'tavily', queries, results: tav, fetchedAt: new Date().toISOString(),
+    });
     logger.success(`${tav.length} Tavily results`);
     emit({ stage: 'search', message: `${tav.length} Tavily results` });
   }
@@ -420,6 +436,9 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     logger.step('Running Brave web search...');
     const br = await new BraveSearch(requireApiKey('brave')).searchMultiple(queries);
     searchResults.push(...br);
+    searchTrace.push({
+      provider: 'brave', queries, results: br, fetchedAt: new Date().toISOString(),
+    });
     logger.success(`${br.length} Brave results`);
     emit({ stage: 'search', message: `${br.length} Brave results` });
   }
@@ -430,7 +449,9 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     search: searchKey(requested),
     pplx:   usePplx ? pplxModel : null,
   };
-  const cachedAnalysis = readAnalysis(cfg.cacheDir, symbol, flags);
+  // Honour `force` — caller explicitly asked for a fresh LLM call. We still
+  // call readAnalysis for symmetry/debug but discard the result.
+  const cachedAnalysis = input.force ? null : readAnalysis(cfg.cacheDir, symbol, flags);
   let llmAnalysis: LLMAnalysis | null = cachedAnalysis?.llmAnalysis ?? null;
   const llmFromCache = llmAnalysis !== null;
 
@@ -450,7 +471,27 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       edgarNeeded ? fetchEdgarFilings(symbol, cfg.cacheDir) : Promise.resolve(null),
     ]);
     llmAnalysis = analysis;
-    writeAnalysis(cfg.cacheDir, symbol, flags, llmAnalysis);
+
+    // After analyze() returns, query the provider for any native-search
+    // queries it issued (Claude / OpenAI built-in web search). The actual
+    // URLs the LLM fetched are processed server-side by the vendor and not
+    // observable here — the queries are the best breadcrumb we have.
+    const nativeQueries = llm.getNativeSearchQueries();
+    if (nativeQueries.length > 0) {
+      const nativeProvider: 'claude-web-search' | 'openai-web-search' =
+        llm.name === 'openai' ? 'openai-web-search' : 'claude-web-search';
+      searchTrace.push({
+        provider:  nativeProvider,
+        queries:   nativeQueries,
+        results:   [],  // not exposed by the LLM SDK
+        fetchedAt: new Date().toISOString(),
+      });
+    }
+
+    const trace: SearchTrace | undefined = searchTrace.length > 0
+      ? { providers: searchTrace }
+      : undefined;
+    writeAnalysis(cfg.cacheDir, symbol, flags, llmAnalysis, trace);
     logger.success('LLM analysis complete');
     emit({
       stage:   'llm',

@@ -46,6 +46,9 @@ export class OpenAIProvider extends LLMProvider {
   private async analyzeWithNativeSearch(prompt: string): Promise<LLMAnalysis> {
     logger.step('OpenAI native web search enabled...');
 
+    // Reset per-call so a reused provider doesn't accumulate across runs.
+    this._nativeSearchQueries = [];
+
     // Responses API with web_search_preview tool
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await (this.client as any).responses.create({
@@ -54,6 +57,19 @@ export class OpenAIProvider extends LLMProvider {
       instructions: SYSTEM_PROMPT,
       input: prompt,
     });
+
+    // Capture the queries OpenAI issued. The Responses API surfaces each
+    // web_search call as an output item of type 'web_search_call' with the
+    // chosen query in `.action.query`. Shape isn't typed in the SDK yet; treat
+    // defensively.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const output: any[] = Array.isArray(response.output) ? response.output : [];
+    for (const item of output) {
+      if (item?.type === 'web_search_call') {
+        const q = item?.action?.query ?? item?.arguments?.query ?? item?.query;
+        if (typeof q === 'string' && q.length > 0) this._nativeSearchQueries.push(q);
+      }
+    }
 
     const text: string = response.output_text ?? '';
     logger.debug('OpenAI native search response:', text.substring(0, 200));

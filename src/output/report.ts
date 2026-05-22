@@ -95,7 +95,10 @@ async function htmlToPdf(html: string, outputPath: string): Promise<void> {
 
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    // 'load' instead of 'networkidle0': the HTML is self-contained (inline
+    // CSS, no external fonts/images) so there's nothing to network-wait for,
+    // and the puppeteer-core typings don't include 'networkidle0' for setContent.
+    await page.setContent(html, { waitUntil: 'load' });
     await page.pdf({
       path: outputPath,
       format: 'A4',

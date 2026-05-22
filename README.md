@@ -1,6 +1,12 @@
 # stock-cli
 
-Fundamental stock analysis from the terminal. Fetches live financial data, runs 15 valuation models, then asks an LLM for a structured bull/bear analysis.
+Fundamental stock analysis from the terminal *and* a local web UI. Fetches live financial data, runs 19 valuation models, then asks an LLM for a structured bull/bear/risks analysis with a composite fair-value range.
+
+```
+CLI mode  →  one-shot analysis, prints markdown or JSON to stdout
+Web mode  →  persistent local app: sidebar of cached stocks, flag toggling,
+             chart-rich detail view, no LLM call until you explicitly Run
+```
 
 ## Setup
 
@@ -10,23 +16,68 @@ npm install
 cp .env.example .env   # fill in your API keys
 ```
 
+The web frontend lives under `web/` and has its own dependencies:
+
+```bash
+cd web && npm install && cd ..
+```
+
 ### API Keys
 
 | Key | Service | Required | Where to get |
 |-----|---------|----------|--------------|
 | `ANTHROPIC_API_KEY` | Claude — `--model claude/haiku/opus/claude-*` | yes | [console.anthropic.com](https://console.anthropic.com) |
-| `FINNHUB_API_KEY` | News & Finnhub metrics | yes | [finnhub.io](https://finnhub.io) — free tier |
+| `FINNHUB_API_KEY` | News, peer medians, sector ETF mapping | yes | [finnhub.io](https://finnhub.io) — free tier |
 | `OPENAI_API_KEY` | OpenAI — `--model openai/gpt-*/o1-*` | optional | [platform.openai.com](https://platform.openai.com) |
 | `GOOGLE_GEMINI_API_KEY` | Gemini — `--model gemini/gemini-*` | optional | [ai.google.dev](https://ai.google.dev) |
+| `PPLX_API_KEY` | Perplexity Sonar — web-sourced context paragraph | optional | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
 | `BRAVE_API_KEY` | Brave web search | optional | [brave.com/search/api](https://brave.com/search/api/) — $5 free credits/mo |
 | `TAVILY_API_KEY` | Tavily web search | optional | [tavily.com](https://tavily.com) |
-| `FRED_API_KEY` | Live interest rates | optional | [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
+| `FRED_API_KEY` | Live macro rates (10Y, AAA, VIX, DXY, yield curve) | optional | [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
 
 Minimum to get started: `ANTHROPIC_API_KEY` + `FINNHUB_API_KEY`.
 
-With `FRED_API_KEY`, the Graham Revised, DDM and Sortino models use live 10-year Treasury and Moody's AAA yields instead of hardcoded fallbacks.
+With `FRED_API_KEY`, Graham Revised, DDM, EPV, the 2-Stage DCF, RIM and Sortino models pull live rates instead of hardcoded fallbacks. Also unlocks the macro context block (VIX regime, yield curve, HY spreads, DXY).
 
-## Usage
+Optional env: `CACHE_DIR=.cache` (default), `LOG_LEVEL=info|debug|warn|error`.
+
+## Web UI
+
+```bash
+npm run web         # starts both API server + Vite dev server, hot-reload
+```
+
+That alias runs `tsx watch src/server.ts` (port 3000) and `vite` (port 5173) in parallel via [concurrently](https://www.npmjs.com/package/concurrently). Open <http://localhost:5173>.
+
+Run them separately if you prefer:
+
+```bash
+npm run serve:watch     # API on :3000 (auto-restarts on file changes)
+npm run web:dev         # Vite dev server on :5173 with HMR
+```
+
+Production build:
+
+```bash
+npm run web:build       # → web/dist/ static assets
+npm run serve           # API only — serve dist/ behind your own reverse proxy
+```
+
+### What the web UI does
+
+- **Left sidebar**: every stock you've ever analysed, with a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6).
+- **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull/bear/risks, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+- **Right sidebar**: model + search-provider + Perplexity toggles. Each flag combo is its own cached entry. Clicking an outdated combo still loads it (older entries get a ⚠ marker) — a warning banner sits on top with a one-click re-run.
+- **Refresh data** (header `↻`) re-fetches the data layer (Yahoo + Finnhub + FRED + technicals) without a single LLM call. **Re-run** in the right sidebar or in the stale banner forces a fresh LLM call, overwriting the cached verdict.
+- **URLs**: each stock has a hash route (`#AAPL`) so reloads and browser back/forward work.
+
+### Theming
+
+Edit hex values in `web/src/styles.css` — your editor opens a colour picker. The Tailwind config is a thin wrapper over CSS vars (`--color-success`, `--color-danger`, `--color-bg-deep`, …), so no rebuild is needed for runtime tweaks.
+
+Consensus-bar palette uses dedicated vars: `--color-consensus-buy/-hold/-sell`.
+
+## CLI
 
 ```bash
 # Basic analysis (Claude Sonnet, no search)
@@ -39,6 +90,10 @@ npx tsx src/cli.ts AAPL --model openai  --search
 # Explicit search provider
 npx tsx src/cli.ts FACC --search brave
 npx tsx src/cli.ts NOW  --search tavily --output report.md
+
+# Perplexity Sonar context (separate from --search; pulls a web-sourced paragraph)
+npx tsx src/cli.ts MSFT --pplx sonar
+npx tsx src/cli.ts MSFT --pplx sonar-pro
 
 # Model shortcuts
 npx tsx src/cli.ts AAPL --model haiku       # claude-haiku-4-5-20251001
@@ -58,14 +113,14 @@ npx tsx src/cli.ts NOW --cache disable   # skip cache
 npx tsx src/cli.ts NOW --verbose         # debug logging
 ```
 
-## Options
+### Options
 
 ```
 Usage: investment-cli [options] <symbol>
 
 Arguments:
   symbol              Stock ticker — local exchange symbols auto-resolved
-                      (e.g. NOW, AAPL, FACC → 0QW9.IL)
+                      (e.g. NOW, AAPL, FACC → 0QW9.IL, Airbus → AIR.PA)
 
 Options:
   -m, --model <id>    Model shortcut or full model ID  (default: claude)
@@ -73,8 +128,10 @@ Options:
                         Full IDs:   claude-* | gpt-* | o1-* | gemini-*
   -s, --search [type] Web search — omit value for native search of active model
                         none | claude | openai | brave | tavily
+                        (can be comma-separated for multi-source: brave,tavily)
+      --pplx <model>  Perplexity Sonar context — sonar | sonar-pro
   -o, --output        Save report — .md or .json
-  -c, --cache         enable | disable                 (default: enable, TTL 1h)
+  -c, --cache         enable | disable                 (default: enable)
   -v, --verbose       Debug logging
   -h, --help          Show help
 ```
@@ -89,78 +146,141 @@ Options:
 | `openai` | `openai` / `gpt-*` only | live web via Responses API | ~$0.02 |
 | `claude` | `claude` / `claude-*` only | live web, best quality | ~$0.12 |
 
-Pass `--search` without a value to auto-select the native search for the active model (`claude` → claude search, `openai` → openai search).
+Pass `--search` without a value to auto-select the native search for the active model. Multiple providers can be combined (`--search brave,tavily`); results are merged before the LLM call.
 
-**Recommendation:** `--search brave` for daily use, `--search` (native) during earnings season or after major news events.
+**Recommendation:** `brave` for daily use, native (`claude` / `openai`) during earnings season, `--pplx sonar` as a complement when you want a curated paragraph of web context instead of raw snippets.
 
 ## Valuation models
 
 | # | Model | Method |
 |---|-------|--------|
-| 1 | **DCF** | 5-year FCF projection at 10% growth, 8% WACC, 3% terminal |
-| 2 | **Reverse DCF** | Binary search for FCF growth rate implied by current price |
+| 1 | **2-Stage DCF (FCFF)** | Stage-1 growth (analyst-forward, capped) → linear fade → terminal. CAPM discount rate from live β + risk-free. Equity bridge (− debt + cash). |
+| 2 | **Reverse DCF** | Binary search for FCF growth implied by the current price, same 2-stage geometry. |
 | 3 | **Graham Number** | `√(22.5 × EPS × Book Value)` |
-| 4 | **Graham Revised (V\*)** | `EPS × (8.5 + 2g) × 4.4 / AAA_yield` — uses live FRED rate |
-| 5 | **Peter Lynch** | `EPS × EPS_growth_rate_pct` — uses 3-year EPS CAGR from Finnhub |
-| 6 | **EPV (Greenwald)** | Normalized EBIT × (1 − tax) / WACC + cash − debt |
-| 7 | **DDM** | Gordon Growth Model with CAPM required return — uses live FRED rate |
-| 8 | **EV Multiples** | EV/EBITDA, EV/Revenue, EV/FCF, P/FCF, P/S |
-| 9 | **Rule of 40** | Revenue growth % + operating margin % |
-| 10 | **Piotroski F-Score** | 9-signal fundamental quality screen (F1–F9) |
-| 11 | **Altman Z-Score** | Original (manufacturing) or Modified Z' (services/tech) |
-| 12 | **Interest Coverage** | EBIT / interest expense |
-| 13 | **Sortino Ratio** | Risk-adjusted return using downside deviation only — uses live FRED rate |
-| 14 | **Beneish M-Score** | 8-variable earnings manipulation detector |
-| 15 | **Key Ratios** | P/E, Forward P/E, PEG, P/B, ROE, ROA, ROIC, D/E, margins, growth |
+| 4 | **Graham Revised (V\*)** | `EPS × (8.5 + 2g) × 4.4 / AAA_yield` — live FRED rate |
+| 5 | **Peter Lynch** | `EPS × growth_rate_pct`, prefers analyst-forward growth |
+| 6 | **EPV (Greenwald)** | Normalised EBIT × (1 − tax) / WACC + cash − debt |
+| 7 | **DDM** | Gordon Growth with CAPM required return |
+| 8 | **RIM (Residual Income / EBO)** | Book value + Σ excess returns over cost of equity |
+| 9 | **NCAV (Graham Net-Net)** | Current assets − total liabilities, ⅔ × NCAV buy threshold |
+| 10 | **Peer Multiples** | P/E, EV/EBITDA, EV/Revenue, P/FCF, P/B, P/S vs Finnhub sector medians — implied fair price per multiple + median fair price |
+| 11 | **Composite Fair Value** | Median + IQR over all *applicable* models, split into Primary (market-aligned) and Conservative (value-investor) tiers. Sanity-bounded 0.02× – 30× of price. |
+| 12 | **EV Multiples** | EV/EBITDA, EV/Revenue, EV/FCF, P/FCF, P/S TTM, forward P/S |
+| 13 | **Simple Valuation Ratio (P/S Run-Rate)** | `marketCap / (latest_quarter_revenue × 4)` — reacts to growth inflections faster than TTM P/S |
+| 14 | **Rule of 40** | Revenue growth % + operating margin % |
+| 15 | **Piotroski F-Score** | 9-signal fundamental quality screen (F1–F9) |
+| 16 | **Altman Z-Score** | Original (manufacturing) or Modified Z′ (services/tech) |
+| 17 | **Interest Coverage** | EBIT / interest expense |
+| 18 | **Sortino Ratio** | Risk-adjusted return using downside deviation, live risk-free rate |
+| 19 | **Beneish M-Score** | 8-variable earnings-manipulation detector, gated on min variable coverage |
+
+## Technical signals gauge
+
+TradingView-style aggregation in `src/analysis/signals.ts`:
+
+- **Moving averages** — SMA/EMA 10, 20, 50, 100, 200 vs price
+- **Oscillators** — RSI14, Stochastic %K/%D, MACD histogram, CCI20, Williams %R, momentum
+- **Overall** — weighted blend mapped to STRONG BUY / BUY / NEUTRAL / SELL / STRONG SELL
 
 ## Data sources
 
 | Source | Data |
 |--------|------|
-| Yahoo Finance (`yahoo-finance2`) | Price, fundamentals, balance sheet, cash flow, historical prices, analyst targets & ratings |
-| Yahoo Finance search API | Symbol auto-resolution — type `FACC` and it resolves to the correct exchange ticker |
+| Yahoo Finance (`yahoo-finance2`) | Price, fundamentals, annual + quarterly income statements, balance sheet, cash flow, daily/monthly price history, analyst targets & ratings, earnings history + estimates, options chain, insider transactions, institutional ownership |
+| Yahoo Finance search API | Symbol auto-resolution (`FACC` → `0QW9.IL`) |
 | Finnhub `/stock/metric` | ROIC, 3-year EPS CAGR, 5-year dividend growth rate |
-| Finnhub `/stock/peers` + `/stock/metric` | Peer group median multiples & profitability (up to 8 peers) |
-| Finnhub `/company-news` | Recent company news (last 7 days) |
-| FRED | Live 10-year Treasury yield (DGS10), Moody's AAA bond yield (DAAA) |
+| Finnhub `/stock/peers` + `/stock/metric` | Peer-group median multiples & profitability |
+| Finnhub `/company-news` | Recent news (last 7 days) |
+| FRED | 10Y Treasury, Moody's AAA, VIX, DXY, yield curve, HY spreads, sector ETF prices |
+| SEC EDGAR | Latest 10-K / 10-Q filings (US tickers only) |
+| Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
+| Perplexity Sonar | Optional web-sourced context paragraph included verbatim in the LLM prompt |
 | Brave / Tavily / Claude / OpenAI | Optional web search for current events |
 
 ## Project structure
 
 ```
 src/
-├── cli.ts               Entry point & orchestration
-├── config.ts            Env vars (Zod validated)
-├── types.ts             Zod schemas with field descriptions (types inferred via z.infer<>)
-├── cache.ts             File-based JSON cache (1h TTL, versioned)
-├── providers/           LLM abstraction layer
-│   ├── anthropic.ts     Claude + native web_search_20250305 tool
-│   ├── openai.ts        OpenAI chat completions + Responses API web_search_preview
-│   ├── gemini.ts        Gemini 1.5 Pro
-│   └── factory.ts
-├── search/
-│   ├── base.ts          Abstract SearchProvider
-│   ├── brave.ts         Brave Search (extra_snippets)
-│   └── tavily.ts        Tavily
+├── cli.ts                 Entry point + runAnalysis() shared by CLI & web
+├── server.ts              Express API: /api/stocks, /api/analyze/stream, …
+├── refresh.ts             Force-refresh data layer without LLM (web "↻ Refresh" button)
+├── config.ts              Env vars (Zod validated)
+├── types.ts               Zod schemas — types inferred via z.infer<>
+├── cache.ts               File-based JSON cache (versioned, no TTL on analyses)
+├── providers/             LLM abstraction layer (anthropic, openai, gemini, factory)
+├── search/                Brave + Tavily clients (LLM-native search is in providers/)
 ├── data/
-│   ├── yfinance.ts      Yahoo Finance — symbol resolution, fundamentalsTimeSeries, chart(), analyst ratings
-│   ├── finnhub.ts       News, basic metrics (ROIC, EPS CAGR), peer group medians
-│   └── fred.ts          Live interest rates (10Y Treasury, AAA yield)
+│   ├── yfinance.ts        Yahoo: financials, quarterly revenues, ISIN via Wikidata
+│   ├── finnhub.ts         News, basic metrics, peer-group medians
+│   ├── fred.ts            FRED rates (live 10Y, AAA, …)
+│   ├── macro.ts           SPY + sector-ETF bundles, yield curve, VIX
+│   ├── perplexity.ts      Sonar / Sonar-Pro web-research paragraph
+│   └── edgar.ts           SEC EDGAR filings
 ├── analysis/
-│   └── metrics.ts       15 valuation models + formatting helpers
+│   ├── metrics.ts         19 valuation models
+│   ├── computeMetrics.ts  Orchestrates the bundle of models for the web GET
+│   ├── signals.ts         TradingView-style buy/sell signal aggregation
+│   └── technical.ts       SMA/EMA/RSI/MACD/Bollinger/Stoch/CCI computations
 ├── output/
-│   ├── prompt.ts        LLM prompt builder
-│   └── markdown.ts      Terminal output formatter
-└── utils/
-    └── logger.ts        Chalk-based structured logging
+│   ├── prompt.ts          LLM prompt builder
+│   ├── markdown.ts        Terminal + report markdown
+│   └── report.ts          PDF/HTML report (Puppeteer)
+└── utils/logger.ts        Chalk-based structured logging
+
+web/
+├── index.html
+├── vite.config.ts
+├── tailwind.config.js     Maps Tailwind colour tokens → CSS vars in styles.css
+├── src/
+│   ├── App.tsx            Routing (hash), state, SSE wiring
+│   ├── api.ts             Thin fetch wrappers
+│   ├── types.ts           Mirror of server schemas (StockBundle, AnalysisFlagsKey, …)
+│   ├── format.ts          fmt*, mosColor, recommendationColor helpers
+│   ├── styles.css         ALL theme tokens as :root HEX vars
+│   └── components/
+│       ├── StockSidebar.tsx       Left list + ConsensusBar
+│       ├── SettingsSidebar.tsx    Right pane: model/search/pplx + cached combos
+│       ├── AnalysisView.tsx       Centre detail; renders all sections
+│       ├── VerdictHero.tsx        AI verdict + composite + analyst hero cards
+│       ├── BullBearRisks.tsx      3-column bull/bear/risks block
+│       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per sidebar item
+│       ├── StockHeader.tsx        Logo, price, refresh button
+│       ├── StockLogo.tsx          Multi-source logo cascade (Logo.dev → Brandfetch → …)
+│       ├── ProgressBanner.tsx     SSE progress events while a run is in flight
+│       ├── AnalyzeForm.tsx        Bottom "analyze a new symbol" input
+│       ├── Section.tsx            Collapsible section with localStorage state
+│       ├── charts/                ECharts wrappers (Composite, FundamentalsHistory, …)
+│       └── sections/              ValuationDetail, QualityScores, FundamentalsGrid,
+│                                  PeerCompare, TechnicalSignalsPanel, PriceAction,
+│                                  MarketContext, OwnershipFlow, EarningsBlock,
+│                                  NewsAndResearch, CompanyInfo
 ```
+
+## Cache layout
+
+Each stock lives under `$CACHE_DIR/$SYMBOL/`:
+
+```
+financials.json        # versioned (v15) — Yahoo + Finnhub + ISIN
+market-signals.json    # versioned — technicals + revisions + options + macro
+news.json              # 30-min TTL
+perplexity.json        # keyed by prompt hash
+analyses/<hash>.json   # one per (model, search, pplx) combo — no TTL, hash-only
+submissions.json       # EDGAR
+report.md/.html/.pdf   # last full CLI analysis output (CLI only)
+```
+
+The web UI never silently invalidates an analysis — outdated entries stay selectable but show a ⚠ marker and a stale banner that prompts a one-click re-run.
 
 ## Development
 
 ```bash
-npm run dev        # watch mode (tsx)
-npm run build      # compile TypeScript → dist/
-npm run typecheck  # type-check without emitting
+npm run dev          # CLI watch mode (tsx)
+npm run serve:watch  # API server watch mode
+npm run web          # CLI server + Vite together
+npm run build        # compile TypeScript → dist/
+npm run web:build    # build the Vite bundle
+npm run typecheck    # type-check without emitting
 ```
 
 ## License

@@ -46,6 +46,9 @@ export class AnthropicProvider extends LLMProvider {
   private async analyzeWithNativeSearch(prompt: string): Promise<LLMAnalysis> {
     logger.step('Claude native web search enabled...');
 
+    // Reset per-call so a reused provider doesn't accumulate across runs.
+    this._nativeSearchQueries = [];
+
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
     let text = '';
 
@@ -70,6 +73,19 @@ export class AnthropicProvider extends LLMProvider {
       }
 
       if (response.stop_reason !== 'tool_use') break;
+
+      // Capture the query Claude issued — the tool's `input.query` is the
+      // only visible breadcrumb (Anthropic processes the actual fetch
+      // server-side and never streams the raw results back to us).
+      for (const b of response.content) {
+        if (b.type === 'tool_use') {
+          const input = (b as { type: 'tool_use'; input: unknown }).input;
+          const q = (input && typeof input === 'object' && 'query' in input)
+            ? String((input as { query: unknown }).query)
+            : null;
+          if (q) this._nativeSearchQueries.push(q);
+        }
+      }
 
       messages.push({ role: 'assistant', content: response.content });
 

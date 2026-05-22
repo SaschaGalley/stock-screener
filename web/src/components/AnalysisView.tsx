@@ -311,12 +311,13 @@ export default function AnalysisView({
             <OwnershipFlow financials={f} />
           </Section>
 
-          {/* TIER 11: PERPLEXITY + NEWS */}
-          {(bundle.perplexity || bundle.news.length > 0) && (
+          {/* TIER 11: PERPLEXITY + NEWS + SEARCH TRACES */}
+          {(bundle.perplexity || bundle.news.length > 0 || (analysis?.searches?.providers.length ?? 0) > 0) && (
             <Section title="Research & News" defaultOpen={false}>
               <NewsAndResearch
                 news={bundle.news}
                 perplexity={bundle.perplexity}
+                searches={analysis?.searches ?? null}
               />
             </Section>
           )}

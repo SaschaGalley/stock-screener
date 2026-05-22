@@ -455,9 +455,10 @@ export function createApp() {
   // `search` accepts: single string | comma-separated string | array of strings.
   app.post('/api/analyze', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { input, model, search, pplx } = req.body as {
+      const { input, model, search, pplx, force } = req.body as {
         input?: string; model?: string; search?: string | string[];
         pplx?: 'sonar' | 'sonar-pro' | null;
+        force?: boolean;
       };
       if (!input || typeof input !== 'string') {
         res.status(400).json({ error: '`input` (symbol or query string) required' });
@@ -466,13 +467,14 @@ export function createApp() {
 
       const isSymbol = looksLikeSymbol(input);
       const opts = isSymbol ? { symbol: input.toUpperCase() } : { query: input };
-      logger.info(`Analyze ${isSymbol ? 'symbol' : 'query'}=${input} model=${model ?? 'claude'} search=${JSON.stringify(search ?? 'none')} pplx=${pplx ?? 'none'}`);
+      logger.info(`Analyze ${isSymbol ? 'symbol' : 'query'}=${input} model=${model ?? 'claude'} search=${JSON.stringify(search ?? 'none')} pplx=${pplx ?? 'none'}${force ? ' force=true' : ''}`);
 
       const { result, meta } = await runAnalysis({
         ...opts,
         model:   model ?? 'claude',
         search:  search ?? 'none',
         pplx:    pplx ?? null,
+        force:   !!force,
         verbose: false,
       });
       res.json({ result, meta });
@@ -496,6 +498,7 @@ export function createApp() {
     const pplxQ  = String(req.query.pplx ?? '');
     const pplx: 'sonar' | 'sonar-pro' | null =
       pplxQ === 'sonar' || pplxQ === 'sonar-pro' ? pplxQ : null;
+    const force  = req.query.force === '1' || req.query.force === 'true';
 
     if (!input) {
       res.status(400).json({ error: '`input` query param required' });
@@ -526,6 +529,7 @@ export function createApp() {
       const { result, meta } = await runAnalysis({
         ...opts,
         model, search, pplx,
+        force,
         verbose: false,
         onProgress: (ev) => {
           if (closed) return;

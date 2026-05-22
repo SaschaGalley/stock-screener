@@ -25,6 +25,15 @@ export abstract class LLMProvider {
   abstract readonly name: string;
   abstract supportsNativeSearch(): boolean;
   abstract analyze(prompt: string, searchResults?: SearchResult[]): Promise<LLMAnalysis>;
+
+  /**
+   * Queries the provider issued during native web search (Claude
+   * `web_search_20250305`, OpenAI `web_search_preview`). Read AFTER `analyze()`
+   * completes. Default: empty array (provider didn't use native search). Stored
+   * by the caller into the analysis cache for debug/inspection in the UI.
+   */
+  protected _nativeSearchQueries: string[] = [];
+  getNativeSearchQueries(): string[] { return [...this._nativeSearchQueries]; }
 }
 
 export function parseJsonFromResponse(text: string): LLMAnalysis {

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join, isAbsolute, resolve } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
-import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem } from './types.js';
+import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem, SearchTrace } from './types.js';
 import { logger } from './utils/logger.js';
 import { PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
 
@@ -96,6 +96,12 @@ export interface CachedAnalysisEntry {
   hash:        string;
   llmAnalysis: LLMAnalysis;
   generatedAt: string;       // ISO timestamp when LLM was called
+  /**
+   * Debug trace of every search provider that ran for this analysis — raw
+   * Tavily/Brave results plus the queries Claude/OpenAI issued via native
+   * search. Optional for backwards-compat with older cache entries.
+   */
+  searches?:   SearchTrace;
 }
 
 /** Manifest entry for one cached analysis (lightweight, no LLM payload). */
@@ -125,7 +131,13 @@ export function readAnalysis(rawDir: string, symbol: string, flags: AnalysisFlag
   return entry.data;
 }
 
-export function writeAnalysis(rawDir: string, symbol: string, flags: AnalysisFlagsKey, llmAnalysis: LLMAnalysis): void {
+export function writeAnalysis(
+  rawDir: string,
+  symbol: string,
+  flags: AnalysisFlagsKey,
+  llmAnalysis: LLMAnalysis,
+  searches?: SearchTrace,
+): void {
   const dir = analysesDir(rawDir, symbol);
   const hash = analysisHash(flags);
   try {
@@ -133,6 +145,7 @@ export function writeAnalysis(rawDir: string, symbol: string, flags: AnalysisFla
     const entry: CachedAnalysisEntry = {
       flags, hash, llmAnalysis,
       generatedAt: new Date().toISOString(),
+      ...(searches && searches.providers.length > 0 ? { searches } : {}),
     };
     writeEntry(join(dir, `${hash}.json`), ANALYSIS_VERSION, entry);
     logger.debug(`Cached analysis for ${symbol} (${hash})`);

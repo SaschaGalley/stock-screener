@@ -95,6 +95,10 @@ export const api = {
   /**
    * Streaming analyze: opens a Server-Sent Events connection and forwards
    * progress events. Returns a cleanup function to close the connection early.
+   *
+   * Pass `force: true` to bypass the LLM cache. Without this the server hits
+   * the cached entry (since analyses are now hash-keyed without TTL) and
+   * "Re-run" becomes a no-op.
    */
   analyzeStream: (
     input: string,
@@ -105,11 +109,13 @@ export const api = {
       onError?:    (msg: string) => void;
       onDone?:     () => void;
     },
+    opts?: { force?: boolean },
   ): (() => void) => {
     const params = new URLSearchParams();
     params.set('input', input);
     params.set('model', settings.model);
     if (settings.pplx) params.set('pplx', settings.pplx);
+    if (opts?.force) params.set('force', '1');
     // Multi-search: append one ?search=… per provider; backend collects them.
     for (const s of settings.searches) params.append('search', s);
     const url = `${BASE}/analyze/stream?${params}`;

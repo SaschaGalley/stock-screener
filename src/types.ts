@@ -678,6 +678,27 @@ export const SearchResultSchema = z.object({
 });
 export type SearchResult = z.infer<typeof SearchResultSchema>;
 
+/**
+ * Per-provider trace of what a search engine actually returned for this run.
+ * Stored alongside the LLM verdict so a user can inspect what context the model
+ * was given. Captures both *external* providers (Tavily, Brave — full result
+ * payloads) and *native* providers (Claude / OpenAI web search — only the
+ * queries the LLM chose to issue; the URLs it ultimately fetched are processed
+ * server-side by the LLM vendor and not exposed back via the SDK).
+ */
+export const SearchProviderTraceSchema = z.object({
+  provider:  z.enum(['tavily', 'brave', 'claude-web-search', 'openai-web-search']),
+  queries:   z.array(z.string()).describe('Queries issued against the provider'),
+  results:   z.array(SearchResultSchema).describe('Raw results returned (empty for native providers — only queries are observable)'),
+  fetchedAt: z.string().describe('ISO timestamp when this provider was queried'),
+});
+export type SearchProviderTrace = z.infer<typeof SearchProviderTraceSchema>;
+
+export const SearchTraceSchema = z.object({
+  providers: z.array(SearchProviderTraceSchema).describe('One entry per search provider that ran for this analysis'),
+});
+export type SearchTrace = z.infer<typeof SearchTraceSchema>;
+
 // ─── LLM Output ───────────────────────────────────────────────────────────────
 
 export const LLMAnalysisSchema = z.object({

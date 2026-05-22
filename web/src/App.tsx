@@ -110,7 +110,12 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selected]);
 
-  function startAnalyze(input: string) {
+  /**
+   * Start an analyze run. `force` bypasses the LLM cache — used by the
+   * sidebar's "Re-run (without cache)" and the StaleBanner's re-run action.
+   * The plain Run button leaves it false so a cached entry serves instantly.
+   */
+  function startAnalyze(input: string, force = false) {
     setLoading(true);
     setError(null);
     setProgress([]);
@@ -131,7 +136,7 @@ export default function App() {
         setLoading(false);
         setRefreshTick((t) => t + 1);
       },
-    });
+    }, { force });
     closeStreamRef.current = close;
   }
 
@@ -205,7 +210,8 @@ export default function App() {
               summary={summary}
               flags={flags}
               refreshKey={refreshTick}
-              onRunAnalysis={() => startAnalyze(selected)}
+              // StaleBanner's Re-run = force fresh LLM call (cache is stale by data).
+              onRunAnalysis={() => startAnalyze(selected, true)}
               analyzing={loading}
             />
           ) : (
@@ -235,8 +241,10 @@ export default function App() {
             symbol={selected}
             settings={settings}
             onChange={setSettings}
-            onLoad={() => selected && startAnalyze(selected)}
-            onReload={() => selected && startAnalyze(selected)}
+            // First-time Run: cache hit serves instantly, miss runs the LLM.
+            onLoad={() => selected && startAnalyze(selected, false)}
+            // "Re-run (without cache)": force a fresh LLM call, overwriting cache.
+            onReload={() => selected && startAnalyze(selected, true)}
             loading={loading}
           />
         </div>

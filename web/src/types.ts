@@ -44,6 +44,24 @@ export interface AnalysisManifestEntry {
   olderThanData?: boolean;
 }
 
+export interface SearchResultRecord {
+  title:   string;
+  url:     string;
+  content: string;
+  score?:  number;
+}
+
+export interface SearchProviderTrace {
+  provider:  'tavily' | 'brave' | 'claude-web-search' | 'openai-web-search';
+  queries:   string[];
+  results:   SearchResultRecord[];   // empty for native providers (LLM-side fetch)
+  fetchedAt: string;
+}
+
+export interface SearchTrace {
+  providers: SearchProviderTrace[];
+}
+
 export interface CachedAnalysisEntry {
   flags: AnalysisFlagsKey;
   hash: string;
@@ -57,6 +75,7 @@ export interface CachedAnalysisEntry {
     recommendation: 'STRONG BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG SELL';
     fairValueEstimate: string;
   };
+  searches?: SearchTrace;
 }
 
 export interface CompositeTier {
