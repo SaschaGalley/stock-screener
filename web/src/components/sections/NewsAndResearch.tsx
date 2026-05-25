@@ -1,9 +1,22 @@
-import type { SearchTrace, SearchProviderTrace } from '../../types';
+import { useState } from 'react';
+import { api } from '../../api';
+import type {
+  SearchTrace,
+  SearchProviderTrace,
+  DistillBundle,
+  DistillBriefing,
+  DistillCacheState,
+} from '../../types';
 
 interface Props {
+  symbol: string;
   news: any[];
   perplexity: any;
+  distill: DistillBundle | null;
   searches: SearchTrace | null;
+  /** Called after a successful Distill refresh so the parent can re-fetch
+   *  the bundle and surface the new briefings + lastRefresh metadata. */
+  onDistillRefreshed: () => void;
 }
 
 /** Friendly label + accent shade per provider. Kept simple — these are debug
@@ -15,39 +28,47 @@ const PROVIDER_META: Record<SearchProviderTrace['provider'], { label: string; ti
   'openai-web-search':   { label: 'OpenAI web_search', tint: 'border-l-emerald-500' },
 };
 
-export default function NewsAndResearch({ news, perplexity, searches }: Props) {
+export default function NewsAndResearch({ symbol, news, perplexity, distill, searches, onDistillRefreshed }: Props) {
   return (
     <div className="space-y-6">
+      {/* Distill — top of the section because it's the most-weighted qualitative
+          signal in the LLM prompt. Always rendered (even with zero briefings)
+          so the user can trigger a first generation via the Refresh button. */}
+      <DistillSection symbol={symbol} distill={distill} onRefreshed={onDistillRefreshed} />
+
+
       {perplexity && (
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+        <details className="rounded border border-ink-800 bg-ink-950" open>
+          <summary className="cursor-pointer px-3 py-2 text-xs">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
               Perplexity Research
-            </h3>
-            <span className="text-[10px] text-ink-600">
+            </span>
+            <span className="ml-2 text-[10px] text-ink-600">
               {perplexity.model} · {new Date(perplexity.fetchedAt).toLocaleString()}
             </span>
+          </summary>
+          <div className="border-t border-ink-800 px-3 py-2">
+            <div className="prose-stock max-h-96 overflow-y-auto text-xs">
+              {perplexity.synthesis.split('\n').map((line: string, i: number) => (
+                <p key={i} className={line.startsWith('**') ? 'mt-3 font-semibold text-ink-100' : 'mt-1'}>
+                  {line.replace(/\*\*/g, '')}
+                </p>
+              ))}
+            </div>
+            {perplexity.citations?.length > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[10px] text-ink-500">
+                  {perplexity.citations.length} sources
+                </summary>
+                <ul className="mt-1 space-y-0.5 pl-4 text-[10px] text-ink-500">
+                  {perplexity.citations.map((u: string, i: number) => (
+                    <li key={i}><a href={u} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">{u}</a></li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
-          <div className="prose-stock max-h-96 overflow-y-auto rounded border border-ink-800 bg-ink-950 p-3 text-xs">
-            {perplexity.synthesis.split('\n').map((line: string, i: number) => (
-              <p key={i} className={line.startsWith('**') ? 'mt-3 font-semibold text-ink-100' : 'mt-1'}>
-                {line.replace(/\*\*/g, '')}
-              </p>
-            ))}
-          </div>
-          {perplexity.citations?.length > 0 && (
-            <details className="mt-2">
-              <summary className="cursor-pointer text-[10px] text-ink-500">
-                {perplexity.citations.length} sources
-              </summary>
-              <ul className="mt-1 space-y-0.5 pl-4 text-[10px] text-ink-500">
-                {perplexity.citations.map((u: string, i: number) => (
-                  <li key={i}><a href={u} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">{u}</a></li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
+        </details>
       )}
 
       {/* Search Traces — one collapsible block per provider that ran. Persisted
@@ -92,6 +113,270 @@ export default function NewsAndResearch({ news, perplexity, searches }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Wrapper around the Distill briefings list with an explicit "↻ Refresh"
+ * button that calls the Distill backend's POST /briefings/refresh. State
+ * machine: idle → in-flight (spinner + helpful copy explaining the wait) →
+ * either an error toast or a parent-triggered bundle refresh that brings the
+ * new briefings + cost badge in.
+ *
+ * Read-only key handling: 403 from the stock-cli proxy is converted into a
+ * disabled button + persistent tooltip rather than an alert. Once the user
+ * sees that state they know to mint a write-scoped key in the Distill admin
+ * — no need to bug them again on subsequent stocks.
+ */
+function DistillSection({
+  symbol,
+  distill,
+  onRefreshed,
+}: {
+  symbol: string;
+  distill: DistillBundle | null;
+  onRefreshed: () => void;
+}) {
+  const briefings = distill?.briefings ?? [];
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Persistent error states — once tripped, the button stays disabled with a
+  // hint until the user fixes the upstream config (no point retrying).
+  const [persistent, setPersistent] = useState<
+    | { kind: 'read-only' }
+    | { kind: 'unauthorized' }
+    | { kind: 'ambiguous-type' }
+    | null
+  >(null);
+
+  async function handleRefresh() {
+    if (busy || persistent) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.refreshDistill(symbol);
+      onRefreshed();
+    } catch (e) {
+      const msg = (e as Error).message ?? 'Refresh failed';
+      if (msg.includes('distill_read_only') || msg.includes('read-only')) {
+        setPersistent({ kind: 'read-only' });
+      } else if (msg.includes('distill_unauthorized')) {
+        setPersistent({ kind: 'unauthorized' });
+      } else if (msg.includes('distill_ambiguous_type') || msg.includes('Ambiguous') || msg.includes('default')) {
+        setPersistent({ kind: 'ambiguous-type' });
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Hide the section entirely when nothing's configured (no bundle, no briefings,
+  // no symbol context to act on). The parent's enclosing-section conditional
+  // already keeps the whole tier hidden if perplexity / news / searches are
+  // also empty — we just don't want a lonely empty Distill card.
+  if (!distill && briefings.length === 0) {
+    return (
+      <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
+        <div className="flex items-center justify-between gap-2">
+          <span>
+            <span className="font-semibold uppercase tracking-wider text-ink-400">Distill Briefings</span>
+            <span className="ml-2">no briefings cached yet</span>
+          </span>
+          <RefreshButton busy={busy} disabled={!!persistent} onClick={handleRefresh} />
+        </div>
+        {error && <div className="mt-1 text-amber-400">{error}</div>}
+        {persistent && <PersistentHint kind={persistent.kind} />}
+      </div>
+    );
+  }
+
+  const last = distill?.lastRefresh;
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          Distill Briefings
+        </h3>
+        <div className="flex items-center gap-2">
+          {last && <CacheStateBadge state={last.cacheState} />}
+          {last && last.distillCostUsd > 0 && (
+            <span
+              className="font-mono text-[10px] text-ink-500 tabular"
+              title="Cost of distill drain batches in this refresh"
+            >
+              +${last.distillCostUsd.toFixed(4)} distill
+            </span>
+          )}
+          <span className="text-[10px] text-ink-600">
+            {briefings.length} brief{briefings.length === 1 ? '' : 's'}
+            {distill?.fetchedAt && ` · ${new Date(distill.fetchedAt).toLocaleString()}`}
+          </span>
+          <RefreshButton busy={busy} disabled={!!persistent} onClick={handleRefresh} />
+        </div>
+      </div>
+
+      {busy && (
+        <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-[11px] text-ink-300">
+          ⟳ Refreshing… first-time tickers can take a few minutes while the
+          backlog is distilled.
+        </div>
+      )}
+      {error && (
+        <div className="mb-2 rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-[11px] text-amber-300">
+          ⚠ {error}
+        </div>
+      )}
+      {persistent && <PersistentHint kind={persistent.kind} />}
+
+      {briefings.length > 0 ? (
+        <div className="space-y-2">
+          {briefings.map((b) => (
+            <DistillBriefingBlock key={b.id} briefing={b} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
+          {last?.cacheState === 'empty-pool'
+            ? 'No fresh insights available upstream — Distill has nothing new to summarise.'
+            : 'No briefings cached yet — click Refresh to trigger one.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RefreshButton({ busy, disabled, onClick }: { busy: boolean; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy || disabled}
+      title={disabled
+        ? 'Refresh unavailable — see the hint below for the fix.'
+        : 'Trigger a Distill refresh — drains pending insights and (re)generates the briefing.'}
+      className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-[10px] font-medium text-ink-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {busy ? '⟳' : '↻'} Refresh
+    </button>
+  );
+}
+
+/** Persistent configuration-error hint. Once the user sees this, the fix is
+ *  upstream (Distill admin or .env) — no point in retrying without action. */
+function PersistentHint({ kind }: { kind: 'read-only' | 'unauthorized' | 'ambiguous-type' }) {
+  const messages: Record<typeof kind, string> = {
+    'read-only':
+      'The configured Distill key is read-only. Mint a key with `briefings:write` scope in the Distill admin (Project → Access keys) to enable refresh.',
+    'unauthorized':
+      'Distill rejected the key as invalid. Check `DISTILL_API_KEY` in your .env and confirm the key still exists in the Distill admin.',
+    'ambiguous-type':
+      'The Distill project has multiple briefing types and no default — star one in the Distill admin (Project → Briefing-Typen) and the refresh will pick it up.',
+  };
+  return (
+    <div className="mt-1 text-[10px] italic text-ink-500">
+      {messages[kind]}
+    </div>
+  );
+}
+
+function CacheStateBadge({ state }: { state: DistillCacheState }) {
+  const meta: Record<DistillCacheState, { label: string; cls: string; title: string }> = {
+    'still-current': { label: 'still-current', cls: 'border-emerald-700 bg-emerald-900 text-emerald-400', title: 'Existing briefing still covers all fresh insights — no LLM call needed.' },
+    'generated':     { label: 'generated',     cls: 'border-accent bg-accent-soft text-ink-200',          title: 'Fresh briefing was just generated (LLM call ran).' },
+    'empty-pool':    { label: 'empty-pool',    cls: 'border-amber-700 bg-amber-950 text-amber-300',       title: 'No fresh insights available upstream — nothing to summarise.' },
+    'unknown':       { label: 'unknown',       cls: 'border-ink-800 bg-ink-950 text-ink-500',             title: 'Server did not return a cache-state header.' },
+  };
+  const m = meta[state];
+  return (
+    <span
+      className={`rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider ${m.cls}`}
+      title={m.title}
+    >
+      {m.label}
+    </span>
+  );
+}
+
+/**
+ * A single Distill briefing. Open by default for the most-recent one to keep
+ * the prominent signal visible without a click, collapsed for the rest. The
+ * body is either plain text or Distill's restricted markdown subset (only
+ * **bold** and `- bullet lists` — no headers, no code blocks). We render
+ * inline rather than pulling in react-markdown to keep the bundle small.
+ */
+function DistillBriefingBlock({ briefing }: { briefing: DistillBriefing }) {
+  return (
+    <details
+      className="rounded border border-l-2 border-ink-800 border-l-accent bg-ink-950"
+      open
+    >
+      <summary className="cursor-pointer px-3 py-2 text-xs">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-semibold text-ink-100">{briefing.briefingTypeName}</span>
+          <span className="shrink-0 text-[10px] text-ink-500">
+            {briefing.createdAt.slice(0, 10)} · {briefing.insightCount} insights · {briefing.model}
+            {briefing.costUsd !== null && (
+              <span className="ml-1 font-mono tabular" title="LLM cost for this briefing">
+                · ${briefing.costUsd.toFixed(4)}
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="mt-0.5 truncate text-[10px] text-ink-500">{briefing.title}</div>
+      </summary>
+      <div className="border-t border-ink-800 px-3 py-2 text-[12px] leading-relaxed text-ink-200">
+        {renderDistillBody(briefing.body, briefing.format)}
+      </div>
+    </details>
+  );
+}
+
+/** Restricted markdown renderer — Distill only emits **bold** and `- bullets`. */
+function renderDistillBody(body: string, format: 'plain' | 'markdown'): React.ReactNode {
+  const lines = body.split('\n');
+  if (format === 'plain') {
+    return lines.map((l, i) =>
+      l.trim() === ''
+        ? <div key={i} className="h-2" />
+        : <p key={i} className="mt-1">{l}</p>,
+    );
+  }
+  // markdown: handle `- ` bullets and `**bold**` inline emphasis
+  const out: React.ReactNode[] = [];
+  let bulletBuffer: string[] = [];
+  const flushBullets = (key: number) => {
+    if (bulletBuffer.length === 0) return;
+    out.push(
+      <ul key={`ul-${key}`} className="mt-1 list-disc space-y-0.5 pl-5">
+        {bulletBuffer.map((b, j) => <li key={j}>{renderInlineBold(b)}</li>)}
+      </ul>,
+    );
+    bulletBuffer = [];
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.startsWith('- ')) {
+      bulletBuffer.push(trimmed.slice(2));
+    } else if (trimmed === '') {
+      flushBullets(i);
+      out.push(<div key={`gap-${i}`} className="h-2" />);
+    } else {
+      flushBullets(i);
+      out.push(<p key={i} className="mt-1">{renderInlineBold(line)}</p>);
+    }
+  }
+  flushBullets(lines.length);
+  return out;
+}
+
+function renderInlineBold(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) =>
+    p.startsWith('**') && p.endsWith('**')
+      ? <strong key={i} className="font-semibold text-ink-50">{p.slice(2, -2)}</strong>
+      : p,
   );
 }
 

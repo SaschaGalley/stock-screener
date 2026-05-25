@@ -202,12 +202,50 @@ export interface TechnicalSignals {
   overall:        SignalGroup;
 }
 
+export interface DistillBriefing {
+  id:               string;
+  briefingTypeId:   string;
+  briefingTypeName: string;
+  title:            string;
+  body:             string;
+  format:           'plain' | 'markdown';
+  language:         string;
+  entityRefs:       string[];
+  insightCount:     number;
+  model:            string;
+  costUsd:          number | null;
+  createdAt:        string;
+}
+
+export type DistillCacheState = 'still-current' | 'generated' | 'empty-pool' | 'unknown';
+
+export interface DistillBundle {
+  ticker:    string;
+  baseUrl:   string;
+  briefings: DistillBriefing[];
+  fetchedAt: string;
+  lastRefresh?: {
+    cacheState:     DistillCacheState;
+    distillCostUsd: number;
+    refreshedAt:    string;
+  };
+}
+
+export interface DistillRefreshResponse {
+  ok:              boolean;
+  symbol:          string;
+  cacheState:      DistillCacheState;
+  distillCostUsd:  number;
+  bundle:          DistillBundle;
+}
+
 export interface StockBundle {
   summary: StockSummary;
   financials: any;
   marketSignals: any;
   news: any[];
   perplexity: any;
+  distill: DistillBundle | null;
   metrics: ComputedMetrics;
   sectorMedians: any;
   marketRates: any;

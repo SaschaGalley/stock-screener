@@ -19,6 +19,7 @@ import {
   readNews,          writeNews,
   readMarketSignals, writeMarketSignals,
   readPerplexity,    writePerplexity,
+  readDistill,       writeDistill,
   readSubmissions,   symbolDir,
   AnalysisFlagsKey, analysisHash,
 } from './cache.js';
@@ -26,6 +27,7 @@ import { fetchEdgarFilings } from './data/edgar.js';
 import { getMarketRates } from './data/fred.js';
 import { getMacroBundle } from './data/macro.js';
 import { fetchPerplexity } from './data/perplexity.js';
+import { fetchDistillBriefings, DistillBundle } from './data/distill.js';
 import { buildAnalysisPrompt } from './output/prompt.js';
 import { formatMarkdown } from './output/markdown.js';
 // import { saveReports } from './output/report.js';  // disabled — see comment in run()
@@ -304,12 +306,20 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   // ── 1b. News (cached 30 min) + Rates + Sector Medians + Perplexity ────────
   const usePplx   = input.pplx !== null && input.pplx !== undefined;
   const pplxModel: 'sonar' | 'sonar-pro' = input.pplx === 'sonar' ? 'sonar' : 'sonar-pro';
-  emit({ stage: 'rates', message: 'Fetching macro rates + news + sector medians' + (usePplx ? ' + Perplexity' : '') + '…' });
+  // Distill is always-on when the key is configured — there's no per-run
+  // toggle. The briefings are upstream-curated, so they're cheap to include
+  // and consistently the highest-signal context block we can hand the LLM.
+  const useDistill = !!cfg.distillApiKey;
+  emit({ stage: 'rates', message: 'Fetching macro rates + news + sector medians'
+    + (usePplx ? ' + Perplexity' : '')
+    + (useDistill ? ' + Distill briefings' : '')
+    + '…' });
 
   let news: NewsItem[] = readNews(cfg.cacheDir, symbol) ?? [];
   let perplexity = usePplx ? readPerplexity(cfg.cacheDir, symbol) : null;
+  let distill: DistillBundle | null = useDistill ? readDistill(cfg.cacheDir, symbol) : null;
 
-  const [freshNews, marketRates, sectorMedians, freshPerplexity] = await Promise.all([
+  const [freshNews, marketRates, sectorMedians, freshPerplexity, freshDistill] = await Promise.all([
     news.length === 0 && cfg.finnhubApiKey
       ? getNews(symbol, cfg.finnhubApiKey).catch((e) => {
           logger.warn(`News unavailable: ${(e as Error).message}`);
@@ -329,6 +339,13 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
             return null;
           })
       : Promise.resolve(null),
+    useDistill && !distill
+      ? fetchDistillBriefings(symbol, cfg.distillApiKey!, cfg.distillApiUrl, cfg.distillBriefingTypeId)
+          .catch((e) => {
+            logger.warn(`Distill unavailable: ${(e as Error).message}`);
+            return null;
+          })
+      : Promise.resolve(null),
   ]);
 
   if (freshNews && freshNews.length > 0) {
@@ -338,6 +355,10 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   if (freshPerplexity) {
     perplexity = freshPerplexity;
     writePerplexity(cfg.cacheDir, symbol, perplexity);
+  }
+  if (freshDistill) {
+    distill = freshDistill;
+    writeDistill(cfg.cacheDir, symbol, distill);
   }
 
   logger.success(`${financials.companyName}  $${financials.price.toFixed(2)}  ${fmtBig(financials.marketCap)}`);
@@ -465,7 +486,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,
       sortino, beneish, rim, ncav, peerMultiples, composite,
       sectorMedians, news, marketSignals,
-    }, perplexity ?? undefined);
+    }, perplexity ?? undefined, distill ?? undefined);
     const [analysis] = await Promise.all([
       llm.analyze(prompt, searchResults),
       edgarNeeded ? fetchEdgarFilings(symbol, cfg.cacheDir) : Promise.resolve(null),

@@ -5,6 +5,7 @@ import { createHash } from 'crypto';
 import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem, SearchTrace } from './types.js';
 import { logger } from './utils/logger.js';
 import { PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
+import { DistillBundle, DISTILL_FETCH_HASH } from './data/distill.js';
 
 const FINANCIALS_TTL_MS    = 60 * 60 * 1000;       // 1 hour
 // Analyses do NOT expire on a clock — invalidation is purely hash-based:
@@ -13,6 +14,10 @@ const FINANCIALS_TTL_MS    = 60 * 60 * 1000;       // 1 hour
 const NEWS_TTL_MS          = 30 * 60 * 1000;       // 30 min
 const MARKET_SIGNALS_TTL_MS = 30 * 60 * 1000;      // 30 min (technicals + options change fast)
 const PERPLEXITY_TTL_MS    = 12 * 60 * 60 * 1000;  // 12 hours
+// Distill briefings are generated upstream on Distill's own schedule. We can
+// re-hit the API cheaply, but the briefing corpus only changes when admins
+// publish new ones — 30min keeps the screener responsive without hammering.
+const DISTILL_TTL_MS       = 30 * 60 * 1000;
 
 // Bump to invalidate all cached entries of that type
 const FINANCIALS_VERSION     = 15;  // bumped — ISIN now sourced from Wikidata (Yahoo dropped the field); old caches have null ISIN
@@ -302,5 +307,31 @@ export function writePerplexity(rawDir: string, symbol: string, data: Perplexity
     logger.debug(`Cached Perplexity context for ${symbol} (hash ${PERPLEXITY_PROMPT_HASH})`);
   } catch (e) {
     logger.warn(`Could not write Perplexity cache: ${(e as Error).message}`);
+  }
+}
+
+// ── Distill briefings ─────────────────────────────────────────────────────────
+
+export function readDistill(rawDir: string, symbol: string): DistillBundle | null {
+  const file = join(symbolDir(rawDir, symbol), 'distill.json');
+  const entry = readEntry<DistillBundle>(file);
+  if (!entry) return null;
+  if (entry.v !== DISTILL_FETCH_HASH) return null;
+  if (Date.now() - entry.ts > DISTILL_TTL_MS) {
+    logger.debug(`Distill cache expired for ${symbol}`);
+    return null;
+  }
+  logger.debug(`Distill cache hit for ${symbol} (${Math.round((Date.now() - entry.ts) / 60000)}m old)`);
+  return entry.data;
+}
+
+export function writeDistill(rawDir: string, symbol: string, data: DistillBundle): void {
+  const dir = symbolDir(rawDir, symbol);
+  try {
+    ensureDir(dir);
+    writeEntry(join(dir, 'distill.json'), DISTILL_FETCH_HASH, data);
+    logger.debug(`Cached Distill briefings for ${symbol} (hash ${DISTILL_FETCH_HASH})`);
+  } catch (e) {
+    logger.warn(`Could not write Distill cache: ${(e as Error).message}`);
   }
 }

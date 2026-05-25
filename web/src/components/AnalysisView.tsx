@@ -311,16 +311,17 @@ export default function AnalysisView({
             <OwnershipFlow financials={f} />
           </Section>
 
-          {/* TIER 11: PERPLEXITY + NEWS + SEARCH TRACES */}
-          {(bundle.perplexity || bundle.news.length > 0 || (analysis?.searches?.providers.length ?? 0) > 0) && (
-            <Section title="Research & News" defaultOpen={false}>
-              <NewsAndResearch
-                news={bundle.news}
-                perplexity={bundle.perplexity}
-                searches={analysis?.searches ?? null}
-              />
-            </Section>
-          )}
+          {/* TIER 11: DISTILL + PERPLEXITY + NEWS + SEARCH TRACES */}
+          <Section title="Research & News" defaultOpen={false}>
+            <NewsAndResearch
+              symbol={symbol}
+              news={bundle.news}
+              perplexity={bundle.perplexity}
+              distill={bundle.distill}
+              searches={analysis?.searches ?? null}
+              onDistillRefreshed={() => setLocalRefresh((x) => x + 1)}
+            />
+          </Section>
 
           {!llm && (
             <div className="rounded-lg border border-amber-700 bg-amber-950 p-4 text-center text-sm text-amber-200">

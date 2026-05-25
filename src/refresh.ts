@@ -5,7 +5,8 @@ import { getNews, getBasicFinancials } from './data/finnhub.js';
 import { getMacroBundle } from './data/macro.js';
 import { getMarketRates } from './data/fred.js';
 import { computeTechnicals } from './analysis/technical.js';
-import { writeFinancials, writeNews, writeMarketSignals } from './cache.js';
+import { writeFinancials, writeNews, writeMarketSignals, writeDistill } from './cache.js';
+import { fetchDistillBriefings } from './data/distill.js';
 import {
   MarketSignals, NewsItem, OptionsSignals, StockFinancials,
 } from './types.js';
@@ -58,6 +59,18 @@ export async function refreshStockData(rawSymbol: string): Promise<RefreshedData
       if (news.length > 0) writeNews(cfg.cacheDir, symbol, news);
     } catch (e) {
       logger.warn(`News refresh failed: ${(e as Error).message}`);
+    }
+  }
+
+  // Distill briefings (best effort — non-fatal). Always-on when the key is
+  // configured; admins publish briefings on Distill's own schedule, so a
+  // header-refresh just pulls whatever's newest from the upstream corpus.
+  if (cfg.distillApiKey) {
+    try {
+      const bundle = await fetchDistillBriefings(symbol, cfg.distillApiKey, cfg.distillApiUrl, cfg.distillBriefingTypeId);
+      writeDistill(cfg.cacheDir, symbol, bundle);
+    } catch (e) {
+      logger.warn(`Distill refresh failed: ${(e as Error).message}`);
     }
   }
 

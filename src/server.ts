@@ -15,9 +15,18 @@ import {
   readAnalysis,
   AnalysisFlagsKey,
   analysisHash,
+  readDistill,
+  writeDistill,
 } from './cache.js';
 import { StockFinancials, MarketSignals, NewsItem, SectorMedians } from './types.js';
 import { PerplexityContext } from './data/perplexity.js';
+import {
+  DistillBundle,
+  DistillReadOnlyError,
+  DistillUnauthorizedError,
+  DistillAmbiguousTypeError,
+  triggerDistillRefresh,
+} from './data/distill.js';
 import { getMarketRates } from './data/fred.js';
 import { getSectorMedians } from './data/finnhub.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
@@ -245,6 +254,76 @@ export function createApp() {
     }
   });
 
+  // ── POST /api/stocks/:symbol/distill-refresh ───────────────────────────────
+  // Triggers Distill's POST /api/v1/briefings/refresh — runs the upstream
+  // distill drain + (re)briefing for this ticker and writes the result back
+  // into our distill.json cache. Body intentionally has no `briefing_type_id`:
+  // Distill picks the project's default briefing type server-side.
+  //
+  // Long-running by nature (drain + LLM can be minutes for first-touch
+  // tickers). We extend Node's per-request socket timeout to 5 min so the
+  // proxy default doesn't kill it. 403 from Distill (read-only key) gets
+  // converted to a clean 403 here so the frontend can show the disabled
+  // affordance without parsing an opaque error.
+  app.post('/api/stocks/:symbol/distill-refresh', async (req, res, next) => {
+    req.setTimeout(5 * 60 * 1000);
+    res.setTimeout(5 * 60 * 1000);
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      if (!cfg.distillApiKey) {
+        res.status(400).json({ error: 'Distill not configured — set DISTILL_API_KEY in .env.' });
+        return;
+      }
+
+      const result = await triggerDistillRefresh(
+        symbol,
+        cfg.distillApiKey,
+        cfg.distillApiUrl,
+        cfg.distillBriefingTypeId,
+      );
+
+      // Merge into the cache. If the server returned an empty data array
+      // (empty-pool or no briefing emitted) we keep any existing cached
+      // briefings rather than clobbering — they're still the most recent
+      // useful context for the LLM prompt.
+      const prior = readDistill(cacheDir, symbol);
+      const merged: DistillBundle = {
+        ticker:    symbol,
+        baseUrl:   cfg.distillApiUrl,
+        briefings: result.briefings.length > 0 ? result.briefings : (prior?.briefings ?? []),
+        fetchedAt: new Date().toISOString(),
+        lastRefresh: {
+          cacheState:     result.cacheState,
+          distillCostUsd: result.distillCostUsd,
+          refreshedAt:    result.refreshedAt,
+        },
+      };
+      writeDistill(cacheDir, symbol, merged);
+
+      res.json({
+        ok:           true,
+        symbol,
+        cacheState:   result.cacheState,
+        distillCostUsd: result.distillCostUsd,
+        bundle:       merged,
+      });
+    } catch (e) {
+      if (e instanceof DistillReadOnlyError) {
+        res.status(403).json({ error: 'distill_read_only', message: e.message });
+        return;
+      }
+      if (e instanceof DistillUnauthorizedError) {
+        res.status(401).json({ error: 'distill_unauthorized', message: e.message });
+        return;
+      }
+      if (e instanceof DistillAmbiguousTypeError) {
+        res.status(422).json({ error: 'distill_ambiguous_type', message: e.message });
+        return;
+      }
+      next(e);
+    }
+  });
+
   // ── DELETE /api/stocks/:symbol ─────────────────────────────────────────────
   // Removes the entire cache directory for a symbol (financials, analyses,
   // market signals, news, perplexity, reports). Use with care.
@@ -307,12 +386,17 @@ export function createApp() {
         res.status(404).json({ error: `No financials cached for ${symbol} yet` });
         return;
       }
-      const msRead     = readJsonEntry<MarketSignals>(join(dir, 'market-signals.json'), MARKET_SIGNALS_VERSION_SERVER);
-      const newsRead   = readJsonEntry<NewsItem[]>(join(dir, 'news.json'));
-      const pplxRead   = readJsonEntry<PerplexityContext>(join(dir, 'perplexity.json'));
+      const msRead       = readJsonEntry<MarketSignals>(join(dir, 'market-signals.json'), MARKET_SIGNALS_VERSION_SERVER);
+      const newsRead     = readJsonEntry<NewsItem[]>(join(dir, 'news.json'));
+      const pplxRead     = readJsonEntry<PerplexityContext>(join(dir, 'perplexity.json'));
+      // Distill briefings — lax read (any cached blob; staleness is upstream).
+      // The UI renders whatever's on disk and lets the user trigger a refresh
+      // via the standard Refresh-data button if they want the newest set.
+      const distillRead  = readJsonEntry<DistillBundle>(join(dir, 'distill.json'));
       const marketSignals = msRead.data;
       const news          = newsRead.data ?? [];
       const perplexity    = pplxRead.data;
+      const distill       = distillRead.data;
       const summary       = buildStockSummary(cacheDir, symbol);
 
       // Try to fetch fresh rates + sector medians for richer metrics, but don't block
@@ -354,6 +438,7 @@ export function createApp() {
         marketSignals,
         news,
         perplexity,
+        distill,
         metrics,
         sectorMedians,
         marketRates,

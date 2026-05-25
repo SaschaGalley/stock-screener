@@ -31,6 +31,7 @@ cd web && npm install && cd ..
 | `OPENAI_API_KEY` | OpenAI — `--model openai/gpt-*/o1-*` | optional | [platform.openai.com](https://platform.openai.com) |
 | `GOOGLE_GEMINI_API_KEY` | Gemini — `--model gemini/gemini-*` | optional | [ai.google.dev](https://ai.google.dev) |
 | `PPLX_API_KEY` | Perplexity Sonar — web-sourced context paragraph | optional | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
+| `DISTILL_API_KEY` + `DISTILL_API_URL` | Distill briefing service — curated multi-source briefings per ticker | optional | mint in Distill Admin → Project → Access keys |
 | `BRAVE_API_KEY` | Brave web search | optional | [brave.com/search/api](https://brave.com/search/api/) — $5 free credits/mo |
 | `TAVILY_API_KEY` | Tavily web search | optional | [tavily.com](https://tavily.com) |
 | `FRED_API_KEY` | Live macro rates (10Y, AAA, VIX, DXY, yield curve) | optional | [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
@@ -195,6 +196,7 @@ TradingView-style aggregation in `src/analysis/signals.ts`:
 | SEC EDGAR | Latest 10-K / 10-Q filings (US tickers only) |
 | Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
 | Perplexity Sonar | Optional web-sourced context paragraph included verbatim in the LLM prompt |
+| Distill | Optional curated multi-source briefings per ticker (RSS, YouTube, web). Weighted **above** Perplexity / raw search in the LLM prompt because the editorial filter happens upstream |
 | Brave / Tavily / Claude / OpenAI | Optional web search for current events |
 
 ## Project structure
@@ -215,6 +217,7 @@ src/
 │   ├── fred.ts            FRED rates (live 10Y, AAA, …)
 │   ├── macro.ts           SPY + sector-ETF bundles, yield curve, VIX
 │   ├── perplexity.ts      Sonar / Sonar-Pro web-research paragraph
+│   ├── distill.ts         Distill briefing service — per-ticker curated briefings
 │   └── edgar.ts           SEC EDGAR filings
 ├── analysis/
 │   ├── metrics.ts         19 valuation models
@@ -265,6 +268,7 @@ financials.json        # versioned (v15) — Yahoo + Finnhub + ISIN
 market-signals.json    # versioned — technicals + revisions + options + macro
 news.json              # 30-min TTL
 perplexity.json        # keyed by prompt hash
+distill.json           # Distill briefings for this ticker (30 min TTL)
 analyses/<hash>.json   # one per (model, search, pplx) combo — no TTL, hash-only
 submissions.json       # EDGAR
 report.md/.html/.pdf   # last full CLI analysis output (CLI only)

@@ -8,6 +8,7 @@ import type {
   Settings,
   StockBundle,
   ProgressEvent,
+  DistillRefreshResponse,
 } from './types';
 
 const BASE = '/api';
@@ -47,6 +48,28 @@ export const api = {
     jsonFetch<{ ok: boolean; symbol: string }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/refresh-data`, {
       method: 'POST',
     }),
+
+  /**
+   * Trigger Distill's substance-based refresh: drains pending raw insights
+   * for this ticker and either returns the still-current briefing or generates
+   * a fresh one. Long-running on first-touch tickers (up to 5 minutes); the
+   * server extends its own socket timeout, but the browser request still
+   * needs a permissive AbortSignal.
+   *
+   * Errors:
+   *   - 400 → DISTILL_API_KEY not configured on the server (informational)
+   *   - 403 → key is read-only; UI should disable the affordance
+   *   - 5xx → propagated as Error for the caller to surface
+   */
+  refreshDistill: (symbol: string) =>
+    jsonFetch<DistillRefreshResponse>(
+      `${BASE}/stocks/${encodeURIComponent(symbol)}/distill-refresh`,
+      {
+        method: 'POST',
+        // No explicit AbortSignal — the browser default (no timeout for fetch)
+        // is what we want here. Fetch only aborts via explicit signal.
+      },
+    ),
 
   deleteAnalysis: (symbol: string, hash: string) =>
     jsonFetch<{ ok: boolean; symbol: string; hash: string }>(

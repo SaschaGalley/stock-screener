@@ -13,6 +13,9 @@ const ConfigSchema = z.object({
   braveApiKey: z.string().optional(),
   fredApiKey: z.string().optional(),
   pplxApiKey: z.string().optional(),
+  distillApiKey: z.string().optional(),
+  distillApiUrl: z.string().default('http://localhost:3000'),
+  distillBriefingTypeId: z.string().uuid().optional(),
   cacheDir: z.string().default('~/.investment-cli-cache'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
@@ -33,6 +36,9 @@ export function getConfig(): AppConfig {
     braveApiKey: process.env.BRAVE_API_KEY,
     fredApiKey: process.env.FRED_API_KEY,
     pplxApiKey: process.env.PPLX_API_KEY,
+    distillApiKey: process.env.DISTILL_API_KEY,
+    distillApiUrl: process.env.DISTILL_API_URL,
+    distillBriefingTypeId: process.env.DISTILL_BRIEFING_TYPE_ID,
     cacheDir: process.env.CACHE_DIR,
     logLevel: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error' | undefined,
   };
@@ -46,7 +52,7 @@ export function getConfig(): AppConfig {
   return _config;
 }
 
-export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily' | 'brave' | 'perplexity'): string {
+export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily' | 'brave' | 'perplexity' | 'distill'): string {
   const cfg = getConfig();
   const keyMap: Record<string, string | undefined> = {
     claude:      cfg.anthropicApiKey, // alias
@@ -57,6 +63,7 @@ export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gem
     tavily:      cfg.tavilyApiKey,
     brave:       cfg.braveApiKey,
     perplexity:  cfg.pplxApiKey,
+    distill:     cfg.distillApiKey,
   };
 
   const envMap: Record<string, string> = {
@@ -68,6 +75,7 @@ export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gem
     tavily:      'TAVILY_API_KEY',
     brave:       'BRAVE_API_KEY',
     perplexity:  'PPLX_API_KEY',
+    distill:     'DISTILL_API_KEY',
   };
 
   const key = keyMap[provider];

@@ -25,6 +25,7 @@ import {
 import { getNews } from '../data/finnhub.js';
 import { MarketSignals, SectorMedians, StockFinancials } from '../types.js';
 import { PerplexityContext } from '../data/perplexity.js';
+import { DistillBundle } from '../data/distill.js';
 
 export interface PromptData {
   dcf: ReturnType<typeof calculateDCF>;
@@ -194,12 +195,42 @@ function macroSection(s: MarketSignals): string {
 - Sector ETF: ${m.sectorEtfSymbol ?? 'unmapped'} 3M ${signedPct(m.sectorEtfReturn3M)}`;
 }
 
-export function buildAnalysisPrompt(f: StockFinancials, d: PromptData, perplexity?: PerplexityContext): string {
+export function buildAnalysisPrompt(
+  f: StockFinancials,
+  d: PromptData,
+  perplexity?: PerplexityContext,
+  distill?: DistillBundle,
+): string {
 
   const piotroskiLine = `${d.piotroski.score}/${d.piotroski.maxScore} (${d.piotroski.interpretation})`;
   const altmanLine = d.altmanZ.score !== null
     ? `${d.altmanZ.score.toFixed(2)} — ${d.altmanZ.zone} zone (${d.altmanZ.model} model)`
     : 'N/A';
+
+  // Distill briefings: render the most recent ≤5 in full, prefixed with their
+  // type-label + date, so the LLM can attribute each insight. Body is passed
+  // through unmodified (plain or markdown — both render identically to the
+  // model). When the bundle exists but is empty, the whole section is dropped.
+  const distillBriefings = (distill?.briefings ?? []).slice(0, 5);
+  const distillSection = distillBriefings.length > 0
+    ? `
+### Distill Briefings (curated, multi-source — weight HIGHER than raw search/news)
+
+The block below is synthesised by the Distill briefing service from a curated
+set of sources (vetted RSS, earnings transcripts, sell-side research, expert
+commentary). Each briefing aggregates multiple distinct insights into a single
+narrative. Because the editorial filtering happens upstream, treat these
+briefings as your **strongest qualitative signal** — stronger than raw search
+results or Perplexity's general-purpose web summary, second only to the
+quantitative valuation models and analyst consensus. If a Distill briefing
+contradicts the calculated models or the analyst consensus, surface the
+divergence explicitly in the bull or bear case.
+
+${distillBriefings.map((b, i) =>
+  `#### ${i + 1}. ${b.briefingTypeName} — ${b.createdAt.slice(0, 10)} (${b.insightCount} insights, ${b.model})\n\n${b.body.trim()}`
+).join('\n\n')}
+`
+    : '';
 
   return `## Stock Analysis: ${f.symbol} — ${f.companyName}
 
@@ -303,7 +334,7 @@ ${f.earningsEstimates.length > 0
 ### Key Dates
 - Next Earnings: ${f.nextEarningsDate ?? 'unknown'}
 - Ex-Dividend: ${f.exDividendDate ?? 'N/A'}  |  Pay Date: ${f.dividendPayDate ?? 'N/A'}
-${perplexity ? `
+${distillSection}${perplexity ? `
 ### Additional Context from Perplexity Sonar (web-sourced — use where relevant, not authoritative)
 
 ${perplexity.synthesis}
@@ -326,9 +357,11 @@ Bullet writing rules — Alphaspread-style:
 
 Focus on: competitive moat, valuation vs. intrinsic value (Composite + single-equation models), **Wall Street analyst consensus and price target as an independent triangulation signal — do not let it be drowned out by the calculated models**, growth quality, financial health, technical posture (trend, RSI/MACD, relative strength), earnings-revision momentum, and macro context (VIX regime, yield curve, HY spreads) when material.
 
-Weighting guidance for the recommendation:
-- The Composite and single-equation models are *one* input class (intrinsic-value lens).
+Weighting guidance for the recommendation (in descending order of authority):
+- The Composite and single-equation models are *one* input class (intrinsic-value lens) — your quantitative anchor.
 - The Analyst Consensus section is a *second* input class (market-aligned, sell-side lens).
-- A strong divergence between the two is itself a signal — flag it in the bull or bear case.
-- Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken).`;
+- **Distill Briefings (when present) are a *third* input class — curated, multi-source qualitative narrative.** Weight them higher than raw web search, raw news, or Perplexity. They have already passed an editorial filter and aggregate multiple insights.
+- Raw News, raw Search Results, and Perplexity are the lowest tier — useful as colour and to fact-check, but never the deciding factor.
+- A strong divergence between any two of these classes is itself a signal — flag it in the bull or bear case.
+- Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken). A Distill briefing flagging the same concern qualifies as a concrete reason.`;
 }
