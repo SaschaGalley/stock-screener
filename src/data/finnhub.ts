@@ -112,10 +112,12 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
     // Margin/growth fields come as percentages from Finnhub — convert to decimals
     const pctFields = new Set(['operatingMargin', 'netMargin', 'roe', 'roic', 'revenueGrowthYoY']);
 
+    let contributingPeers = 0;
     metrics.forEach((r) => {
       if (r.status !== 'fulfilled') return;
       const m = r.value?.metric;
       if (!m) return;
+      contributingPeers++;
       for (const [key, field] of Object.entries(fieldMap)) {
         const raw = m[field];
         if (typeof raw !== 'number' || !isFinite(raw)) continue;
@@ -153,7 +155,7 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
       roe:                 median(buckets.roe),
       roic:                median(buckets.roic),
       revenueGrowthYoY:    revGrMedian,
-      peerCount:           peers.length,
+      peerCount:           contributingPeers,
       peers,
     };
   } catch (e) {

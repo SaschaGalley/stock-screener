@@ -21,7 +21,12 @@ function readSymbolFromHash(): string | null {
 }
 function writeSymbolToHash(symbol: string | null): void {
   const next = symbol ? `#${symbol}` : window.location.pathname + window.location.search;
-  if (next !== window.location.hash && next !== window.location.pathname + window.location.search) {
+  // Compare against the FULL current URL. The old guard compared `next` against
+  // the very expression it was derived from in the clear case, so it could
+  // never write — a deleted/deselected stock's hash was never removed and
+  // reappeared on reload.
+  const current = window.location.pathname + window.location.search + window.location.hash;
+  if (next !== current) {
     window.history.replaceState(null, '', next);
   }
 }
@@ -35,6 +40,13 @@ export default function App() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [progress, setProgress] = useState<ProgressEvent[]>([]);
   const closeStreamRef = useRef<(() => void) | null>(null);
+  // Monotonic id of the active analyze run. Switching symbols (or starting a
+  // new run) bumps it; stale SSE callbacks check it and no-op so a finished
+  // run can't navigate/clobber state after the user has moved on.
+  const runIdRef = useRef(0);
+  // Whether the user has manually edited settings for the current symbol — if
+  // so, the cached-analysis auto-switch must not overwrite their choice.
+  const userTouchedSettingsRef = useRef(false);
   // Below `lg` (1024px) one of the two side panels can slide in as a drawer.
   // Above `lg` both panels are always visible in the flex flow and this state
   // is irrelevant.
@@ -81,9 +93,21 @@ export default function App() {
   };
 
   const handleSelectSymbol = useCallback((s: string) => {
+    // Abandon any in-flight analyze run: invalidate its callbacks and abort the
+    // SSE so a late onResult can't yank the user back to the old symbol.
+    runIdRef.current++;
+    closeStreamRef.current?.();
+    closeStreamRef.current = null;
+    setLoading(false);
     setSelected(s);
     setProgress([]);
   }, [setSelected]);
+
+  // User-initiated settings change — flag it so the auto-switch effect yields.
+  const handleSettingsChange = useCallback((s: Settings) => {
+    userTouchedSettingsRef.current = true;
+    setSettings(s);
+  }, []);
 
   // Whenever the selected symbol changes (sidebar click, hash change, page
   // load with hash) auto-switch settings to the most recently cached analysis
@@ -92,9 +116,13 @@ export default function App() {
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
+    // Fresh symbol → user hasn't touched settings for it yet.
+    userTouchedSettingsRef.current = false;
     api.listAnalyses(selected)
       .then(({ analyses }) => {
-        if (cancelled || analyses.length === 0) return;
+        // Bail if the symbol changed OR the user has since edited settings
+        // (don't clobber their in-progress choice with the cached default).
+        if (cancelled || userTouchedSettingsRef.current || analyses.length === 0) return;
         const newest = [...analyses].sort(
           (a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime(),
         )[0];
@@ -116,23 +144,29 @@ export default function App() {
    * The plain Run button leaves it false so a cached entry serves instantly.
    */
   function startAnalyze(input: string, force = false) {
+    const myRun = ++runIdRef.current;       // claim this run; supersedes any prior
+    const isCurrent = () => runIdRef.current === myRun;
     setLoading(true);
     setError(null);
     setProgress([]);
     closeStreamRef.current?.();
 
     const close = api.analyzeStream(input, settings, {
-      onProgress: (ev) => setProgress((prev) => [...prev, ev]),
+      onProgress: (ev) => { if (isCurrent()) setProgress((prev) => [...prev, ev]); },
       onResult:   ({ meta }) => {
-        // Refresh stock list (in case new symbol) and select the resolved one.
-        reloadStockList().then(() => setSelected(meta.symbol));
+        if (!isCurrent()) return;
+        // Refresh stock list (in case new symbol) and select the resolved one —
+        // but only if the user hasn't moved on to another symbol meanwhile.
+        reloadStockList().then(() => { if (isCurrent()) setSelected(meta.symbol); });
         setRefreshTick((t) => t + 1);
       },
       onError: (msg) => {
+        if (!isCurrent()) return;
         setError(msg);
         setLoading(false);
       },
       onDone: () => {
+        if (!isCurrent()) return;
         setLoading(false);
         setRefreshTick((t) => t + 1);
       },
@@ -240,7 +274,7 @@ export default function App() {
           <SettingsSidebar
             symbol={selected}
             settings={settings}
-            onChange={setSettings}
+            onChange={handleSettingsChange}
             // First-time Run: cache hit serves instantly, miss runs the LLM.
             onLoad={() => selected && startAnalyze(selected, false)}
             // "Re-run (without cache)": force a fresh LLM call, overwriting cache.

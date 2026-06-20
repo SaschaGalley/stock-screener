@@ -180,7 +180,7 @@ export async function fetchDistillBriefings(
   logger.step(`Fetching Distill briefings for ${symbol}${briefingTypeId ? ` (type ${briefingTypeId.slice(0, 8)}…)` : ''}…`);
 
   const ref = entityRefFor(symbol);
-  let url = `${baseUrl.replace(/\/$/, '')}/api/v1/briefings`
+  let url = `${baseUrl.replace(/\/+$/, '')}/api/v1/briefings`
     + `?entity_ref=${encodeURIComponent(ref)}`
     + `&limit=${limit}`
     + `&offset=0`;
@@ -198,10 +198,12 @@ export async function fetchDistillBriefings(
     throw new Error(`Distill API error ${res.status}: ${text.slice(0, 200)}`);
   }
 
-  const json = await res.json() as DistillListResponse;
-  const briefing = json.data && json.data.length > 0 ? normaliseBriefing(json.data[0]) : null;
+  const json = await res.json().catch(() => null) as DistillListResponse | null;
+  const data = Array.isArray(json?.data) ? json!.data : [];
+  const briefing = data.length > 0 ? normaliseBriefing(data[0]) : null;
+  const total = typeof json?.total === 'number' ? json!.total : data.length;
 
-  logger.success(`Distill: ${briefing ? '1 briefing' : 'no briefing'} for ${ref}${json.total > 1 ? ` (${json.total} total in DB)` : ''}`);
+  logger.success(`Distill: ${briefing ? '1 briefing' : 'no briefing'} for ${ref}${total > 1 ? ` (${total} total in DB)` : ''}`);
   return {
     ticker:    symbol,
     baseUrl,
@@ -239,7 +241,7 @@ export async function triggerDistillRefresh(
   logger.step(`Distill refresh requested for ${symbol}…`);
 
   const ref = entityRefFor(symbol);
-  const url = `${baseUrl.replace(/\/$/, '')}/api/v1/briefings/refresh`;
+  const url = `${baseUrl.replace(/\/+$/, '')}/api/v1/briefings/refresh`;
 
   // Resolution chain server-side (per Distill API ref): explicit type_id →
   // projects.default_briefing_type_id → single type in project → 422.
@@ -276,8 +278,12 @@ export async function triggerDistillRefresh(
       : 'unknown';
   const distillCostUsd = toCost(res.headers.get('x-distill-cost-usd')) ?? 0;
 
-  const json = await res.json() as DistillListResponse;
-  const briefing = json.data && json.data.length > 0 ? normaliseBriefing(json.data[0]) : null;
+  // A 2xx refresh may legitimately return an empty/non-JSON body (e.g. 204 or a
+  // "still-current" response) — tolerate it instead of throwing away the
+  // already-known cacheState/cost.
+  const json = await res.json().catch(() => null) as DistillListResponse | null;
+  const data = Array.isArray(json?.data) ? json!.data : [];
+  const briefing = data.length > 0 ? normaliseBriefing(data[0]) : null;
 
   logger.success(`Distill refresh: ${cacheState}, ${briefing ? '1 briefing' : 'no briefing'}, distill cost $${distillCostUsd.toFixed(4)}`);
   return {

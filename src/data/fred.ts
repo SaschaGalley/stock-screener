@@ -16,7 +16,10 @@ async function fetchLatestRaw(seriesId: string, apiKey: string): Promise<number 
     if (!res.ok) throw new Error(`FRED HTTP ${res.status}`);
     const data = await res.json() as { observations?: Array<{ value: string }> };
     const value = data.observations?.find((o) => o.value !== '.')?.value;
-    return value ? parseFloat(value) : null;
+    // Reject non-finite parses (NaN) so the `?? FALLBACK` guards in
+    // getMarketRates actually engage — NaN is neither null nor undefined.
+    const n = value != null ? Number(value) : NaN;
+    return Number.isFinite(n) ? n : null;
   } catch (e) {
     logger.warn(`FRED[${seriesId}]: ${(e as Error).message}`);
     return null;

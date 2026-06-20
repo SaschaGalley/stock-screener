@@ -39,11 +39,15 @@ export const logger = {
     console.error(chalk.red(`[${timestamp()}] ERROR ${msg}`), ...args);
   },
 
+  // success/step are info-tier progress lines — respect logLevel like info,
+  // so LOG_LEVEL=warn/error actually silences them.
   success(msg: string): void {
+    if (!shouldLog('info')) return;
     console.log(chalk.green(`✓ ${msg}`));
   },
 
   step(msg: string): void {
+    if (!shouldLog('info')) return;
     console.log(chalk.cyan(`→ ${msg}`));
   },
 };

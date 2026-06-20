@@ -86,8 +86,13 @@ export async function fetchEdgarFilings(
     return null;
   }
 
-  // Collect relevant filings respecting per-form limits
-  const recent = edgarData.filings.recent;
+  // Collect relevant filings respecting per-form limits. Large filers paginate
+  // (filings.files[]) and `recent` / its arrays may be absent — guard the cast.
+  const recent = edgarData.filings?.recent;
+  if (!recent || !Array.isArray(recent.accessionNumber)) {
+    logger.warn(`EDGAR submissions for ${symbol} had no usable 'recent' filings block`);
+    return null;
+  }
   const formCount: Record<string, number> = {};
   const filings: FilingEntry[] = [];
 

@@ -17,6 +17,8 @@ import {
   analysisHash,
   readDistill,
   writeDistill,
+  FINANCIALS_VERSION,
+  MARKET_SIGNALS_VERSION,
 } from './cache.js';
 import { StockFinancials, MarketSignals, NewsItem, SectorMedians } from './types.js';
 import { PerplexityContext } from './data/perplexity.js';
@@ -68,9 +70,15 @@ function readJsonEntry<T>(file: string, expectedVersion?: number): CacheRead<T> 
   }
 }
 
-// Schema versions — kept in sync with cache.ts. Bump matching constant there.
-const FINANCIALS_VERSION_SERVER     = 15;
-const MARKET_SIGNALS_VERSION_SERVER = 2;
+// Schema versions are imported from cache.ts (single source of truth) — the
+// old hand-synced local copies drifted (server stuck at 15 while writers wrote
+// 17), marking every financials file permanently "stale".
+
+/** File mtime in ms, or null if the file is gone — avoids a TOCTOU throw when a
+ *  concurrent DELETE/refresh removes the file between existsSync and statSync. */
+function safeMtime(file: string): number | null {
+  try { return statSync(file).mtime.getTime(); } catch { return null; }
+}
 
 function listCachedSymbols(cacheDir: string): string[] {
   const root = resolveCacheRoot(cacheDir);
@@ -228,6 +236,29 @@ export function createApp() {
     next();
   });
 
+  // ── Route-param validation (security: these params become filesystem paths) ──
+  // Reject any :symbol / :hash that isn't a plausible ticker / md5-hex before it
+  // can reach symbolDir()/file paths. Defends against path traversal
+  // (e.g. DELETE /api/stocks/..%2f..%2f..) at the boundary; symbolDir() also
+  // confines to the cache root as defense-in-depth. Must start alphanumeric
+  // (no leading dot) so "../" and ".." can never match.
+  const SAFE_SYMBOL = /^[A-Za-z0-9][A-Za-z0-9.\-]{0,14}$/;
+  const SAFE_HASH   = /^[a-f0-9]{6,64}$/i;
+  app.param('symbol', (req, res, next, value) => {
+    if (typeof value !== 'string' || !SAFE_SYMBOL.test(value)) {
+      res.status(400).json({ error: 'invalid symbol' });
+      return;
+    }
+    next();
+  });
+  app.param('hash', (req, res, next, value) => {
+    if (typeof value !== 'string' || !SAFE_HASH.test(value)) {
+      res.status(400).json({ error: 'invalid hash' });
+      return;
+    }
+    next();
+  });
+
   const cfg = getConfig();
   const cacheDir = cfg.cacheDir;
 
@@ -379,14 +410,14 @@ export function createApp() {
         res.status(404).json({ error: `No cached data for ${symbol}` });
         return;
       }
-      const fRead   = readJsonEntry<StockFinancials>(join(dir, 'financials.json'), FINANCIALS_VERSION_SERVER);
+      const fRead   = readJsonEntry<StockFinancials>(join(dir, 'financials.json'), FINANCIALS_VERSION);
       const financials = fRead.data;
       if (!financials) {
         // truly missing — only true 404 case
         res.status(404).json({ error: `No financials cached for ${symbol} yet` });
         return;
       }
-      const msRead       = readJsonEntry<MarketSignals>(join(dir, 'market-signals.json'), MARKET_SIGNALS_VERSION_SERVER);
+      const msRead       = readJsonEntry<MarketSignals>(join(dir, 'market-signals.json'), MARKET_SIGNALS_VERSION);
       const newsRead     = readJsonEntry<NewsItem[]>(join(dir, 'news.json'));
       const pplxRead     = readJsonEntry<PerplexityContext>(join(dir, 'perplexity.json'));
       // Distill briefings — lax read (any cached blob; staleness is upstream).
@@ -417,7 +448,7 @@ export function createApp() {
       // financials.cachedAt comes from the file mtime; LLM analyses know their
       // own generatedAt. If the most-recent analysis was generated before the
       // most recent data refresh, it's "based on older data".
-      const financialsMtime = statSync(join(dir, 'financials.json')).mtime.getTime();
+      const financialsMtime = safeMtime(join(dir, 'financials.json')) ?? Date.now();
       const newestAnalysis  = listAnalyses(cacheDir, symbol)
         .map((a) => new Date(a.generatedAt).getTime())
         .sort((a, b) => b - a)[0];
@@ -460,9 +491,7 @@ export function createApp() {
     const symbol = req.params.symbol.toUpperCase();
     const entries = listAnalyses(cacheDir, symbol);
     const financialsFile = join(symbolDir(cacheDir, symbol), 'financials.json');
-    const financialsMtime = existsSync(financialsFile)
-      ? statSync(financialsFile).mtime.getTime()
-      : 0;
+    const financialsMtime = safeMtime(financialsFile) ?? 0;
     const augmented = entries.map((e) => ({
       ...e,
       olderThanData: financialsMtime > 0

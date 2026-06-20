@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../../api';
 import type {
   SearchTrace,
@@ -149,6 +149,13 @@ function DistillSection({
     | null
   >(null);
 
+  // Reset transient + persistent error state when switching tickers — a config
+  // error surfaced on one symbol must not leave Refresh disabled for the next.
+  useEffect(() => {
+    setPersistent(null);
+    setError(null);
+  }, [symbol]);
+
   async function handleRefresh() {
     if (busy || persistent) return;
     setBusy(true);
@@ -162,7 +169,9 @@ function DistillSection({
         setPersistent({ kind: 'read-only' });
       } else if (msg.includes('distill_unauthorized')) {
         setPersistent({ kind: 'unauthorized' });
-      } else if (msg.includes('distill_ambiguous_type') || msg.includes('Ambiguous') || msg.includes('default')) {
+      } else if (msg.includes('distill_ambiguous_type')) {
+        // Match the structured code only — substrings like 'default'/'Ambiguous'
+        // tripped this refresh-disabling state on unrelated errors.
         setPersistent({ kind: 'ambiguous-type' });
       } else {
         setError(msg);

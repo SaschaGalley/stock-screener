@@ -88,12 +88,12 @@ export async function fetchPerplexity(
     throw new Error(`Perplexity API error ${res.status}: ${text}`);
   }
 
-  const json = await res.json() as {
-    choices: Array<{ message: { content: string } }>;
+  const json = await res.json().catch(() => null) as {
+    choices?: Array<{ message?: { content?: string } }>;
     citations?: string[];
-  };
-  const raw       = json.choices[0]?.message?.content ?? '';
-  const citations = json.citations ?? [];
+  } | null;
+  const raw       = json?.choices?.[0]?.message?.content ?? '';
+  const citations = json?.citations ?? [];
   const synthesis = raw.replace(/\[\d+\]/g, '').replace(/  +/g, ' ').trim();
 
   if (looksLikeRefusal(synthesis)) {

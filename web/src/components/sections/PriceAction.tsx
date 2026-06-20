@@ -38,7 +38,7 @@ export default function PriceAction({ marketSignals: ms }: Props) {
 
         <Block title="Position">
           <Row label="Drawdown from 1Y high" value={fmtSignedPct(t.drawdownFromHighPct)}
-            accentColor={t.drawdownFromHighPct <= -0.2 ? 'text-red-400' : t.drawdownFromHighPct <= -0.1 ? 'text-amber-400' : 'text-emerald-400'} />
+            accentColor={t.drawdownFromHighPct == null ? undefined : t.drawdownFromHighPct <= -0.2 ? 'text-red-400' : t.drawdownFromHighPct <= -0.1 ? 'text-amber-400' : 'text-emerald-400'} />
           <Row label="52W range" value={fmtPct(t.position52WPct)}
             accent={t.position52WPct >= 0.9 ? 'near high' : t.position52WPct <= 0.1 ? 'near low' : 'mid'} />
           <Row label="Volume ratio" value={fmt(t.currentVolRatio, 'x', 2)}

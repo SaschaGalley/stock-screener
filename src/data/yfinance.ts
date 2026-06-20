@@ -103,7 +103,9 @@ async function safeHistoricalData(symbol: string): Promise<HistoricalData> {
     const recent = priceList.slice(-13);
     const monthlyReturns: number[] = [];
     for (let i = 1; i < recent.length; i++) {
-      monthlyReturns.push((recent[i].price - recent[i - 1].price) / recent[i - 1].price);
+      const prev = recent[i - 1].price;
+      if (!(prev > 0)) continue;   // skip zero/negative base → avoid Infinity/NaN returns
+      monthlyReturns.push((recent[i].price - prev) / prev);
     }
 
     const monthlyPrices: Record<string, number> = {};
@@ -919,7 +921,10 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     fiftyTwoWeekHigh: num(quote?.fiftyTwoWeekHigh),
     fiftyTwoWeekLow:  num(quote?.fiftyTwoWeekLow),
     beta:             num(quote?.beta) ?? num(ks.beta),
-    dividendYield:    (() => { const dy = num(quote?.dividendYield); return dy !== null && dy > 1 ? dy / 100 : dy; })(),
+    // yahoo-finance2 quote.dividendYield is in PERCENT (verified: AAPL 0.36,
+    // KO 2.67, MO 6.13), so always /100. The old `dy > 1` heuristic left
+    // sub-1% yields unscaled (AAPL 0.36 → 36%).
+    dividendYield:    (() => { const dy = num(quote?.dividendYield); return dy !== null ? dy / 100 : null; })(),
     payoutRatio:      num(sd.payoutRatio),
 
     sector:   str(ap.sector),

@@ -15,9 +15,12 @@ const ConfigSchema = z.object({
   pplxApiKey: z.string().optional(),
   distillApiKey: z.string().optional(),
   distillApiUrl: z.string().default('http://localhost:3000'),
-  distillBriefingTypeId: z.string().uuid().optional(),
+  // A malformed briefing-type id should disable the feature, not crash the
+  // process; a bad LOG_LEVEL should fall back to 'info'. `.catch()` degrades
+  // gracefully instead of failing safeParse for the whole config.
+  distillBriefingTypeId: z.string().uuid().optional().catch(undefined),
   cacheDir: z.string().default('~/.investment-cli-cache'),
-  logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info').catch('info'),
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;

@@ -32,8 +32,8 @@ export default function EarningsBlock({ financials: f }: Props) {
                   <td className="py-1 pr-2 text-ink-300">{q.quarter}</td>
                   <td className="py-1 px-2 text-right font-mono text-ink-100">{fmt(q.epsEstimate, '', 2)}</td>
                   <td className="py-1 px-2 text-right font-mono text-ink-100">{fmt(q.epsActual, '', 2)}</td>
-                  <td className={`py-1 pl-2 text-right font-mono ${q.surprisePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {q.surprisePct === null ? '—' : `${q.surprisePct >= 0 ? '+' : ''}${(q.surprisePct * 100).toFixed(1)}%`}
+                  <td className={`py-1 pl-2 text-right font-mono ${q.surprisePct == null ? 'text-ink-500' : q.surprisePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {q.surprisePct == null ? '—' : `${q.surprisePct >= 0 ? '+' : ''}${(q.surprisePct * 100).toFixed(1)}%`}
                   </td>
                 </tr>
               ))}

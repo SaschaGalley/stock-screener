@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
-import { join, isAbsolute, resolve } from 'path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync } from 'fs';
+import { join, isAbsolute, resolve, relative } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
 import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem, SearchTrace } from './types.js';
@@ -19,11 +19,15 @@ const PERPLEXITY_TTL_MS    = 12 * 60 * 60 * 1000;  // 12 hours
 // publish new ones — 30min keeps the screener responsive without hammering.
 const DISTILL_TTL_MS       = 30 * 60 * 1000;
 
-// Bump to invalidate all cached entries of that type
-const FINANCIALS_VERSION     = 17;  // bumped — FX-convert quarterly + forward revenue; clamp effective tax rate; avgPE5Y date keying; EV fallback no longer double-converts
-const ANALYSIS_VERSION       = 5;   // bumped — LLM output now in German (bullCase/bearCase/keyRisks/thesis)
-const NEWS_VERSION           = 1;
-const MARKET_SIGNALS_VERSION = 2;  // bumped — technicals expanded with EMAs, Stoch, CCI, WilliamsR, Momentum
+// Bump to invalidate all cached entries of that type.
+// EXPORTED so server.ts validates against the same numbers — keeping two
+// hand-synced copies previously drifted (server stuck at 15 while writers wrote
+// 17, marking every financials file permanently "stale").
+export const FINANCIALS_VERSION     = 17;  // FX-convert quarterly + forward revenue; clamp tax rate; avgPE5Y date keying; EV fallback
+export const ANALYSIS_VERSION       = 5;   // LLM output now in German (bullCase/bearCase/keyRisks/thesis)
+export const NEWS_VERSION           = 1;
+export const MARKET_SIGNALS_VERSION = 2;   // technicals expanded with EMAs, Stoch, CCI, WilliamsR, Momentum
+const SUBMISSIONS_VERSION    = 1;
 
 function resolveCacheRoot(rawDir: string): string {
   if (rawDir.startsWith('~')) return join(homedir(), rawDir.slice(1));
@@ -31,8 +35,28 @@ function resolveCacheRoot(rawDir: string): string {
   return resolve(process.cwd(), rawDir);
 }
 
+/**
+ * Resolve a per-symbol cache directory, confined to the cache root. The symbol
+ * reaches this from untrusted HTTP route params, so reject anything that would
+ * escape the root (traversal like "../.." or an absolute path) before it
+ * touches the filesystem — see also the route-boundary validation in server.ts.
+ */
 export function symbolDir(rawDir: string, symbol: string): string {
-  return join(resolveCacheRoot(rawDir), symbol);
+  const root = resolveCacheRoot(rawDir);
+  const dir  = resolve(root, symbol);
+  const rel  = relative(root, dir);
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel) || rel.includes('/') || rel.includes('\\')) {
+    throw new Error(`Unsafe cache symbol: ${JSON.stringify(symbol)}`);
+  }
+  return dir;
+}
+
+/** Validate a hash-keyed cache filename component (analysis hashes are md5 hex). */
+export function assertSafeHash(hash: string): string {
+  if (!/^[a-f0-9]{6,64}$/i.test(hash)) {
+    throw new Error(`Unsafe cache hash: ${JSON.stringify(hash)}`);
+  }
+  return hash;
 }
 
 function ensureDir(dir: string): void {
@@ -48,7 +72,13 @@ function readEntry<T>(file: string): CacheEntry<T> | null {
 }
 
 function writeEntry(file: string, version: number | string, data: unknown): void {
-  writeFileSync(file, JSON.stringify({ v: version, ts: Date.now(), data }, null, 2), 'utf-8');
+  // Atomic: write to a temp file in the same dir, then rename (atomic on POSIX
+  // within a filesystem). Prevents a corrupt/truncated cache file if the
+  // process is killed mid-write or two writers race on the same path.
+  const json = JSON.stringify({ v: version, ts: Date.now(), data }, null, 2);
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, json, 'utf-8');
+  renameSync(tmp, file);
 }
 
 // ── Financials ────────────────────────────────────────────────────────────────
@@ -187,6 +217,7 @@ export function readNews(rawDir: string, symbol: string): NewsItem[] | null {
   const file = join(symbolDir(rawDir, symbol), 'news.json');
   const entry = readEntry<NewsItem[]>(file);
   if (!entry) return null;
+  if (entry.v !== NEWS_VERSION) return null;
   if (Date.now() - entry.ts > NEWS_TTL_MS) {
     logger.debug(`News cache expired for ${symbol}`);
     return null;
@@ -254,6 +285,7 @@ export function readSubmissions(rawDir: string, symbol: string): SubmissionsMeta
   const file = join(symbolDir(rawDir, symbol), 'submissions.json');
   const entry = readEntry<SubmissionsMeta>(file);
   if (!entry) return null;
+  if (entry.v !== SUBMISSIONS_VERSION) return null;
   logger.debug(`Submissions cache hit for ${symbol}`);
   return entry.data;
 }
@@ -262,7 +294,7 @@ export function writeSubmissions(rawDir: string, symbol: string, data: Submissio
   const dir = symbolDir(rawDir, symbol);
   try {
     ensureDir(dir);
-    writeEntry(join(dir, 'submissions.json'), 1, data);
+    writeEntry(join(dir, 'submissions.json'), SUBMISSIONS_VERSION, data);
     logger.debug(`Cached submissions for ${symbol}`);
   } catch (e) {
     logger.warn(`Could not write submissions cache: ${(e as Error).message}`);

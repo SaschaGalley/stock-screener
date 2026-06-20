@@ -489,7 +489,14 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     }, perplexity ?? undefined, distill ?? undefined);
     const [analysis] = await Promise.all([
       llm.analyze(prompt, searchResults),
-      edgarNeeded ? fetchEdgarFilings(symbol, cfg.cacheDir) : Promise.resolve(null),
+      // EDGAR is a non-essential sidecar — never let its failure reject the
+      // Promise.all and throw away the (paid-for) LLM result.
+      edgarNeeded
+        ? fetchEdgarFilings(symbol, cfg.cacheDir).catch((e) => {
+            logger.warn(`EDGAR filings unavailable: ${(e as Error).message}`);
+            return null;
+          })
+        : Promise.resolve(null),
     ]);
     llmAnalysis = analysis;
 
@@ -520,7 +527,10 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       data:    { recommendation: analysis.recommendation, score: analysis.score },
     });
   } else {
-    if (edgarNeeded) await fetchEdgarFilings(symbol, cfg.cacheDir);
+    if (edgarNeeded) {
+      await fetchEdgarFilings(symbol, cfg.cacheDir).catch((e) =>
+        logger.warn(`EDGAR filings unavailable: ${(e as Error).message}`));
+    }
     logger.success('LLM analysis loaded from cache');
     emit({ stage: 'llm', message: 'LLM analysis loaded from cache', cached: true });
   }
