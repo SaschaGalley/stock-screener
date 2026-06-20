@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type ModelInfo } from '../api';
 import type { AnalysisManifestEntry, SearchChoice, Settings } from '../types';
 import { searchesKey } from '../types';
+import { formatAge } from '../format';
 
 interface Props {
   symbol: string | null;
@@ -281,8 +282,8 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
                         </div>
                         <div className="mt-0.5 text-[10px] text-ink-500">
                           {a.olderThanData
-                            ? <span className="text-amber-400/80">{a.ageMinutes}m old · pre-refresh</span>
-                            : `${a.ageMinutes}m old`}
+                            ? <span className="text-amber-400/80">{formatAge(a.generatedAt)} · pre-refresh</span>
+                            : formatAge(a.generatedAt)}
                         </div>
                       </button>
                       <button
@@ -309,7 +310,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
                 </div>
               ) : (
                 <div className="rounded border border-emerald-700 bg-emerald-900 px-2.5 py-2 text-[11px] text-emerald-400">
-                  ✓ Cached ({cachedMatch.ageMinutes}m old)
+                  ✓ Cached ({formatAge(cachedMatch.generatedAt)})
                 </div>
               )}
               <button

@@ -20,8 +20,8 @@ const PERPLEXITY_TTL_MS    = 12 * 60 * 60 * 1000;  // 12 hours
 const DISTILL_TTL_MS       = 30 * 60 * 1000;
 
 // Bump to invalidate all cached entries of that type
-const FINANCIALS_VERSION     = 15;  // bumped — ISIN now sourced from Wikidata (Yahoo dropped the field); old caches have null ISIN
-const ANALYSIS_VERSION       = 4;   // bumped — bull/bear are now string[] of 3 bullets each
+const FINANCIALS_VERSION     = 17;  // bumped — FX-convert quarterly + forward revenue; clamp effective tax rate; avgPE5Y date keying; EV fallback no longer double-converts
+const ANALYSIS_VERSION       = 5;   // bumped — LLM output now in German (bullCase/bearCase/keyRisks/thesis)
 const NEWS_VERSION           = 1;
 const MARKET_SIGNALS_VERSION = 2;  // bumped — technicals expanded with EMAs, Stoch, CCI, WilliamsR, Momentum
 

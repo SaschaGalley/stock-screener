@@ -50,16 +50,30 @@ export default function AnalysisView({
   const [error, setError] = useState<string | null>(null);
   const [localRefresh, setLocalRefresh] = useState(0);
 
-  // Stock bundle (financials, market signals, computed metrics, news) depends
-  // only on the symbol — not on which LLM flags are selected.
+  // Clear stale cross-ticker state immediately when the symbol changes so we
+  // don't flash the previous ticker's header/verdict while the new bundle
+  // loads. Refresh-triggered reloads (refreshKey/localRefresh) keep the
+  // current bundle visible until the new one arrives — smoother UX for the
+  // same-ticker case.
   useEffect(() => {
+    setBundle(null);
+    setAnalysis(null);
+  }, [symbol]);
+
+  // Stock bundle (financials, market signals, computed metrics, news) depends
+  // only on the symbol — not on which LLM flags are selected. Cancellation
+  // flag prevents a stale response from clobbering a newer symbol's state
+  // when the user rapid-fires across the sidebar.
+  useEffect(() => {
+    let cancelled = false;
     setBundleLoading(true);
     setError(null);
     api
       .getStock(symbol)
-      .then(setBundle)
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setBundleLoading(false));
+      .then((b) => { if (!cancelled) setBundle(b); })
+      .catch((e) => { if (!cancelled) setError((e as Error).message); })
+      .finally(() => { if (!cancelled) setBundleLoading(false); });
+    return () => { cancelled = true; };
   }, [symbol, refreshKey, localRefresh]);
 
   // Cached LLM analysis depends on the flag combination. Cheap cache lookup —

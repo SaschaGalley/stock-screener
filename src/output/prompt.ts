@@ -22,7 +22,6 @@ import {
   fmtPct,
   fmtBig,
 } from '../analysis/metrics.js';
-import { getNews } from '../data/finnhub.js';
 import { MarketSignals, SectorMedians, StockFinancials } from '../types.js';
 import { PerplexityContext } from '../data/perplexity.js';
 import { DistillBundle } from '../data/distill.js';
@@ -48,7 +47,6 @@ export interface PromptData {
   sortino: ReturnType<typeof calculateSortino>;
   beneish: ReturnType<typeof calculateBeneish>;
   sectorMedians: SectorMedians | null;
-  news: Awaited<ReturnType<typeof getNews>>;
   marketSignals: MarketSignals;
 }
 
@@ -207,28 +205,28 @@ export function buildAnalysisPrompt(
     ? `${d.altmanZ.score.toFixed(2)} — ${d.altmanZ.zone} zone (${d.altmanZ.model} model)`
     : 'N/A';
 
-  // Distill briefings: render the most recent ≤5 in full, prefixed with their
-  // type-label + date, so the LLM can attribute each insight. Body is passed
-  // through unmodified (plain or markdown — both render identically to the
-  // model). When the bundle exists but is empty, the whole section is dropped.
-  const distillBriefings = (distill?.briefings ?? []).slice(0, 5);
-  const distillSection = distillBriefings.length > 0
+  // Distill briefing: the single currently-relevant brief for this ticker.
+  // Body is passed through unmodified (plain or markdown — both render
+  // identically to the model). When no briefing is available the section
+  // is dropped entirely.
+  const distillBriefing = distill?.briefing ?? null;
+  const distillSection = distillBriefing
     ? `
-### Distill Briefings (curated, multi-source — weight HIGHER than raw search/news)
+### Distill Briefing (curated, multi-source — weight HIGHER than Perplexity / search)
 
 The block below is synthesised by the Distill briefing service from a curated
 set of sources (vetted RSS, earnings transcripts, sell-side research, expert
-commentary). Each briefing aggregates multiple distinct insights into a single
-narrative. Because the editorial filtering happens upstream, treat these
-briefings as your **strongest qualitative signal** — stronger than raw search
-results or Perplexity's general-purpose web summary, second only to the
-quantitative valuation models and analyst consensus. If a Distill briefing
-contradicts the calculated models or the analyst consensus, surface the
-divergence explicitly in the bull or bear case.
+commentary), aggregating multiple distinct insights into a single narrative.
+Because the editorial filtering happens upstream, treat this briefing as your
+**strongest qualitative signal** — stronger than raw search results or
+Perplexity's general-purpose web summary, second only to the quantitative
+valuation models and analyst consensus. If the briefing contradicts the
+calculated models or the analyst consensus, surface the divergence explicitly
+in the bull or bear case.
 
-${distillBriefings.map((b, i) =>
-  `#### ${i + 1}. ${b.briefingTypeName} — ${b.createdAt.slice(0, 10)} (${b.insightCount} insights, ${b.model})\n\n${b.body.trim()}`
-).join('\n\n')}
+#### ${distillBriefing.briefingTypeName} — ${distillBriefing.createdAt.slice(0, 10)} (${distillBriefing.insightCount} insights, ${distillBriefing.model})
+
+${distillBriefing.body.trim()}
 `
     : '';
 
@@ -358,10 +356,24 @@ Bullet writing rules — Alphaspread-style:
 Focus on: competitive moat, valuation vs. intrinsic value (Composite + single-equation models), **Wall Street analyst consensus and price target as an independent triangulation signal — do not let it be drowned out by the calculated models**, growth quality, financial health, technical posture (trend, RSI/MACD, relative strength), earnings-revision momentum, and macro context (VIX regime, yield curve, HY spreads) when material.
 
 Weighting guidance for the recommendation (in descending order of authority):
-- The Composite and single-equation models are *one* input class (intrinsic-value lens) — your quantitative anchor.
-- The Analyst Consensus section is a *second* input class (market-aligned, sell-side lens).
-- **Distill Briefings (when present) are a *third* input class — curated, multi-source qualitative narrative.** Weight them higher than raw web search, raw news, or Perplexity. They have already passed an editorial filter and aggregate multiple insights.
-- Raw News, raw Search Results, and Perplexity are the lowest tier — useful as colour and to fact-check, but never the deciding factor.
-- A strong divergence between any two of these classes is itself a signal — flag it in the bull or bear case.
-- Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken). A Distill briefing flagging the same concern qualifies as a concrete reason.`;
+1. **Composite + single-equation valuation models** — your quantitative anchor (intrinsic-value lens).
+2. **Analyst Consensus** — market-aligned sell-side lens; independent of the calculated models.
+3. **Distill Briefing** (when present) — curated multi-source qualitative narrative that has already passed an editorial filter. Strongest qualitative input.
+4. **Perplexity Sonar** (when present) — substantive web-sourced synthesis. Weight below Distill (Distill has tighter source curation) but above raw search results.
+5. **Web Search Results** (when present) — raw snippets, useful for fact-checking and recency only. The user opted into these explicitly; treat as colour, not as decision input.
+
+A strong divergence between any two of these classes is itself a signal — flag it in the bull or bear case.
+
+Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken). A Distill briefing flagging the same concern qualifies as a concrete reason.
+
+---
+
+**Output language — German.** All free-text fields (\`bullCase\`, \`bearCase\`, \`keyRisks\`, \`thesis\`) must be written in **natural, professional German** — the register of a sell-side equity research note. Apply the Alphaspread-style bullet writing rules above to the German text: lead with the strongest single fact, cite a number in every bullet, no hedging verbs ("könnte", "möglicherweise"), no narrative connectors ("erstens … schließlich").
+
+Keep these unchanged regardless of language:
+- The \`recommendation\` enum: \`"STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL"\` (used as UI tokens — not translated).
+- The \`fairValueEstimate\` format: \`"$120–$145"\` style (price range with US-dollar sign and en-dash).
+- Established finance terminology in the body text: *Free Cash Flow*, *EBITDA*, *DCF*, *ROE*, *Margin of Safety*, *Forward P/E*, *Piotroski*, *Altman Z*, *Beneish*, ticker symbols, company names. Don't germanise these.
+
+Numbers, ratios, and currency amounts keep their English-style formatting ("$1.2B", "23.4%", "1.8x"). Use German for the surrounding prose only ("Bewertung mit 23% Abschlag zum Composite Fair Value" — not "Valuation with 23% discount …").`;
 }

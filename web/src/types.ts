@@ -222,7 +222,7 @@ export type DistillCacheState = 'still-current' | 'generated' | 'empty-pool' | '
 export interface DistillBundle {
   ticker:    string;
   baseUrl:   string;
-  briefings: DistillBriefing[];
+  briefing:  DistillBriefing | null;
   fetchedAt: string;
   lastRefresh?: {
     cacheState:     DistillCacheState;

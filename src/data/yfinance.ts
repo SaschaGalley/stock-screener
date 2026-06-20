@@ -35,6 +35,26 @@ async function safeQuote(symbol: string): Promise<any> {
   catch (e) { logger.warn(`Quote: ${(e as Error).message}`); return null; }
 }
 
+/**
+ * FX spot rate `from → to` via Yahoo's currency pseudo-ticker (e.g. "CNYUSD=X").
+ * Returns 1 when the currencies match, null on any failure (caller falls back
+ * to no conversion). Used to reconcile ADRs/foreign listings where Yahoo
+ * reports market data (price, marketCap, targets) in the trading currency but
+ * the financial statements in the reporting currency — mixing the two silently
+ * corrupts every per-share valuation model.
+ */
+async function fetchFxRate(from: string, to: string): Promise<number | null> {
+  if (from === to) return 1;
+  try {
+    const q = await yf.quote(`${from}${to}=X`);
+    const r = num((q as any)?.regularMarketPrice);
+    return r !== null && r > 0 ? r : null;
+  } catch (e) {
+    logger.warn(`FX ${from}${to}=X: ${(e as Error).message}`);
+    return null;
+  }
+}
+
 async function safeSummary(symbol: string): Promise<any> {
   try {
     return await yf.quoteSummary(symbol, {
@@ -551,6 +571,31 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   const ap = summary?.assetProfile         ?? {};
   const pr = summary?.price                ?? {};
 
+  // ── Currency reconciliation ───────────────────────────────────────────────
+  // Yahoo reports market data (price, marketCap, analyst targets, the quote's
+  // trailing EPS) in the TRADING currency, but the financial statements
+  // (revenue, net income, FCF, debt, book value, the EPS/FCF history) in the
+  // REPORTING currency. For ADRs and foreign listings these differ (e.g. BABA:
+  // price USD, statements CNY), and mixing them turns every per-share model
+  // into garbage — a P/B of price$ / bookValue¥, a DCF of ¥-FCF bridged to a
+  // $-price. We fetch the spot FX rate once and convert all statement-sourced
+  // figures into the trading currency so the whole pipeline downstream can stay
+  // currency-agnostic. Verified against the identity
+  // netIncome¥ / sharesADS × FX ≈ trailing EPS$ (Yahoo's own quote figure).
+  const tradingCurrency   = str(pr.currency) ?? str((quote as any)?.currency) ?? str(sd.currency) ?? null;
+  const financialCurrency = str(fd.financialCurrency) ?? null;
+  const fxRate = (tradingCurrency && financialCurrency && tradingCurrency !== financialCurrency)
+    ? (await fetchFxRate(financialCurrency, tradingCurrency)) ?? 1
+    : 1;
+  if (fxRate !== 1) {
+    logger.info(`Currency: ${financialCurrency}→${tradingCurrency} statements ×${fxRate.toFixed(4)} for ${symbol}`);
+  }
+  /** Convert a statement-currency (reporting) amount into the trading currency. */
+  const fxc = (n: number | null): number | null => (n === null ? null : n * fxRate);
+  /** Convert a {year,value} history series of statement-currency values. */
+  const fxcSeries = (s: { year: number; value: number }[]) =>
+    fxRate === 1 ? s : s.map((p) => ({ year: p.year, value: p.value * fxRate }));
+
   // ISIN: kicked off as soon as we have the company longName from Yahoo's
   // price module. Wikidata's wbsearchentities works best with the canonical
   // company name (not the ticker), e.g. "ASML Holding" rather than "ASML.AS".
@@ -594,8 +639,13 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     ?? num((inc as any).interestExpenseNonOperating);
   const incomeTaxExpense = num(inc.taxProvision);
   const incomeBeforeTax  = num(inc.pretaxIncome);
-  const taxRate = incomeTaxExpense && incomeBeforeTax && incomeBeforeTax > 0
+  // Effective tax rate, clamped to a sane band: a genuine 0% rate is kept
+  // (=== 0, not treated as missing), a tax *benefit* (negative provision) maps
+  // to 0, and one-off rates above the statutory ceiling are capped at 35% so
+  // NOPAT-based models (EPV) aren't distorted by a single distorted year.
+  const rawTaxRate = incomeTaxExpense !== null && incomeBeforeTax !== null && incomeBeforeTax > 0
     ? incomeTaxExpense / incomeBeforeTax : null;
+  const taxRate = rawTaxRate !== null ? Math.max(0, Math.min(rawTaxRate, 0.35)) : null;
 
   // ── Cash flow ─────────────────────────────────────────────────────────────
   const operatingCashFlowAnnual = num(cf.operatingCashFlow);
@@ -622,7 +672,9 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     epsLow:           num(t.earningsEstimate?.low?.raw ?? t.earningsEstimate?.low),
     epsHigh:          num(t.earningsEstimate?.high?.raw ?? t.earningsEstimate?.high),
     epsGrowth:        num(t.earningsEstimate?.growth?.raw ?? t.earningsEstimate?.growth),
-    revenueEstimate:  num(t.revenueEstimate?.avg?.raw ?? t.revenueEstimate?.avg),
+    // Consensus revenue is reported in the statement currency — convert to the
+    // trading currency so forward P/S (marketCap / fwdRev) is consistent.
+    revenueEstimate:  fxc(num(t.revenueEstimate?.avg?.raw ?? t.revenueEstimate?.avg)),
     revenueGrowth:    num(t.revenueEstimate?.growth?.raw ?? t.revenueEstimate?.growth),
     numberOfAnalysts: num(t.earningsEstimate?.numberOfAnalysts?.raw ?? t.earningsEstimate?.numberOfAnalysts),
   }));
@@ -639,7 +691,8 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
         : typeof rawDate === 'string' ? new Date(rawDate)
         : typeof rawDate === 'number' ? new Date(rawDate * 1000)
         : null;
-      const rev = num(q.totalRevenue) ?? num(q.revenue);
+      // Convert to trading currency to match marketCap in the SVR (run-rate P/S).
+      const rev = fxc(num(q.totalRevenue) ?? num(q.revenue));
       if (!d || isNaN(d.getTime()) || rev === null || rev <= 0) return null;
       return { endDate: d.toISOString().slice(0, 10), revenue: rev };
     })
@@ -684,19 +737,22 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   // ── Prior-year snapshot for Piotroski / Beneish ──────────────────────────
   let prevYear: PrevYearSnapshot | null = null;
   if (bs1 && inc1 && cf1) {
+    // Statement-currency amounts — FX-converted to match the current-year
+    // figures (Piotroski/Beneish compare the two years, so both sides must be
+    // in the same currency; for same-currency stocks fxRate is 1, a no-op).
     prevYear = {
-      netIncome:          num(inc1.netIncome),
-      totalAssets:        num(bs1.totalAssets),
-      longTermDebt:       num(bs1.longTermDebt),
-      currentAssets:      num(bs1.currentAssets),
-      currentLiabilities: num(bs1.currentLiabilities),
-      grossProfit:        num(inc1.grossProfit),
-      revenue:            num(inc1.totalRevenue),
-      operatingCashFlow:  num(cf1.operatingCashFlow),
-      receivables:        num(bs1.accountsReceivable),
-      ppe:                num(bs1.netPPE),
-      sga:                num((inc1 as any).sellingGeneralAndAdministration),
-      depreciation:       num((cf1 as any).depreciationAndAmortization) ?? num((cf1 as any).depreciation),
+      netIncome:          fxc(num(inc1.netIncome)),
+      totalAssets:        fxc(num(bs1.totalAssets)),
+      longTermDebt:       fxc(num(bs1.longTermDebt)),
+      currentAssets:      fxc(num(bs1.currentAssets)),
+      currentLiabilities: fxc(num(bs1.currentLiabilities)),
+      grossProfit:        fxc(num(inc1.grossProfit)),
+      revenue:            fxc(num(inc1.totalRevenue)),
+      operatingCashFlow:  fxc(num(cf1.operatingCashFlow)),
+      receivables:        fxc(num(bs1.accountsReceivable)),
+      ppe:                fxc(num(bs1.netPPE)),
+      sga:                fxc(num((inc1 as any).sellingGeneralAndAdministration)),
+      depreciation:       fxc(num((cf1 as any).depreciationAndAmortization) ?? num((cf1 as any).depreciation)),
     };
   }
 
@@ -724,16 +780,19 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
       .sort((a, b) => a[0] - b[0])
       .map(([year, value]) => ({ year, value }));
   }
+  // All series below are statement-currency monetary values (eps is per-share
+  // but still currency-denominated), so each is FX-converted into the trading
+  // currency to stay consistent with the price.
   const fundamentalsHistory = {
-    revenue:            series(finData, (r) => num(r.totalRevenue)),
-    grossProfit:        series(finData, (r) => num(r.grossProfit)),
-    operatingIncome:    series(finData, (r) => num(r.operatingIncome) ?? num((r as any).EBIT)),
-    netIncome:          series(finData, (r) => num((r as any).netIncome) ?? num((r as any).netIncomeCommonStockholders)),
-    eps:                series(finData, (r) => num((r as any).dilutedEPS) ?? num((r as any).basicEPS)),
-    freeCashFlow:       series(cfData,  (r) => num((r as any).freeCashFlow)),
-    operatingCashFlow:  series(cfData,  (r) => num((r as any).operatingCashFlow) ?? num((r as any).cashFlowFromContinuingOperatingActivities)),
-    totalAssets:        series(bsData,  (r) => num(r.totalAssets)),
-    stockholdersEquity: series(bsData,  (r) => num((r as any).stockholdersEquity) ?? num((r as any).totalEquityGrossMinorityInterest)),
+    revenue:            fxcSeries(series(finData, (r) => num(r.totalRevenue))),
+    grossProfit:        fxcSeries(series(finData, (r) => num(r.grossProfit))),
+    operatingIncome:    fxcSeries(series(finData, (r) => num(r.operatingIncome) ?? num((r as any).EBIT))),
+    netIncome:          fxcSeries(series(finData, (r) => num((r as any).netIncome) ?? num((r as any).netIncomeCommonStockholders))),
+    eps:                fxcSeries(series(finData, (r) => num((r as any).dilutedEPS) ?? num((r as any).basicEPS))),
+    freeCashFlow:       fxcSeries(series(cfData,  (r) => num((r as any).freeCashFlow))),
+    operatingCashFlow:  fxcSeries(series(cfData,  (r) => num((r as any).operatingCashFlow) ?? num((r as any).cashFlowFromContinuingOperatingActivities))),
+    totalAssets:        fxcSeries(series(bsData,  (r) => num(r.totalAssets))),
+    stockholdersEquity: fxcSeries(series(bsData,  (r) => num((r as any).stockholdersEquity) ?? num((r as any).totalEquityGrossMinorityInterest))),
   };
 
   // ── 5-year average trailing P/E ──────────────────────────────────────────
@@ -742,14 +801,18 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     for (const entry of finData) {
       const eps = num((entry as any).dilutedEPS);
       if (eps === null || eps <= 0) continue;
-      const raw = (entry as any).asOfDate;
+      // Match the canonical asYear keying: fundamentalsTimeSeries puts the
+      // period end in `date` (primary); `asOfDate` only on older shapes.
+      const raw = (entry as any).date ?? (entry as any).asOfDate;
       const endDate: Date | null = raw instanceof Date ? raw
         : typeof raw === 'string' ? new Date(raw) : null;
       if (!endDate || isNaN(endDate.getTime())) continue;
       const ym = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`;
       const price = monthlyPrices[ym] ?? monthlyPrices[ymShift(ym, -1)] ?? monthlyPrices[ymShift(ym, 1)];
       if (!price) continue;
-      const pe = price / eps;
+      // price is in the trading currency; statement EPS is in the reporting
+      // currency — convert EPS so the ratio is currency-consistent.
+      const pe = price / (eps * fxRate);
       if (pe > 0 && pe < 500) pes.push(pe);
     }
     return pes.length >= 2 ? pes.reduce((a, b) => a + b, 0) / pes.length : null;
@@ -770,7 +833,18 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     avgPE5Y,
     pegRatio:    num(ks.pegRatio),
     eps:         num(quote?.epsTrailingTwelveMonths),
-    bookValue:   num(ks.bookValue),
+    // ks.bookValue is per-share in the reporting currency on an ambiguous basis
+    // for ADRs; when currencies differ, derive BVPS from the (already FX-
+    // converted) latest equity ÷ shares so it bridges cleanly to the $-price.
+    bookValue:   (() => {
+      if (fxRate === 1) return num(ks.bookValue);
+      const eq = fundamentalsHistory.stockholdersEquity;
+      const latestEq = eq.length ? eq[eq.length - 1].value : null;
+      const shares = num(ks.sharesOutstanding);
+      return (latestEq !== null && shares !== null && shares > 0)
+        ? latestEq / shares
+        : fxc(num(ks.bookValue));
+    })(),
 
     roe:              num(fd.returnOnEquity),
     roa:              num(fd.returnOnAssets),
@@ -780,37 +854,55 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     revenueGrowthYoY: num(fd.revenueGrowth),
     earningsGrowth:   num(fd.earningsGrowth),
 
-    freeCashFlow:      num(fd.freeCashflow),
-    operatingCashFlow: num(fd.operatingCashflow),
-    totalCash:         num(fd.totalCash),
-    totalDebt:         num(fd.totalDebt) ?? num(bs.totalDebt),
-    longTermDebt,
+    freeCashFlow:      fxc(num(fd.freeCashflow)),
+    operatingCashFlow: fxc(num(fd.operatingCashflow)),
+    totalCash:         fxc(num(fd.totalCash)),
+    totalDebt:         fxc(num(fd.totalDebt) ?? num(bs.totalDebt)),
+    longTermDebt:      fxc(longTermDebt),
     debtToEquity:      num(fd.debtToEquity),
     currentRatio:      num(fd.currentRatio),
     quickRatio:        num(fd.quickRatio),
 
-    revenue:          num(fd.totalRevenue) ?? num(inc.totalRevenue),
-    grossProfit:      num(fd.grossProfits) ?? grossProfit,
-    ebit,
-    netIncome:        num(fd.netIncomeToCommon) ?? num(inc.netIncome),
-    ebitda:           num(fd.ebitda),
-    interestExpense,
-    incomeTaxExpense,
-    incomeBeforeTax,
+    revenue:          fxc(num(fd.totalRevenue) ?? num(inc.totalRevenue)),
+    grossProfit:      fxc(num(fd.grossProfits) ?? grossProfit),
+    ebit:             fxc(ebit),
+    netIncome:        fxc(num(fd.netIncomeToCommon) ?? num(inc.netIncome)),
+    ebitda:           fxc(num(fd.ebitda)),
+    interestExpense:  fxc(interestExpense),
+    incomeTaxExpense: fxc(incomeTaxExpense),
+    incomeBeforeTax:  fxc(incomeBeforeTax),
     taxRate,
 
-    totalAssets,
-    totalCurrentAssets,
-    totalCurrentLiabilities,
-    totalLiabilities,
-    retainedEarnings,
-    workingCapital,
+    totalAssets:             fxc(totalAssets),
+    totalCurrentAssets:      fxc(totalCurrentAssets),
+    totalCurrentLiabilities: fxc(totalCurrentLiabilities),
+    totalLiabilities:        fxc(totalLiabilities),
+    retainedEarnings:        fxc(retainedEarnings),
+    workingCapital:          fxc(workingCapital),
 
-    operatingCashFlowAnnual,
-    capex,
-    depreciation,
+    operatingCashFlowAnnual: fxc(operatingCashFlowAnnual),
+    capex:                   fxc(capex),
+    depreciation:            fxc(depreciation),
 
-    enterpriseValue:   num(ks.enterpriseValue),
+    // EV = trading-currency market cap + converted net debt. For mismatched
+    // currencies Yahoo's ks.enterpriseValue mixes a $-market-cap with ¥-debt,
+    // so recompute it from the converted figures; otherwise trust Yahoo's.
+    enterpriseValue:   fxRate === 1
+      ? num(ks.enterpriseValue)
+      : (() => {
+          // Reconstruct EV from trading-currency equity + converted net debt.
+          // marketCap (and price×shares) are already trading currency; never
+          // FX-scale them. ks.enterpriseValue is unusable here because it mixes
+          // a trading-currency market cap with reporting-currency debt, so
+          // multiplying it by fxRate would double-convert the equity portion.
+          const px = num(quote?.regularMarketPrice);
+          const sh = num(ks.sharesOutstanding);
+          const equity = num(quote?.marketCap) ?? (px !== null && sh !== null ? px * sh : null);
+          if (equity === null) return null;
+          const debt = fxc(num(fd.totalDebt) ?? num(bs.totalDebt)) ?? 0;
+          const cash = fxc(num(fd.totalCash)) ?? 0;
+          return equity + debt - cash;
+        })(),
     sharesOutstanding: num(ks.sharesOutstanding),
     targetMeanPrice:   num(fd.targetMeanPrice),
 
@@ -845,9 +937,12 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     epsGrowth3Y:         null,
     dividendGrowthRate5Y: null,
 
-    receivables: num(bs.accountsReceivable),
-    ppe:         num(bs.netPPE),
-    sga:         num((inc as any).sellingGeneralAndAdministration),
+    receivables: fxc(num(bs.accountsReceivable)),
+    ppe:         fxc(num(bs.netPPE)),
+    sga:         fxc(num((inc as any).sellingGeneralAndAdministration)),
+
+    tradingCurrency,
+    financialCurrency,
 
     monthlyReturns,
 

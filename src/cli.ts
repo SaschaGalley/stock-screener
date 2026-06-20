@@ -485,7 +485,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
       ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,
       sortino, beneish, rim, ncav, peerMultiples, composite,
-      sectorMedians, news, marketSignals,
+      sectorMedians, marketSignals,
     }, perplexity ?? undefined, distill ?? undefined);
     const [analysis] = await Promise.all([
       llm.analyze(prompt, searchResults),

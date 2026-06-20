@@ -28,11 +28,13 @@ export interface DistillBriefing {
 export type DistillCacheState = 'still-current' | 'generated' | 'empty-pool' | 'unknown';
 
 export interface DistillRefreshResult {
-  briefings:        DistillBriefing[];
+  /** Single currently-relevant briefing returned by POST /refresh, or null
+   *  if the project had no fresh insights to summarise ("empty-pool"). */
+  briefing:         DistillBriefing | null;
   cacheState:       DistillCacheState;
   /** Summed cost of any distill drain batches the server ran during THIS
    *  request (0 if the briefing was still-current; >0 if drain + generate
-   *  ran). The briefing's own LLM cost lives on each briefing.costUsd. */
+   *  ran). The briefing's own LLM cost lives on briefing.costUsd. */
   distillCostUsd:   number;
   refreshedAt:      string;
 }
@@ -65,11 +67,18 @@ export class DistillAmbiguousTypeError extends Error {
   }
 }
 
-/** Bundle persisted to the per-symbol cache and consumed by the prompt. */
+/**
+ * Bundle persisted to the per-symbol cache and consumed by the prompt.
+ *
+ * Single-briefing model: we only ever show / prompt with ONE briefing per
+ * ticker — the currently-relevant one for the pinned `DISTILL_BRIEFING_TYPE_ID`.
+ * Distill's GET (with limit=1) and POST /refresh both return exactly that, so
+ * there's no need for a list or upsert logic on our side.
+ */
 export interface DistillBundle {
   ticker:    string;
   baseUrl:   string;
-  briefings: DistillBriefing[];
+  briefing:  DistillBriefing | null;
   fetchedAt: string;
   /** Populated only when the bundle was last written by a POST /refresh call.
    *  Lets the UI render cost + cache-state badges without re-querying. */
@@ -80,18 +89,18 @@ export interface DistillBundle {
   };
 }
 
-/** Number of briefings to request from Distill — newest first. Enough to give
- *  the LLM a recent picture without bloating the prompt. */
-const DEFAULT_LIMIT = 5;
+/** We only need the single currently-relevant briefing per ticker — no
+ *  history, no list. limit=1 keeps the response tiny and matches the UI's
+ *  single-briefing rendering. */
+const DEFAULT_LIMIT = 1;
 
 /**
- * Cache-version hash. Bump implicitly by changing the schema or the request
- * shape — the cache file's `v` field is compared on read so older blobs get
- * invalidated automatically. Includes the limit so changing it forces a
- * refresh.
+ * Cache-version hash. Bumped to `v2` to invalidate older array-shaped
+ * cache files (the schema went from `briefings: []` to `briefing: null`).
+ * Includes the limit so any later request-shape change also forces refresh.
  */
 export const DISTILL_FETCH_HASH = createHash('md5')
-  .update(`distill-v1-limit=${DEFAULT_LIMIT}`)
+  .update(`distill-v2-single-limit=${DEFAULT_LIMIT}`)
   .digest('hex')
   .slice(0, 8);
 
@@ -190,13 +199,13 @@ export async function fetchDistillBriefings(
   }
 
   const json = await res.json() as DistillListResponse;
-  const briefings = (json.data ?? []).map(normaliseBriefing);
+  const briefing = json.data && json.data.length > 0 ? normaliseBriefing(json.data[0]) : null;
 
-  logger.success(`Distill: ${briefings.length}/${json.total} briefings for ${ref}`);
+  logger.success(`Distill: ${briefing ? '1 briefing' : 'no briefing'} for ${ref}${json.total > 1 ? ` (${json.total} total in DB)` : ''}`);
   return {
     ticker:    symbol,
     baseUrl,
-    briefings,
+    briefing,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -268,11 +277,11 @@ export async function triggerDistillRefresh(
   const distillCostUsd = toCost(res.headers.get('x-distill-cost-usd')) ?? 0;
 
   const json = await res.json() as DistillListResponse;
-  const briefings = (json.data ?? []).map(normaliseBriefing);
+  const briefing = json.data && json.data.length > 0 ? normaliseBriefing(json.data[0]) : null;
 
-  logger.success(`Distill refresh: ${cacheState}, ${briefings.length} briefing(s), distill cost $${distillCostUsd.toFixed(4)}`);
+  logger.success(`Distill refresh: ${cacheState}, ${briefing ? '1 briefing' : 'no briefing'}, distill cost $${distillCostUsd.toFixed(4)}`);
   return {
-    briefings,
+    briefing,
     cacheState,
     distillCostUsd,
     refreshedAt: new Date().toISOString(),

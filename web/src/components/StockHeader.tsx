@@ -21,7 +21,24 @@ export default function StockHeader({
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await api.refreshData(summary.symbol);
+      // Fire both refreshes in parallel — data refresh is cheap (~seconds),
+      // Distill can be slow (up to 5 min on first-touch tickers) but the user
+      // explicitly asked to avoid scrolling down to the dedicated button.
+      // allSettled so a Distill outage / config issue doesn't mask the
+      // successful data refresh.
+      const [dataR, distillR] = await Promise.allSettled([
+        api.refreshData(summary.symbol),
+        api.refreshDistill(summary.symbol),
+      ]);
+      if (dataR.status === 'rejected') throw dataR.reason;
+      if (distillR.status === 'rejected') {
+        // Persistent Distill config errors (read-only / unauthorized /
+        // ambiguous-type / not configured) are surfaced by the dedicated
+        // Distill section's own UI — no point alerting twice. Log for
+        // diagnosis only.
+        // eslint-disable-next-line no-console
+        console.warn('Distill refresh skipped:', (distillR.reason as Error)?.message);
+      }
       onRefreshed?.();
     } catch (e) {
       alert(`Refresh failed: ${(e as Error).message}`);
@@ -63,7 +80,7 @@ export default function StockHeader({
             onClick={handleRefresh}
             disabled={refreshing}
             className="rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Refresh raw data (Yahoo, Finnhub, FRED, technicals) — does not call LLM or Perplexity"
+            title="Refresh raw data (Yahoo, Finnhub, FRED, technicals) AND Distill briefing — does not call LLM or Perplexity. Distill drain can take up to ~5 min on first-touch tickers."
           >
             {refreshing ? "⟳" : "↻"}<span className="ml-1 hidden sm:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
           </button>

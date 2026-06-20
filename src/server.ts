@@ -282,15 +282,15 @@ export function createApp() {
         cfg.distillBriefingTypeId,
       );
 
-      // Merge into the cache. If the server returned an empty data array
-      // (empty-pool or no briefing emitted) we keep any existing cached
-      // briefings rather than clobbering — they're still the most recent
-      // useful context for the LLM prompt.
+      // Single-briefing model: just replace the cached briefing with whatever
+      // /refresh returned. On empty-pool (briefing === null) keep the prior
+      // briefing — losing established context to a transient upstream miss
+      // would degrade the LLM prompt for no good reason.
       const prior = readDistill(cacheDir, symbol);
       const merged: DistillBundle = {
         ticker:    symbol,
         baseUrl:   cfg.distillApiUrl,
-        briefings: result.briefings.length > 0 ? result.briefings : (prior?.briefings ?? []),
+        briefing:  result.briefing ?? prior?.briefing ?? null,
         fetchedAt: new Date().toISOString(),
         lastRefresh: {
           cacheState:     result.cacheState,

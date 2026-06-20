@@ -137,7 +137,7 @@ function DistillSection({
   distill: DistillBundle | null;
   onRefreshed: () => void;
 }) {
-  const briefings = distill?.briefings ?? [];
+  const briefing = distill?.briefing ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Persistent error states — once tripped, the button stays disabled with a
@@ -172,32 +172,12 @@ function DistillSection({
     }
   }
 
-  // Hide the section entirely when nothing's configured (no bundle, no briefings,
-  // no symbol context to act on). The parent's enclosing-section conditional
-  // already keeps the whole tier hidden if perplexity / news / searches are
-  // also empty — we just don't want a lonely empty Distill card.
-  if (!distill && briefings.length === 0) {
-    return (
-      <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
-        <div className="flex items-center justify-between gap-2">
-          <span>
-            <span className="font-semibold uppercase tracking-wider text-ink-400">Distill Briefings</span>
-            <span className="ml-2">no briefings cached yet</span>
-          </span>
-          <RefreshButton busy={busy} disabled={!!persistent} onClick={handleRefresh} />
-        </div>
-        {error && <div className="mt-1 text-amber-400">{error}</div>}
-        {persistent && <PersistentHint kind={persistent.kind} />}
-      </div>
-    );
-  }
-
   const last = distill?.lastRefresh;
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-          Distill Briefings
+          Distill Briefing
         </h3>
         <div className="flex items-center gap-2">
           {last && <CacheStateBadge state={last.cacheState} />}
@@ -209,10 +189,11 @@ function DistillSection({
               +${last.distillCostUsd.toFixed(4)} distill
             </span>
           )}
-          <span className="text-[10px] text-ink-600">
-            {briefings.length} brief{briefings.length === 1 ? '' : 's'}
-            {distill?.fetchedAt && ` · ${new Date(distill.fetchedAt).toLocaleString()}`}
-          </span>
+          {distill?.fetchedAt && (
+            <span className="text-[10px] text-ink-600">
+              {new Date(distill.fetchedAt).toLocaleString()}
+            </span>
+          )}
           <RefreshButton busy={busy} disabled={!!persistent} onClick={handleRefresh} />
         </div>
       </div>
@@ -230,17 +211,13 @@ function DistillSection({
       )}
       {persistent && <PersistentHint kind={persistent.kind} />}
 
-      {briefings.length > 0 ? (
-        <div className="space-y-2">
-          {briefings.map((b) => (
-            <DistillBriefingBlock key={b.id} briefing={b} />
-          ))}
-        </div>
+      {briefing ? (
+        <DistillBriefingBlock briefing={briefing} />
       ) : (
         <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
           {last?.cacheState === 'empty-pool'
             ? 'No fresh insights available upstream — Distill has nothing new to summarise.'
-            : 'No briefings cached yet — click Refresh to trigger one.'}
+            : 'No briefing cached yet — click Refresh to trigger one.'}
         </div>
       )}
     </div>

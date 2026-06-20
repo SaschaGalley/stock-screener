@@ -72,8 +72,30 @@ export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return '';
   const t = new Date(iso).getTime();
   const diff = (Date.now() - t) / 1000;
-  if (diff < 60)     return 'just now';
-  if (diff < 3600)   return `${Math.round(diff / 60)}m ago`;
-  if (diff < 86400)  return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
+  if (diff < 60)        return 'just now';
+  if (diff < 3600)      return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400)     return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 7 * 86400) return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 30 * 86400) return `${Math.floor(diff / (7 * 86400))}w ago`;
+  if (diff < 365 * 86400) return `${Math.floor(diff / (30 * 86400))}mo ago`;
+  return `${Math.floor(diff / (365 * 86400))}y ago`;
+}
+
+/**
+ * Human-readable cache age — same scale as `relativeTime` but phrased as
+ * "X unit old" so it reads naturally inside "✓ Cached (5h old)" style copy.
+ * Rolls up automatically: minutes → hours → days → weeks → months → years
+ * so an entry from a month ago shows "1mo old" instead of "43200m old".
+ */
+export function formatAge(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  const diff = (Date.now() - t) / 1000;
+  if (diff < 60)         return 'just now';
+  if (diff < 3600)       return `${Math.floor(diff / 60)}m old`;
+  if (diff < 86400)      return `${Math.floor(diff / 3600)}h old`;
+  if (diff < 7 * 86400)  return `${Math.floor(diff / 86400)}d old`;
+  if (diff < 30 * 86400) return `${Math.floor(diff / (7 * 86400))}w old`;
+  if (diff < 365 * 86400) return `${Math.floor(diff / (30 * 86400))}mo old`;
+  return `${Math.floor(diff / (365 * 86400))}y old`;
 }

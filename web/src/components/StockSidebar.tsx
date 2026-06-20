@@ -77,30 +77,25 @@ export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDelet
                   <button
                     onClick={() => onSelect(s.symbol)}
                     disabled={isDeleting}
-                    className={`flex w-full items-center gap-2 px-3 py-2 pr-9 text-left transition disabled:opacity-50 ${
+                    className={`flex w-full items-center gap-2 px-3 py-1 pr-9 text-left transition disabled:opacity-50 ${
                       active
                         ? 'bg-accent-soft border-l-2 border-l-accent'
                         : 'border-l-2 border-l-transparent hover:bg-ink-800'
                     }`}
+                    title={`${s.companyName} · ${s.sector ?? '—'} · ${fmtMcap(s.marketCap)}`}
                   >
-                    <ConsensusBar consensus={s.consensus} height={36} />
+                    <ConsensusBar consensus={s.consensus} height={22} />
                     <StockLogo
                       domain={s.logoDomain}
                       symbol={s.symbol}
                       fallbackInitials={initialsFromName(s.companyName)}
-                      size={28}
+                      size={20}
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className={`truncate text-sm font-medium ${active ? 'text-ink-50' : 'text-ink-200'}`}>
-                          {s.companyName}
-                        </span>
-                        <span className="shrink-0 font-mono text-[11px] text-ink-500">{s.symbol}</span>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-2 text-[11px] text-ink-500">
-                        <span className="truncate">{s.sector ?? '—'}</span>
-                        <span className="tabular shrink-0">{fmtMcap(s.marketCap)}</span>
-                      </div>
+                    <div className="min-w-0 flex-1 flex items-baseline justify-between gap-2">
+                      <span className={`truncate text-sm font-medium ${active ? 'text-ink-50' : 'text-ink-200'}`}>
+                        {s.companyName}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] text-ink-500">{s.symbol}</span>
                     </div>
                   </button>
                   <button

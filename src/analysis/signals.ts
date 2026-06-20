@@ -30,8 +30,11 @@ function classifyRSI(rsi: number | null | undefined): SignalDirection {
 
 function classifyStochastic(k: number | null | undefined, d: number | null | undefined): SignalDirection {
   if (!isUsable(k) || !isUsable(d)) return 'neutral';
-  if (k < 20 && k <= d) return 'buy';
-  if (k > 80 && k >= d) return 'sell';
+  // Canonical: in oversold territory a %K crossing UP through %D (k >= d) is the
+  // buy turn-up; in overbought territory a %K crossing DOWN through %D (k <= d)
+  // is the sell turn-down. The operators were previously inverted.
+  if (k < 20 && k >= d) return 'buy';
+  if (k > 80 && k <= d) return 'sell';
   return 'neutral';
 }
 
@@ -65,6 +68,14 @@ function classifyMomentum(mom: number | null | undefined): SignalDirection {
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 
+function verdictFromScore(score: number): SignalGroup['verdict'] {
+  if (score >=  0.5) return 'STRONG BUY';
+  if (score >=  0.1) return 'BUY';
+  if (score <= -0.5) return 'STRONG SELL';
+  if (score <= -0.1) return 'SELL';
+  return 'NEUTRAL';
+}
+
 function tally(items: SignalItem[]): SignalGroup {
   let buy = 0, sell = 0, neutral = 0;
   for (const it of items) {
@@ -74,13 +85,7 @@ function tally(items: SignalItem[]): SignalGroup {
   }
   const total = items.length;
   const score = total === 0 ? 0 : (buy - sell) / total;
-  let verdict: SignalGroup['verdict'];
-  if (score >=  0.5)      verdict = 'STRONG BUY';
-  else if (score >=  0.1) verdict = 'BUY';
-  else if (score <= -0.5) verdict = 'STRONG SELL';
-  else if (score <= -0.1) verdict = 'SELL';
-  else                    verdict = 'NEUTRAL';
-  return { items, buy, sell, neutral, score, verdict };
+  return { items, buy, sell, neutral, score, verdict: verdictFromScore(score) };
 }
 
 function maItem(name: string, price: number, ma: number | null | undefined): SignalItem {
@@ -167,7 +172,20 @@ export function deriveTechnicalSignals(t: TechnicalIndicators, price: number): T
 
   const movingAverages = tally(maItems);
   const oscillators    = tally(oscItems);
-  const overall        = tally([...maItems, ...oscItems]);
+
+  // TradingView-style summary: equal-weight the two GROUP scores instead of
+  // pooling all votes, otherwise the 12 MA votes swamp the 7 oscillator votes
+  // (~63/37) and pin the verdict to the trend in any trending market.
+  const groups = [movingAverages, oscillators].filter((g) => g.items.length > 0);
+  const overallScore = groups.length ? groups.reduce((s, g) => s + g.score, 0) / groups.length : 0;
+  const overall: SignalGroup = {
+    items:   [...maItems, ...oscItems],
+    buy:     movingAverages.buy + oscillators.buy,
+    sell:    movingAverages.sell + oscillators.sell,
+    neutral: movingAverages.neutral + oscillators.neutral,
+    score:   overallScore,
+    verdict: verdictFromScore(overallScore),
+  };
 
   return { movingAverages, oscillators, overall };
 }

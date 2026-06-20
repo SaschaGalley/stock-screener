@@ -51,6 +51,8 @@ export const StockFinancialsSchema = z.object({
   companyName: z.string().describe('Full legal company name from Yahoo Finance price data'),
   price:       z.number().describe('Most recent regular market close price in USD (or local currency)'),
   marketCap:   z.number().describe('Total market capitalisation: shares outstanding × price'),
+  tradingCurrency:   z.string().nullable().optional().describe('Currency of price/marketCap/analyst targets (the quote/trading currency, e.g. USD for an ADR)'),
+  financialCurrency: z.string().nullable().optional().describe('Reporting currency of the financial statements (e.g. CNY). When it differs from tradingCurrency, all statement-sourced figures below are FX-converted into tradingCurrency so per-share models stay consistent.'),
 
   // ── Valuation ───────────────────────────────────────────────────────────────
   peRatio:   z.number().nullable().describe('Trailing 12-month P/E ratio (price / EPS TTM)'),
@@ -70,7 +72,7 @@ export const StockFinancialsSchema = z.object({
   earningsGrowth:   z.number().nullable().describe('Year-over-year earnings/net-income growth rate TTM (decimal); can be noisy for single-quarter spikes'),
 
   // ── Cash & Liquidity ────────────────────────────────────────────────────────
-  freeCashFlow:      z.number().nullable().describe('Free cash flow TTM (operating CF − capex) in reporting currency'),
+  freeCashFlow:      z.number().nullable().describe('Free cash flow TTM (operating CF − capex), FX-converted into the trading currency'),
   operatingCashFlow: z.number().nullable().describe('Operating cash flow TTM from Yahoo financialData'),
   totalCash:         z.number().nullable().describe('Total cash, cash equivalents and short-term investments on the balance sheet'),
   totalDebt:         z.number().nullable().describe('Total interest-bearing debt (short-term + long-term)'),
@@ -374,7 +376,7 @@ export const DCFResultSchema = z.object({
   fairValue:          z.number().nullable().describe('Base-case 2-stage DCF fair value per share (FCFF discounted at cost of equity, equity-bridge applied: + cash − debt)'),
   fairValueBear:      z.number().nullable().describe('Bear-case fair value: stage-1 growth −2pp, discount rate +1pp'),
   fairValueBull:      z.number().nullable().describe('Bull-case fair value: stage-1 growth +2pp, discount rate −1pp'),
-  discountRate:       z.number().describe('Discount rate used (cost of equity from CAPM: rf + βcapped × ERP)'),
+  discountRate:       z.number().describe('Discount rate used: WACC = E/V·(CAPM cost of equity) + D/V·kd·(1−tax)'),
   beta:               z.number().nullable().describe('Beta used for CAPM (capped at [0.8, 2.0] per SWS convention)'),
   riskFreeRate:       z.number().describe('Risk-free rate used (10Y Treasury from FRED, decimal)'),
   stage1Growth:       z.number().describe('Stage-1 (years 1–5) FCF growth rate (decimal)'),
@@ -434,7 +436,7 @@ export const PeterLynchResultSchema = z.object({
 export type PeterLynchResult = z.infer<typeof PeterLynchResultSchema>;
 
 export const EVMultiplesResultSchema = z.object({
-  enterpriseValue:     z.number().nullable().describe('Enterprise value in reporting currency'),
+  enterpriseValue:     z.number().nullable().describe('Enterprise value in the trading currency (statement figures are FX-converted upstream)'),
   evToEbitda:          z.number().nullable().describe('EV / EBITDA — most widely used EV multiple'),
   evToRevenue:         z.number().nullable().describe('EV / Revenue — useful for pre-profit or low-margin businesses'),
   evToFCF:             z.number().nullable().describe('EV / Free Cash Flow'),
@@ -538,7 +540,7 @@ export const EPVResultSchema = z.object({
   fairValue:       z.number().nullable().describe('Earnings Power Value per share (Greenwald method): NOPAT / discountRate, plus cash − debt bridge'),
   normalizedEbit:  z.number().nullable().describe('Sustainable EBIT used as input (= reported EBIT; no D&A boost — true Greenwald uses cycle-averaged EBIT which we approximate with latest annual)'),
   taxRate:         z.number().describe('Effective tax rate applied (decimal); uses computed taxRate or defaults to 21%'),
-  wacc:            z.number().describe('Discount rate used to capitalise NOPAT (decimal); cost of equity from CAPM'),
+  wacc:            z.number().describe('WACC used to capitalise NOPAT (decimal): E/V·CAPM-ke + D/V·kd·(1−tax)'),
   marginOfSafety:  z.number().nullable().describe('(fairValue − price) / price'),
 });
 export type EPVResult = z.infer<typeof EPVResultSchema>;
