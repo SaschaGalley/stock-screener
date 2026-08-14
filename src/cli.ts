@@ -163,8 +163,9 @@ export interface AnalysisRunInput {
    *   • single string: 'brave', 'tavily', 'claude', 'openai', 'none'
    *   • comma-separated: 'brave,tavily'
    *   • array: ['brave', 'tavily']
+   *   • `true`: bare `--search` from the CLI — use the active model's native search
    * The list is normalised to a sorted, deduped joined string for the cache key. */
-  search?:    string | string[];
+  search?:    string | string[] | boolean;
   pplx?:      'sonar' | 'sonar-pro' | null;
   verbose?:   boolean;
   /**
@@ -178,8 +179,19 @@ export interface AnalysisRunInput {
   onProgress?: (event: ProgressEvent) => void;
 }
 
-/** Parse a search input (string | string[] | comma-separated) into a clean list. */
-function parseSearchList(input: AnalysisRunInput['search']): string[] {
+/**
+ * Parse a search input (string | string[] | comma-separated) into a clean list.
+ *
+ * `--search` is declared as `[type]`, so commander yields boolean `true` when the
+ * flag is passed without a value. That form means "use the active model's native
+ * web search" — hence the provider argument. Both providers are also native-search
+ * ids ('claude', 'openai'), the same coupling the compatibility checks below rely on.
+ */
+function parseSearchList(
+  input: AnalysisRunInput['search'],
+  provider: AnalysisOptions['provider'],
+): string[] {
+  if (input === true) return [provider];
   if (!input) return [];
   const raw = Array.isArray(input) ? input : String(input).split(',');
   const out: string[] = [];
@@ -224,7 +236,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   //     native-search routing); always prefer the matching native option if
   //     present so the LLM can call its built-in web search.
   //   - External searches (Brave/Tavily) run independently before the LLM call.
-  const requested = parseSearchList(input.search);
+  const requested = parseSearchList(input.search, provider);
   if (provider !== 'claude' && requested.includes('claude')) {
     throw new Error(`search "claude" requires a Claude model (${acceptedModels('claude')})`);
   }
@@ -614,7 +626,7 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
     symbol:  rawSymbol,
     query:   opts.query as string | undefined,
     model:   String(opts.model ?? 'claude'),
-    search:  opts.search as string | undefined,
+    search:  opts.search,
     pplx,
     verbose: Boolean(opts.verbose),
   });
