@@ -3,6 +3,7 @@ import { api, type ModelInfo } from '../api';
 import type { AnalysisManifestEntry, SearchChoice, Settings } from '../types';
 import { searchesKey } from '../types';
 import { formatAge } from '../format';
+import { DEFAULT_MODEL_ID, type ModelProvider, providerFor, resolveModelId } from '../../../src/models';
 
 interface Props {
   symbol: string | null;
@@ -18,7 +19,7 @@ interface SearchOption {
   label: string;
   help: string;
   /** Native searches require a specific model provider. */
-  requires?: 'claude' | 'openai';
+  requires?: ModelProvider;
 }
 
 const SEARCH_OPTIONS: SearchOption[] = [
@@ -34,28 +35,11 @@ const PPLX_OPTIONS: { value: 'none' | 'sonar' | 'sonar-pro'; label: string }[] =
   { value: 'sonar-pro', label: 'Sonar Pro' },
 ];
 
-const SHORTCUT_TO_RESOLVED: Record<string, string> = {
-  claude: 'claude-sonnet-4-6',
-  sonnet: 'claude-sonnet-4-6',
-  haiku:  'claude-haiku-4-5-20251001',
-  opus:   'claude-opus-4-7',
-  openai: 'gpt-5.4-mini',
-  gemini: 'gemini-1.5-pro',
-};
-
 const CUSTOM_MODELS_KEY = 'stockcli:custom-models';
 
-function modelToProvider(modelId: string): 'claude' | 'openai' | 'gemini' | 'unknown' {
-  const lc = modelId.toLowerCase();
-  if (['claude', 'sonnet', 'haiku', 'opus'].includes(lc) || lc.startsWith('claude-')) return 'claude';
-  if (lc === 'openai' || /^(gpt|o1|o3|o4)/.test(lc)) return 'openai';
-  if (lc === 'gemini' || lc.startsWith('gemini-')) return 'gemini';
-  return 'unknown';
-}
-
-function flagsMatch(a: AnalysisManifestEntry, settings: Settings, resolveModel: (s: string) => string): boolean {
+function flagsMatch(a: AnalysisManifestEntry, settings: Settings): boolean {
   return (
-    a.flags.model === resolveModel(settings.model)
+    a.flags.model === resolveModelId(settings.model)
     && a.flags.search === searchesKey(settings.searches)
     && (a.flags.pplx ?? null) === (settings.pplx ?? null)
   );
@@ -99,8 +83,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
     if (!loading) setRefreshKey((k) => k + 1);
   }, [loading]);
 
-  const resolveModel = (s: string): string => SHORTCUT_TO_RESOLVED[s.toLowerCase()] ?? s;
-  const cachedMatch = analyses.find((a) => flagsMatch(a, settings, resolveModel));
+  const cachedMatch = analyses.find((a) => flagsMatch(a, settings));
 
   /**
    * Switch the model — and drop any native search options that no longer
@@ -108,7 +91,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
    * model, otherwise the request would fail validation).
    */
   function setModel(modelId: string) {
-    const newProvider = modelToProvider(resolveModel(modelId));
+    const newProvider = providerFor(modelId);
     const filtered = settings.searches.filter((s) => {
       if (s === 'claude' && newProvider !== 'claude') return false;
       if (s === 'openai' && newProvider !== 'openai') return false;
@@ -153,7 +136,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
 
   function deleteCustomModel(id: string) {
     setCustomModels(customModels.filter((m) => m !== id));
-    if (settings.model === id) setModel('claude');
+    if (settings.model === id) setModel(DEFAULT_MODEL_ID);
   }
 
   async function deleteCachedAnalysis(hash: string) {
@@ -218,7 +201,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
         <Section title="Web Search">
           <SearchButtonGroup
             selected={settings.searches}
-            modelProvider={modelToProvider(resolveModel(settings.model))}
+            modelProvider={providerFor(settings.model)}
             onToggle={(value) => {
               const has = settings.searches.includes(value);
               const next = has
@@ -388,7 +371,7 @@ function ModelOption({ option, selected, onSelect, onDelete }: {
  */
 function SearchButtonGroup({ selected, modelProvider, onToggle }: {
   selected: SearchChoice[];
-  modelProvider: 'claude' | 'openai' | 'gemini' | 'unknown';
+  modelProvider: ModelProvider | null;
   onToggle: (value: SearchChoice) => void;
 }) {
   return (

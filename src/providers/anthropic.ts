@@ -2,8 +2,9 @@ import Anthropic from '@anthropic-ai/sdk';
 import { LLMAnalysis, SearchResult } from '../types.js';
 import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
 import { logger } from '../utils/logger.js';
+import { defaultModelFor } from '../models.js';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+const DEFAULT_MODEL = defaultModelFor('claude');
 
 export class AnthropicProvider extends LLMProvider {
   readonly name = 'anthropic';

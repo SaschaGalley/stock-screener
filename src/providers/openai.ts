@@ -2,8 +2,9 @@ import OpenAI from 'openai';
 import { LLMAnalysis, SearchResult } from '../types.js';
 import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
 import { logger } from '../utils/logger.js';
+import { defaultModelFor } from '../models.js';
 
-const DEFAULT_MODEL = 'gpt-5.4-mini';
+const DEFAULT_MODEL = defaultModelFor('openai');
 const SEARCH_MODEL  = 'gpt-4o-mini'; // Responses API web_search_preview
 
 export class OpenAIProvider extends LLMProvider {

@@ -36,14 +36,23 @@ import {
   MarketSignals, NewsItem, OptionsSignals, SearchResult, StockFinancials,
   SearchTrace, SearchProviderTrace,
 } from './types.js';
-
-// ─── Model defaults ───────────────────────────────────────────────────────────
-
-const CLAUDE_DEFAULT = 'claude-sonnet-4-6';
-const OPENAI_DEFAULT = 'gpt-5.4-mini';
-const GEMINI_DEFAULT = 'gemini-1.5-pro';
+import {
+  acceptedModels, DEFAULT_MODEL_ID, fullIdList, MODELS, providerFor, resolveModelId, shortcutList,
+} from './models.js';
 
 // ─── CLI Setup ───────────────────────────────────────────────────────────────
+
+// Help text is derived from the model registry so `--help` can never drift
+// from what `resolveModel` actually accepts.
+const MODEL_HELP = (() => {
+  const width = Math.max(...MODELS.map((m) => m.id.length));
+  return [
+    'Model to use — shortcut or full model ID:',
+    ...MODELS.map((m) =>
+      `  ${m.id.padEnd(width)}  ${m.resolved}${m.id === DEFAULT_MODEL_ID ? '  (default)' : ''}`),
+    `  …or any full model ID: ${fullIdList()}`,
+  ].join('\n');
+})();
 
 const program = new Command();
 
@@ -58,23 +67,12 @@ program
   .version('1.0.0')
   .argument('[symbol]', 'Stock ticker symbol (e.g. NOW, AAPL, MSFT, NVDA, FACC). Mutually exclusive with --query.')
   .option('-q, --query <name>', 'Resolve by company name instead of ticker (e.g. "Siemens Energy")')
-  .option(
-    '-m, --model <id>',
-    'Model to use — shortcut or full model ID:\n' +
-    '  claude          Claude Sonnet 4.6 (default)\n' +
-    '  openai          GPT default model\n' +
-    '  gemini          Gemini 1.5 Pro\n' +
-    '  haiku           claude-haiku-4-5-20251001\n' +
-    '  opus            claude-opus-4-7\n' +
-    '  gpt-5.4         any OpenAI model ID\n' +
-    '  claude-opus-4-7 any Claude model ID',
-    'claude',
-  )
+  .option('-m, --model <id>', MODEL_HELP, DEFAULT_MODEL_ID)
   .option(
     '-s, --search [type]',
     'Web search enrichment (omit value to use native search for the active model):\n' +
-    '  claude        Claude built-in search  (requires --model claude/*)\n' +
-    '  openai        OpenAI built-in search  (requires --model openai/gpt-*)\n' +
+    `  claude        Claude built-in search  (requires --model ${acceptedModels('claude')})\n` +
+    `  openai        OpenAI built-in search  (requires --model ${acceptedModels('openai')})\n` +
     '  brave         Brave Search API — recommended for daily use\n' +
     '  tavily        Tavily API\n' +
     '  none          No search (default)',
@@ -100,20 +98,19 @@ Examples:
   $ npx tsx src/cli.ts --query "Airbus" --search brave
   $ npx tsx src/cli.ts FACC --model claude --search brave
   $ npx tsx src/cli.ts AAPL --model claude --search          # native Claude search
-  $ npx tsx src/cli.ts MSFT --model openai --search          # native OpenAI search
-  $ npx tsx src/cli.ts NVDA --model haiku  --search brave
-  $ npx tsx src/cli.ts NOW  --model gpt-5.4 --search tavily
+  $ npx tsx src/cli.ts MSFT --model terra  --search          # native OpenAI search
+  $ npx tsx src/cli.ts NVDA --model mini   --search brave
+  $ npx tsx src/cli.ts NOW  --model luna   --search tavily
   $ npx tsx src/cli.ts NOW  --output report.md
-  $ npx tsx src/cli.ts NVDA --model gemini --verbose
+  $ npx tsx src/cli.ts NVDA --model opus   --verbose
   $ npx tsx src/cli.ts AAPL --fetch                  # refresh financials + download filings
   $ npx tsx src/cli.ts AAPL --fetch financials        # refresh market data only
   $ npx tsx src/cli.ts AAPL --fetch submissions       # download SEC 10-K/10-Q/8-K
   $ npx tsx src/cli.ts AAPL --pplx                   # add Perplexity AI synthesis (12h cache)
 
 Required API keys (set in .env):
-  ANTHROPIC_API_KEY     for --model claude / haiku / opus / claude-*
-  OPENAI_API_KEY        for --model openai / gpt-*
-  GOOGLE_GEMINI_API_KEY for --model gemini / gemini-*
+  ANTHROPIC_API_KEY     for --model claude / opus / claude-*
+  OPENAI_API_KEY        for --model terra / luna / mini / gpt-*
   FINNHUB_API_KEY       for news & peer data  (free tier: https://finnhub.io)
   BRAVE_API_KEY         for --search brave    (https://brave.com/search/api/)
   TAVILY_API_KEY        for --search tavily   (https://tavily.com)
@@ -228,10 +225,10 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   //   - External searches (Brave/Tavily) run independently before the LLM call.
   const requested = parseSearchList(input.search);
   if (provider !== 'claude' && requested.includes('claude')) {
-    throw new Error('search "claude" requires a Claude model');
+    throw new Error(`search "claude" requires a Claude model (${acceptedModels('claude')})`);
   }
   if (provider !== 'openai' && (requested.includes('openai') || requested.includes('openai-tavily'))) {
-    throw new Error('search "openai" requires an OpenAI model');
+    throw new Error(`search "openai" requires an OpenAI model (${acceptedModels('openai')})`);
   }
   // Resolve `options.search` (single value the provider sees):
   //   • 'openai' + 'tavily'  → 'openai-tavily' (special routing)
@@ -246,7 +243,6 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   else if (requested.includes('claude')) optionsSearch = 'claude';
   else if (requested.includes('brave'))  optionsSearch = 'brave';
   else if (requested.includes('tavily')) optionsSearch = 'tavily';
-  validateSearch(optionsSearch, provider);
 
   const options: AnalysisOptions = {
     provider, modelId, search: optionsSearch,
@@ -635,46 +631,14 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function resolveModel(input: string): { provider: AnalysisOptions['provider']; modelId: string } {
-  const l = input.toLowerCase();
-  if (l === 'claude' || l === 'sonnet') return { provider: 'claude', modelId: CLAUDE_DEFAULT };
-  if (l === 'haiku')  return { provider: 'claude', modelId: 'claude-haiku-4-5-20251001' };
-  if (l === 'opus')   return { provider: 'claude', modelId: 'claude-opus-4-7' };
-  if (l.startsWith('claude-')) return { provider: 'claude', modelId: input };
-  if (l === 'openai') return { provider: 'openai', modelId: OPENAI_DEFAULT };
-  if (/^(gpt|o1|o3|o4)/.test(l)) return { provider: 'openai', modelId: input };
-  if (l === 'gemini') return { provider: 'gemini', modelId: GEMINI_DEFAULT };
-  if (l.startsWith('gemini-')) return { provider: 'gemini', modelId: input };
-  throw new Error(
-    `Unknown model "${input}".\n` +
-    `  Shortcuts:  claude | openai | gemini | haiku | opus | sonnet\n` +
-    `  Full IDs:   claude-* | gpt-* | o1-* | gemini-*`,
-  );
+  const provider = providerFor(input);
+  if (!provider) {
+    throw new Error(
+      `Unknown model "${input}".\n` +
+      `  Shortcuts:  ${shortcutList()}\n` +
+      `  Full IDs:   ${fullIdList()}`,
+    );
+  }
+  return { provider, modelId: resolveModelId(input) };
 }
 
-function normalizeSearch(
-  raw: string | boolean | undefined,
-  provider: AnalysisOptions['provider'],
-): AnalysisOptions['search'] {
-  // --search without a value: use native search for the current provider
-  if (raw === true) {
-    if (provider === 'claude') return 'claude';
-    if (provider === 'openai') return 'openai';
-    return 'none';
-  }
-  if (!raw || raw === 'none') return 'none';
-  if (raw === 'claude') return 'claude';
-  if (raw === 'openai') return 'openai';
-  if (raw === 'brave')  return 'brave';
-  if (raw === 'openai-tavily') return 'openai-tavily';
-  if (raw === 'tavily') return provider === 'openai' ? 'openai-tavily' : 'tavily';
-  return 'none';
-}
-
-function validateSearch(search: AnalysisOptions['search'], provider: AnalysisOptions['provider']): void {
-  if (search === 'claude' && provider !== 'claude') {
-    throw new Error('--search claude requires a Claude model (--model claude | haiku | opus | claude-*)');
-  }
-  if (search === 'openai' && provider !== 'openai') {
-    throw new Error('--search openai requires an OpenAI model (--model openai | gpt-* | o1-* | o3-*)');
-  }
-}

@@ -6,9 +6,10 @@ import SettingsSidebar from './components/SettingsSidebar';
 import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
 import type { Settings, StockSummary, ProgressEvent, SearchChoice } from './types';
+import { DEFAULT_MODEL_ID, resolveModelId } from '../../src/models';
 
 const DEFAULT_SETTINGS: Settings = {
-  model:    'claude',
+  model:    DEFAULT_MODEL_ID,
   searches: [],
   pplx:     null,
 };
@@ -81,13 +82,13 @@ export default function App() {
 
   const summary = selected ? stocks.find((s) => s.symbol === selected) : undefined;
 
-  // Resolve the actual model id (e.g. 'claude' shortcut → 'claude-sonnet-4-6')
+  // Resolve the actual model id (e.g. 'claude' shortcut → 'claude-sonnet-5')
   // for cache lookups. Server resolves these on POST, but for the read-only
   // GET `/analyses-by-flags?model=...` we send the shortcut string verbatim and
   // it'll miss; better to use the resolved ID. For now rely on the server
   // doing exact-match — user sees "not cached" until the analysis runs once.
   const flags = {
-    model:  resolveClientModel(settings.model),
+    model:  resolveModelId(settings.model),
     search: settings.searches.length === 0 ? 'none' : [...settings.searches].sort().join(','),
     pplx:   settings.pplx,
   };
@@ -287,17 +288,3 @@ export default function App() {
   );
 }
 
-// Server resolves shortcuts like 'claude' → 'claude-sonnet-4-6' but the cache
-// lookup needs the exact stored id. Mirror the server's known shortcuts here.
-const SHORTCUTS: Record<string, string> = {
-  claude: 'claude-sonnet-4-6',
-  sonnet: 'claude-sonnet-4-6',
-  haiku:  'claude-haiku-4-5-20251001',
-  opus:   'claude-opus-4-7',
-  openai: 'gpt-5.4-mini',
-  gemini: 'gemini-1.5-pro',
-};
-
-function resolveClientModel(s: string): string {
-  return SHORTCUTS[s.toLowerCase()] ?? s;
-}

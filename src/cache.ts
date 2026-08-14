@@ -114,7 +114,7 @@ export function writeFinancials(rawDir: string, symbol: string, data: StockFinan
 
 /** Flag combination that uniquely identifies a cached LLM analysis. */
 export interface AnalysisFlagsKey {
-  model:  string;            // resolved model id, e.g. 'claude-sonnet-4-6'
+  model:  string;            // resolved model id, e.g. 'claude-sonnet-5'
   search: string;            // 'none' | 'brave' | 'tavily' | 'claude' | 'openai' | 'openai-tavily'
   pplx:   'sonar' | 'sonar-pro' | null;
 }

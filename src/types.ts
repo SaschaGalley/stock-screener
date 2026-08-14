@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PROVIDERS } from './models.js';
 
 // ─── Core Financial Data ──────────────────────────────────────────────────────
 
@@ -719,7 +720,7 @@ export type LLMAnalysis = z.infer<typeof LLMAnalysisSchema>;
 export const AnalysisResultSchema = z.object({
   symbol:          z.string().describe('Resolved Yahoo Finance ticker symbol'),
   timestamp:       z.string().describe('ISO 8601 timestamp of when the analysis was run'),
-  provider:        z.string().describe('Actual model ID used for analysis (e.g. claude-sonnet-4-6, gpt-5.4-mini)'),
+  provider:        z.string().describe('Actual model ID used for analysis (e.g. claude-sonnet-5, gpt-5.6-terra)'),
   searchProvider:  z.string().describe('Web search mode used (none | brave | tavily | claude | openai | openai-tavily)'),
   financials:      StockFinancialsSchema,
   dcf:             DCFResultSchema,
@@ -755,8 +756,8 @@ export const AnalysisResultSchema = z.object({
 export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
 
 export const AnalysisOptionsSchema = z.object({
-  provider: z.enum(['claude', 'openai', 'gemini']).describe('Resolved LLM provider (claude | openai | gemini)'),
-  modelId:  z.string().describe('Actual model ID sent to the API (e.g. claude-sonnet-4-6, gpt-5.4-mini)'),
+  provider: z.enum(PROVIDERS).describe(`Resolved LLM provider (${PROVIDERS.join(' | ')})`),
+  modelId:  z.string().describe('Actual model ID sent to the API (e.g. claude-sonnet-5, gpt-5.6-terra)'),
   search:   z.enum(['claude', 'openai', 'tavily', 'openai-tavily', 'brave', 'none']).describe('Web search mode; claude requires Claude provider, openai requires OpenAI provider'),
   cache:    z.boolean().describe('Whether to read/write the financial data file cache (TTL 1 hour, invalidated on schema version bump)'),
   output:   z.string().optional().describe('Output file path; .md produces Markdown, .json produces raw JSON'),

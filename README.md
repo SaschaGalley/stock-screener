@@ -26,10 +26,9 @@ cd web && npm install && cd ..
 
 | Key | Service | Required | Where to get |
 |-----|---------|----------|--------------|
-| `ANTHROPIC_API_KEY` | Claude — `--model claude/haiku/opus/claude-*` | yes | [console.anthropic.com](https://console.anthropic.com) |
+| `ANTHROPIC_API_KEY` | Claude — `--model claude/opus/claude-*` | yes | [console.anthropic.com](https://console.anthropic.com) |
 | `FINNHUB_API_KEY` | News, peer medians, sector ETF mapping | yes | [finnhub.io](https://finnhub.io) — free tier |
-| `OPENAI_API_KEY` | OpenAI — `--model openai/gpt-*/o1-*` | optional | [platform.openai.com](https://platform.openai.com) |
-| `GOOGLE_GEMINI_API_KEY` | Gemini — `--model gemini/gemini-*` | optional | [ai.google.dev](https://ai.google.dev) |
+| `OPENAI_API_KEY` | OpenAI — `--model terra/luna/mini/gpt-*/o1-*` | optional | [platform.openai.com](https://platform.openai.com) |
 | `PPLX_API_KEY` | Perplexity Sonar — web-sourced context paragraph | optional | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
 | `DISTILL_API_KEY` + `DISTILL_API_URL` | Distill briefing service — curated multi-source briefings per ticker | optional | mint in Distill Admin → Project → Access keys |
 | `BRAVE_API_KEY` | Brave web search | optional | [brave.com/search/api](https://brave.com/search/api/) — $5 free credits/mo |
@@ -86,7 +85,7 @@ npx tsx src/cli.ts NOW
 
 # Native search (no value = auto-selects native for the active model)
 npx tsx src/cli.ts AAPL --model claude  --search
-npx tsx src/cli.ts AAPL --model openai  --search
+npx tsx src/cli.ts AAPL --model terra   --search
 
 # Explicit search provider
 npx tsx src/cli.ts FACC --search brave
@@ -96,14 +95,15 @@ npx tsx src/cli.ts NOW  --search tavily --output report.md
 npx tsx src/cli.ts MSFT --pplx sonar
 npx tsx src/cli.ts MSFT --pplx sonar-pro
 
-# Model shortcuts
-npx tsx src/cli.ts AAPL --model haiku       # claude-haiku-4-5-20251001
-npx tsx src/cli.ts AAPL --model opus        # claude-opus-4-7
-npx tsx src/cli.ts MSFT --model gemini
+# Model shortcuts — the full list lives in src/models.ts
+npx tsx src/cli.ts AAPL --model opus        # claude-opus-5
+npx tsx src/cli.ts MSFT --model terra       # gpt-5.6-terra
+npx tsx src/cli.ts MSFT --model luna        # gpt-5.6-luna
+npx tsx src/cli.ts MSFT --model mini        # gpt-5.4-mini
 
 # Full model ID override
-npx tsx src/cli.ts NOW  --model gpt-5.4
-npx tsx src/cli.ts NOW  --model claude-opus-4-7 --search brave
+npx tsx src/cli.ts NOW  --model gpt-5.6-terra
+npx tsx src/cli.ts NOW  --model claude-opus-5 --search brave
 
 # Save output
 npx tsx src/cli.ts NOW --output report.md
@@ -125,8 +125,8 @@ Arguments:
 
 Options:
   -m, --model <id>    Model shortcut or full model ID  (default: claude)
-                        Shortcuts:  claude | openai | gemini | haiku | opus | sonnet
-                        Full IDs:   claude-* | gpt-* | o1-* | gemini-*
+                        Shortcuts:  claude | sonnet | opus | terra | luna | mini
+                        Full IDs:   claude-* | gpt-* | o1-*
   -s, --search [type] Web search — omit value for native search of active model
                         none | claude | openai | brave | tavily
                         (can be comma-separated for multi-source: brave,tavily)
@@ -144,8 +144,8 @@ Options:
 | *(omitted)* | any model | financial data only | free |
 | `brave` | any model | current news + snippets | ~$0.015 (free up to 2k req/mo) |
 | `tavily` | any model | current news | ~$0.005 |
-| `openai` | `openai` / `gpt-*` only | live web via Responses API | ~$0.02 |
-| `claude` | `claude` / `claude-*` only | live web, best quality | ~$0.12 |
+| `openai` | `terra` / `luna` / `mini` / `gpt-*` only | live web via Responses API | ~$0.02 |
+| `claude` | `claude` / `opus` / `claude-*` only | live web, best quality | ~$0.12 |
 
 Pass `--search` without a value to auto-select the native search for the active model. Multiple providers can be combined (`--search brave,tavily`); results are merged before the LLM call.
 
@@ -209,7 +209,8 @@ src/
 ├── config.ts              Env vars (Zod validated)
 ├── types.ts               Zod schemas — types inferred via z.infer<>
 ├── cache.ts               File-based JSON cache (versioned, no TTL on analyses)
-├── providers/             LLM abstraction layer (anthropic, openai, gemini, factory)
+├── models.ts              Model registry — single source for CLI, server and web UI
+├── providers/             LLM abstraction layer (anthropic, openai, factory)
 ├── search/                Brave + Tavily clients (LLM-native search is in providers/)
 ├── data/
 │   ├── yfinance.ts        Yahoo: financials, quarterly revenues, ISIN via Wikidata

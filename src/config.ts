@@ -7,7 +7,6 @@ config({ path: resolve(process.cwd(), '.env') });
 const ConfigSchema = z.object({
   anthropicApiKey: z.string().optional(),
   openaiApiKey: z.string().optional(),
-  googleGeminiApiKey: z.string().optional(),
   finnhubApiKey: z.string().optional(),
   tavilyApiKey: z.string().optional(),
   braveApiKey: z.string().optional(),
@@ -33,7 +32,6 @@ export function getConfig(): AppConfig {
   const raw = {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     openaiApiKey: process.env.OPENAI_API_KEY,
-    googleGeminiApiKey: process.env.GOOGLE_GEMINI_API_KEY,
     finnhubApiKey: process.env.FINNHUB_API_KEY,
     tavilyApiKey: process.env.TAVILY_API_KEY,
     braveApiKey: process.env.BRAVE_API_KEY,
@@ -55,13 +53,12 @@ export function getConfig(): AppConfig {
   return _config;
 }
 
-export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gemini' | 'finnhub' | 'tavily' | 'brave' | 'perplexity' | 'distill'): string {
+export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'finnhub' | 'tavily' | 'brave' | 'perplexity' | 'distill'): string {
   const cfg = getConfig();
   const keyMap: Record<string, string | undefined> = {
     claude:      cfg.anthropicApiKey, // alias
     anthropic:   cfg.anthropicApiKey,
     openai:      cfg.openaiApiKey,
-    gemini:      cfg.googleGeminiApiKey,
     finnhub:     cfg.finnhubApiKey,
     tavily:      cfg.tavilyApiKey,
     brave:       cfg.braveApiKey,
@@ -73,7 +70,6 @@ export function requireApiKey(provider: 'claude' | 'anthropic' | 'openai' | 'gem
     claude:      'ANTHROPIC_API_KEY',
     anthropic:   'ANTHROPIC_API_KEY',
     openai:      'OPENAI_API_KEY',
-    gemini:      'GOOGLE_GEMINI_API_KEY',
     finnhub:     'FINNHUB_API_KEY',
     tavily:      'TAVILY_API_KEY',
     brave:       'BRAVE_API_KEY',

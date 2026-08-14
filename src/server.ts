@@ -21,6 +21,7 @@ import {
   MARKET_SIGNALS_VERSION,
 } from './cache.js';
 import { StockFinancials, MarketSignals, NewsItem, SectorMedians } from './types.js';
+import { MODELS } from './models.js';
 import { PerplexityContext } from './data/perplexity.js';
 import {
   DistillBundle,
@@ -389,13 +390,7 @@ export function createApp() {
       .sort((a, b) => b.count - a.count);
 
     res.json({
-      shortcuts: [
-        { id: 'claude', resolved: 'claude-sonnet-4-6',     label: 'Claude Sonnet 4.6'  },
-        { id: 'opus',   resolved: 'claude-opus-4-7',       label: 'Claude Opus 4.7'    },
-        { id: 'haiku',  resolved: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-        { id: 'openai', resolved: 'gpt-5.4-mini',          label: 'GPT default'        },
-        { id: 'gemini', resolved: 'gemini-1.5-pro',        label: 'Gemini 1.5 Pro'     },
-      ],
+      shortcuts: MODELS.map(({ id, resolved, label }) => ({ id, resolved, label })),
       used,
     });
   });
