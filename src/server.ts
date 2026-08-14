@@ -28,8 +28,9 @@ import {
   DistillReadOnlyError,
   DistillUnauthorizedError,
   DistillAmbiguousTypeError,
-  triggerDistillRefresh,
+  DistillEntityUnresolvedError,
 } from './data/distill.js';
+import { distillHintsFor, refreshDistillBriefing } from './distill-service.js';
 import { getMarketRates } from './data/fred.js';
 import { getSectorMedians } from './data/finnhub.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
@@ -307,8 +308,16 @@ export function createApp() {
         return;
       }
 
-      const result = await triggerDistillRefresh(
-        symbol,
+      // Entity resolution wants every identifier we hold — the ISIN pins a
+      // ticker collision that a symbol search alone would leave ambiguous.
+      // Lax read: a stale financials file still carries a valid ISIN/name.
+      const cachedFinancials = readJsonEntry<StockFinancials>(
+        join(symbolDir(cacheDir, symbol), 'financials.json'),
+      ).data;
+
+      const result = await refreshDistillBriefing(
+        cacheDir,
+        distillHintsFor(symbol, cachedFinancials),
         cfg.distillApiKey,
         cfg.distillApiUrl,
         cfg.distillBriefingTypeId,
@@ -322,6 +331,7 @@ export function createApp() {
       const merged: DistillBundle = {
         ticker:    symbol,
         baseUrl:   cfg.distillApiUrl,
+        entity:    result.entity,
         briefing:  result.briefing ?? prior?.briefing ?? null,
         fetchedAt: new Date().toISOString(),
         lastRefresh: {
@@ -350,6 +360,28 @@ export function createApp() {
       }
       if (e instanceof DistillAmbiguousTypeError) {
         res.status(422).json({ error: 'distill_ambiguous_type', message: e.message });
+        return;
+      }
+      // The symbol maps to no single entity. 409 rather than 404: the request
+      // is well-formed, the registry just needs a human to disambiguate — so
+      // ship the candidates instead of a dead end.
+      if (e instanceof DistillEntityUnresolvedError) {
+        res.status(409).json({
+          error:        'distill_entity_unresolved',
+          reason:       e.reason,
+          message:      e.message,
+          entityStatus: e.entityStatus,
+          candidates:   e.candidates.map((c) => ({
+            id:            c.id,
+            ref:           c.ref,
+            displayName:   c.displayName,
+            matchedOn:     c.matchedOn,
+            matchedValue:  c.matchedValue,
+            primarySymbol: c.primarySymbol,
+            country:       c.country,
+            isin:          c.isin,
+          })),
+        });
         return;
       }
       next(e);

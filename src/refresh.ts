@@ -6,7 +6,7 @@ import { getMacroBundle } from './data/macro.js';
 import { getMarketRates } from './data/fred.js';
 import { computeTechnicals } from './analysis/technical.js';
 import { writeFinancials, writeNews, writeMarketSignals, writeDistill } from './cache.js';
-import { fetchDistillBriefings } from './data/distill.js';
+import { distillHintsFor, loadDistillBundle } from './distill-service.js';
 import {
   MarketSignals, NewsItem, OptionsSignals, StockFinancials,
 } from './types.js';
@@ -67,8 +67,14 @@ export async function refreshStockData(rawSymbol: string): Promise<RefreshedData
   // header-refresh just pulls whatever's newest from the upstream corpus.
   if (cfg.distillApiKey) {
     try {
-      const bundle = await fetchDistillBriefings(symbol, cfg.distillApiKey, cfg.distillApiUrl, cfg.distillBriefingTypeId);
-      writeDistill(cfg.cacheDir, symbol, bundle);
+      const distill = await loadDistillBundle(
+        cfg.cacheDir,
+        distillHintsFor(symbol, bundle.financials),
+        cfg.distillApiKey,
+        cfg.distillApiUrl,
+        cfg.distillBriefingTypeId,
+      );
+      writeDistill(cfg.cacheDir, symbol, distill);
     } catch (e) {
       logger.warn(`Distill refresh failed: ${(e as Error).message}`);
     }

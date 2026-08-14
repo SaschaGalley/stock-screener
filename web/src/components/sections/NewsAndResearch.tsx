@@ -146,6 +146,8 @@ function DistillSection({
     | { kind: 'read-only' }
     | { kind: 'unauthorized' }
     | { kind: 'ambiguous-type' }
+    /** Symbol-specific: the server carries the candidate list in `detail`. */
+    | { kind: 'entity-unresolved'; detail: string }
     | null
   >(null);
 
@@ -173,6 +175,14 @@ function DistillSection({
         // Match the structured code only — substrings like 'default'/'Ambiguous'
         // tripped this refresh-disabling state on unrelated errors.
         setPersistent({ kind: 'ambiguous-type' });
+      } else if (msg.includes('distill_entity_unresolved')) {
+        // No single Distill entity answers to this ticker. Retrying changes
+        // nothing until someone adds the ISIN or picks the right entity, so
+        // disable the button and show what the registry offered.
+        setPersistent({
+          kind:   'entity-unresolved',
+          detail: msg.replace(/^distill_entity_unresolved:\s*/, ''),
+        });
       } else {
         setError(msg);
       }
@@ -218,7 +228,12 @@ function DistillSection({
           ⚠ {error}
         </div>
       )}
-      {persistent && <PersistentHint kind={persistent.kind} />}
+      {persistent && (
+        <PersistentHint
+          kind={persistent.kind}
+          detail={'detail' in persistent ? persistent.detail : undefined}
+        />
+      )}
 
       {briefing ? (
         <DistillBriefingBlock briefing={briefing} />
@@ -249,8 +264,12 @@ function RefreshButton({ busy, disabled, onClick }: { busy: boolean; disabled: b
 }
 
 /** Persistent configuration-error hint. Once the user sees this, the fix is
- *  upstream (Distill admin or .env) — no point in retrying without action. */
-function PersistentHint({ kind }: { kind: 'read-only' | 'unauthorized' | 'ambiguous-type' }) {
+ *  upstream (Distill admin or .env) — no point in retrying without action.
+ *  `detail` replaces the canned copy when the server sent something specific. */
+function PersistentHint({ kind, detail }: {
+  kind: 'read-only' | 'unauthorized' | 'ambiguous-type' | 'entity-unresolved';
+  detail?: string;
+}) {
   const messages: Record<typeof kind, string> = {
     'read-only':
       'The configured Distill key is read-only. Mint a key with `briefings:write` scope in the Distill admin (Project → Access keys) to enable refresh.',
@@ -258,10 +277,12 @@ function PersistentHint({ kind }: { kind: 'read-only' | 'unauthorized' | 'ambigu
       'Distill rejected the key as invalid. Check `DISTILL_API_KEY` in your .env and confirm the key still exists in the Distill admin.',
     'ambiguous-type':
       'The Distill project has multiple briefing types and no default — star one in the Distill admin (Project → Briefing-Typen) and the refresh will pick it up.',
+    'entity-unresolved':
+      'This ticker does not map to exactly one Distill entity. Add the ISIN or pick the entity in Distill — guessing would attach another company’s briefing.',
   };
   return (
     <div className="mt-1 text-[10px] italic text-ink-500">
-      {messages[kind]}
+      {detail ?? messages[kind]}
     </div>
   );
 }

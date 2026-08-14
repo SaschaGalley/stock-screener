@@ -18,8 +18,12 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     let errorMsg = `HTTP ${res.status}`;
     try {
-      const body = await res.json() as { error?: string };
-      if (body.error) errorMsg = body.error;
+      const body = await res.json() as { error?: string; message?: string };
+      // Keep the machine-readable code first — callers match on it — but carry
+      // the human-readable detail along; some errors (e.g. an ambiguous entity
+      // and its candidates) are only actionable with it.
+      if (body.error) errorMsg = body.message ? `${body.error}: ${body.message}` : body.error;
+      else if (body.message) errorMsg = body.message;
     } catch { /* ignore */ }
     throw new Error(errorMsg);
   }

@@ -209,6 +209,7 @@ src/
 ├── config.ts              Env vars (Zod validated)
 ├── types.ts               Zod schemas — types inferred via z.infer<>
 ├── cache.ts               File-based JSON cache (versioned, no TTL on analyses)
+├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
 ├── models.ts              Model registry — single source for CLI, server and web UI
 ├── providers/             LLM abstraction layer (anthropic, openai, factory)
 ├── search/                Brave + Tavily clients (LLM-native search is in providers/)
@@ -218,7 +219,9 @@ src/
 │   ├── fred.ts            FRED rates (live 10Y, AAA, …)
 │   ├── macro.ts           SPY + sector-ETF bundles, yield curve, VIX
 │   ├── perplexity.ts      Sonar / Sonar-Pro web-research paragraph
-│   ├── distill.ts         Distill briefing service — per-ticker curated briefings
+│   ├── distill.ts         Distill briefing service — briefings for a resolved entity
+│   ├── distill-entities.ts Distill entity registry — identifier → entity UUID
+│   ├── distill-errors.ts  Typed Distill failures (shared by both clients)
 │   └── edgar.ts           SEC EDGAR filings
 ├── analysis/
 │   ├── metrics.ts         19 valuation models
@@ -269,13 +272,49 @@ financials.json        # versioned (v15) — Yahoo + Finnhub + ISIN
 market-signals.json    # versioned — technicals + revisions + options + macro
 news.json              # 30-min TTL
 perplexity.json        # keyed by prompt hash
-distill.json           # Distill briefings for this ticker (30 min TTL)
+distill.json           # Distill briefing for this ticker (30 min TTL)
+distill-entity.json    # ticker → Distill entity UUID (no TTL — see below)
 analyses/<hash>.json   # one per (model, search, pplx) combo — no TTL, hash-only
 submissions.json       # EDGAR
 report.md/.html/.pdf   # last full CLI analysis output (CLI only)
 ```
 
 The web UI never silently invalidates an analysis — outdated entries stay selectable but show a ⚠ marker and a stale banner that prompts a one-click re-run.
+
+## Distill entity resolution
+
+Distill addresses entities by opaque UUID (`6d59e35b-…`, handle `company:microsoft`).
+The old guessable refs (`ticker:MSFT`) are gone and 404 by design — an unknown
+prefix is never silently reinterpreted as free text. Every Distill call therefore
+goes through `src/distill-service.ts`:
+
+1. **Resolve** via `GET /api/v1/entities/search?q=…`, using the identifiers we
+   hold, best-first: **ISIN → Yahoo symbol → company name**. The ISIN is the only
+   globally unique one, so it settles ticker collisions without a human.
+2. **Trust by tier.** `matched_on` reports *how* a hit was found, which decides
+   whether it may be taken unattended:
+
+   | tier | auto-accept |
+   | --- | --- |
+   | `id`, `ref` | always |
+   | `key` | ISIN/FIGI/LEI always; a ticker key only when `total === 1` |
+   | `symbol`, `alias` | only when `total === 1` |
+   | `name` | never — a human picks |
+
+3. **Cache the UUID, not the ref.** `distill-entity.json` has no TTL: ids are
+   stable forever, handles change on rename. It is dropped only on a version
+   bump, a `DISTILL_API_URL` change, or a 404 from Distill.
+4. **Never retry a 404 verbatim.** `POST /briefings/refresh` 404s on a stale id;
+   `GET /api/v1/entities/{id}` then explains it — the endpoint follows merges
+   (returns the merge root, which replaces our cached id) and reports the
+   `quarantined`/`rejected` statuses search hides. Only then do we retry, exactly
+   once. `GET /briefings` answers 200-with-empty rather than 404, so a cached id
+   that suddenly yields no briefing gets the same check.
+
+A symbol that cannot be pinned to exactly one entity is never guessed: the CLI
+logs the candidates and runs without the briefing, the server answers `409
+distill_entity_unresolved` with them, and the web UI lists them under a disabled
+Refresh button.
 
 ## Development
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
 import { join, isAbsolute, resolve, relative } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
@@ -6,6 +6,9 @@ import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem, SearchTrace } fr
 import { logger } from './utils/logger.js';
 import { PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
 import { DistillBundle, DISTILL_FETCH_HASH } from './data/distill.js';
+// Type-only: keeps this module free of a runtime edge to the entity client
+// (which would close a cycle back through data/distill.ts).
+import type { DistillEntityRef } from './data/distill-entities.js';
 
 const FINANCIALS_TTL_MS    = 60 * 60 * 1000;       // 1 hour
 // Analyses do NOT expire on a clock — invalidation is purely hash-based:
@@ -365,5 +368,51 @@ export function writeDistill(rawDir: string, symbol: string, data: DistillBundle
     logger.debug(`Cached Distill briefings for ${symbol} (hash ${DISTILL_FETCH_HASH})`);
   } catch (e) {
     logger.warn(`Could not write Distill cache: ${(e as Error).message}`);
+  }
+}
+
+// ── Distill entity resolution (identifier → UUID) ─────────────────────────────
+// Deliberately TTL-free: an entity UUID is stable forever, so re-searching on a
+// clock would just burn a request per run. It is invalidated only by a version
+// bump, by pointing at a different Distill deployment, or by an explicit clear
+// after the API reports the id gone (404) — see src/distill-service.ts.
+
+const DISTILL_ENTITY_VERSION = 1;
+
+export function readDistillEntity(rawDir: string, symbol: string, baseUrl: string): DistillEntityRef | null {
+  const file = join(symbolDir(rawDir, symbol), 'distill-entity.json');
+  const entry = readEntry<DistillEntityRef>(file);
+  if (!entry) return null;
+  if (entry.v !== DISTILL_ENTITY_VERSION) return null;
+  const data = entry.data;
+  if (!data?.id) return null;
+  // Entity ids are per-installation — never reuse one resolved against a
+  // different Distill deployment.
+  if (data.baseUrl !== baseUrl) {
+    logger.debug(`Distill entity for ${symbol} was resolved against ${data.baseUrl} — re-resolving for ${baseUrl}`);
+    return null;
+  }
+  logger.debug(`Distill entity cache hit for ${symbol}: ${data.id} (${data.displayName})`);
+  return data;
+}
+
+export function writeDistillEntity(rawDir: string, symbol: string, data: DistillEntityRef): void {
+  const dir = symbolDir(rawDir, symbol);
+  try {
+    ensureDir(dir);
+    writeEntry(join(dir, 'distill-entity.json'), DISTILL_ENTITY_VERSION, data);
+    logger.debug(`Cached Distill entity for ${symbol}: ${data.id} (${data.matchedOn}="${data.query}")`);
+  } catch (e) {
+    logger.warn(`Could not write Distill entity cache: ${(e as Error).message}`);
+  }
+}
+
+/** Drop a mapping the API has disowned. Missing file is not an error. */
+export function clearDistillEntity(rawDir: string, symbol: string): void {
+  const file = join(symbolDir(rawDir, symbol), 'distill-entity.json');
+  try {
+    if (existsSync(file)) unlinkSync(file);
+  } catch (e) {
+    logger.warn(`Could not clear Distill entity cache: ${(e as Error).message}`);
   }
 }

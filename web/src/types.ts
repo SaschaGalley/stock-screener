@@ -219,9 +219,50 @@ export interface DistillBriefing {
 
 export type DistillCacheState = 'still-current' | 'generated' | 'empty-pool' | 'unknown';
 
+/** How a symbol was matched onto a Distill entity — the trust tier of the
+ *  mapping (`id`/`ref`/`key` are unambiguous, `name` needs a human). */
+export type DistillMatchTier = 'id' | 'ref' | 'key' | 'symbol' | 'alias' | 'name';
+
+/** The registry entity a bundle was fetched for. `id` is the opaque UUID —
+ *  the only stable identifier; `ref`/handles change on rename. */
+export interface DistillEntityRef {
+  id:           string;
+  ref:          string;
+  type:         string;
+  displayName:  string;
+  matchedOn:    DistillMatchTier;
+  matchedValue: string;
+  query:        string;
+  baseUrl:      string;
+  resolvedAt:   string;
+}
+
+/** Candidate returned with a 409 `distill_entity_unresolved` — several
+ *  entities (or only weak matches) answered to this symbol. */
+export interface DistillEntityCandidate {
+  id:            string;
+  ref:           string;
+  displayName:   string;
+  matchedOn:     DistillMatchTier;
+  matchedValue:  string;
+  primarySymbol: string | null;
+  country:       string | null;
+  isin:          string | null;
+}
+
+export interface DistillEntityUnresolvedResponse {
+  error:        'distill_entity_unresolved';
+  reason:       'ambiguous' | 'not-found' | 'inactive';
+  message:      string;
+  entityStatus: string | null;
+  candidates:   DistillEntityCandidate[];
+}
+
 export interface DistillBundle {
   ticker:    string;
   baseUrl:   string;
+  /** Absent in bundles cached before entity resolution existed. */
+  entity?:   DistillEntityRef | null;
   briefing:  DistillBriefing | null;
   fetchedAt: string;
   lastRefresh?: {

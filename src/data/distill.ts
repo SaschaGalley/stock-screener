@@ -1,5 +1,22 @@
 import { createHash } from 'crypto';
 import { logger } from '../utils/logger.js';
+import type { DistillEntityRef } from './distill-entities.js';
+import {
+  DistillAmbiguousTypeError,
+  DistillEntityGoneError,
+  DistillReadOnlyError,
+  DistillUnauthorizedError,
+} from './distill-errors.js';
+
+// Re-exported so callers keep importing Distill's failure modes from one place.
+export {
+  DistillAmbiguousTypeError,
+  DistillEntityGoneError,
+  DistillEntityUnresolvedError,
+  DistillReadOnlyError,
+  DistillUnauthorizedError,
+} from './distill-errors.js';
+export type { DistillUnresolvedReason } from './distill-errors.js';
 
 /**
  * One briefing as returned by Distill's `GET /api/v1/briefings`. We only keep
@@ -39,34 +56,6 @@ export interface DistillRefreshResult {
   refreshedAt:      string;
 }
 
-/** Sentinel thrown when the configured API key lacks `briefings:write` scope. */
-export class DistillReadOnlyError extends Error {
-  constructor(msg = 'Distill key is read-only — mint a write-scoped key to use refresh.') {
-    super(msg);
-    this.name = 'DistillReadOnlyError';
-  }
-}
-
-/** The configured token is missing/invalid (401). Distinct from 403 (key
- *  exists but lacks `briefings:write`) so the UI can guide the user to the
- *  right fix (rotate the env var vs. rescope the existing key). */
-export class DistillUnauthorizedError extends Error {
-  constructor(msg = 'Distill key is missing or invalid — check DISTILL_API_KEY in your .env.') {
-    super(msg);
-    this.name = 'DistillUnauthorizedError';
-  }
-}
-
-/** Server returned 422 — the project has multiple briefing types and no
- *  `default_briefing_type_id` set. Fix is admin-side (star a type in the
- *  Distill admin) OR pass `briefingTypeId` explicitly. */
-export class DistillAmbiguousTypeError extends Error {
-  constructor(msg = 'Distill project has multiple briefing types and no default — star one in the Distill admin (Project → Briefing-Typen) or pass an explicit briefing_type_id.') {
-    super(msg);
-    this.name = 'DistillAmbiguousTypeError';
-  }
-}
-
 /**
  * Bundle persisted to the per-symbol cache and consumed by the prompt.
  *
@@ -78,6 +67,11 @@ export class DistillAmbiguousTypeError extends Error {
 export interface DistillBundle {
   ticker:    string;
   baseUrl:   string;
+  /** The registry entity this bundle was fetched for — the UUID we called
+   *  with, plus how the symbol mapped onto it. Absent only in bundles written
+   *  before entity resolution existed, which the server may still serve from
+   *  disk via its version-lax read. */
+  entity?:   DistillEntityRef | null;
   briefing:  DistillBriefing | null;
   fetchedAt: string;
   /** Populated only when the bundle was last written by a POST /refresh call.
@@ -95,12 +89,14 @@ export interface DistillBundle {
 const DEFAULT_LIMIT = 1;
 
 /**
- * Cache-version hash. Bumped to `v2` to invalidate older array-shaped
- * cache files (the schema went from `briefings: []` to `briefing: null`).
- * Includes the limit so any later request-shape change also forces refresh.
+ * Cache-version hash. `v3` invalidates every bundle fetched under the old
+ * guessable `ticker:SYMBOL` refs — those were resolved against an entity model
+ * that no longer exists, so the cached briefings can't be trusted to belong to
+ * the entity we now resolve to. (`v2` had invalidated the array-shaped schema.)
+ * Includes the limit so any later request-shape change also forces a refresh.
  */
 export const DISTILL_FETCH_HASH = createHash('md5')
-  .update(`distill-v2-single-limit=${DEFAULT_LIMIT}`)
+  .update(`distill-v3-entity-uuid-single-limit=${DEFAULT_LIMIT}`)
   .digest('hex')
   .slice(0, 8);
 
@@ -152,36 +148,29 @@ function normaliseBriefing(b: DistillBriefingRow): DistillBriefing {
 }
 
 /**
- * Strip Yahoo exchange suffix conventions to fit Distill's canonical refs:
- *   - US tickers stay bare:           AAPL → ticker:AAPL
- *   - European stay with the venue:   AIR.PA, ENR.DE, MBG.DE → preserved
- *   - Asian numerical with suffix:    7203.T, 0700.HK → preserved
+ * Fetch the currently-relevant briefing for one already-resolved entity.
  *
- * Distill's docs explicitly call out the mixed format so we pass the
- * Yahoo-style symbol through unchanged — Distill is the source of truth for
- * what its corpus indexes.
- */
-function entityRefFor(symbol: string): string {
-  return `ticker:${symbol}`;
-}
-
-/**
- * Fetch the most recent briefings for one ticker. Optional / best-effort —
- * a missing key or network error must NOT block the rest of the analysis,
- * so the caller catches and treats absence as "no briefings available".
+ * `entity_ref` still takes both a UUID and a `type:handle`; we always send the
+ * UUID because it is the only identifier that survives a rename. Resolution
+ * (and the cache in front of it) lives in `src/distill-service.ts` — this
+ * function never guesses a ref from a symbol.
+ *
+ * Optional / best-effort — a missing key or network error must NOT block the
+ * rest of the analysis, so the caller catches and treats absence as "no
+ * briefings available".
  */
 export async function fetchDistillBriefings(
   symbol: string,
+  entity: DistillEntityRef,
   apiKey: string,
   baseUrl: string,
   briefingTypeId?: string,
   limit: number = DEFAULT_LIMIT,
 ): Promise<DistillBundle> {
-  logger.step(`Fetching Distill briefings for ${symbol}${briefingTypeId ? ` (type ${briefingTypeId.slice(0, 8)}…)` : ''}…`);
+  logger.step(`Fetching Distill briefings for ${symbol} (${entity.displayName})${briefingTypeId ? ` (type ${briefingTypeId.slice(0, 8)}…)` : ''}…`);
 
-  const ref = entityRefFor(symbol);
   let url = `${baseUrl.replace(/\/+$/, '')}/api/v1/briefings`
-    + `?entity_ref=${encodeURIComponent(ref)}`
+    + `?entity_ref=${encodeURIComponent(entity.id)}`
     + `&limit=${limit}`
     + `&offset=0`;
   if (briefingTypeId) {
@@ -193,6 +182,12 @@ export async function fetchDistillBriefings(
     signal: AbortSignal.timeout(10_000),
   });
 
+  if (res.status === 401) throw new DistillUnauthorizedError();
+  // Defensive: today the list endpoint answers 200-with-empty for an unknown
+  // entity_ref (unlike /refresh, which 404s), so the service also re-checks the
+  // id when a cached mapping returns no briefing. If that ever tightens to a
+  // 404, it lands on the same recovery path instead of a dead end.
+  if (res.status === 404) throw new DistillEntityGoneError(entity.id);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`Distill API error ${res.status}: ${text.slice(0, 200)}`);
@@ -203,10 +198,11 @@ export async function fetchDistillBriefings(
   const briefing = data.length > 0 ? normaliseBriefing(data[0]) : null;
   const total = typeof json?.total === 'number' ? json!.total : data.length;
 
-  logger.success(`Distill: ${briefing ? '1 briefing' : 'no briefing'} for ${ref}${total > 1 ? ` (${total} total in DB)` : ''}`);
+  logger.success(`Distill: ${briefing ? '1 briefing' : 'no briefing'} for ${entity.displayName} [${entity.id}]${total > 1 ? ` (${total} total in DB)` : ''}`);
   return {
     ticker:    symbol,
     baseUrl,
+    entity,
     briefing,
     fetchedAt: new Date().toISOString(),
   };
@@ -219,7 +215,8 @@ export async function fetchDistillBriefings(
  * generates a fresh one.
  *
  * Body is `{ entity_ref }` only — the project's default briefing_type_id is
- * used server-side (no need to know the UUID on the client).
+ * used server-side (no need to know the UUID on the client). `entity_ref`
+ * accepts a UUID as well as `type:handle`; we send the UUID.
  *
  * Caveats the caller should handle:
  *  - Long-running: first-time entities with a 100+ raw-insight backlog can
@@ -229,25 +226,27 @@ export async function fetchDistillBriefings(
  *  - 403: the configured DISTILL_API_KEY is read-only. We surface this as a
  *    typed `DistillReadOnlyError` so the UI can disable the button cleanly
  *    instead of bubbling a generic 4xx.
+ *  - 404: the entity id is gone or the handle went stale. Typed as
+ *    `DistillEntityGoneError` — re-resolve, never retry the same id.
  *  - 200 with empty data: "empty-pool" state — no fresh insights to summarise.
  *    Not an error; the caller surfaces it as a UI hint.
  */
 export async function triggerDistillRefresh(
   symbol: string,
+  entity: DistillEntityRef,
   apiKey: string,
   baseUrl: string,
   briefingTypeId?: string,
 ): Promise<DistillRefreshResult> {
-  logger.step(`Distill refresh requested for ${symbol}…`);
+  logger.step(`Distill refresh requested for ${symbol} (${entity.displayName})…`);
 
-  const ref = entityRefFor(symbol);
   const url = `${baseUrl.replace(/\/+$/, '')}/api/v1/briefings/refresh`;
 
   // Resolution chain server-side (per Distill API ref): explicit type_id →
   // projects.default_briefing_type_id → single type in project → 422.
   // We only send type_id when the caller has one; otherwise we rely on
   // server-side defaults.
-  const body: Record<string, string> = { entity_ref: ref };
+  const body: Record<string, string> = { entity_ref: entity.id };
   if (briefingTypeId) body.briefing_type_id = briefingTypeId;
 
   const res = await fetch(url, {
@@ -265,6 +264,7 @@ export async function triggerDistillRefresh(
   // render an actionable hint instead of a generic toast.
   if (res.status === 401) throw new DistillUnauthorizedError();
   if (res.status === 403) throw new DistillReadOnlyError();
+  if (res.status === 404) throw new DistillEntityGoneError(entity.id);
   if (res.status === 422) throw new DistillAmbiguousTypeError();
   if (!res.ok) {
     const text = await res.text().catch(() => '');
