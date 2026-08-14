@@ -38,7 +38,7 @@ import {
   SearchTrace, SearchProviderTrace,
 } from './types.js';
 import {
-  acceptedModels, DEFAULT_MODEL_ID, fullIdList, MODELS, providerFor, resolveModelId, shortcutList,
+  acceptedModels, aliasList, DEFAULT_MODEL_ID, fullIdList, MODELS, providerFor, resolveModelId,
 } from './models.js';
 
 // ─── CLI Setup ───────────────────────────────────────────────────────────────
@@ -48,10 +48,12 @@ import {
 const MODEL_HELP = (() => {
   const width = Math.max(...MODELS.map((m) => m.id.length));
   return [
-    'Model to use — shortcut or full model ID:',
-    ...MODELS.map((m) =>
-      `  ${m.id.padEnd(width)}  ${m.resolved}${m.id === DEFAULT_MODEL_ID ? '  (default)' : ''}`),
-    `  …or any full model ID: ${fullIdList()}`,
+    'Model to use — model ID or alias:',
+    ...MODELS.map((m) => (
+      `  ${m.id.padEnd(width)}  ${(m.aliases ?? []).join(', ').padEnd(width)}`
+      + (m.id === DEFAULT_MODEL_ID ? '  (default)' : '')
+    ).trimEnd()),
+    `  …or any other model ID: ${fullIdList()}`,
   ].join('\n');
 })();
 
@@ -654,7 +656,7 @@ function resolveModel(input: string): { provider: AnalysisOptions['provider']; m
   if (!provider) {
     throw new Error(
       `Unknown model "${input}".\n` +
-      `  Shortcuts:  ${shortcutList()}\n` +
+      `  Aliases:    ${aliasList()}\n` +
       `  Full IDs:   ${fullIdList()}`,
     );
   }

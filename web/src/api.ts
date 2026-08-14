@@ -31,8 +31,10 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export interface ModelInfo {
-  shortcuts: { id: string; resolved: string; label: string }[];
-  used:      { modelId: string; count: number }[];
+  /** The selectable registry from `src/models.ts`. */
+  models: { id: string; label: string; provider: string }[];
+  /** Model IDs found in the analysis cache — includes retired ones. */
+  used:   { modelId: string; count: number }[];
 }
 
 export const api = {

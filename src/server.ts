@@ -422,7 +422,7 @@ export function createApp() {
       .sort((a, b) => b.count - a.count);
 
     res.json({
-      shortcuts: MODELS.map(({ id, resolved, label }) => ({ id, resolved, label })),
+      models: MODELS.map(({ id, label, provider }) => ({ id, label, provider })),
       used,
     });
   });

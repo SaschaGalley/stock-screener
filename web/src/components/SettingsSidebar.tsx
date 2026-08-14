@@ -83,6 +83,9 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
     if (!loading) setRefreshKey((k) => k + 1);
   }, [loading]);
 
+  // Settings normally already hold a real model ID; resolving covers an alias
+  // typed into the custom-model box ('opus' → 'claude-opus-5').
+  const activeModel = resolveModelId(settings.model);
   const cachedMatch = analyses.find((a) => flagsMatch(a, settings));
 
   /**
@@ -102,31 +105,36 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
 
   const allModelOptions: { value: string; label: string; sublabel?: string; deletable: boolean }[] = [];
   if (models) {
-    // 1. Shortcuts (built-in, not deletable, sorted as defined by server)
-    for (const s of models.shortcuts) {
-      allModelOptions.push({ value: s.id, label: s.label, sublabel: s.resolved, deletable: false });
+    const listed = new Set<string>();
+    // 1. The registry (src/models.ts), in the order it defines.
+    for (const m of models.models) {
+      listed.add(m.id);
+      allModelOptions.push({ value: m.id, label: m.label, sublabel: m.id, deletable: false });
     }
-    // 2. Used model IDs that aren't shortcuts (deletable via DELETE analyses)
-    const shortcutResolved = new Set(models.shortcuts.map((s) => s.resolved));
-    for (const u of models.used) {
-      if (shortcutResolved.has(u.modelId)) continue;
-      allModelOptions.push({
-        value: u.modelId,
-        label: u.modelId,
-        sublabel: `${u.count} cached analysis${u.count === 1 ? '' : 'es'}`,
-        deletable: false, // deletion handled via per-analysis delete in cache list
-      });
-    }
-    // 3. User-saved custom IDs (LocalStorage, deletable from list)
-    const usedIds = new Set(models.used.map((u) => u.modelId));
+    // 2. User-saved custom IDs (LocalStorage, deletable from list)
     for (const c of customModels) {
-      if (shortcutResolved.has(c) || usedIds.has(c)) continue;
+      if (listed.has(c)) continue;
+      listed.add(c);
       allModelOptions.push({ value: c, label: c, sublabel: 'custom', deletable: true });
+    }
+    // 3. The active model when it is neither — i.e. a retired model reached by
+    //    opening one of its cached analyses. Listed so the picker still shows a
+    //    selection, but never offered on its own: a model that left the registry
+    //    must not come back through the cache.
+    if (!listed.has(activeModel)) {
+      const cached = models.used.find((u) => u.modelId === activeModel);
+      allModelOptions.push({
+        value: activeModel,
+        label: activeModel,
+        sublabel: cached ? `retired · ${cached.count} cached` : 'retired',
+        deletable: false,
+      });
     }
   }
 
   function addCustomModel() {
-    const id = newModelInput.trim();
+    // Normalise aliases so the saved entry is a real model ID like every other.
+    const id = resolveModelId(newModelInput.trim());
     if (!id) return;
     if (!customModels.includes(id)) setCustomModels([...customModels, id]);
     setModel(id);
@@ -164,7 +172,7 @@ export default function SettingsSidebar({ symbol, settings, onChange, onLoad, on
               <ModelOption
                 key={opt.value}
                 option={opt}
-                selected={settings.model === opt.value}
+                selected={activeModel === opt.value}
                 onSelect={() => setModel(opt.value)}
                 onDelete={opt.deletable ? () => deleteCustomModel(opt.value) : undefined}
               />

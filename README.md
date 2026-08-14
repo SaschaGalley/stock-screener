@@ -95,15 +95,15 @@ npx tsx src/cli.ts NOW  --search tavily --output report.md
 npx tsx src/cli.ts MSFT --pplx sonar
 npx tsx src/cli.ts MSFT --pplx sonar-pro
 
-# Model shortcuts — the full list lives in src/models.ts
+# Model IDs — the registry lives in src/models.ts
+npx tsx src/cli.ts NOW  --model claude-opus-5 --search brave
+npx tsx src/cli.ts NOW  --model gpt-5.6-terra
+
+# …or the short alias for the same thing
 npx tsx src/cli.ts AAPL --model opus        # claude-opus-5
 npx tsx src/cli.ts MSFT --model terra       # gpt-5.6-terra
 npx tsx src/cli.ts MSFT --model luna        # gpt-5.6-luna
 npx tsx src/cli.ts MSFT --model mini        # gpt-5.4-mini
-
-# Full model ID override
-npx tsx src/cli.ts NOW  --model gpt-5.6-terra
-npx tsx src/cli.ts NOW  --model claude-opus-5 --search brave
 
 # Save output
 npx tsx src/cli.ts NOW --output report.md
@@ -125,8 +125,10 @@ Arguments:
 
 Options:
   -m, --model <id>    Model shortcut or full model ID  (default: claude)
-                        Shortcuts:  claude | sonnet | opus | terra | luna | mini
-                        Full IDs:   claude-* | gpt-* | o1-*
+                        Model IDs: claude-sonnet-5 | claude-opus-5 |
+                                   gpt-5.6-terra | gpt-5.6-luna | gpt-5.4-mini
+                        Aliases:   claude | sonnet | opus | terra | luna | mini
+                        Any other: claude-* | gpt-* | o1-*
   -s, --search [type] Web search — omit value for native search of active model
                         none | claude | openai | brave | tavily
                         (can be comma-separated for multi-source: brave,tavily)
