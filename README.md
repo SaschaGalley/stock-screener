@@ -65,11 +65,24 @@ npm run serve           # API only — serve dist/ behind your own reverse proxy
 
 ### What the web UI does
 
+A toolbar at the top switches between two working views; the cog on the far right opens administration.
+
+**Tab „Analyse"** — the single-stock view the app has always opened on:
+
 - **Left sidebar**: every stock you've ever analysed, with a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6).
 - **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull/bear/risks, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
 - **Right sidebar**: model + search-provider + Perplexity toggles. Each flag combo is its own cached entry. Clicking an outdated combo still loads it (older entries get a ⚠ marker) — a warning banner sits on top with a one-click re-run.
 - **Refresh data** (header `↻`) re-fetches the data layer (Yahoo + Finnhub + FRED + technicals) without a single LLM call. **Re-run** in the right sidebar or in the stale banner forces a fresh LLM call, overwriting the cached verdict.
-- **URLs**: each stock has a hash route (`#AAPL`) so reloads and browser back/forward work.
+
+Adding a stock (`+ Hinzufügen` at the bottom of the Analyse tab) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit `Run Analysis` in the right sidebar, so looking a company up never costs an API bill.
+
+**Tab „Übersicht"** — every cached stock in one ranked table: AI score (with the change since the first recorded verdict), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. Sorted by score descending by default; other columns and a watchlist-only filter are one click away. A row click opens that stock in the Analyse tab.
+
+**⚙ Administration** — schedule, pipeline steps, watchlist and run log. See [Nightly pipeline](#nightly-pipeline) below.
+
+**URLs**: `#/stock/AAPL`, `#/overview`, `#/admin` — reload and browser back/forward work everywhere. Old `#AAPL` links still resolve to the analysis view.
+
+Switching tabs never interrupts a running analysis: the Analyse view stays mounted (hidden) so its progress stream survives a detour to the overview.
 
 ### Theming
 
@@ -211,6 +224,10 @@ src/
 ├── config.ts              Env vars (Zod validated)
 ├── types.ts               Zod schemas — types inferred via z.infer<>
 ├── cache.ts               File-based JSON cache (versioned, no TTL on analyses)
+├── sector-medians.ts      Cached peer-group medians (the app's most expensive read)
+├── app-config.ts          Operational settings edited from the admin page
+├── scheduler.ts           Nightly pipeline — one cron, one queue, one symbol at a time
+├── history.ts             Recorded time series (score, target, fair value) per symbol
 ├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
 ├── models.ts              Model registry — single source for CLI, server and web UI
 ├── providers/             LLM abstraction layer (anthropic, openai, factory)
@@ -242,6 +259,7 @@ web/
 ├── tailwind.config.js     Maps Tailwind colour tokens → CSS vars in styles.css
 ├── src/
 │   ├── App.tsx            Routing (hash), state, SSE wiring
+│   ├── pages/             Übersicht (ranked table) + Administration
 │   ├── api.ts             Thin fetch wrappers
 │   ├── types.ts           Mirror of server schemas (StockBundle, AnalysisFlagsKey, …)
 │   ├── format.ts          fmt*, mosColor, recommendationColor helpers
@@ -257,6 +275,7 @@ web/
 │       ├── StockLogo.tsx          Multi-source logo cascade (Logo.dev → Brandfetch → …)
 │       ├── ProgressBanner.tsx     SSE progress events while a run is in flight
 │       ├── AnalyzeForm.tsx        Bottom "analyze a new symbol" input
+│       ├── Toolbar.tsx            Tabs (Analyse · Übersicht) + admin cog
 │       ├── Section.tsx            Collapsible section with localStorage state
 │       ├── charts/                ECharts wrappers (Composite, FundamentalsHistory, …)
 │       └── sections/              ValuationDetail, QualityScores, FundamentalsGrid,
@@ -273,15 +292,71 @@ Each stock lives under `$CACHE_DIR/$SYMBOL/`:
 financials.json        # versioned (v15) — Yahoo + Finnhub + ISIN
 market-signals.json    # versioned — technicals + revisions + options + macro
 news.json              # 30-min TTL
+sector-medians.json    # Finnhub peer medians (24h TTL — 9 upstream calls each)
 perplexity.json        # keyed by prompt hash
 distill.json           # Distill briefing for this ticker (30 min TTL)
 distill-entity.json    # ticker → Distill entity UUID (no TTL — see below)
+history.json           # recorded series: score, verdict, target, fair value (no TTL)
 analyses/<hash>.json   # one per (model, search, pplx) combo — no TTL, hash-only
 submissions.json       # EDGAR
 report.md/.html/.pdf   # last full CLI analysis output (CLI only)
 ```
 
+Two files sit at the cache **root**, next to the symbol directories, because they
+describe the installation rather than a stock:
+
+```
+app-config.json        # schedule, pipeline steps, watchlist (edited in the admin page)
+job-runs.json          # last 20 pipeline runs with per-symbol, per-step outcomes
+```
+
+Everything worth keeping therefore lives under one directory — mount that as the
+container volume and a redeploy keeps data, settings and run history together.
+
 The web UI never silently invalidates an analysis — outdated entries stay selectable but show a ⚠ marker and a stale banner that prompts a one-click re-run.
+
+## Nightly pipeline
+
+One cron, one queue, one symbol at a time — configured in **⚙ Administration**,
+stored in `app-config.json`, executed in-process by `src/scheduler.ts`.
+
+Per symbol, in order:
+
+| # | Step | What it does | Default |
+| --- | --- | --- | --- |
+| 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
+| 2 | **Distill** | `refresh` (POST — drains upstream, may generate a briefing, costs LLM budget there) or `fetch` (GET — free) | on, `refresh` |
+| 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-5.6-terra` |
+
+Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).
+
+Serial by design: every step talks to a rate-limited third party and writes into
+the same per-symbol cache directory, and a run that has all night has nothing to
+gain from racing itself. A second trigger while a run is active is refused, not
+queued — cron ticks that land on a busy pipeline are skipped with a log line.
+
+A failing step is recorded and the run continues: one dead ticker must not cost
+the other forty their nightly update. The run finishes as `partial` and the admin
+page shows exactly which step failed and why.
+
+The **watchlist** decides coverage. Symbols are opted in by default — only an
+explicit *off* is stored — so a stock you analyse today joins tonight's run
+without anyone remembering to enable it. `▶` next to a symbol runs the pipeline
+for that one stock, `▶ Jetzt laufen` runs the whole watchlist, `■ Stoppen` ends
+the run after the symbol it is on.
+
+### Recorded history
+
+`financials.json` and `analyses/<hash>.json` are snapshots that get overwritten —
+they answer "where does this stock stand now?" and throw away "where was it three
+weeks ago?". `history.json` keeps the second question answerable: price, market
+cap, P/E, analyst mean target, composite fair value, both upside percentages,
+and — on analysis points — the verdict score, label, model and fair-value range.
+
+Points are deduplicated per (source, calendar day), so a nightly run leaves
+exactly one data point and one analysis point per day, while hitting Refresh ten
+times in an afternoon does not distort the series. The Übersicht sparkline reads
+from it, and `GET /api/stocks/:symbol/history` returns it raw.
 
 ## Distill entity resolution
 
