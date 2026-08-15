@@ -44,6 +44,14 @@ export const MODELS: ModelDef[] = [
 export const DEFAULT_MODEL_ID = 'claude-sonnet-5';
 
 /**
+ * Default for the scheduled pipeline, which re-analyses the whole watchlist and
+ * therefore favours throughput over the interactive default. Lives here rather
+ * than as a string literal in app-config.ts so retiring a model is still a
+ * one-file edit — the point of this registry.
+ */
+export const DEFAULT_PIPELINE_MODEL_ID = 'gpt-5.6-terra';
+
+/**
  * Model IDs outside the registry still route to a provider by prefix, so a
  * brand-new model can be used via `--model <id>` before it earns an entry.
  * `hint` is the human-readable form of `test`, used in help and error text.

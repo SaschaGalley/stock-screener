@@ -16,12 +16,12 @@
  * broke, never the whole server.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { isAbsolute, join, resolve } from 'path';
-import { homedir } from 'os';
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { z } from 'zod';
 import { logger } from './utils/logger.js';
-import { DEFAULT_MODEL_ID, resolveModelId } from './models.js';
+import { readJsonFile, resolveCacheRoot, writeJsonAtomic } from './cache.js';
+import { DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, resolveModelId } from './models.js';
 
 /** Cron field count we accept: standard 5-field (minute hour dom month dow). */
 const CRON_RE = /^(\S+\s+){4}\S+$/;
@@ -58,7 +58,7 @@ export const AppConfigSchema = z.object({
       /** Re-run only when the newest cached analysis is older than this. */
       maxAgeDays: z.number().int().min(1).max(365).default(5),
       /** Model id from the registry (or any provider-routable id). */
-      model:   z.string().min(1).default('gpt-5.6-terra'),
+      model:   z.string().min(1).default(DEFAULT_PIPELINE_MODEL_ID),
       /** Search providers, same vocabulary as the CLI's `--search`. */
       search:  z.array(z.string()).default([]),
       pplx:    z.enum(['sonar', 'sonar-pro']).nullable().default(null),
@@ -77,12 +77,6 @@ export type AppConfig = z.infer<typeof AppConfigSchema>;
 /** Parsing `{}` yields every default, so the defaults live in one place only. */
 export const DEFAULT_APP_CONFIG: AppConfig = AppConfigSchema.parse({});
 
-function resolveCacheRoot(rawDir: string): string {
-  if (rawDir.startsWith('~')) return join(homedir(), rawDir.slice(1));
-  if (isAbsolute(rawDir)) return rawDir;
-  return resolve(process.cwd(), rawDir);
-}
-
 function configFile(cacheDir: string): string {
   return join(resolveCacheRoot(cacheDir), 'app-config.json');
 }
@@ -98,11 +92,9 @@ export function readAppConfig(cacheDir: string): AppConfig {
   const file = configFile(cacheDir);
   if (!existsSync(file)) return DEFAULT_APP_CONFIG;
 
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(file, 'utf-8'));
-  } catch (e) {
-    logger.warn(`app-config.json is unreadable (${(e as Error).message}) — using defaults.`);
+  const raw = readJsonFile<unknown>(file);
+  if (raw === null) {
+    logger.warn('app-config.json is unreadable — using defaults.');
     return DEFAULT_APP_CONFIG;
   }
 
@@ -138,10 +130,7 @@ export function writeAppConfig(cacheDir: string, next: AppConfig): AppConfig {
   const root = resolveCacheRoot(cacheDir);
   mkdirSync(root, { recursive: true });
 
-  const file = configFile(cacheDir);
-  const tmp  = `${file}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, JSON.stringify(validated, null, 2), 'utf-8');
-  renameSync(tmp, file);
+  writeJsonAtomic(configFile(cacheDir), validated);
   logger.info(`app-config.json updated (schedule ${validated.schedule.enabled ? validated.schedule.cron : 'disabled'})`);
   return validated;
 }

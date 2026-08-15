@@ -4,7 +4,7 @@ import type { OverviewRow } from '../types';
 import StockLogo, { initialsFromName } from '../components/StockLogo';
 import ScoreSparkline from '../components/charts/ScoreSparkline';
 import RecommendationBadge from '../components/RecommendationBadge';
-import { fmtBig, fmtPrice, relativeTime } from '../format';
+import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
 
 interface Props {
   onSelect: (symbol: string) => void;
@@ -35,18 +35,6 @@ function scoreColor(score: number | null): string {
   if (score >= 7) return 'text-emerald-400';
   if (score >= 5) return 'text-amber-400';
   return 'text-red-400';
-}
-
-function pctColor(pct: number | null): string {
-  if (pct === null) return 'text-ink-500';
-  if (pct > 0) return 'text-emerald-400';
-  if (pct < -5) return 'text-red-400';
-  return 'text-amber-400';
-}
-
-function fmtPct(pct: number | null, decimals = 1): string {
-  if (pct === null || !Number.isFinite(pct)) return '—';
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(decimals)}%`;
 }
 
 export default function OverviewPage({ onSelect, refreshKey = 0 }: Props) {
@@ -210,14 +198,14 @@ export default function OverviewPage({ onSelect, refreshKey = 0 }: Props) {
 
                   <td className="px-2 py-2 text-right font-mono text-xs tabular">
                     <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean)}</div>
-                    <div className={`text-[10px] ${pctColor(r.targetUpsidePct)}`}>{fmtPct(r.targetUpsidePct)}</div>
+                    <div className={`text-[10px] ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
                   </td>
 
                   <td className="px-2 py-2 text-right font-mono text-xs tabular">
                     <div className="text-ink-300">
                       {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue)}
                     </div>
-                    <div className={`text-[10px] ${pctColor(r.compositeUpsidePct)}`}>{fmtPct(r.compositeUpsidePct)}</div>
+                    <div className={`text-[10px] ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
                   </td>
 
                   <td className="px-2 py-2 text-right font-mono text-xs tabular text-ink-400">

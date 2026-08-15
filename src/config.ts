@@ -22,11 +22,17 @@ const ConfigSchema = z.object({
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info').catch('info'),
 });
 
-export type AppConfig = z.infer<typeof ConfigSchema>;
+/**
+ * Environment-derived configuration: secrets and paths, read once at boot.
+ * Named apart from `app-config.ts`'s `AppConfig` (the operational settings the
+ * admin page edits) — two types called AppConfig in one codebase is an import
+ * away from a confusing bug.
+ */
+export type EnvConfig = z.infer<typeof ConfigSchema>;
 
-let _config: AppConfig | null = null;
+let _config: EnvConfig | null = null;
 
-export function getConfig(): AppConfig {
+export function getConfig(): EnvConfig {
   if (_config) return _config;
 
   const raw = {

@@ -30,24 +30,9 @@ import { MarketRates } from '../data/fred.js';
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
-export function fmt(n: number | null, suffix = '', decimals = 2): string {
-  if (n === null) return 'N/A';
-  return `${n.toFixed(decimals)}${suffix}`;
-}
-
-export function fmtPct(n: number | null): string {
-  if (n === null) return 'N/A';
-  return `${(n * 100).toFixed(1)}%`;
-}
-
-export function fmtBig(n: number | null): string {
-  if (n === null) return 'N/A';
-  const abs = Math.abs(n);
-  if (abs >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
-  if (abs >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`;
-  return `$${n.toFixed(0)}`;
-}
+// Formatting lives in src/format.ts, shared with the web UI — re-exported here
+// so the report writers keep importing it from where they always have.
+export { fmt, fmtPct, fmtBig } from '../format.js';
 
 // ─── Shared constants & helpers ──────────────────────────────────────────────
 

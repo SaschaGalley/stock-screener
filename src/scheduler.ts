@@ -19,15 +19,17 @@
  * what happened last night after a restart.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { isAbsolute, join, resolve } from 'path';
-import { homedir } from 'os';
+import { mkdirSync } from 'fs';
+import { join } from 'path';
 import cron, { type ScheduledTask } from 'node-cron';
 
 import { getConfig } from './config.js';
 import { logger } from './utils/logger.js';
 import { AppConfig, isWatched, readAppConfig } from './app-config.js';
-import { listAnalyses, listCachedSymbols, readFinancialsLax } from './cache.js';
+import {
+  listAnalyses, listCachedSymbols, readFinancialsLax,
+  readJsonFile, resolveCacheRoot, writeJsonAtomic,
+} from './cache.js';
 import { refreshStockData } from './refresh.js';
 import { runAnalysis } from './cli.js';
 import { distillHintsFor, syncDistillBriefing } from './distill-service.js';
@@ -75,25 +77,13 @@ let task: ScheduledTask | null = null;
 let activeRun: JobRun | null = null;
 let stopRequested = false;
 
-function resolveCacheRoot(rawDir: string): string {
-  if (rawDir.startsWith('~')) return join(homedir(), rawDir.slice(1));
-  if (isAbsolute(rawDir)) return rawDir;
-  return resolve(process.cwd(), rawDir);
-}
-
 function runsFile(cacheDir: string): string {
   return join(resolveCacheRoot(cacheDir), 'job-runs.json');
 }
 
 export function readJobRuns(cacheDir: string): JobRun[] {
-  const file = runsFile(cacheDir);
-  if (!existsSync(file)) return [];
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as { runs?: JobRun[] };
-    return Array.isArray(parsed.runs) ? parsed.runs : [];
-  } catch {
-    return [];
-  }
+  const parsed = readJsonFile<{ runs?: JobRun[] }>(runsFile(cacheDir));
+  return Array.isArray(parsed?.runs) ? parsed.runs : [];
 }
 
 function persistRun(cacheDir: string, run: JobRun): void {
@@ -102,20 +92,13 @@ function persistRun(cacheDir: string, run: JobRun): void {
     mkdirSync(root, { recursive: true });
     const runs = readJobRuns(cacheDir).filter((r) => r.id !== run.id);
     runs.unshift(run);
-    const file = runsFile(cacheDir);
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ runs: runs.slice(0, MAX_KEPT_RUNS) }, null, 2), 'utf-8');
-    renameSync(tmp, file);
+    writeJsonAtomic(runsFile(cacheDir), { runs: runs.slice(0, MAX_KEPT_RUNS) });
   } catch (e) {
     logger.warn(`Could not persist job run: ${(e as Error).message}`);
   }
 }
 
 // ── Step helpers ─────────────────────────────────────────────────────────────
-
-function ageInDays(iso: string): number {
-  return (Date.now() - new Date(iso).getTime()) / 86_400_000;
-}
 
 /**
  * Age of the newest cached verdict across *all* flag combinations, or null when

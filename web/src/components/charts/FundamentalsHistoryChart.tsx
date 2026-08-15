@@ -58,7 +58,12 @@ const MODE_PRESETS: Record<NonNullable<Props['initialMode']>, { label: string; s
   },
 };
 
-function fmtBig(n: number, perShare: boolean): string {
+/**
+ * Axis/tooltip label for this chart only: per-share values keep two decimals,
+ * absolutes are abbreviated one digit shorter than the app-wide `fmtBig` so the
+ * axis stays narrow. Named apart from it so the difference is deliberate.
+ */
+function fmtChartValue(n: number, perShare: boolean): string {
   if (perShare) return `$${n.toFixed(2)}`;
   const a = Math.abs(n);
   if (a >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
@@ -133,7 +138,7 @@ export default function FundamentalsHistoryChart({ history, initialMode = 'incom
               backgroundColor: CHART_COLORS.bg,
               borderColor: CHART_COLORS.grid,
               textStyle: { color: CHART_COLORS.text, fontSize: 12 },
-              valueFormatter: (v: any) => v == null ? '—' : fmtBig(v, !!preset.isPerShare),
+              valueFormatter: (v: any) => v == null ? '—' : fmtChartValue(v, !!preset.isPerShare),
             },
             legend: {
               textStyle: { color: CHART_COLORS.text, fontSize: 11 },
@@ -150,7 +155,7 @@ export default function FundamentalsHistoryChart({ history, initialMode = 'incom
               type: 'value',
               axisLabel: {
                 color: CHART_COLORS.ink, fontSize: 10,
-                formatter: (v: number) => fmtBig(v, !!preset.isPerShare),
+                formatter: (v: number) => fmtChartValue(v, !!preset.isPerShare),
               },
               splitLine: { lineStyle: { color: CHART_COLORS.grid } },
             },

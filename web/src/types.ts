@@ -1,321 +1,98 @@
-export interface ConsensusBand {
-  buy:  number;
-  hold: number;
-  sell: number;
-  sources: number;
-}
+/**
+ * The frontend's type surface — a facade, not a copy.
+ *
+ * These used to be ~30 hand-written mirrors of server types. Mirrors don't fail
+ * loudly: they drift, and the drift surfaces as a field that is quietly always
+ * `undefined` in the browser. So everything the server owns is re-exported from
+ * where the server defines it, exactly as `src/models.ts` is already imported
+ * across the package boundary.
+ *
+ * All of it is `export type`, which TypeScript erases at build time — zod and
+ * the Node-side modules behind these types never reach the bundle (verified:
+ * zero zod references in the built output). Keep it that way: a *value* import
+ * from `../../src/…` here would pull the server's dependencies into the app.
+ *
+ * Only genuinely frontend-owned concepts are defined below.
+ */
 
-// Mirrors the server-side StockSummary returned by /api/stocks
-export interface StockSummary {
-  symbol: string;
-  companyName: string;
-  sector: string | null;
-  industry: string | null;
-  price: number | null;
-  marketCap: number | null;
-  website: string | null;
-  logoDomain: string | null;
-  cachedAt: string;
-  analysisCount: number;
-  consensus: ConsensusBand | null;
-}
+// ── Wire shapes (src/api-types.ts) ───────────────────────────────────────────
+export type {
+  ConsensusBand,
+  StockSummary,
+  CacheFreshness,
+  CacheStatus,
+  StockBundle,
+  OverviewRow,
+  AnalysisListEntry,
+  ConfigResponse,
+  ConfigSaveResponse,
+  AddStockResponse,
+  DistillRefreshResponse,
+  DistillEntityCandidate,
+  DistillEntityUnresolvedResponse,
+} from '../../src/api-types';
 
-export type CacheFreshness = 'fresh' | 'stale' | 'missing' | 'older-than-data';
+// ── Domain types, from the modules that model them ───────────────────────────
+export type {
+  AnalysisResult,
+  TechnicalSignals,
+  SignalDirection,
+  SignalItem,
+  SignalGroup,
+  DCFResult,
+  CompositeTier,
+  CompositeFairValueResult as CompositeFairValue,
+  PeerMultiplesEntry,
+  SearchTrace,
+  SearchProviderTrace,
+  SearchResult as SearchResultRecord,
+  LLMAnalysis,
+  StockFinancials,
+  MarketSignals,
+  NewsItem,
+} from '../../src/types';
 
-export interface CacheStatus {
-  financials:    CacheFreshness;
-  marketSignals: CacheFreshness;
-  analysis:      CacheFreshness;
-}
+export type { ComputedMetrics } from '../../src/analysis/computeMetrics';
 
-export interface AnalysisFlagsKey {
-  model: string;
-  search: string;
-  pplx: 'sonar' | 'sonar-pro' | null;
-}
+export type {
+  AnalysisFlagsKey,
+  AnalysisManifestEntry,
+  CachedAnalysisEntry,
+} from '../../src/cache';
 
-export interface AnalysisManifestEntry {
-  hash: string;
-  flags: AnalysisFlagsKey;
-  generatedAt: string;
-  ageMinutes: number;
-  /** True when this analysis was generated before the most recent data refresh —
-   *  user can still select it but the detail view's StaleBanner will warn. */
-  olderThanData?: boolean;
-}
+export type { HistoryPoint, HistorySource } from '../../src/history';
 
-export interface SearchResultRecord {
-  title:   string;
-  url:     string;
-  content: string;
-  score?:  number;
-}
+export type {
+  DistillBriefing,
+  DistillBundle,
+  DistillCacheState,
+} from '../../src/data/distill';
 
-export interface SearchProviderTrace {
-  provider:  'tavily' | 'brave' | 'claude-web-search' | 'openai-web-search';
-  queries:   string[];
-  results:   SearchResultRecord[];   // empty for native providers (LLM-side fetch)
-  fetchedAt: string;
-}
+export type { DistillEntityRef, DistillMatchTier } from '../../src/data/distill-entities';
 
-export interface SearchTrace {
-  providers: SearchProviderTrace[];
-}
+export type { AppConfig, DistillMode } from '../../src/app-config';
 
-export interface CachedAnalysisEntry {
-  flags: AnalysisFlagsKey;
-  hash: string;
-  generatedAt: string;
-  llmAnalysis: {
-    bullCase: string[];
-    bearCase: string[];
-    keyRisks: string[];
-    thesis: string;
-    score: number;
-    recommendation: 'STRONG BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG SELL';
-    fairValueEstimate: string;
-  };
-  searches?: SearchTrace;
-}
+export type {
+  JobStep,
+  StepStatus,
+  JobStepResult,
+  JobSymbolResult,
+  JobRun,
+  JobRunStatus,
+  SchedulerStatus,
+} from '../../src/scheduler';
 
-export interface CompositeTier {
-  median: number | null;
-  mean: number | null;
-  p25: number | null;
-  p75: number | null;
-  min: number | null;
-  max: number | null;
-  marginOfSafety: number | null;
-  models: { name: string; fairValue: number }[];
-}
+export type { ProgressEvent, AnalysisRunMeta } from '../../src/cli';
 
-export interface CompositeFairValue {
-  // New tiered shape
-  primary: CompositeTier;
-  conservative: CompositeTier;
-  excludedModels: { name: string; reason: string }[];
-  confidence: number;
-  pctPrimaryUndervalued: number | null;
+// ── Frontend-only ────────────────────────────────────────────────────────────
 
-  // Backwards-compat aliases — same as primary.*
-  median: number | null;
-  mean: number | null;
-  p25: number | null;
-  p75: number | null;
-  min: number | null;
-  max: number | null;
-  marginOfSafety: number | null;
-  pctModelsUndervalued: number | null;
-  contributingModels: { name: string; fairValue: number }[];
-}
-
-export interface DCFResult {
-  fairValue: number | null;
-  fairValueBear: number | null;
-  fairValueBull: number | null;
-  discountRate: number;
-  beta: number | null;
-  riskFreeRate: number;
-  stage1Growth: number;
-  terminalGrowthRate: number;
-  stage1Years: number;
-  fadeYears: number;
-  projectedFCFs: number[];
-  terminalValue: number | null;
-  enterpriseValue: number | null;
-  netDebt: number | null;
-  assumptions: string;
-}
-
-export interface PeerMultiplesEntry {
-  metric: 'pe' | 'evEbitda' | 'evRevenue' | 'priceFCF' | 'priceSales' | 'pb';
-  ownMetric: number | null;
-  sectorMedian: number | null;
-  fairPrice: number | null;
-}
-
-// Loose typing for the full AnalysisResult — we don't redeclare every nested
-// field in the frontend; just enough for the components to type-check.
-export interface AnalysisResult {
-  symbol: string;
-  timestamp: string;
-  provider: string;
-  searchProvider: string;
-  financials: any;
-  dcf: DCFResult;
-  composite: CompositeFairValue;
-  peerMultiples: { byMultiple: PeerMultiplesEntry[]; medianFairPrice: number | null; meanFairPrice: number | null; count: number; marginOfSafety: number | null };
-  llmAnalysis: CachedAnalysisEntry['llmAnalysis'];
-  [key: string]: any;
-}
-
-export interface ComputedMetrics {
-  dcf: DCFResult;
-  composite: CompositeFairValue;
-  peerMultiples: {
-    byMultiple: PeerMultiplesEntry[];
-    medianFairPrice: number | null;
-    meanFairPrice: number | null;
-    count: number;
-    marginOfSafety: number | null;
-  };
-  ratios: any;
-  reverseDCF: any;
-  peterLynch: any;
-  evMultiples: any;
-  ruleOf40: any;
-  grahamRevised: any;
-  grahamNumber: any;
-  piotroski: any;
-  altmanZ: any;
-  ddm: any;
-  epv: any;
-  rim: any;
-  ncav: any;
-  interestCoverage: any;
-  sortino: any;
-  beneish: any;
-}
-
-export type SignalDirection = 'buy' | 'sell' | 'neutral';
-
-export interface SignalItem {
-  name: string;
-  value: number | null;
-  signal: SignalDirection;
-  hint: string;
-}
-
-export interface SignalGroup {
-  items: SignalItem[];
-  buy: number;
-  sell: number;
-  neutral: number;
-  /** −1 (Strong Sell) to +1 (Strong Buy) */
-  score: number;
-  verdict: 'STRONG BUY' | 'BUY' | 'NEUTRAL' | 'SELL' | 'STRONG SELL';
-}
-
-export interface TechnicalSignals {
-  movingAverages: SignalGroup;
-  oscillators:    SignalGroup;
-  overall:        SignalGroup;
-}
-
-export interface DistillBriefing {
-  id:               string;
-  briefingTypeId:   string;
-  briefingTypeName: string;
-  title:            string;
-  body:             string;
-  format:           'plain' | 'markdown';
-  language:         string;
-  entityRefs:       string[];
-  insightCount:     number;
-  model:            string;
-  costUsd:          number | null;
-  createdAt:        string;
-}
-
-export type DistillCacheState = 'still-current' | 'generated' | 'empty-pool' | 'unknown';
-
-/** How a symbol was matched onto a Distill entity — the trust tier of the
- *  mapping (`id`/`ref`/`key` are unambiguous, `name` needs a human). */
-export type DistillMatchTier = 'id' | 'ref' | 'key' | 'symbol' | 'alias' | 'name';
-
-/** The registry entity a bundle was fetched for. `id` is the opaque UUID —
- *  the only stable identifier; `ref`/handles change on rename. */
-export interface DistillEntityRef {
-  id:           string;
-  ref:          string;
-  type:         string;
-  displayName:  string;
-  matchedOn:    DistillMatchTier;
-  matchedValue: string;
-  query:        string;
-  baseUrl:      string;
-  resolvedAt:   string;
-}
-
-/** Candidate returned with a 409 `distill_entity_unresolved` — several
- *  entities (or only weak matches) answered to this symbol. */
-export interface DistillEntityCandidate {
-  id:            string;
-  ref:           string;
-  displayName:   string;
-  matchedOn:     DistillMatchTier;
-  matchedValue:  string;
-  primarySymbol: string | null;
-  country:       string | null;
-  isin:          string | null;
-}
-
-export interface DistillEntityUnresolvedResponse {
-  error:        'distill_entity_unresolved';
-  reason:       'ambiguous' | 'not-found' | 'inactive';
-  message:      string;
-  entityStatus: string | null;
-  candidates:   DistillEntityCandidate[];
-}
-
-export interface DistillBundle {
-  ticker:    string;
-  baseUrl:   string;
-  /** Absent in bundles cached before entity resolution existed. */
-  entity?:   DistillEntityRef | null;
-  briefing:  DistillBriefing | null;
-  fetchedAt: string;
-  lastRefresh?: {
-    cacheState:     DistillCacheState;
-    distillCostUsd: number;
-    refreshedAt:    string;
-  };
-}
-
-export interface DistillRefreshResponse {
-  ok:              boolean;
-  symbol:          string;
-  cacheState:      DistillCacheState;
-  distillCostUsd:  number;
-  bundle:          DistillBundle;
-}
-
-export interface StockBundle {
-  summary: StockSummary;
-  financials: any;
-  marketSignals: any;
-  news: any[];
-  perplexity: any;
-  distill: DistillBundle | null;
-  metrics: ComputedMetrics;
-  sectorMedians: any;
-  marketRates: any;
-  technicalSignals: TechnicalSignals | null;
-  cacheStatus: CacheStatus;
-}
-
-export interface ProgressEvent {
-  stage: string;
-  message: string;
-  cached?: boolean;
-  data?: Record<string, unknown>;
-}
-
-export interface AnalysisRunMeta {
-  symbol: string;
-  modelId: string;
-  searchUsed: string;
-  pplxUsed: 'sonar' | 'sonar-pro' | null;
-  fromCache: boolean;
-  flagsHash: string;
-}
-
-// Selectable settings on the right sidebar
+/** Search providers offered by the settings sidebar. */
 export type SearchChoice = 'brave' | 'tavily' | 'claude' | 'openai';
 export type PplxChoice = null | 'sonar' | 'sonar-pro';
 
+/** The right sidebar's current selection — a UI concept, not a server one. */
 export interface Settings {
-  /** A shortcut from `src/models.ts` (e.g. 'opus') or a full custom model ID. */
+  /** A model ID from `src/models.ts`, or a custom one typed by the user. */
   model: string;
   /** Multi-select. Empty array = no search. */
   searches: SearchChoice[];
@@ -325,124 +102,4 @@ export interface Settings {
 /** Stable joined form for cache lookup ('brave,tavily' or 'none'). */
 export function searchesKey(searches: SearchChoice[]): string {
   return searches.length === 0 ? 'none' : [...searches].sort().join(',');
-}
-
-// ─── Overview tab ────────────────────────────────────────────────────────────
-
-/** One row of GET /api/overview — already ranked by verdict score server-side. */
-export interface OverviewRow {
-  symbol:       string;
-  companyName:  string;
-  sector:       string | null;
-  logoDomain:   string | null;
-  price:        number | null;
-  marketCap:    number | null;
-  currency:     string | null;
-  aiScore:            number | null;
-  recommendation:     string | null;
-  verdictAt:          string | null;
-  verdictModel:       string | null;
-  fairValueEstimate:  string | null;
-  targetMean:         number | null;
-  targetUpsidePct:    number | null;
-  compositeFairValue: number | null;
-  compositeUpsidePct: number | null;
-  /** Oldest first — the sparkline series. */
-  scoreHistory:  { at: string; score: number }[];
-  scoreDelta:    number | null;
-  analysisCount: number;
-  dataAgeHours:  number | null;
-  watched:       boolean;
-}
-
-/** One recorded point of a symbol's history (GET /api/stocks/:symbol/history). */
-export interface HistoryPoint {
-  at:        string;
-  source:    'analysis' | 'data';
-  price:     number | null;
-  marketCap: number | null;
-  peRatio:   number | null;
-  targetMean:      number | null;
-  targetUpsidePct: number | null;
-  compositeFairValue: number | null;
-  compositeUpsidePct: number | null;
-  aiScore:           number | null;
-  recommendation:    string | null;
-  fairValueEstimate: string | null;
-  model:             string | null;
-}
-
-// ─── Administration ──────────────────────────────────────────────────────────
-
-export type DistillMode = 'refresh' | 'fetch';
-
-/**
- * Mirror of the server's AppConfig. Defaults deliberately live only on the
- * server — the admin page edits what GET /api/config handed it, so there is no
- * second copy of "midnight, 5 days, terra" to drift.
- */
-export interface AppConfig {
-  schedule: {
-    enabled:  boolean;
-    cron:     string;
-    timezone: string;
-  };
-  steps: {
-    data:    { enabled: boolean };
-    distill: { enabled: boolean; mode: DistillMode };
-    analysis: {
-      enabled:    boolean;
-      maxAgeDays: number;
-      model:      string;
-      search:     string[];
-      pplx:       'sonar' | 'sonar-pro' | null;
-    };
-  };
-  watchlist: Record<string, boolean>;
-}
-
-export interface ConfigResponse {
-  config:  AppConfig;
-  symbols: { symbol: string; watched: boolean; companyName: string }[];
-  keys:    Record<string, boolean>;
-  cacheDir:      string;
-  distillApiUrl: string;
-}
-
-export type JobStep = 'data' | 'distill' | 'analysis';
-export type StepStatus = 'ok' | 'skipped' | 'failed';
-
-export interface JobStepResult {
-  step:   JobStep;
-  status: StepStatus;
-  detail: string;
-  ms:     number;
-}
-
-export interface JobSymbolResult {
-  symbol: string;
-  steps:  JobStepResult[];
-  ms:     number;
-}
-
-export interface JobRun {
-  id:            string;
-  trigger:       'cron' | 'manual';
-  startedAt:     string;
-  finishedAt:    string | null;
-  status:        'running' | 'ok' | 'partial' | 'failed' | 'stopped';
-  currentSymbol: string | null;
-  symbols:       JobSymbolResult[];
-  totals:        { symbols: number; data: number; distill: number; analysis: number; failed: number };
-  error?:        string;
-}
-
-export interface SchedulerStatus {
-  cron:     string | null;
-  timezone: string;
-  nextRun:  string | null;
-  running:  boolean;
-  current:  JobRun | null;
-  runs:     JobRun[];
-  watched:  string[];
 }

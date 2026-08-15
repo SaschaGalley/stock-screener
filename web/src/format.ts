@@ -1,34 +1,17 @@
+import { isStrongRecommendation, recommendationTone } from '../../src/verdict';
+
+// Numbers are formatted the same way in the terminal and the browser, so the
+// formatters come from the shared module; this file owns only the colours.
+export { fmt, fmtPct, fmtSignedPct, fmtPercentPoints, fmtBig, fmtPrice } from '../../src/format';
+
 // Shared formatting helpers for the React frontend.
 
-export function fmt(n: number | null | undefined, suffix = '', decimals = 2): string {
-  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
-  return `${n.toFixed(decimals)}${suffix}`;
-}
-
-export function fmtPct(n: number | null | undefined, decimals = 1): string {
-  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
-  return `${(n * 100).toFixed(decimals)}%`;
-}
-
-export function fmtSignedPct(n: number | null | undefined, decimals = 1): string {
-  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
-  const v = n * 100;
-  return `${v >= 0 ? '+' : ''}${v.toFixed(decimals)}%`;
-}
-
-export function fmtBig(n: number | null | undefined): string {
-  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
-  const abs = Math.abs(n);
-  if (abs >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
-  if (abs >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3)  return `$${(n / 1e3).toFixed(1)}K`;
-  return `$${n.toFixed(0)}`;
-}
-
-export function fmtPrice(n: number | null | undefined): string {
-  if (n === null || n === undefined) return 'N/A';
-  return `$${n.toFixed(2)}`;
+/** Colour for an upside in percentage points — green above, amber flat, red below. */
+export function upsideColor(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return 'text-ink-500';
+  if (n > 0)  return 'text-emerald-400';
+  if (n < -5) return 'text-red-400';
+  return 'text-amber-400';
 }
 
 // Theme-shade map for context (per tailwind.config.js):
@@ -54,23 +37,10 @@ export function mosBgColor(mos: number | null | undefined): string {
   return 'bg-red-900 border-red-500';
 }
 
-export type RecommendationTone = 'positive' | 'neutral' | 'negative';
-
-/**
- * Direction of a recommendation label — the single classifier every
- * recommendation-coloured element derives from, so the badge and the score bar
- * can never disagree about whether a verdict is bullish.
- *
- * STRONG is deliberately not a tone of its own: the word is already in the
- * label, so strength is rendered as emphasis (see `recommendationColor`) rather
- * than as a fourth colour.
- */
-export function recommendationTone(rec: string): RecommendationTone {
-  const r = rec.toUpperCase();
-  if (r.includes('SELL')) return 'negative';
-  if (r.includes('BUY'))  return 'positive';
-  return 'neutral';   // HOLD
-}
+// The label reading itself lives in src/verdict.ts, shared with the server's
+// consensus band — this module owns only what a tone should *look* like.
+export { recommendationTone } from '../../src/verdict';
+export type { RecommendationTone } from '../../src/verdict';
 
 /**
  * Color for a recommendation badge.
@@ -79,7 +49,7 @@ export function recommendationTone(rec: string): RecommendationTone {
  * pattern carries the strength signal without needing extra theme vars.
  */
 export function recommendationColor(rec: string): string {
-  const strong = rec.toUpperCase().includes('STRONG');
+  const strong = isStrongRecommendation(rec);
   switch (recommendationTone(rec)) {
     case 'positive':
       return strong ? 'bg-emerald-500 text-white' : 'bg-emerald-900 text-emerald-400 border border-emerald-500';

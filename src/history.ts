@@ -19,9 +19,9 @@
  * while a user hammering the refresh button doesn't distort the series.
  */
 
-import { StockFinancials } from './types.js';
-import { AnalysisResult } from './types.js';
+import { AnalysisResult, StockFinancials } from './types.js';
 import { ComputedMetrics } from './analysis/computeMetrics.js';
+import { pctChange, toFiniteNumber as num } from './utils/num.js';
 
 export type HistorySource = 'analysis' | 'data';
 
@@ -50,16 +50,6 @@ export interface HistoryPoint {
 export const HISTORY_MAX_POINTS = 3000;
 export const HISTORY_VERSION = 1;
 
-function pct(from: number | null | undefined, to: number | null | undefined): number | null {
-  if (typeof from !== 'number' || typeof to !== 'number') return null;
-  if (!Number.isFinite(from) || !Number.isFinite(to) || from === 0) return null;
-  return ((to - from) / from) * 100;
-}
-
-function num(v: unknown): number | null {
-  return typeof v === 'number' && Number.isFinite(v) ? v : null;
-}
-
 /** Shared numeric core of both point kinds. */
 function basePoint(
   f: StockFinancials,
@@ -75,13 +65,13 @@ function basePoint(
     marketCap: num(f.marketCap),
     peRatio:   num(f.peRatio),
     targetMean:      num(f.targetMeanPrice),
-    targetUpsidePct: pct(price, num(f.targetMeanPrice)),
+    targetUpsidePct: pctChange(price, num(f.targetMeanPrice)),
     compositeFairValue,
     // The composite already computes (median − price) / price; fall back to
     // deriving it so a tier without marginOfSafety still charts.
     compositeUpsidePct: composite?.primary?.marginOfSafety != null
       ? composite.primary.marginOfSafety * 100
-      : pct(price, compositeFairValue),
+      : pctChange(price, compositeFairValue),
     aiScore:           null,
     recommendation:    null,
     fairValueEstimate: null,

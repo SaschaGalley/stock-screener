@@ -1,6 +1,6 @@
 import type {
   StockSummary,
-  AnalysisManifestEntry,
+  AnalysisListEntry,
   CachedAnalysisEntry,
   AnalysisFlagsKey,
   AnalysisResult,
@@ -13,6 +13,8 @@ import type {
   HistoryPoint,
   AppConfig,
   ConfigResponse,
+  ConfigSaveResponse,
+  AddStockResponse,
   SchedulerStatus,
 } from './types';
 
@@ -59,7 +61,7 @@ export const api = {
    * No LLM call — analysing is a separate, explicit step.
    */
   addStock: (input: string) =>
-    jsonFetch<{ ok: boolean; symbol: string; summary: StockSummary | null }>(`${BASE}/stocks`, {
+    jsonFetch<AddStockResponse>(`${BASE}/stocks`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ input }),
@@ -118,7 +120,7 @@ export const api = {
 
   /** Whole-object write; the server reinstalls the cron before answering. */
   saveConfig: (config: AppConfig) =>
-    jsonFetch<{ ok: boolean; config: AppConfig; scheduler: SchedulerStatus }>(`${BASE}/config`, {
+    jsonFetch<ConfigSaveResponse>(`${BASE}/config`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(config),
@@ -139,7 +141,7 @@ export const api = {
     jsonFetch<{ ok: boolean; stopping: boolean }>(`${BASE}/jobs/stop`, { method: 'POST' }),
 
   listAnalyses: (symbol: string) =>
-    jsonFetch<{ symbol: string; analyses: AnalysisManifestEntry[] }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/analyses`),
+    jsonFetch<{ symbol: string; analyses: AnalysisListEntry[] }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/analyses`),
 
   getAnalysisByHash: (symbol: string, hash: string) =>
     jsonFetch<CachedAnalysisEntry>(`${BASE}/stocks/${encodeURIComponent(symbol)}/analyses/${hash}`),

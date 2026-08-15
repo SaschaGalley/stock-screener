@@ -1,8 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { existsSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync } from 'fs';
-import { join, isAbsolute, resolve } from 'path';
-import { homedir } from 'os';
+import { existsSync, readFileSync, rmSync, statSync, unlinkSync } from 'fs';
+import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -18,10 +17,12 @@ import {
   AnalysisFlagsKey,
   analysisHash,
   readDistill,
+  readEntry,
   FINANCIALS_VERSION,
   MARKET_SIGNALS_VERSION,
 } from './cache.js';
 import { StockFinancials, MarketSignals, NewsItem, SectorMedians } from './types.js';
+import type { AnalysisListEntry, ConsensusBand, OverviewRow, StockSummary } from './api-types.js';
 import { MODELS } from './models.js';
 import { PerplexityContext } from './data/perplexity.js';
 import {
@@ -47,6 +48,9 @@ import {
   runPipeline,
 } from './scheduler.js';
 import { HistoryPoint, latestVerdict } from './history.js';
+import { pctChange } from './utils/num.js';
+import { looksLikeSymbol, SAFE_SYMBOL_RE } from './symbols.js';
+import { recommendationVote } from './verdict.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
@@ -54,12 +58,6 @@ const __dirname  = dirname(__filename);
 const PORT = Number(process.env.PORT ?? 4317);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function resolveCacheRoot(rawDir: string): string {
-  if (rawDir.startsWith('~')) return join(homedir(), rawDir.slice(1));
-  if (isAbsolute(rawDir)) return rawDir;
-  return resolve(process.cwd(), rawDir);
-}
 
 interface CacheRead<T> {
   data:  T | null;
@@ -72,15 +70,11 @@ interface CacheRead<T> {
 /** Read a versioned cache file. Always returns the data when present, plus
  *  a `stale` flag so the caller can display a "refresh me" banner. */
 function readJsonEntry<T>(file: string, expectedVersion?: number): CacheRead<T> {
-  if (!existsSync(file)) return { data: null, stale: false };
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as { v?: unknown; data?: T };
-    const stale = expectedVersion !== undefined && parsed.v !== expectedVersion;
-    if (stale) logger.debug(`Cache version mismatch for ${file} (got ${parsed.v}, want ${expectedVersion})`);
-    return { data: parsed.data ?? null, stale };
-  } catch {
-    return { data: null, stale: false };
-  }
+  const entry = readEntry<T>(file);
+  if (!entry) return { data: null, stale: false };
+  const stale = expectedVersion !== undefined && entry.v !== expectedVersion;
+  if (stale) logger.debug(`Cache version mismatch for ${file} (got ${entry.v}, want ${expectedVersion})`);
+  return { data: entry.data ?? null, stale };
 }
 
 // Schema versions are imported from cache.ts (single source of truth) — the
@@ -94,49 +88,13 @@ function safeMtime(file: string): number | null {
 }
 
 
-/**
- * Combined buy/hold/sell consensus shown as a thin band on the stock list.
- * Aggregates two sources with AI-leaning weights:
- *   - All cached LLM analyses for this symbol (each one votes its recommendation)
- *   - Analyst recommendation counts from Yahoo (strong-buy through strong-sell)
- * AI carries 0.6 weight, analysts 0.4. If only one source is available it
- * gets 1.0 weight (so the bar still shows something useful).
- */
-interface ConsensusBand {
-  buy:  number;   // 0–1
-  hold: number;   // 0–1
-  sell: number;   // 0–1
-  /** Number of vote sources that contributed (≥1 for the band to render). */
-  sources: number;
-}
-
-interface StockSummary {
-  symbol:        string;
-  companyName:   string;
-  sector:        string | null;
-  industry:      string | null;
-  price:         number | null;
-  marketCap:     number | null;
-  website:       string | null;
-  logoDomain:    string | null;       // domain for clearbit-style lookup
-  cachedAt:      string;              // ISO timestamp of financials.json mtime
-  analysisCount: number;              // how many cached LLM analyses exist
-  consensus:     ConsensusBand | null; // for the sidebar buy/hold/sell band
-}
-
-function recommendationToVote(rec: string): 'buy' | 'hold' | 'sell' {
-  if (rec.includes('BUY')) return 'buy';
-  if (rec.includes('SELL')) return 'sell';
-  return 'hold';
-}
-
 function computeConsensus(f: StockFinancials, cacheDir: string, symbol: string): ConsensusBand | null {
   // ── AI source: aggregate ALL cached LLM analyses (each combo votes once) ──
   let aiBuy = 0, aiHold = 0, aiSell = 0, aiCount = 0;
   for (const entry of listAnalyses(cacheDir, symbol)) {
     const cached = readAnalysis(cacheDir, symbol, entry.flags);
     if (!cached) continue;
-    const v = recommendationToVote(cached.llmAnalysis.recommendation);
+    const v = recommendationVote(cached.llmAnalysis.recommendation);
     if (v === 'buy')  aiBuy++;
     else if (v === 'sell') aiSell++;
     else aiHold++;
@@ -217,41 +175,6 @@ function buildStockSummary(cacheDir: string, symbol: string): StockSummary | nul
 }
 
 // ── Overview rows ────────────────────────────────────────────────────────────
-
-/** One line of the ranked overview table. */
-interface OverviewRow {
-  symbol:        string;
-  companyName:   string;
-  sector:        string | null;
-  logoDomain:    string | null;
-  price:         number | null;
-  marketCap:     number | null;
-  currency:      string | null;
-  /** Newest LLM verdict across all flag combinations. */
-  aiScore:        number | null;
-  recommendation: string | null;
-  verdictAt:      string | null;
-  verdictModel:   string | null;
-  fairValueEstimate: string | null;
-  /** Analyst consensus target and its distance from today's price. */
-  targetMean:      number | null;
-  targetUpsidePct: number | null;
-  /** Composite (primary tier) fair value and its distance from today's price. */
-  compositeFairValue: number | null;
-  compositeUpsidePct: number | null;
-  /** Verdict-score series for the sparkline, oldest first. */
-  scoreHistory:  { at: string; score: number }[];
-  /** Score change from the first recorded verdict to the newest. */
-  scoreDelta:    number | null;
-  analysisCount: number;
-  dataAgeHours:  number | null;
-  watched:       boolean;
-}
-
-function pctChange(from: number | null, to: number | null): number | null {
-  if (from === null || to === null || !Number.isFinite(from) || !Number.isFinite(to) || from === 0) return null;
-  return ((to - from) / from) * 100;
-}
 
 /**
  * Composite fair value, or null when the models can't run.
@@ -352,15 +275,6 @@ function compareOverviewRows(a: OverviewRow, b: OverviewRow): number {
   return a.symbol.localeCompare(b.symbol);
 }
 
-// Best-effort symbol vs query auto-detection.
-// Tickers are typically 1–5 uppercase chars, optionally with one suffix segment
-// like ".DE", "-A", "/P", and no spaces. Anything else is treated as a query.
-function looksLikeSymbol(input: string): boolean {
-  const trimmed = input.trim();
-  if (trimmed.includes(' ')) return false;
-  return /^[A-Za-z][A-Za-z0-9.\-/:]{0,9}$/.test(trimmed);
-}
-
 // ── App Setup ────────────────────────────────────────────────────────────────
 
 export function createApp() {
@@ -380,10 +294,9 @@ export function createApp() {
   // (e.g. DELETE /api/stocks/..%2f..%2f..) at the boundary; symbolDir() also
   // confines to the cache root as defense-in-depth. Must start alphanumeric
   // (no leading dot) so "../" and ".." can never match.
-  const SAFE_SYMBOL = /^[A-Za-z0-9][A-Za-z0-9.\-]{0,14}$/;
-  const SAFE_HASH   = /^[a-f0-9]{6,64}$/i;
+  const SAFE_HASH = /^[a-f0-9]{6,64}$/i;
   app.param('symbol', (req, res, next, value) => {
-    if (typeof value !== 'string' || !SAFE_SYMBOL.test(value)) {
+    if (typeof value !== 'string' || !SAFE_SYMBOL_RE.test(value)) {
       res.status(400).json({ error: 'invalid symbol' });
       return;
     }
@@ -792,7 +705,7 @@ export function createApp() {
     const entries = listAnalyses(cacheDir, symbol);
     const financialsFile = join(symbolDir(cacheDir, symbol), 'financials.json');
     const financialsMtime = safeMtime(financialsFile) ?? 0;
-    const augmented = entries.map((e) => ({
+    const augmented: AnalysisListEntry[] = entries.map((e) => ({
       ...e,
       olderThanData: financialsMtime > 0
         && new Date(e.generatedAt).getTime() < financialsMtime - 60_000,  // 60s tolerance

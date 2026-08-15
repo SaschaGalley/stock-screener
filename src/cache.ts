@@ -33,10 +33,33 @@ export const NEWS_VERSION           = 1;
 export const MARKET_SIGNALS_VERSION = 2;   // technicals expanded with EMAs, Stoch, CCI, WilliamsR, Momentum
 const SUBMISSIONS_VERSION    = 1;
 
-function resolveCacheRoot(rawDir: string): string {
+/**
+ * Absolute path of the cache root. Exported because four modules used to carry
+ * a private copy of these three lines, which is three chances for `~` to stop
+ * meaning the home directory in one of them.
+ */
+export function resolveCacheRoot(rawDir: string): string {
   if (rawDir.startsWith('~')) return join(homedir(), rawDir.slice(1));
   if (isAbsolute(rawDir)) return rawDir;
   return resolve(process.cwd(), rawDir);
+}
+
+/**
+ * Write JSON so a reader never sees half a file: same-directory temp file, then
+ * rename (atomic within a filesystem on POSIX). Used for the versioned symbol
+ * caches and for the two installation-level files at the cache root.
+ */
+export function writeJsonAtomic(file: string, value: unknown): void {
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf-8');
+  renameSync(tmp, file);
+}
+
+/** Parse a JSON file, or null when it is missing or unreadable. */
+export function readJsonFile<T>(file: string): T | null {
+  if (!existsSync(file)) return null;
+  try { return JSON.parse(readFileSync(file, 'utf-8')) as T; }
+  catch { return null; }
 }
 
 /**
@@ -84,22 +107,20 @@ function ensureDir(dir: string): void {
   mkdirSync(dir, { recursive: true });
 }
 
-interface CacheEntry<T> { v: number | string; ts: number; data: T }
+/** The envelope every cache file uses: schema version, write time, payload. */
+export interface CacheEntry<T> { v: number | string; ts: number; data: T }
 
-function readEntry<T>(file: string): CacheEntry<T> | null {
-  if (!existsSync(file)) return null;
-  try { return JSON.parse(readFileSync(file, 'utf-8')) as CacheEntry<T>; }
-  catch { return null; }
+/**
+ * Read a cache envelope. Exported so the HTTP layer reads the same shape with
+ * the same tolerance for a corrupt file instead of parsing `{v, ts, data}` a
+ * second time with slightly different rules.
+ */
+export function readEntry<T>(file: string): CacheEntry<T> | null {
+  return readJsonFile<CacheEntry<T>>(file);
 }
 
 function writeEntry(file: string, version: number | string, data: unknown): void {
-  // Atomic: write to a temp file in the same dir, then rename (atomic on POSIX
-  // within a filesystem). Prevents a corrupt/truncated cache file if the
-  // process is killed mid-write or two writers race on the same path.
-  const json = JSON.stringify({ v: version, ts: Date.now(), data }, null, 2);
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, json, 'utf-8');
-  renameSync(tmp, file);
+  writeJsonAtomic(file, { v: version, ts: Date.now(), data });
 }
 
 // ── Financials ────────────────────────────────────────────────────────────────

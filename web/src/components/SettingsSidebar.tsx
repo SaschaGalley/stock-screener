@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type ModelInfo } from '../api';
-import type { AnalysisManifestEntry, SearchChoice, Settings } from '../types';
+import type { AnalysisListEntry, SearchChoice, Settings } from '../types';
 import { searchesKey } from '../types';
 import { formatAge } from '../format';
 import { DEFAULT_MODEL_ID, type ModelProvider, providerFor, resolveModelId } from '../../../src/models';
@@ -37,7 +37,7 @@ const PPLX_OPTIONS: { value: 'none' | 'sonar' | 'sonar-pro'; label: string }[] =
 
 const CUSTOM_MODELS_KEY = 'stockcli:custom-models';
 
-function flagsMatch(a: AnalysisManifestEntry, settings: Settings): boolean {
+function flagsMatch(a: AnalysisListEntry, settings: Settings): boolean {
   return (
     a.flags.model === resolveModelId(settings.model)
     && a.flags.search === searchesKey(settings.searches)
@@ -59,7 +59,7 @@ function saveCustomModels(list: string[]): void {
 }
 
 export default function SettingsSidebar({ symbol, settings, onChange, onLoad, onReload, loading }: Props) {
-  const [analyses, setAnalyses]         = useState<AnalysisManifestEntry[]>([]);
+  const [analyses, setAnalyses]         = useState<AnalysisListEntry[]>([]);
   const [models, setModels]             = useState<ModelInfo | null>(null);
   const [customModels, setCustomModels] = useState<string[]>(loadCustomModels);
   const [refreshKey, setRefreshKey]     = useState(0);

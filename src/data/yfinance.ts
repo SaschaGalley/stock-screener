@@ -11,13 +11,11 @@ import {
 } from '../types.js';
 import { DailyBar } from '../analysis/technical.js';
 import { logger } from '../utils/logger.js';
+import { toFiniteNumber as num } from '../utils/num.js';
 
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'], validation: { logErrors: false, logOptionsErrors: false } } as any);
 
-function num(v: unknown): number | null {
-  if (typeof v === 'number' && isFinite(v)) return v;
-  return null;
-}
+
 function str(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
 }

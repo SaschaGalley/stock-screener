@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { StockSummary } from '../types';
 import { api } from '../api';
+import { fmtBig } from '../format';
 import StockLogo, { initialsFromName } from './StockLogo';
 import ConsensusBar from './ConsensusBar';
 
@@ -9,14 +10,6 @@ interface Props {
   selectedSymbol: string | null;
   onSelect: (symbol: string) => void;
   onDeleted: (symbol: string) => void;
-}
-
-function fmtMcap(n: number | null): string {
-  if (n === null) return '';
-  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
-  if (n >= 1e9)  return `$${(n / 1e9).toFixed(1)}B`;
-  if (n >= 1e6)  return `$${(n / 1e6).toFixed(0)}M`;
-  return `$${n.toFixed(0)}`;
 }
 
 export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDeleted }: Props) {
@@ -82,7 +75,7 @@ export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDelet
                         ? 'bg-accent-soft border-l-2 border-l-accent'
                         : 'border-l-2 border-l-transparent hover:bg-ink-800'
                     }`}
-                    title={`${s.companyName} · ${s.sector ?? '—'} · ${fmtMcap(s.marketCap)}`}
+                    title={`${s.companyName} · ${s.sector ?? '—'} · ${fmtBig(s.marketCap)}`}
                   >
                     <ConsensusBar consensus={s.consensus} height={22} />
                     <StockLogo

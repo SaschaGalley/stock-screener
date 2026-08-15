@@ -1,0 +1,53 @@
+/**
+ * Number formatting shared by the terminal output and the web UI.
+ *
+ * These three lived twice — once in `analysis/metrics.ts` for markdown reports,
+ * once in `web/src/format.ts` for the browser — with bodies that had already
+ * started to differ (only one of them knew about thousands). Same numbers, same
+ * readers, so: one definition, imported by both.
+ *
+ * Dependency-free on purpose, like `models.ts` and `symbols.ts` — the web app
+ * imports it directly across the package boundary.
+ */
+
+/** Fixed-decimal number with an optional suffix. `N/A` for anything unusable. */
+export function fmt(n: number | null | undefined, suffix = '', decimals = 2): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
+  return `${n.toFixed(decimals)}${suffix}`;
+}
+
+/** Percent from a FRACTION: 0.145 → "14.5%". */
+export function fmtPct(n: number | null | undefined, decimals = 1): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
+  return `${(n * 100).toFixed(decimals)}%`;
+}
+
+/** Signed percent from a FRACTION: 0.145 → "+14.5%". */
+export function fmtSignedPct(n: number | null | undefined, decimals = 1): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
+  const v = n * 100;
+  return `${v >= 0 ? '+' : ''}${v.toFixed(decimals)}%`;
+}
+
+/** Percent from PERCENTAGE POINTS: 14.5 → "+14.5%", em dash when unusable. */
+export function fmtPercentPoints(n: number | null | undefined, decimals = 1): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+  return `${n >= 0 ? '+' : ''}${n.toFixed(decimals)}%`;
+}
+
+/** Currency amount abbreviated to T/B/M/K. */
+export function fmtBig(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9)  return `$${(n / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6)  return `$${(n / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3)  return `$${(n / 1e3).toFixed(1)}K`;
+  return `$${n.toFixed(0)}`;
+}
+
+/** Plain price with two decimals. */
+export function fmtPrice(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
+  return `$${n.toFixed(2)}`;
+}

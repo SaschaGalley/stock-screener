@@ -16,6 +16,9 @@
  */
 
 import { logger } from './utils/logger.js';
+// The mode vocabulary is the admin page's, so app-config owns it — this module
+// executes what was configured rather than declaring its own copy of the words.
+import type { DistillMode } from './app-config.js';
 import { clearDistillEntity, readDistill, readDistillEntity, writeDistill, writeDistillEntity } from './cache.js';
 import {
   DistillBundle,
@@ -264,16 +267,9 @@ export async function refreshDistillBriefing(
   return { ...value, entity };
 }
 
-/** How a symbol's briefing gets brought up to date. */
-export type DistillSyncMode =
-  /** POST /refresh — drains upstream and may generate a briefing (costs LLM budget there). */
-  | 'refresh'
-  /** GET /briefings — pulls what is already published (free). */
-  | 'fetch';
-
 export interface DistillSyncResult {
   bundle:         DistillBundle;
-  mode:           DistillSyncMode;
+  mode:           DistillMode;
   /** Only set for `refresh`; a plain fetch has no cache-state header. */
   cacheState:     DistillCacheState | null;
   distillCostUsd: number;
@@ -291,7 +287,7 @@ export async function syncDistillBriefing(
   apiKey: string,
   baseUrl: string,
   briefingTypeId: string | undefined,
-  mode: DistillSyncMode,
+  mode: DistillMode,
 ): Promise<DistillSyncResult> {
   if (mode === 'fetch') {
     const bundle = await loadDistillBundle(cacheDir, hints, apiKey, baseUrl, briefingTypeId);

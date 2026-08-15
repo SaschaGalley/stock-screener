@@ -1,16 +1,11 @@
 import { useState, FormEvent } from 'react';
+import { looksLikeSymbol } from '../../../src/symbols';
 
 interface Props {
   /** Adds the stock and fetches its data — no LLM call. */
   onAdd: (input: string) => Promise<void>;
   /** True while an analysis is running elsewhere in the app. */
   analyzing: boolean;
-}
-
-function looksLikeSymbol(input: string): boolean {
-  const t = input.trim();
-  if (!t || t.includes(' ')) return false;
-  return /^[A-Za-z][A-Za-z0-9.\-/:]{0,9}$/.test(t);
 }
 
 /**
