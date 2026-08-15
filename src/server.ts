@@ -12,11 +12,12 @@ import { runAnalysis } from './cli.js';
 import {
   symbolDir,
   listAnalyses,
+  listCachedSymbols,
   readAnalysis,
+  readHistory,
   AnalysisFlagsKey,
   analysisHash,
   readDistill,
-  writeDistill,
   FINANCIALS_VERSION,
   MARKET_SIGNALS_VERSION,
 } from './cache.js';
@@ -30,12 +31,22 @@ import {
   DistillAmbiguousTypeError,
   DistillEntityUnresolvedError,
 } from './data/distill.js';
-import { distillHintsFor, refreshDistillBriefing } from './distill-service.js';
+import { distillHintsFor, syncDistillBriefing } from './distill-service.js';
 import { getMarketRates } from './data/fred.js';
-import { getSectorMedians } from './data/finnhub.js';
+import { getSectorMediansCached } from './sector-medians.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { deriveTechnicalSignals } from './analysis/signals.js';
 import { refreshStockData } from './refresh.js';
+import { searchByQuery } from './data/yfinance.js';
+import { AppConfigSchema, readAppConfig, writeAppConfig, isWatched } from './app-config.js';
+import {
+  applySchedule,
+  getSchedulerStatus,
+  isPipelineRunning,
+  requestStop,
+  runPipeline,
+} from './scheduler.js';
+import { HistoryPoint, latestVerdict } from './history.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
@@ -82,17 +93,6 @@ function safeMtime(file: string): number | null {
   try { return statSync(file).mtime.getTime(); } catch { return null; }
 }
 
-function listCachedSymbols(cacheDir: string): string[] {
-  const root = resolveCacheRoot(cacheDir);
-  if (!existsSync(root)) return [];
-  try {
-    return readdirSync(root, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && existsSync(join(root, d.name, 'financials.json')))
-      .map((d) => d.name);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Combined buy/hold/sell consensus shown as a thin band on the stock list.
@@ -216,6 +216,142 @@ function buildStockSummary(cacheDir: string, symbol: string): StockSummary | nul
   };
 }
 
+// ── Overview rows ────────────────────────────────────────────────────────────
+
+/** One line of the ranked overview table. */
+interface OverviewRow {
+  symbol:        string;
+  companyName:   string;
+  sector:        string | null;
+  logoDomain:    string | null;
+  price:         number | null;
+  marketCap:     number | null;
+  currency:      string | null;
+  /** Newest LLM verdict across all flag combinations. */
+  aiScore:        number | null;
+  recommendation: string | null;
+  verdictAt:      string | null;
+  verdictModel:   string | null;
+  fairValueEstimate: string | null;
+  /** Analyst consensus target and its distance from today's price. */
+  targetMean:      number | null;
+  targetUpsidePct: number | null;
+  /** Composite (primary tier) fair value and its distance from today's price. */
+  compositeFairValue: number | null;
+  compositeUpsidePct: number | null;
+  /** Verdict-score series for the sparkline, oldest first. */
+  scoreHistory:  { at: string; score: number }[];
+  /** Score change from the first recorded verdict to the newest. */
+  scoreDelta:    number | null;
+  analysisCount: number;
+  dataAgeHours:  number | null;
+  watched:       boolean;
+}
+
+function pctChange(from: number | null, to: number | null): number | null {
+  if (from === null || to === null || !Number.isFinite(from) || !Number.isFinite(to) || from === 0) return null;
+  return ((to - from) / from) * 100;
+}
+
+/**
+ * Composite fair value, or null when the models can't run.
+ *
+ * The overview walks every cached symbol, including ones whose financials.json
+ * predates the current schema and is missing fields the models dereference. A
+ * row without a fair value is still a useful row, so a throw here costs that
+ * one number rather than the whole table.
+ */
+function safeComposite(
+  f: StockFinancials,
+  marketRates: Awaited<ReturnType<typeof getMarketRates>> | null,
+  symbol: string,
+): number | null {
+  try {
+    return computeAllMetrics(f, marketRates, null).composite.primary.median ?? null;
+  } catch (e) {
+    logger.debug(`Overview: composite unavailable for ${symbol} (${(e as Error).message}) — stale financials schema?`);
+    return null;
+  }
+}
+
+/**
+ * Compose one row from what is already on disk.
+ *
+ * Composite fair value comes from the newest history point when there is one:
+ * that value was computed with peer medians in hand, whereas recomputing it
+ * here for every row would mean one Finnhub call per stock. The *upside* is
+ * always recomputed against today's price, so a fair value recorded last night
+ * is not paired with last night's price.
+ */
+function buildOverviewRow(
+  cacheDir: string,
+  symbol: string,
+  marketRates: Awaited<ReturnType<typeof getMarketRates>> | null,
+  watched: boolean,
+): OverviewRow | null {
+  const dir = symbolDir(cacheDir, symbol);
+  const financialsFile = join(dir, 'financials.json');
+  const { data: f } = readJsonEntry<StockFinancials>(financialsFile);
+  if (!f) return null;
+
+  const analyses = listAnalyses(cacheDir, symbol);
+  const newest = [...analyses].sort(
+    (a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime(),
+  )[0];
+  const verdict = newest ? readAnalysis(cacheDir, symbol, newest.flags) : null;
+
+  const history: HistoryPoint[] = readHistory(cacheDir, symbol);
+  const scoreHistory = history
+    .filter((p) => p.aiScore !== null)
+    .map((p) => ({ at: p.at, score: p.aiScore as number }));
+
+  const price = typeof f.price === 'number' ? f.price : null;
+  const recorded = [...history].reverse().find((p) => p.compositeFairValue !== null) ?? null;
+  const compositeFairValue = recorded?.compositeFairValue ?? safeComposite(f, marketRates, symbol);
+
+  // Prefer the live verdict for the headline score; fall back to history for
+  // installs whose analyses predate this file.
+  const aiScore = verdict?.llmAnalysis.score
+    ?? (scoreHistory.length > 0 ? scoreHistory[scoreHistory.length - 1].score : null);
+
+  const mtime = safeMtime(financialsFile);
+
+  return {
+    symbol,
+    companyName: f.companyName ?? symbol,
+    sector:      f.sector ?? null,
+    logoDomain:  logoDomainFromWebsite(f.website ?? null),
+    price,
+    marketCap:   typeof f.marketCap === 'number' ? f.marketCap : null,
+    currency:    f.tradingCurrency ?? null,
+    aiScore:        aiScore ?? null,
+    recommendation: verdict?.llmAnalysis.recommendation ?? null,
+    verdictAt:      newest?.generatedAt ?? null,
+    verdictModel:   newest?.flags.model ?? null,
+    fairValueEstimate: verdict?.llmAnalysis.fairValueEstimate ?? null,
+    targetMean:      typeof f.targetMeanPrice === 'number' ? f.targetMeanPrice : null,
+    targetUpsidePct: pctChange(price, typeof f.targetMeanPrice === 'number' ? f.targetMeanPrice : null),
+    compositeFairValue,
+    compositeUpsidePct: pctChange(price, compositeFairValue),
+    scoreHistory,
+    scoreDelta: scoreHistory.length >= 2
+      ? scoreHistory[scoreHistory.length - 1].score - scoreHistory[0].score
+      : null,
+    analysisCount: analyses.length,
+    dataAgeHours:  mtime === null ? null : (Date.now() - mtime) / 3_600_000,
+    watched,
+  };
+}
+
+/** Score descending; stocks without a verdict sort to the bottom, then A→Z. */
+function compareOverviewRows(a: OverviewRow, b: OverviewRow): number {
+  if (a.aiScore === null && b.aiScore === null) return a.symbol.localeCompare(b.symbol);
+  if (a.aiScore === null) return 1;
+  if (b.aiScore === null) return -1;
+  if (b.aiScore !== a.aiScore) return b.aiScore - a.aiScore;
+  return a.symbol.localeCompare(b.symbol);
+}
+
 // Best-effort symbol vs query auto-detection.
 // Tickers are typically 1–5 uppercase chars, optionally with one suffix segment
 // like ".DE", "-A", "/P", and no spaces. Anything else is treated as a query.
@@ -315,39 +451,23 @@ export function createApp() {
         join(symbolDir(cacheDir, symbol), 'financials.json'),
       ).data;
 
-      const result = await refreshDistillBriefing(
+      // Same merge-and-persist path the nightly job takes (an empty pool keeps
+      // the briefing already on disk), so both routes can never drift apart.
+      const result = await syncDistillBriefing(
         cacheDir,
         distillHintsFor(symbol, cachedFinancials),
         cfg.distillApiKey,
         cfg.distillApiUrl,
         cfg.distillBriefingTypeId,
+        'refresh',
       );
 
-      // Single-briefing model: just replace the cached briefing with whatever
-      // /refresh returned. On empty-pool (briefing === null) keep the prior
-      // briefing — losing established context to a transient upstream miss
-      // would degrade the LLM prompt for no good reason.
-      const prior = readDistill(cacheDir, symbol);
-      const merged: DistillBundle = {
-        ticker:    symbol,
-        baseUrl:   cfg.distillApiUrl,
-        entity:    result.entity,
-        briefing:  result.briefing ?? prior?.briefing ?? null,
-        fetchedAt: new Date().toISOString(),
-        lastRefresh: {
-          cacheState:     result.cacheState,
-          distillCostUsd: result.distillCostUsd,
-          refreshedAt:    result.refreshedAt,
-        },
-      };
-      writeDistill(cacheDir, symbol, merged);
-
       res.json({
-        ok:           true,
+        ok:             true,
         symbol,
-        cacheState:   result.cacheState,
+        cacheState:     result.cacheState,
         distillCostUsd: result.distillCostUsd,
-        bundle:       merged,
+        bundle:         result.bundle,
       });
     } catch (e) {
       if (e instanceof DistillReadOnlyError) {
@@ -427,6 +547,129 @@ export function createApp() {
     });
   });
 
+  // ── GET /api/health ────────────────────────────────────────────────────────
+  // Liveness for the container platform. Deliberately does no I/O beyond
+  // reading the process clock: a probe that touches the cache or an upstream
+  // API turns a slow disk or a flaky third party into a restart loop.
+  app.get('/api/health', (_req, res) => {
+    res.json({
+      ok:        true,
+      uptimeSec: Math.round(process.uptime()),
+      scheduler: { running: isPipelineRunning() },
+    });
+  });
+
+  // ── GET /api/config ────────────────────────────────────────────────────────
+  // Operational settings plus the read-only facts the admin page needs to make
+  // sense of them: which API keys the process actually has, and which symbols
+  // exist to be watched. Key *values* never leave the server.
+  app.get('/api/config', (_req, res) => {
+    const config = readAppConfig(cacheDir);
+    const symbols = listCachedSymbols(cacheDir).sort();
+    res.json({
+      config,
+      symbols: symbols.map((symbol) => ({
+        symbol,
+        watched: isWatched(config, symbol),
+        companyName: readJsonEntry<StockFinancials>(join(symbolDir(cacheDir, symbol), 'financials.json'))
+          .data?.companyName ?? symbol,
+      })),
+      keys: {
+        anthropic:  !!cfg.anthropicApiKey,
+        openai:     !!cfg.openaiApiKey,
+        finnhub:    !!cfg.finnhubApiKey,
+        fred:       !!cfg.fredApiKey,
+        perplexity: !!cfg.pplxApiKey,
+        brave:      !!cfg.braveApiKey,
+        tavily:     !!cfg.tavilyApiKey,
+        distill:    !!cfg.distillApiKey,
+      },
+      cacheDir,
+      distillApiUrl: cfg.distillApiUrl,
+    });
+  });
+
+  // ── PUT /api/config ────────────────────────────────────────────────────────
+  // Whole-object write (the admin page always sends the full config), then the
+  // cron is reinstalled so a schedule change takes effect without a restart.
+  app.put('/api/config', (req, res) => {
+    const parsed = AppConfigSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'invalid_config',
+        issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+      });
+      return;
+    }
+    const config = writeAppConfig(cacheDir, parsed.data);
+    applySchedule(cacheDir);
+    res.json({ ok: true, config, scheduler: getSchedulerStatus(cacheDir) });
+  });
+
+  // ── GET /api/jobs ──────────────────────────────────────────────────────────
+  app.get('/api/jobs', (_req, res) => {
+    res.json(getSchedulerStatus(cacheDir));
+  });
+
+  // ── POST /api/jobs/run ─────────────────────────────────────────────────────
+  // Fire-and-poll: a full watchlist pass runs for minutes to hours, far past
+  // any sane HTTP timeout, so this returns as soon as the run is claimed and
+  // the client watches GET /api/jobs for progress.
+  app.post('/api/jobs/run', (req, res) => {
+    if (isPipelineRunning()) {
+      res.status(409).json({ error: 'job_running', message: 'A pipeline run is already in progress.' });
+      return;
+    }
+    const body = req.body as { symbols?: unknown };
+    const symbols = Array.isArray(body?.symbols)
+      ? body.symbols.filter((s): s is string => typeof s === 'string')
+      : undefined;
+
+    runPipeline({ trigger: 'manual', symbols }).catch((e) => {
+      logger.error(`Manual run failed: ${(e as Error).message}`);
+    });
+    res.status(202).json({ ok: true, started: true, symbols: symbols ?? null });
+  });
+
+  // ── POST /api/jobs/stop ────────────────────────────────────────────────────
+  app.post('/api/jobs/stop', (_req, res) => {
+    const stopping = requestStop();
+    res.json({ ok: true, stopping });
+  });
+
+  // ── GET /api/overview ──────────────────────────────────────────────────────
+  // One row per cached stock, ranked by AI verdict score. Everything is read
+  // from disk and recomputed in-process; the single upstream call is one FRED
+  // fetch for the whole table (the models need a discount rate), and it degrades
+  // to null rather than failing the page.
+  app.get('/api/overview', async (_req, res, next) => {
+    try {
+      const config = readAppConfig(cacheDir);
+      const marketRates = cfg.fredApiKey ? await getMarketRates(cfg.fredApiKey).catch(() => null) : null;
+      const rows = listCachedSymbols(cacheDir)
+        .map((symbol) => {
+          try {
+            return buildOverviewRow(cacheDir, symbol, marketRates, isWatched(config, symbol));
+          } catch (e) {
+            // One unreadable symbol directory must not blank the whole table.
+            logger.warn(`Overview: skipping ${symbol} — ${(e as Error).message}`);
+            return null;
+          }
+        })
+        .filter((r): r is OverviewRow => r !== null)
+        .sort(compareOverviewRows);
+      res.json({ rows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/stocks/:symbol/history ────────────────────────────────────────
+  app.get('/api/stocks/:symbol/history', (req, res) => {
+    const symbol = req.params.symbol.toUpperCase();
+    res.json({ symbol, points: readHistory(cacheDir, symbol) });
+  });
+
   // ── GET /api/stocks/:symbol ────────────────────────────────────────────────
   // Shared data + computed metrics. Cheap (<10ms) to recompute on every call.
   app.get('/api/stocks/:symbol', async (req, res, next) => {
@@ -461,7 +704,7 @@ export function createApp() {
       // on failure — fall back to defaults so the response always succeeds.
       const [marketRates, sectorMedians] = await Promise.all([
         cfg.fredApiKey ? getMarketRates(cfg.fredApiKey).catch(() => null) : Promise.resolve(null),
-        cfg.finnhubApiKey ? getSectorMedians(symbol, cfg.finnhubApiKey).catch(() => null) : Promise.resolve(null),
+        getSectorMediansCached(cacheDir, symbol, cfg.finnhubApiKey),
       ]);
 
       const metrics = computeAllMetrics(financials, marketRates, sectorMedians);
@@ -750,13 +993,22 @@ if (isMain) {
   app.listen(PORT, () => {
     logger.success(`Stock-CLI server listening on http://localhost:${PORT}`);
     logger.info(`Endpoints:`);
+    logger.info(`  GET  /api/health                       — liveness probe`);
     logger.info(`  GET  /api/stocks                       — list cached symbols`);
+    logger.info(`  GET  /api/overview                     — ranked overview rows`);
     logger.info(`  GET  /api/stocks/:symbol               — financials + market signals`);
+    logger.info(`  GET  /api/stocks/:symbol/history       — recorded score/target series`);
     logger.info(`  GET  /api/stocks/:symbol/analyses      — list cached analysis combos`);
     logger.info(`  GET  /api/stocks/:symbol/analyses/:h   — specific analysis`);
     logger.info(`  GET  /api/stocks/:symbol/analyses-by-flags?model=&search=&pplx= — lookup by flags`);
     logger.info(`  POST /api/analyze                      — run analysis (body: {input, model, search, pplx})`);
+    logger.info(`  GET  /api/config · PUT /api/config     — operational settings`);
+    logger.info(`  GET  /api/jobs · POST /api/jobs/run    — pipeline status / manual run`);
     logger.info(`  GET  /api/stocks/:symbol/report.pdf    — saved PDF`);
     logger.info(`  GET  /api/stocks/:symbol/report.md     — saved Markdown`);
+
+    // Install the cron only once the port is bound: if the process is going to
+    // die on EADDRINUSE, it should do so without having kicked off a run.
+    applySchedule(getConfig().cacheDir);
   });
 }

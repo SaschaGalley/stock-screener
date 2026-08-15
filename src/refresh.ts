@@ -2,11 +2,14 @@ import { getConfig } from './config.js';
 import { logger } from './utils/logger.js';
 import { getFinancials, getOptionsSignals, resolveSymbol } from './data/yfinance.js';
 import { getNews, getBasicFinancials } from './data/finnhub.js';
+import { getSectorMediansCached } from './sector-medians.js';
 import { getMacroBundle } from './data/macro.js';
 import { getMarketRates } from './data/fred.js';
 import { computeTechnicals } from './analysis/technical.js';
-import { writeFinancials, writeNews, writeMarketSignals, writeDistill } from './cache.js';
+import { writeFinancials, writeNews, writeMarketSignals, writeDistill, appendHistory } from './cache.js';
 import { distillHintsFor, loadDistillBundle } from './distill-service.js';
+import { computeAllMetrics } from './analysis/computeMetrics.js';
+import { historyPointFromData } from './history.js';
 import {
   MarketSignals, NewsItem, OptionsSignals, StockFinancials,
 } from './types.js';
@@ -16,6 +19,16 @@ export interface RefreshedData {
   financials:    StockFinancials;
   news:          NewsItem[];
   marketSignals: MarketSignals;
+}
+
+export interface RefreshOptions {
+  /**
+   * Pull the current Distill briefing along the way. On by default, because a
+   * user hitting "Refresh data" expects everything on the page to be current.
+   * The nightly pipeline turns it off: it runs Distill as its own step (which
+   * can also POST a refresh), and a symbol should reach Distill once per run.
+   */
+  includeDistill?: boolean;
 }
 
 /**
@@ -33,8 +46,9 @@ export interface RefreshedData {
  *   - EDGAR submissions
  *   - Reports (`report.md/.html/.pdf`) — those reflect the last full analysis run
  */
-export async function refreshStockData(rawSymbol: string): Promise<RefreshedData> {
+export async function refreshStockData(rawSymbol: string, opts: RefreshOptions = {}): Promise<RefreshedData> {
   const cfg = getConfig();
+  const includeDistill = opts.includeDistill !== false;
   const symbol = await resolveSymbol(rawSymbol);
 
   logger.step(`Refreshing data for ${symbol}…`);
@@ -65,7 +79,7 @@ export async function refreshStockData(rawSymbol: string): Promise<RefreshedData
   // Distill briefings (best effort — non-fatal). Always-on when the key is
   // configured; admins publish briefings on Distill's own schedule, so a
   // header-refresh just pulls whatever's newest from the upstream corpus.
-  if (cfg.distillApiKey) {
+  if (includeDistill && cfg.distillApiKey) {
     try {
       const distill = await loadDistillBundle(
         cfg.cacheDir,
@@ -81,8 +95,9 @@ export async function refreshStockData(rawSymbol: string): Promise<RefreshedData
   }
 
   // Macro context (SPY, sector ETF, yield curve, FX) + options + technicals.
-  // Rates fetched purely so we re-validate the FRED feed; not cached separately.
-  await (cfg.fredApiKey ? getMarketRates(cfg.fredApiKey).catch(() => null) : Promise.resolve(null));
+  // Rates are also what the valuation models discount with, so the same fetch
+  // that re-validates the FRED feed feeds the composite recorded below.
+  const marketRates = await (cfg.fredApiKey ? getMarketRates(cfg.fredApiKey).catch(() => null) : Promise.resolve(null));
   const [macro, optionsRaw] = await Promise.all([
     getMacroBundle(bundle.financials.sector, cfg.fredApiKey ?? null),
     getOptionsSignals({
@@ -108,6 +123,18 @@ export async function refreshStockData(rawSymbol: string): Promise<RefreshedData
     macro:     macro.context,
   };
   writeMarketSignals(cfg.cacheDir, symbol, marketSignals);
+
+  // Record today's market numbers. Peer medians are fetched for this alone —
+  // without them the composite would drop its peer-multiples contributor and
+  // the recorded series wouldn't line up with what the UI shows.
+  const sectorMedians = cfg.finnhubApiKey
+    ? await getSectorMediansCached(cfg.cacheDir, symbol, cfg.finnhubApiKey)
+    : null;
+  appendHistory(
+    cfg.cacheDir,
+    symbol,
+    historyPointFromData(bundle.financials, computeAllMetrics(bundle.financials, marketRates, sectorMedians)),
+  );
 
   logger.success(`Data refreshed for ${symbol}`);
   return { symbol, financials: bundle.financials, news, marketSignals };

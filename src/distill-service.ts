@@ -16,9 +16,10 @@
  */
 
 import { logger } from './utils/logger.js';
-import { clearDistillEntity, readDistillEntity, writeDistillEntity } from './cache.js';
+import { clearDistillEntity, readDistill, readDistillEntity, writeDistill, writeDistillEntity } from './cache.js';
 import {
   DistillBundle,
+  DistillCacheState,
   DistillRefreshResult,
   fetchDistillBriefings,
   triggerDistillRefresh,
@@ -261,4 +262,62 @@ export async function refreshDistillBriefing(
   const { value, entity } = await withResolvedEntity(cacheDir, hints, apiKey, baseUrl, (e) =>
     triggerDistillRefresh(hints.symbol, e, apiKey, baseUrl, briefingTypeId));
   return { ...value, entity };
+}
+
+/** How a symbol's briefing gets brought up to date. */
+export type DistillSyncMode =
+  /** POST /refresh — drains upstream and may generate a briefing (costs LLM budget there). */
+  | 'refresh'
+  /** GET /briefings — pulls what is already published (free). */
+  | 'fetch';
+
+export interface DistillSyncResult {
+  bundle:         DistillBundle;
+  mode:           DistillSyncMode;
+  /** Only set for `refresh`; a plain fetch has no cache-state header. */
+  cacheState:     DistillCacheState | null;
+  distillCostUsd: number;
+}
+
+/**
+ * Bring a symbol's cached briefing up to date and write it. Shared by the
+ * manual Refresh button and the nightly job so both merge and persist the same
+ * way — in particular, an empty pool keeps the briefing already on disk rather
+ * than blanking established context over a transient upstream miss.
+ */
+export async function syncDistillBriefing(
+  cacheDir: string,
+  hints: DistillEntityHints,
+  apiKey: string,
+  baseUrl: string,
+  briefingTypeId: string | undefined,
+  mode: DistillSyncMode,
+): Promise<DistillSyncResult> {
+  if (mode === 'fetch') {
+    const bundle = await loadDistillBundle(cacheDir, hints, apiKey, baseUrl, briefingTypeId);
+    const prior = readDistill(cacheDir, hints.symbol);
+    const merged: DistillBundle = {
+      ...bundle,
+      briefing: bundle.briefing ?? prior?.briefing ?? null,
+    };
+    writeDistill(cacheDir, hints.symbol, merged);
+    return { bundle: merged, mode, cacheState: null, distillCostUsd: 0 };
+  }
+
+  const result = await refreshDistillBriefing(cacheDir, hints, apiKey, baseUrl, briefingTypeId);
+  const prior = readDistill(cacheDir, hints.symbol);
+  const merged: DistillBundle = {
+    ticker:    hints.symbol,
+    baseUrl,
+    entity:    result.entity,
+    briefing:  result.briefing ?? prior?.briefing ?? null,
+    fetchedAt: new Date().toISOString(),
+    lastRefresh: {
+      cacheState:     result.cacheState,
+      distillCostUsd: result.distillCostUsd,
+      refreshedAt:    result.refreshedAt,
+    },
+  };
+  writeDistill(cacheDir, hints.symbol, merged);
+  return { bundle: merged, mode, cacheState: result.cacheState, distillCostUsd: result.distillCostUsd };
 }

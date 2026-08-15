@@ -9,6 +9,7 @@ import { DistillBundle, DISTILL_FETCH_HASH } from './data/distill.js';
 // Type-only: keeps this module free of a runtime edge to the entity client
 // (which would close a cycle back through data/distill.ts).
 import type { DistillEntityRef } from './data/distill-entities.js';
+import { HistoryPoint, HISTORY_VERSION, mergeHistoryPoint } from './history.js';
 
 const FINANCIALS_TTL_MS    = 60 * 60 * 1000;       // 1 hour
 // Analyses do NOT expire on a clock — invalidation is purely hash-based:
@@ -52,6 +53,23 @@ export function symbolDir(rawDir: string, symbol: string): string {
     throw new Error(`Unsafe cache symbol: ${JSON.stringify(symbol)}`);
   }
   return dir;
+}
+
+/**
+ * Every symbol with cached financials, i.e. everything the app knows about.
+ * The presence of `financials.json` is the marker — a directory holding only a
+ * stray file is not a stock.
+ */
+export function listCachedSymbols(rawDir: string): string[] {
+  const root = resolveCacheRoot(rawDir);
+  if (!existsSync(root)) return [];
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(root, d.name, 'financials.json')))
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
 }
 
 /** Validate a hash-keyed cache filename component (analysis hashes are md5 hex). */
@@ -100,6 +118,16 @@ export function readFinancials(rawDir: string, symbol: string): StockFinancials 
   }
   logger.debug(`Financials cache hit for ${symbol} (${Math.round((Date.now() - entry.ts) / 60000)}m old)`);
   return entry.data;
+}
+
+/**
+ * Financials regardless of age or schema version — for consumers that only need
+ * slow-moving identity fields (company name, ISIN, sector) and would rather
+ * have a stale answer than none. Never use this where numbers matter.
+ */
+export function readFinancialsLax(rawDir: string, symbol: string): StockFinancials | null {
+  const file = join(symbolDir(rawDir, symbol), 'financials.json');
+  return readEntry<StockFinancials>(file)?.data ?? null;
 }
 
 export function writeFinancials(rawDir: string, symbol: string, data: StockFinancials): void {
@@ -445,5 +473,34 @@ export function clearDistillEntity(rawDir: string, symbol: string): void {
     if (existsSync(file)) unlinkSync(file);
   } catch (e) {
     logger.warn(`Could not clear Distill entity cache: ${(e as Error).message}`);
+  }
+}
+
+// ── History (append-only time series per symbol) ──────────────────────────────
+// No TTL and no staleness: this file IS the record of how a stock's numbers
+// moved. Only a version bump discards it, and that should be rare enough to
+// hurt — history is the one thing here that cannot be refetched.
+
+export function readHistory(rawDir: string, symbol: string): HistoryPoint[] {
+  const file = join(symbolDir(rawDir, symbol), 'history.json');
+  const entry = readEntry<HistoryPoint[]>(file);
+  if (!entry || entry.v !== HISTORY_VERSION) return [];
+  return Array.isArray(entry.data) ? entry.data : [];
+}
+
+/**
+ * Append one point, replacing a same-source point from the same day. Best
+ * effort by design: history is an observation of a run, never its purpose, so a
+ * failed write warns instead of failing the analysis that produced it.
+ */
+export function appendHistory(rawDir: string, symbol: string, point: HistoryPoint): void {
+  const dir = symbolDir(rawDir, symbol);
+  try {
+    ensureDir(dir);
+    const next = mergeHistoryPoint(readHistory(rawDir, symbol), point);
+    writeEntry(join(dir, 'history.json'), HISTORY_VERSION, next);
+    logger.debug(`History for ${symbol}: ${next.length} point(s) after ${point.source} write`);
+  } catch (e) {
+    logger.warn(`Could not write history for ${symbol}: ${(e as Error).message}`);
   }
 }

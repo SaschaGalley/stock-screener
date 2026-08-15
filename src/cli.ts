@@ -23,7 +23,9 @@ import {
   readDistill,       writeDistill,
   readSubmissions,   symbolDir,
   AnalysisFlagsKey, analysisHash,
+  appendHistory,
 } from './cache.js';
+import { historyPointFromAnalysis } from './history.js';
 import { fetchEdgarFilings } from './data/edgar.js';
 import { getMarketRates } from './data/fred.js';
 import { getMacroBundle } from './data/macro.js';
@@ -566,6 +568,11 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     llmAnalysis: llmAnalysis!, news,
     perplexity: perplexity ?? null,
   };
+
+  // Record where this stock stood today. A cache-served verdict still counts:
+  // the market numbers around it are fresh, and the series is per (source, day),
+  // so a re-open of the same analysis just refreshes today's point.
+  appendHistory(cfg.cacheDir, symbol, historyPointFromAnalysis(result));
 
   const meta: AnalysisRunMeta = {
     symbol,
