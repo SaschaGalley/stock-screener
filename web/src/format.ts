@@ -54,6 +54,24 @@ export function mosBgColor(mos: number | null | undefined): string {
   return 'bg-red-900 border-red-500';
 }
 
+export type RecommendationTone = 'positive' | 'neutral' | 'negative';
+
+/**
+ * Direction of a recommendation label — the single classifier every
+ * recommendation-coloured element derives from, so the badge and the score bar
+ * can never disagree about whether a verdict is bullish.
+ *
+ * STRONG is deliberately not a tone of its own: the word is already in the
+ * label, so strength is rendered as emphasis (see `recommendationColor`) rather
+ * than as a fourth colour.
+ */
+export function recommendationTone(rec: string): RecommendationTone {
+  const r = rec.toUpperCase();
+  if (r.includes('SELL')) return 'negative';
+  if (r.includes('BUY'))  return 'positive';
+  return 'neutral';   // HOLD
+}
+
 /**
  * Color for a recommendation badge.
  * Strong = filled (saturated foreground bg). Regular = outlined (tinted bg
@@ -61,11 +79,28 @@ export function mosBgColor(mos: number | null | undefined): string {
  * pattern carries the strength signal without needing extra theme vars.
  */
 export function recommendationColor(rec: string): string {
-  if (rec.includes('STRONG BUY'))  return 'bg-emerald-500 text-white';
-  if (rec.includes('BUY'))         return 'bg-emerald-900 text-emerald-400 border border-emerald-500';
-  if (rec.includes('STRONG SELL')) return 'bg-red-500 text-white';
-  if (rec.includes('SELL'))        return 'bg-red-900 text-red-400 border border-red-500';
-  return 'bg-amber-500 text-white';   // HOLD
+  const strong = rec.toUpperCase().includes('STRONG');
+  switch (recommendationTone(rec)) {
+    case 'positive':
+      return strong ? 'bg-emerald-500 text-white' : 'bg-emerald-900 text-emerald-400 border border-emerald-500';
+    case 'negative':
+      return strong ? 'bg-red-500 text-white' : 'bg-red-900 text-red-400 border border-red-500';
+    default:
+      return 'bg-amber-500 text-white';
+  }
+}
+
+/**
+ * Fill color for a recommendation-driven bar. Three tones only — the strong/
+ * regular distinction lives in the badge, so repeating it here would just add a
+ * shade the reader has to decode.
+ */
+export function recommendationBarColor(rec: string): string {
+  switch (recommendationTone(rec)) {
+    case 'positive': return 'bg-emerald-500';
+    case 'negative': return 'bg-red-500';
+    default:         return 'bg-amber-500';
+  }
 }
 
 export function relativeTime(iso: string | null | undefined): string {

@@ -1,5 +1,6 @@
 import type { CompositeFairValue } from '../types';
-import { fmtPrice, fmtSignedPct, mosColor, mosBgColor, recommendationColor } from '../format';
+import { fmtPrice, fmtSignedPct, mosColor, mosBgColor, recommendationBarColor } from '../format';
+import RecommendationBadge from './RecommendationBadge';
 
 interface Props {
   price: number;
@@ -39,11 +40,9 @@ export default function VerdictHero({ price, composite, llm, analyst }: Props) {
         {llm ? (
           <div className="flex h-full flex-col">
             <div className="flex items-center gap-3">
-              <span className={`rounded px-2.5 py-1 text-xs font-bold ${recommendationColor(llm.recommendation)}`}>
-                {llm.recommendation}
-              </span>
+              <RecommendationBadge rec={llm.recommendation} />
               <div className="flex items-center gap-1">
-                <ScoreBar score={llm.score} />
+                <ScoreBar score={llm.score} recommendation={llm.recommendation} />
                 <span className="ml-1 font-mono text-sm font-semibold text-ink-100">{llm.score}/10</span>
               </div>
             </div>
@@ -165,18 +164,21 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ScoreBar({ score }: { score: number }) {
+/**
+ * Ten segments filled to the score, coloured by the recommendation.
+ *
+ * The colour deliberately does NOT come from the score: the two are separate
+ * LLM outputs with no enforced relationship, so a score-derived colour could
+ * contradict the badge right next to it (a BUY at 6.8 rendering amber). One
+ * rounding, one colour source — the bar can only ever restate the verdict.
+ */
+function ScoreBar({ score, recommendation }: { score: number; recommendation: string }) {
+  const filled = Math.round(score);
+  const fill   = recommendationBarColor(recommendation);
   return (
     <div className="flex gap-0.5">
       {Array.from({ length: 10 }).map((_, i) => (
-        <div
-          key={i}
-          className={`h-3 w-1.5 rounded-sm ${
-            i < Math.round(score)
-              ? score >= 7 ? 'bg-emerald-500' : score >= 4 ? 'bg-amber-500' : 'bg-red-500'
-              : 'bg-ink-700'
-          }`}
-        />
+        <div key={i} className={`h-3 w-1.5 rounded-sm ${i < filled ? fill : 'bg-ink-700'}`} />
       ))}
     </div>
   );
