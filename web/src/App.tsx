@@ -220,6 +220,19 @@ export default function App() {
     closeStreamRef.current = close;
   }
 
+  /**
+   * Add a stock: data only. The user lands on it with the numbers filled in and
+   * no verdict, and starts the LLM run themselves from the settings sidebar —
+   * so "let me look at this ticker" never turns into an unasked-for API bill.
+   */
+  const addStock = useCallback(async (input: string) => {
+    setError(null);
+    const { symbol } = await api.addStock(input);
+    await reloadStockList();
+    setSelected(symbol);
+    setRefreshTick((t) => t + 1);
+  }, [reloadStockList, setSelected]);
+
   // Auto-close the stock drawer after picking a symbol on mobile.
   const handleSelectAndClose = useCallback((s: string) => {
     handleSelectSymbol(s);
@@ -316,18 +329,15 @@ export default function App() {
           ) : (
             <div className="flex flex-1 items-center justify-center p-8 text-center text-ink-400">
               <div>
-                <p className="mb-2 text-lg font-semibold text-ink-200">Pick a stock from the sidebar</p>
+                <p className="mb-2 text-lg font-semibold text-ink-200">Aktie aus der Liste wählen</p>
                 <p className="text-sm">
-                  or analyze a new one below — type a ticker (NVDA) or company name (Siemens Energy).
+                  oder unten eine neue hinzufügen — Ticker (NVDA) oder Firmenname (Siemens Energy).
+                  Das holt zunächst nur die Daten; die Analyse startest du danach rechts.
                 </p>
               </div>
             </div>
           )}
-          <AnalyzeForm
-            settings={settings}
-            loading={loading}
-            onAnalyze={startAnalyze}
-          />
+          <AnalyzeForm onAdd={addStock} analyzing={loading} />
         </main>
 
         {/* Settings sidebar — slide-in drawer on mobile, regular column on lg+ */}

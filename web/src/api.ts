@@ -54,6 +54,17 @@ export const api = {
       method: 'DELETE',
     }),
 
+  /**
+   * Add a stock: resolve ticker or company name, fetch the data layer, done.
+   * No LLM call — analysing is a separate, explicit step.
+   */
+  addStock: (input: string) =>
+    jsonFetch<{ ok: boolean; symbol: string; summary: StockSummary | null }>(`${BASE}/stocks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input }),
+    }),
+
   /** Force-refresh raw data (Yahoo + Finnhub + FRED + macro). No LLM call. */
   refreshData: (symbol: string) =>
     jsonFetch<{ ok: boolean; symbol: string }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/refresh-data`, {

@@ -410,6 +410,36 @@ export function createApp() {
     res.json({ stocks: summaries });
   });
 
+  // ── POST /api/stocks ───────────────────────────────────────────────────────
+  // Add a stock without analysing it: resolve the input to a ticker, fetch the
+  // data layer, done. Adding and analysing are separate decisions — the first
+  // is free and fast, the second costs an LLM call, so the UI must not be able
+  // to trigger the second by doing the first.
+  app.post('/api/stocks', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { input } = req.body as { input?: string };
+      if (!input || typeof input !== 'string' || !input.trim()) {
+        res.status(400).json({ error: '`input` (symbol or company name) required' });
+        return;
+      }
+      const raw = input.trim();
+
+      // A company name has to go through Yahoo's search first; a ticker-shaped
+      // input is handed straight to the refresh, which resolves it anyway.
+      const symbol = looksLikeSymbol(raw) ? raw.toUpperCase() : await searchByQuery(raw);
+      logger.info(`Add stock: "${raw}" → ${symbol}`);
+
+      const data = await refreshStockData(symbol);
+      res.status(201).json({
+        ok:      true,
+        symbol:  data.symbol,
+        summary: buildStockSummary(cacheDir, data.symbol),
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // ── POST /api/stocks/:symbol/refresh-data ──────────────────────────────────
   // Force-refresh the data layer (Yahoo + Finnhub + FRED + macro + technicals)
   // for a symbol without touching cached LLM analyses, Perplexity, or reports.
