@@ -326,3 +326,123 @@ export interface Settings {
 export function searchesKey(searches: SearchChoice[]): string {
   return searches.length === 0 ? 'none' : [...searches].sort().join(',');
 }
+
+// ─── Overview tab ────────────────────────────────────────────────────────────
+
+/** One row of GET /api/overview — already ranked by verdict score server-side. */
+export interface OverviewRow {
+  symbol:       string;
+  companyName:  string;
+  sector:       string | null;
+  logoDomain:   string | null;
+  price:        number | null;
+  marketCap:    number | null;
+  currency:     string | null;
+  aiScore:            number | null;
+  recommendation:     string | null;
+  verdictAt:          string | null;
+  verdictModel:       string | null;
+  fairValueEstimate:  string | null;
+  targetMean:         number | null;
+  targetUpsidePct:    number | null;
+  compositeFairValue: number | null;
+  compositeUpsidePct: number | null;
+  /** Oldest first — the sparkline series. */
+  scoreHistory:  { at: string; score: number }[];
+  scoreDelta:    number | null;
+  analysisCount: number;
+  dataAgeHours:  number | null;
+  watched:       boolean;
+}
+
+/** One recorded point of a symbol's history (GET /api/stocks/:symbol/history). */
+export interface HistoryPoint {
+  at:        string;
+  source:    'analysis' | 'data';
+  price:     number | null;
+  marketCap: number | null;
+  peRatio:   number | null;
+  targetMean:      number | null;
+  targetUpsidePct: number | null;
+  compositeFairValue: number | null;
+  compositeUpsidePct: number | null;
+  aiScore:           number | null;
+  recommendation:    string | null;
+  fairValueEstimate: string | null;
+  model:             string | null;
+}
+
+// ─── Administration ──────────────────────────────────────────────────────────
+
+export type DistillMode = 'refresh' | 'fetch';
+
+/**
+ * Mirror of the server's AppConfig. Defaults deliberately live only on the
+ * server — the admin page edits what GET /api/config handed it, so there is no
+ * second copy of "midnight, 5 days, terra" to drift.
+ */
+export interface AppConfig {
+  schedule: {
+    enabled:  boolean;
+    cron:     string;
+    timezone: string;
+  };
+  steps: {
+    data:    { enabled: boolean };
+    distill: { enabled: boolean; mode: DistillMode };
+    analysis: {
+      enabled:    boolean;
+      maxAgeDays: number;
+      model:      string;
+      search:     string[];
+      pplx:       'sonar' | 'sonar-pro' | null;
+    };
+  };
+  watchlist: Record<string, boolean>;
+}
+
+export interface ConfigResponse {
+  config:  AppConfig;
+  symbols: { symbol: string; watched: boolean; companyName: string }[];
+  keys:    Record<string, boolean>;
+  cacheDir:      string;
+  distillApiUrl: string;
+}
+
+export type JobStep = 'data' | 'distill' | 'analysis';
+export type StepStatus = 'ok' | 'skipped' | 'failed';
+
+export interface JobStepResult {
+  step:   JobStep;
+  status: StepStatus;
+  detail: string;
+  ms:     number;
+}
+
+export interface JobSymbolResult {
+  symbol: string;
+  steps:  JobStepResult[];
+  ms:     number;
+}
+
+export interface JobRun {
+  id:            string;
+  trigger:       'cron' | 'manual';
+  startedAt:     string;
+  finishedAt:    string | null;
+  status:        'running' | 'ok' | 'partial' | 'failed' | 'stopped';
+  currentSymbol: string | null;
+  symbols:       JobSymbolResult[];
+  totals:        { symbols: number; data: number; distill: number; analysis: number; failed: number };
+  error?:        string;
+}
+
+export interface SchedulerStatus {
+  cron:     string | null;
+  timezone: string;
+  nextRun:  string | null;
+  running:  boolean;
+  current:  JobRun | null;
+  runs:     JobRun[];
+  watched:  string[];
+}

@@ -9,6 +9,11 @@ import type {
   StockBundle,
   ProgressEvent,
   DistillRefreshResponse,
+  OverviewRow,
+  HistoryPoint,
+  AppConfig,
+  ConfigResponse,
+  SchedulerStatus,
 } from './types';
 
 const BASE = '/api';
@@ -85,6 +90,42 @@ export const api = {
 
   getStock: (symbol: string) =>
     jsonFetch<StockBundle>(`${BASE}/stocks/${encodeURIComponent(symbol)}`),
+
+  /** Ranked overview rows — already sorted by verdict score on the server. */
+  listOverview: () =>
+    jsonFetch<{ rows: OverviewRow[] }>(`${BASE}/overview`),
+
+  getHistory: (symbol: string) =>
+    jsonFetch<{ symbol: string; points: HistoryPoint[] }>(
+      `${BASE}/stocks/${encodeURIComponent(symbol)}/history`,
+    ),
+
+  // ── Administration ────────────────────────────────────────────────────────
+
+  getConfig: () =>
+    jsonFetch<ConfigResponse>(`${BASE}/config`),
+
+  /** Whole-object write; the server reinstalls the cron before answering. */
+  saveConfig: (config: AppConfig) =>
+    jsonFetch<{ ok: boolean; config: AppConfig; scheduler: SchedulerStatus }>(`${BASE}/config`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(config),
+    }),
+
+  getJobs: () =>
+    jsonFetch<SchedulerStatus>(`${BASE}/jobs`),
+
+  /** Returns as soon as the run is claimed — poll getJobs() for progress. */
+  runJob: (symbols?: string[]) =>
+    jsonFetch<{ ok: boolean; started: boolean }>(`${BASE}/jobs/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(symbols?.length ? { symbols } : {}),
+    }),
+
+  stopJob: () =>
+    jsonFetch<{ ok: boolean; stopping: boolean }>(`${BASE}/jobs/stop`, { method: 'POST' }),
 
   listAnalyses: (symbol: string) =>
     jsonFetch<{ symbol: string; analyses: AnalysisManifestEntry[] }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/analyses`),

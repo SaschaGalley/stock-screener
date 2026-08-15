@@ -5,6 +5,9 @@ import AnalyzeForm from './components/AnalyzeForm';
 import SettingsSidebar from './components/SettingsSidebar';
 import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
+import Toolbar, { type ViewName } from './components/Toolbar';
+import OverviewPage from './pages/OverviewPage';
+import AdminPage from './pages/AdminPage';
 import type { Settings, StockSummary, ProgressEvent, SearchChoice } from './types';
 import { DEFAULT_MODEL_ID, resolveModelId } from '../../src/models';
 
@@ -14,14 +17,37 @@ const DEFAULT_SETTINGS: Settings = {
   pplx:     null,
 };
 
-// Hash-based routing: `#AAPL` → selected = 'AAPL'. Survives reload, supports
-// browser back/forward, no server config needed (works in dev + prod).
-function readSymbolFromHash(): string | null {
-  const h = window.location.hash.replace(/^#\/?/, '').toUpperCase();
-  return h || null;
+/**
+ * Hash routing. The tabs made the hash carry two things — which view, and which
+ * symbol the analysis view is on — so it is now `#/overview`, `#/admin` or
+ * `#/stock/AAPL`. Bare `#AAPL` still resolves to the analysis view: those links
+ * are in people's bookmarks and history, and honouring them costs one branch.
+ */
+interface RouteState {
+  view:   ViewName;
+  symbol: string | null;
 }
-function writeSymbolToHash(symbol: string | null): void {
-  const next = symbol ? `#${symbol}` : window.location.pathname + window.location.search;
+
+function readRoute(): RouteState {
+  const raw = window.location.hash.replace(/^#\/?/, '');
+  if (!raw) return { view: 'analysis', symbol: null };
+  const [head, tail] = raw.split('/');
+  const key = head.toLowerCase();
+  if (key === 'overview') return { view: 'overview', symbol: null };
+  if (key === 'admin')    return { view: 'admin', symbol: null };
+  if (key === 'stock')    return { view: 'analysis', symbol: tail ? tail.toUpperCase() : null };
+  return { view: 'analysis', symbol: raw.toUpperCase() };   // legacy `#AAPL`
+}
+
+function routeToHash(route: RouteState): string {
+  if (route.view === 'overview') return '#/overview';
+  if (route.view === 'admin')    return '#/admin';
+  return route.symbol ? `#/stock/${route.symbol}` : '';
+}
+
+function writeRoute(route: RouteState): void {
+  const hash = routeToHash(route);
+  const next = hash || window.location.pathname + window.location.search;
   // Compare against the FULL current URL. The old guard compared `next` against
   // the very expression it was derived from in the clear case, so it could
   // never write — a deleted/deselected stock's hash was never removed and
@@ -34,7 +60,8 @@ function writeSymbolToHash(symbol: string | null): void {
 
 export default function App() {
   const [stocks, setStocks] = useState<StockSummary[]>([]);
-  const [selected, setSelectedRaw] = useState<string | null>(() => readSymbolFromHash());
+  const [route, setRoute] = useState<RouteState>(() => readRoute());
+  const [selected, setSelectedRaw] = useState<string | null>(() => readRoute().symbol);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,15 +80,33 @@ export default function App() {
   // is irrelevant.
   const [mobileMenu, setMobileMenu] = useState<'stocks' | 'settings' | null>(null);
 
-  // Wrap setSelected to keep URL hash in sync
+  // Selecting a symbol always means "show it" — from the overview table too, so
+  // a click there lands on the analysis tab rather than silently changing state
+  // behind the current view.
   const setSelected = useCallback((s: string | null) => {
     setSelectedRaw(s);
-    writeSymbolToHash(s);
+    setRoute((prev) => {
+      const next: RouteState = { view: s ? 'analysis' : prev.view, symbol: s };
+      writeRoute(next);
+      return next;
+    });
+  }, []);
+
+  const navigate = useCallback((view: ViewName) => {
+    setRoute((prev) => {
+      const next: RouteState = { view, symbol: prev.symbol };
+      writeRoute(next);
+      return next;
+    });
   }, []);
 
   // React to back/forward navigation
   useEffect(() => {
-    const onHashChange = () => setSelectedRaw(readSymbolFromHash());
+    const onHashChange = () => {
+      const next = readRoute();
+      setRoute(next);
+      if (next.symbol) setSelectedRaw(next.symbol);
+    };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
@@ -181,25 +226,34 @@ export default function App() {
     setMobileMenu(null);
   }, [handleSelectSymbol]);
 
+  const isAnalysis = route.view === 'analysis';
+
   return (
     <div className="flex h-full flex-col bg-ink-950 text-ink-100">
-      {/* Mobile-only top bar with sidebar toggles. Hidden on lg+ where both
-          sidebars are always visible in the flex flow. */}
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-ink-700 bg-ink-900 px-3 py-2 lg:hidden">
-        <button
-          onClick={() => setMobileMenu(mobileMenu === 'stocks' ? null : 'stocks')}
-          className="rounded p-1.5 text-lg leading-none text-ink-200 hover:bg-ink-800"
-          aria-label="Toggle stock list"
-        >☰</button>
-        <span className="truncate font-mono text-xs text-ink-300">
-          {selected ?? 'pick a stock below'}
-        </span>
-        <button
-          onClick={() => setMobileMenu(mobileMenu === 'settings' ? null : 'settings')}
-          className="rounded p-1.5 text-base leading-none text-ink-200 hover:bg-ink-800"
-          aria-label="Toggle settings"
-        >⚙</button>
-      </header>
+      {/* Tabs, plus the mobile sidebar toggles that used to be their own bar.
+          The drawer buttons only exist below lg and only for the analysis view —
+          the other tabs have no side panels to open. */}
+      <Toolbar
+        view={route.view}
+        onNavigate={navigate}
+        left={isAnalysis ? (
+          <button
+            onClick={() => setMobileMenu(mobileMenu === 'stocks' ? null : 'stocks')}
+            className="rounded p-1.5 text-lg leading-none text-ink-200 hover:bg-ink-800 lg:hidden"
+            aria-label="Aktienliste ein-/ausblenden"
+          >☰</button>
+        ) : null}
+        right={isAnalysis ? (
+          <button
+            onClick={() => setMobileMenu(mobileMenu === 'settings' ? null : 'settings')}
+            className="rounded p-1.5 text-base leading-none text-ink-200 hover:bg-ink-800 lg:hidden"
+            aria-label="Einstellungen ein-/ausblenden"
+          >⚙</button>
+        ) : null}
+        status={selected && isAnalysis ? (
+          <span className="hidden truncate font-mono text-xs text-ink-500 sm:inline">{selected}</span>
+        ) : null}
+      />
 
       {/* Backdrop while a mobile drawer is open. Clicking it closes the drawer. */}
       {mobileMenu && (
@@ -210,7 +264,17 @@ export default function App() {
         />
       )}
 
-      <div className="flex flex-1 overflow-hidden">
+      {route.view === 'overview' && (
+        <OverviewPage onSelect={handleSelectSymbol} refreshKey={refreshTick} />
+      )}
+
+      {route.view === 'admin' && <AdminPage />}
+
+      {/* The analysis view is hidden rather than unmounted: an analysis run can
+          take minutes, and switching to the overview mid-run must not tear down
+          its SSE stream and lose the progress. The other two tabs are cheap to
+          rebuild, so they mount and unmount normally. */}
+      <div className={`flex flex-1 overflow-hidden ${isAnalysis ? '' : 'hidden'}`}>
         {/* Stock sidebar — slide-in drawer on mobile, regular column on lg+ */}
         <div
           className={`fixed inset-y-0 left-0 z-40 transition-transform duration-200 ease-out
