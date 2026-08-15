@@ -358,6 +358,37 @@ exactly one data point and one analysis point per day, while hitting Refresh ten
 times in an afternoon does not distort the series. The Übersicht sparkline reads
 from it, and `GET /api/stocks/:symbol/history` returns it raw.
 
+## Deployment (Coolify / Docker)
+
+One container: the Express API also serves the built SPA, so there is a single
+image, a single port and a single volume.
+
+```bash
+docker compose up -d --build          # http://localhost:4317
+```
+
+In **Coolify**: new resource → *Docker Compose* (or *Dockerfile*) → point it at
+this repository. Set the port to `4317`, add your API keys under *Environment
+Variables*, and mount a persistent volume at **`/data`** — that path is
+`CACHE_DIR`, and it holds the stock caches, the analyses, the recorded history,
+`app-config.json` and `job-runs.json`.
+
+Notes that matter in production:
+
+- **Keep it always-on.** The scheduler runs inside the process; a container that
+  scales to zero has no cron.
+- **Health check** is `GET /api/health`. It reads the process clock and nothing
+  else, so a slow Yahoo or a two-hour pipeline run can never trigger a restart
+  loop.
+- **Timezone**: cron expressions are interpreted in the zone stored in
+  `app-config.json` (`Europe/Berlin` by default); `tzdata` is installed in the
+  image so DST switches are handled.
+- **Volume ownership**: the container runs as the unprivileged `node` user
+  (uid 1000). A named volume inherits ownership from the image and just works; a
+  bind mount keeps the host's, so `chown 1000:1000` it first.
+- **Secrets** stay in the environment. The admin page only ever reports whether a
+  key is present — values are never sent to the browser.
+
 ## Distill entity resolution
 
 Distill addresses entities by opaque UUID (`6d59e35b-…`, handle `company:microsoft`).

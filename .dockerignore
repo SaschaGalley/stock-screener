@@ -1,0 +1,22 @@
+# Build inputs only — everything here is either rebuilt in the image, secret,
+# or host-specific.
+node_modules
+web/node_modules
+dist
+web/dist
+.git
+.gitignore
+.env
+*.env.local
+.cache
+*.log
+.DS_Store
+.claude
+.serena
+tsconfig.tsbuildinfo
+web/tsconfig.tsbuildinfo
+pnpm-lock.yaml
+pnpm-workspace.yaml
+Dockerfile
+docker-compose.yml
+README.md
