@@ -38,19 +38,46 @@ export interface MarketRates {
 
 const FALLBACK: MarketRates = { riskFreeRate: 0.045, aaaBondYield: 0.05 };
 
+/**
+ * Process-level memo. These are daily series — refetching them per HTTP request
+ * bought nothing but latency, and every stock the web UI opens went through
+ * here. In-flight requests are shared too, so N concurrent openers issue one
+ * pair of FRED calls, not N.
+ *
+ * Memory only, deliberately: two numbers are not worth a cache file, and a
+ * restart paying ~300ms once is cheaper than reasoning about a stale one.
+ */
+const RATES_TTL_MS = 60 * 60 * 1000;
+let ratesCache: { at: number; rates: MarketRates } | null = null;
+let ratesInFlight: Promise<MarketRates> | null = null;
+
 export async function getMarketRates(apiKey: string): Promise<MarketRates> {
-  const [rfr, aaa] = await Promise.all([
-    fetchLatestDecimal('DGS10', apiKey),
-    fetchLatestDecimal('DAAA', apiKey),
-  ]);
+  if (ratesCache && Date.now() - ratesCache.at < RATES_TTL_MS) return ratesCache.rates;
+  if (ratesInFlight) return ratesInFlight;
 
-  const rates: MarketRates = {
-    riskFreeRate: rfr ?? FALLBACK.riskFreeRate,
-    aaaBondYield: aaa ?? FALLBACK.aaaBondYield,
-  };
+  ratesInFlight = (async () => {
+    const [rfr, aaa] = await Promise.all([
+      fetchLatestDecimal('DGS10', apiKey),
+      fetchLatestDecimal('DAAA', apiKey),
+    ]);
 
-  logger.debug(`FRED rates — 10Y Treasury: ${(rates.riskFreeRate * 100).toFixed(2)}%, AAA: ${(rates.aaaBondYield * 100).toFixed(2)}%`);
-  return rates;
+    const rates: MarketRates = {
+      riskFreeRate: rfr ?? FALLBACK.riskFreeRate,
+      aaaBondYield: aaa ?? FALLBACK.aaaBondYield,
+    };
+
+    logger.debug(`FRED rates — 10Y Treasury: ${(rates.riskFreeRate * 100).toFixed(2)}%, AAA: ${(rates.aaaBondYield * 100).toFixed(2)}%`);
+    ratesCache = { at: Date.now(), rates };
+    return rates;
+  })();
+
+  try {
+    return await ratesInFlight;
+  } finally {
+    // Cleared on failure too — a transient FRED outage must not pin the app to
+    // the fallback constants for an hour.
+    ratesInFlight = null;
+  }
 }
 
 export interface MacroSpreads {

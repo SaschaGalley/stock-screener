@@ -6,7 +6,8 @@ import chalk from 'chalk';
 import { getConfig, requireApiKey } from './config.js';
 import { logger } from './utils/logger.js';
 import { getFinancials, getOptionsSignals, resolveSymbol, searchByQuery } from './data/yfinance.js';
-import { getNews, getBasicFinancials, getSectorMedians } from './data/finnhub.js';
+import { getNews, getBasicFinancials } from './data/finnhub.js';
+import { getSectorMediansCached } from './sector-medians.js';
 import { fmtBig } from './analysis/metrics.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { computeTechnicals, DailyBar } from './analysis/technical.js';
@@ -341,7 +342,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       ? getMarketRates(cfg.fredApiKey)
       : Promise.resolve(null),
     cfg.finnhubApiKey
-      ? getSectorMedians(symbol, cfg.finnhubApiKey).catch(() => null)
+      ? getSectorMediansCached(cfg.cacheDir, symbol, cfg.finnhubApiKey)
       : Promise.resolve(null),
     usePplx && !perplexity
       ? fetchPerplexity(symbol, financials.companyName, requireApiKey('perplexity'), pplxModel)

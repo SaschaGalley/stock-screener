@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rename
 import { join, isAbsolute, resolve, relative } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
-import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem, SearchTrace } from './types.js';
+import { StockFinancials, LLMAnalysis, MarketSignals, NewsItem, SearchTrace, SectorMedians } from './types.js';
 import { logger } from './utils/logger.js';
 import { PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
 import { DistillBundle, DISTILL_FETCH_HASH } from './data/distill.js';
@@ -342,6 +342,37 @@ export function writePerplexity(rawDir: string, symbol: string, data: Perplexity
     logger.debug(`Cached Perplexity context for ${symbol} (hash ${PERPLEXITY_PROMPT_HASH})`);
   } catch (e) {
     logger.warn(`Could not write Perplexity cache: ${(e as Error).message}`);
+  }
+}
+
+// ── Sector medians (Finnhub peer group) ──────────────────────────────────────
+// The single most expensive read in the app: one peers call plus up to eight
+// per-peer metric calls, i.e. nine requests against a 60/min free tier — paid
+// on every stock the web UI opened. Peer medians move on the timescale of
+// quarterly reports, so a day-long TTL costs nothing in accuracy.
+
+const SECTOR_MEDIANS_TTL_MS = 24 * 60 * 60 * 1000;
+const SECTOR_MEDIANS_VERSION = 1;
+
+export function readSectorMedians(rawDir: string, symbol: string): SectorMedians | null {
+  const file = join(symbolDir(rawDir, symbol), 'sector-medians.json');
+  const entry = readEntry<SectorMedians>(file);
+  if (!entry || entry.v !== SECTOR_MEDIANS_VERSION) return null;
+  if (Date.now() - entry.ts > SECTOR_MEDIANS_TTL_MS) {
+    logger.debug(`Sector medians cache expired for ${symbol}`);
+    return null;
+  }
+  logger.debug(`Sector medians cache hit for ${symbol} (${Math.round((Date.now() - entry.ts) / 3600000)}h old)`);
+  return entry.data;
+}
+
+export function writeSectorMedians(rawDir: string, symbol: string, data: SectorMedians): void {
+  const dir = symbolDir(rawDir, symbol);
+  try {
+    ensureDir(dir);
+    writeEntry(join(dir, 'sector-medians.json'), SECTOR_MEDIANS_VERSION, data);
+  } catch (e) {
+    logger.warn(`Could not write sector medians cache: ${(e as Error).message}`);
   }
 }
 
