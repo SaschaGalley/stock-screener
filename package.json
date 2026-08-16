@@ -34,6 +34,7 @@
     "openai": "^4.60.0",
     "pg": "^8.23.0",
     "puppeteer-core": "^24.42.0",
+    "trading-signals": "^8.3.0",
     "yahoo-finance2": "^3.14.0",
     "zod": "^3.22.0"
   },

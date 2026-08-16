@@ -194,7 +194,9 @@ Pass `--search` without a value to auto-select the native search for the active 
 
 ## Technical signals gauge
 
-TradingView-style aggregation in `src/analysis/signals.ts`:
+Indicators come from [`trading-signals`](https://github.com/bennycode/trading-signals);
+`src/analysis/technical.ts` feeds it the daily bars and snapshots the latest value of each.
+TradingView-style aggregation on top of that in `src/analysis/signals.ts`:
 
 - **Moving averages** — SMA/EMA 10, 20, 50, 100, 200 vs price
 - **Oscillators** — RSI14, Stochastic %K/%D, MACD histogram, CCI20, Williams %R, momentum
@@ -255,7 +257,7 @@ src/
 │   ├── metrics.ts         19 valuation models
 │   ├── computeMetrics.ts  Orchestrates the bundle of models for the web GET
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
-│   └── technical.ts       SMA/EMA/RSI/MACD/Bollinger/Stoch/CCI computations
+│   └── technical.ts       SMA/EMA/RSI/MACD/Bollinger/Stoch/CCI via `trading-signals`
 ├── output/
 │   ├── prompt.ts          LLM prompt builder
 │   ├── markdown.ts        Terminal + report markdown
