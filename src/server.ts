@@ -175,7 +175,10 @@ function safeComposite(
 
 // ── App Setup ────────────────────────────────────────────────────────────────
 
-export function createApp() {
+// The return type is explicit rather than inferred: under pnpm's strict
+// node_modules layout, express's own type references a transitive package this
+// module has no path to, so the inferred type cannot be named (TS2742).
+export function createApp(): express.Express {
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '2mb' }));

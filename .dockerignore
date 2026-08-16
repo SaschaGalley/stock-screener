@@ -16,8 +16,9 @@ web/dist
 .serena
 tsconfig.tsbuildinfo
 web/tsconfig.tsbuildinfo
-pnpm-lock.yaml
-pnpm-workspace.yaml
+# pnpm-lock.yaml and pnpm-workspace.yaml are deliberately NOT ignored:
+# the build copies them before installing, which is what makes the
+# dependency layer cacheable and the install reproducible.
 Dockerfile
 docker-compose.yml
 README.md

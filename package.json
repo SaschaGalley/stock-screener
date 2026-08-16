@@ -2,6 +2,7 @@
   "name": "investment-cli",
   "version": "1.0.0",
   "description": "Fundamental stock analysis CLI with multiple LLM providers",
+  "packageManager": "pnpm@11.21.0",
   "type": "module",
   "bin": {
     "investment-cli": "./dist/cli.js"
@@ -12,9 +13,9 @@
     "start": "node dist/cli.js",
     "serve": "tsx src/server.ts",
     "serve:watch": "tsx watch src/server.ts",
-    "web": "concurrently -n api,web -c blue,green \"npm:serve:watch\" \"npm:web:dev\"",
-    "web:dev": "cd web && npm run dev",
-    "web:build": "cd web && npm run build",
+    "web": "concurrently -n api,web -c blue,green \"pnpm run serve:watch\" \"pnpm run web:dev\"",
+    "web:dev": "pnpm --filter stock-cli-web dev",
+    "web:build": "pnpm --filter stock-cli-web build",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/db/migrate-cli.ts",
     "backfill": "tsx src/db/backfill.ts",

@@ -12,15 +12,13 @@ Web mode  →  persistent local app: sidebar of cached stocks, flag toggling,
 
 ```bash
 git clone <repo> && cd stock-cli
-npm install
+corepack enable        # pins the pnpm version from package.json
+pnpm install           # installs the server and the web/ frontend together
 cp .env.example .env   # fill in your API keys
 ```
 
-The web frontend lives under `web/` and has its own dependencies:
-
-```bash
-cd web && npm install && cd ..
-```
+The frontend under `web/` is a workspace package, so one install covers both —
+there is no second step and one lockfile describes the whole tree.
 
 ### API Keys
 
@@ -48,7 +46,7 @@ things still stored as files), `LOG_LEVEL=info|debug|warn|error`.
 ## Web UI
 
 ```bash
-npm run web         # starts both API server + Vite dev server, hot-reload
+pnpm run web         # starts both API server + Vite dev server, hot-reload
 ```
 
 That alias runs `tsx watch src/server.ts` (port 3000) and `vite` (port 5173) in parallel via [concurrently](https://www.npmjs.com/package/concurrently). Open <http://localhost:5173>.
@@ -56,15 +54,15 @@ That alias runs `tsx watch src/server.ts` (port 3000) and `vite` (port 5173) in 
 Run them separately if you prefer:
 
 ```bash
-npm run serve:watch     # API on :3000 (auto-restarts on file changes)
-npm run web:dev         # Vite dev server on :5173 with HMR
+pnpm run serve:watch     # API on :3000 (auto-restarts on file changes)
+pnpm run web:dev         # Vite dev server on :5173 with HMR
 ```
 
 Production build:
 
 ```bash
-npm run web:build       # → web/dist/ static assets
-npm run serve           # API only — serve dist/ behind your own reverse proxy
+pnpm run web:build       # → web/dist/ static assets
+pnpm run serve           # API only — serve dist/ behind your own reverse proxy
 ```
 
 ### What the web UI does
@@ -334,9 +332,9 @@ report.md/.html/.pdf   # last full CLI analysis output (CLI only, regenerable)
 
 ```bash
 docker compose up -d postgres          # or point DATABASE_URL at an existing server
-npm run migrate                        # apply the schema, seed the catalogue
-npm run backfill -- --data-dir .cache --dry-run   # see what it would import
-npm run backfill -- --data-dir .cache
+pnpm run migrate                        # apply the schema, seed the catalogue
+pnpm run backfill --data-dir .cache --dry-run   # see what it would import
+pnpm run backfill --data-dir .cache
 ```
 
 Afterwards, point `DATA_DIR` at the old cache directory (`DATA_DIR=.cache`) so
@@ -467,12 +465,12 @@ Refresh button.
 ## Development
 
 ```bash
-npm run dev          # CLI watch mode (tsx)
-npm run serve:watch  # API server watch mode
-npm run web          # CLI server + Vite together
-npm run build        # compile TypeScript → dist/
-npm run web:build    # build the Vite bundle
-npm run typecheck    # type-check without emitting
+pnpm run dev          # CLI watch mode (tsx)
+pnpm run serve:watch  # API server watch mode
+pnpm run web          # CLI server + Vite together
+pnpm run build        # compile TypeScript → dist/
+pnpm run web:build    # build the Vite bundle
+pnpm run typecheck    # type-check without emitting
 ```
 
 ## License

@@ -1,2 +1,11 @@
+# Two packages, one lockfile: the server at the root and the SPA in web/.
+# They are genuinely coupled — web/src/types.ts imports server types across the
+# package boundary — so installing them together is what keeps the two dependency
+# trees resolvable from one `pnpm install`.
+packages:
+  - 'web'
+
+# pnpm blocks postinstall scripts unless a package is listed here. esbuild needs
+# its platform binary; nothing else in this tree does real work at install time.
 allowBuilds:
   esbuild: true

@@ -8,22 +8,34 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 
-# npm (not pnpm): package-lock.json is what the repository actually commits, so
-# a clean checkout can always reproduce this build.
-COPY package.json package-lock.json ./
-RUN npm ci
+# corepack installs the exact pnpm pinned in package.json's "packageManager",
+# so this image and a developer's machine resolve the same tree.
+RUN corepack enable
 
-# The web app is its own npm project with its own lockfile.
-COPY web/package.json web/package-lock.json ./web/
-RUN npm ci --prefix web
+# Manifests and the lockfile first: this layer only busts when a dependency
+# changes, not when a source file does. One workspace covers both packages, so
+# a single install populates the server and the SPA.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY web/package.json ./web/
+RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json ./
+COPY scripts ./scripts
 COPY src ./src
 COPY web ./web
 
 # Server → dist/, SPA → web/dist/. The SPA imports src/models.ts across the
 # package boundary, so both must be built from the same tree.
-RUN npm run build && npm run web:build
+RUN pnpm run build && pnpm run web:build
+
+# Production dependencies as a real directory tree. pnpm's normal layout is a
+# symlink farm pointing into a content-addressed store, which does not survive
+# a COPY into another stage; `pnpm deploy` resolves it into something that does.
+#
+# --legacy because the server depends on no workspace package (web/ is built
+# into static files, not imported at runtime), so there is nothing to inject and
+# pnpm 10+ otherwise refuses to deploy.
+RUN pnpm deploy --filter=investment-cli --prod --legacy /deploy
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime
@@ -34,9 +46,8 @@ ENV NODE_ENV=production
 # across the DST switch.
 RUN apk add --no-cache tzdata
 
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
+COPY --from=build /deploy/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/web/dist ./web/dist
 
