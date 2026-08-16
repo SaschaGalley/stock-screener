@@ -8,7 +8,7 @@
 
 import pg from 'pg';
 // Not just for the value: importing this module is what loads `.env`. Reading
-// process.env directly here meant `npm run migrate` never saw the file, because
+// process.env directly here meant `pnpm run migrate` never saw the file, because
 // nothing on that entry point's import path had pulled dotenv in.
 import { getConfig } from '../config.js';
 import { logger } from '../utils/logger.js';
@@ -110,7 +110,7 @@ export async function closePool(): Promise<void> {
  *
  * The app and Postgres start together under compose, and the app usually wins
  * the race. A healthcheck-based `depends_on` handles it there, but a plain
- * `docker compose up` or a local `npm run serve` against a just-started server
+ * `docker compose up` or a local `pnpm run serve` against a just-started server
  * has no such gate — retrying briefly is cheaper than a crash loop.
  */
 export async function waitForDatabase(attempts = 30, delayMs = 1000): Promise<void> {

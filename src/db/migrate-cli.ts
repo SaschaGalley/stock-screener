@@ -1,5 +1,5 @@
 /**
- * `npm run migrate` — apply pending migrations and sync the metric catalogue,
+ * `pnpm run migrate` — apply pending migrations and sync the metric catalogue,
  * then exit. The server does the same on boot; this exists for running it
  * against a database by hand, before a first backfill or after a schema change.
  */

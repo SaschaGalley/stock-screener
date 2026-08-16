@@ -15,7 +15,7 @@
  * Idempotent: snapshots and documents deduplicate on content hash, observations
  * upsert on (symbol, metric, timestamp). Running it twice changes nothing.
  *
- *   npm run backfill -- [--data-dir .cache] [--dry-run]
+ *   pnpm run backfill [--data-dir .cache] [--dry-run]
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
