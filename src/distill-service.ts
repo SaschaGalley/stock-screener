@@ -19,7 +19,8 @@ import { logger } from './utils/logger.js';
 // The mode vocabulary is the admin page's, so app-config owns it — this module
 // executes what was configured rather than declaring its own copy of the words.
 import type { DistillMode } from './app-config.js';
-import { clearDistillEntity, readDistill, readDistillEntity, writeDistill, writeDistillEntity } from './cache.js';
+import { clearDistillEntity, readDistillEntity, writeDistillEntity } from './db/admin.js';
+import { readDistillLax, writeDistill } from './db/store.js';
 import {
   DistillBundle,
   DistillCacheState,
@@ -72,21 +73,20 @@ function describeCandidates(candidates: DistillEntityHit[]): string {
  * briefing into the analysis prompt.
  */
 export async function resolveDistillEntityCached(
-  cacheDir: string,
   hints: DistillEntityHints,
   apiKey: string,
   baseUrl: string,
   opts: { force?: boolean } = {},
 ): Promise<DistillEntityRef> {
   if (!opts.force) {
-    const cached = readDistillEntity(cacheDir, hints.symbol, baseUrl);
+    const cached = await readDistillEntity(hints.symbol, baseUrl);
     if (cached) return cached;
   }
 
   const resolution = await resolveDistillEntity(hints, apiKey, baseUrl);
 
   if (resolution.status === 'resolved') {
-    writeDistillEntity(cacheDir, hints.symbol, resolution.entity);
+    await writeDistillEntity(hints.symbol, resolution.entity);
     return resolution.entity;
   }
 
@@ -128,7 +128,6 @@ type Revalidation =
  * used to work stops producing briefings.
  */
 async function revalidateEntity(
-  cacheDir: string,
   hints: DistillEntityHints,
   entity: DistillEntityRef,
   apiKey: string,
@@ -137,7 +136,7 @@ async function revalidateEntity(
   const detail = await getDistillEntity(entity.id, apiKey, baseUrl);
 
   if (!detail) {
-    clearDistillEntity(cacheDir, hints.symbol);
+    await clearDistillEntity(hints.symbol);
     return { status: 'gone' };
   }
 
@@ -150,7 +149,7 @@ async function revalidateEntity(
       displayName: detail.displayName || entity.displayName,
       resolvedAt:  new Date().toISOString(),
     };
-    writeDistillEntity(cacheDir, hints.symbol, merged);
+    await writeDistillEntity(hints.symbol, merged);
     logger.warn(`Distill entity ${entity.id} was merged into ${detail.id} (${merged.displayName}) — cache updated.`);
     return { status: 'replaced', entity: merged };
   }
@@ -171,37 +170,35 @@ async function revalidateEntity(
 
 /** Recover from a 404 on an id we sent: follow a merge, else resolve afresh. */
 async function recoverDistillEntity(
-  cacheDir: string,
   hints: DistillEntityHints,
   stale: DistillEntityRef,
   apiKey: string,
   baseUrl: string,
 ): Promise<DistillEntityRef> {
-  const check = await revalidateEntity(cacheDir, hints, stale, apiKey, baseUrl);
+  const check = await revalidateEntity(hints, stale, apiKey, baseUrl);
   if (check.status === 'replaced') return check.entity;
 
   // Either the id is unknown, or it looks healthy yet the call still rejected
   // it — in both cases the mapping is what we distrust, so drop it and resolve
   // from the identifiers again.
-  clearDistillEntity(cacheDir, hints.symbol);
-  return resolveDistillEntityCached(cacheDir, hints, apiKey, baseUrl, { force: true });
+  await clearDistillEntity(hints.symbol);
+  return resolveDistillEntityCached(hints, apiKey, baseUrl, { force: true });
 }
 
 /** Resolve, call, and — on a 404 for the id — re-resolve and retry exactly once. */
 async function withResolvedEntity<T>(
-  cacheDir: string,
   hints: DistillEntityHints,
   apiKey: string,
   baseUrl: string,
   call: (entity: DistillEntityRef) => Promise<T>,
 ): Promise<{ value: T; entity: DistillEntityRef }> {
-  const entity = await resolveDistillEntityCached(cacheDir, hints, apiKey, baseUrl);
+  const entity = await resolveDistillEntityCached(hints, apiKey, baseUrl);
   try {
     return { value: await call(entity), entity };
   } catch (e) {
     if (!(e instanceof DistillEntityGoneError)) throw e;
     logger.warn(`Distill returned 404 for ${hints.symbol} → ${entity.id}; re-resolving instead of retrying.`);
-    const recovered = await recoverDistillEntity(cacheDir, hints, entity, apiKey, baseUrl);
+    const recovered = await recoverDistillEntity(hints, entity, apiKey, baseUrl);
     // Single retry: if the freshly resolved id 404s too, the error propagates.
     return { value: await call(recovered), entity: recovered };
   }
@@ -218,7 +215,6 @@ async function withResolvedEntity<T>(
  * when there is no briefing to show.
  */
 export async function loadDistillBundle(
-  cacheDir: string,
   hints: DistillEntityHints,
   apiKey: string,
   baseUrl: string,
@@ -227,8 +223,8 @@ export async function loadDistillBundle(
   const fetchFor = (entity: DistillEntityRef) =>
     fetchDistillBriefings(hints.symbol, entity, apiKey, baseUrl, briefingTypeId);
 
-  const cached = readDistillEntity(cacheDir, hints.symbol, baseUrl);
-  const { value: bundle, entity } = await withResolvedEntity(cacheDir, hints, apiKey, baseUrl, fetchFor);
+  const cached = await readDistillEntity(hints.symbol, baseUrl);
+  const { value: bundle, entity } = await withResolvedEntity(hints, apiKey, baseUrl, fetchFor);
 
   // Only a mapping we took from disk can have gone stale behind our back; one
   // resolved in this call already reflects the registry.
@@ -236,7 +232,7 @@ export async function loadDistillBundle(
 
   let check: Revalidation;
   try {
-    check = await revalidateEntity(cacheDir, hints, entity, apiKey, baseUrl);
+    check = await revalidateEntity(hints, entity, apiKey, baseUrl);
   } catch (e) {
     // An inactive entity explains the emptiness — let that surface. A transport
     // hiccup during the check must not discard a valid (if empty) result.
@@ -249,20 +245,19 @@ export async function loadDistillBundle(
 
   const next = check.status === 'replaced'
     ? check.entity
-    : await resolveDistillEntityCached(cacheDir, hints, apiKey, baseUrl, { force: true });
+    : await resolveDistillEntityCached(hints, apiKey, baseUrl, { force: true });
   logger.warn(`Distill: ${hints.symbol} had no briefing under ${entity.id}; retrying with re-resolved ${next.id}.`);
   return fetchFor(next);
 }
 
 /** Trigger Distill's drain + (re)briefing for a symbol's entity. */
 export async function refreshDistillBriefing(
-  cacheDir: string,
   hints: DistillEntityHints,
   apiKey: string,
   baseUrl: string,
   briefingTypeId?: string,
 ): Promise<DistillRefreshResult & { entity: DistillEntityRef }> {
-  const { value, entity } = await withResolvedEntity(cacheDir, hints, apiKey, baseUrl, (e) =>
+  const { value, entity } = await withResolvedEntity(hints, apiKey, baseUrl, (e) =>
     triggerDistillRefresh(hints.symbol, e, apiKey, baseUrl, briefingTypeId));
   return { ...value, entity };
 }
@@ -282,7 +277,6 @@ export interface DistillSyncResult {
  * than blanking established context over a transient upstream miss.
  */
 export async function syncDistillBriefing(
-  cacheDir: string,
   hints: DistillEntityHints,
   apiKey: string,
   baseUrl: string,
@@ -290,18 +284,18 @@ export async function syncDistillBriefing(
   mode: DistillMode,
 ): Promise<DistillSyncResult> {
   if (mode === 'fetch') {
-    const bundle = await loadDistillBundle(cacheDir, hints, apiKey, baseUrl, briefingTypeId);
-    const prior = readDistill(cacheDir, hints.symbol);
+    const bundle = await loadDistillBundle(hints, apiKey, baseUrl, briefingTypeId);
+    const prior = await readDistillLax(hints.symbol);
     const merged: DistillBundle = {
       ...bundle,
       briefing: bundle.briefing ?? prior?.briefing ?? null,
     };
-    writeDistill(cacheDir, hints.symbol, merged);
+    await writeDistill(hints.symbol, merged);
     return { bundle: merged, mode, cacheState: null, distillCostUsd: 0 };
   }
 
-  const result = await refreshDistillBriefing(cacheDir, hints, apiKey, baseUrl, briefingTypeId);
-  const prior = readDistill(cacheDir, hints.symbol);
+  const result = await refreshDistillBriefing(hints, apiKey, baseUrl, briefingTypeId);
+  const prior = await readDistillLax(hints.symbol);
   const merged: DistillBundle = {
     ticker:    hints.symbol,
     baseUrl,
@@ -314,6 +308,6 @@ export async function syncDistillBriefing(
       refreshedAt:    result.refreshedAt,
     },
   };
-  writeDistill(cacheDir, hints.symbol, merged);
+  await writeDistill(hints.symbol, merged);
   return { bundle: merged, mode, cacheState: result.cacheState, distillCostUsd: result.distillCostUsd };
 }

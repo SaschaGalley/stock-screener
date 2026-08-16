@@ -6,21 +6,21 @@
  * settings a user turns knobs on: when the nightly pipeline runs, what each of
  * its steps does, and which symbols it covers.
  *
- * Stored as JSON next to the caches (`$CACHE_DIR/app-config.json`) rather than
- * in the repo: in a container it lives on the same persistent volume as the
- * data it governs, so a redeploy keeps both or loses both — never a schedule
- * pointing at a cache that isn't there.
+ * Stored as a single JSONB row in Postgres alongside the data it governs, so a
+ * redeploy keeps both or loses both — never a schedule pointing at data that
+ * isn't there.
  *
  * Every read repairs: unknown keys are dropped, invalid values fall back to the
- * default for that field only. A hand-edited file can degrade the setting it
+ * default for that field only. A hand-edited row can degrade the setting it
  * broke, never the whole server.
+ *
+ * The zod work stays here and the raw row access lives in `db/admin.ts`; that
+ * split is what keeps the database layer free of domain types.
  */
 
-import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
 import { z } from 'zod';
 import { logger } from './utils/logger.js';
-import { readJsonFile, resolveCacheRoot, writeJsonAtomic } from './cache.js';
+import { readSettingsJson, writeSettingsJson } from './db/admin.js';
 import { DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, resolveModelId } from './models.js';
 
 /** Cron field count we accept: standard 5-field (minute hour dom month dow). */
@@ -77,10 +77,6 @@ export type AppConfig = z.infer<typeof AppConfigSchema>;
 /** Parsing `{}` yields every default, so the defaults live in one place only. */
 export const DEFAULT_APP_CONFIG: AppConfig = AppConfigSchema.parse({});
 
-function configFile(cacheDir: string): string {
-  return join(resolveCacheRoot(cacheDir), 'app-config.json');
-}
-
 /**
  * Read the stored config, falling back to defaults per field.
  *
@@ -88,20 +84,14 @@ function configFile(cacheDir: string): string {
  * removed model) is replaced by its default and logged, so the scheduler keeps
  * running on a sane config instead of the server refusing to start.
  */
-export function readAppConfig(cacheDir: string): AppConfig {
-  const file = configFile(cacheDir);
-  if (!existsSync(file)) return DEFAULT_APP_CONFIG;
-
-  const raw = readJsonFile<unknown>(file);
-  if (raw === null) {
-    logger.warn('app-config.json is unreadable — using defaults.');
-    return DEFAULT_APP_CONFIG;
-  }
+export async function readAppConfig(): Promise<AppConfig> {
+  const raw = await readSettingsJson();
+  if (raw === null) return DEFAULT_APP_CONFIG;
 
   const parsed = AppConfigSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
 
-  logger.warn(`app-config.json has invalid fields — repairing: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`);
+  logger.warn(`Stored settings have invalid fields — repairing: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`);
   return repair(raw);
 }
 
@@ -124,14 +114,11 @@ function repair(raw: unknown): AppConfig {
   };
 }
 
-/** Persist a full config atomically. Returns what was actually written. */
-export function writeAppConfig(cacheDir: string, next: AppConfig): AppConfig {
+/** Persist a full config. Returns what was actually written. */
+export async function writeAppConfig(next: AppConfig): Promise<AppConfig> {
   const validated = AppConfigSchema.parse(next);
-  const root = resolveCacheRoot(cacheDir);
-  mkdirSync(root, { recursive: true });
-
-  writeJsonAtomic(configFile(cacheDir), validated);
-  logger.info(`app-config.json updated (schedule ${validated.schedule.enabled ? validated.schedule.cron : 'disabled'})`);
+  await writeSettingsJson(validated);
+  logger.info(`Settings updated (schedule ${validated.schedule.enabled ? validated.schedule.cron : 'disabled'})`);
   return validated;
 }
 

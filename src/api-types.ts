@@ -18,7 +18,7 @@
  */
 
 import type { StockFinancials, MarketSignals, NewsItem, SectorMedians, TechnicalSignals } from './types.js';
-import type { AnalysisManifestEntry } from './cache.js';
+import type { AnalysisManifestEntry } from './db/store.js';
 import type { ComputedMetrics } from './analysis/computeMetrics.js';
 import type { PerplexityContext } from './data/perplexity.js';
 import type { DistillBundle, DistillCacheState } from './data/distill.js';
@@ -63,6 +63,40 @@ export interface CacheStatus {
   marketSignals: CacheFreshness;
   /** `older-than-data` means the financials were refreshed after the analysis ran. */
   analysis:      CacheFreshness;
+}
+
+/** One entry of `GET /api/metrics` — the chart picker's data source. */
+export interface MetricCatalogEntry {
+  key:         string;
+  domain:      string;
+  label:       string;
+  unit:        string | null;
+  valueKind:   string;
+  description: string | null;
+}
+
+/** One point of a recorded series. */
+export interface SeriesPoint { at: string; value: number | null; text: string | null }
+
+/** `GET /api/stocks/:symbol/series` — one entry per requested metric key. */
+export interface MetricSeries {
+  key:    string;
+  label:  string;
+  unit:   string | null;
+  points: SeriesPoint[];
+}
+
+/** `GET /api/stocks/:symbol/documents/:kind` — a text output's change history. */
+export interface DocumentVersion<D = unknown> {
+  id:         number;
+  kind:       string;
+  variant:    string;
+  producedAt: string;
+  lastSeenAt: string;
+  model:      string | null;
+  content:    string;
+  data:       D | null;
+  costUsd:    number | null;
 }
 
 /** `GET /api/stocks/:symbol` — everything the detail view renders. */
@@ -129,7 +163,8 @@ export interface ConfigResponse {
   symbols: { symbol: string; watched: boolean; companyName: string }[];
   /** Presence only — key values never leave the server. */
   keys:    Record<string, boolean>;
-  cacheDir:      string;
+  /** Where the file-shaped leftovers live (EDGAR filings, generated reports). */
+  dataDir:       string;
   distillApiUrl: string;
 }
 

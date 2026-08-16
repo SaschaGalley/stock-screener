@@ -187,7 +187,7 @@ export default function AdminPage() {
       <div className="mx-auto max-w-5xl space-y-4 p-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-base font-semibold text-ink-100">Administration</h2>
-          <span className="text-[11px] text-ink-500">Cache: <span className="font-mono">{meta.cacheDir}</span></span>
+          <span className="text-[11px] text-ink-500">Dateien: <span className="font-mono">{meta.dataDir}</span></span>
           <div className="ml-auto flex items-center gap-2">
             {dirty && <span className="text-[11px] text-amber-400">ungespeicherte Änderungen</span>}
             <button

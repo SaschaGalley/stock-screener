@@ -2,10 +2,8 @@ import fetch from 'node-fetch';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { logger } from '../utils/logger.js';
-import {
-  FilingEntry, SubmissionsMeta,
-  writeSubmissions, writeSubmissionFile, getSubmissionsDir,
-} from '../cache.js';
+import { FilingEntry, SubmissionsMeta, writeSubmissions } from '../db/admin.js';
+import { getSubmissionsDir, writeSubmissionFile } from '../files.js';
 
 const EDGAR_BASE = 'https://data.sec.gov';
 const SEC_BASE   = 'https://www.sec.gov';
@@ -68,7 +66,7 @@ async function lookupCIK(symbol: string): Promise<{ cik: string; name: string } 
 
 export async function fetchEdgarFilings(
   symbol: string,
-  cacheDir: string,
+  dataDir: string,
 ): Promise<SubmissionsMeta | null> {
   logger.step('Looking up CIK in EDGAR...');
   const cikInfo = await lookupCIK(symbol);
@@ -115,7 +113,7 @@ export async function fetchEdgarFilings(
   logger.success(`Found ${filings.length} relevant filings`);
 
   // Download primary documents
-  const subDir = getSubmissionsDir(cacheDir, symbol);
+  const subDir = getSubmissionsDir(dataDir, symbol);
   const cikNum = parseInt(cikInfo.cik, 10);
   let downloaded = 0;
 
@@ -137,7 +135,7 @@ export async function fetchEdgarFilings(
     const content = await getText(url);
 
     if (content) {
-      writeSubmissionFile(cacheDir, symbol, localFile, content);
+      writeSubmissionFile(dataDir, symbol, localFile, content);
       filing.localFile = localFile;
       downloaded++;
     } else {
@@ -157,6 +155,6 @@ export async function fetchEdgarFilings(
     fetchedAt:  new Date().toISOString(),
   };
 
-  writeSubmissions(cacheDir, symbol, meta);
+  await writeSubmissions(symbol, meta);
   return meta;
 }

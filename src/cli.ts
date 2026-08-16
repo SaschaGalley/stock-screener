@@ -21,11 +21,12 @@ import {
   readMarketSignals, writeMarketSignals,
   readPerplexity,    writePerplexity,
   readDistill,       writeDistill,
-  readSubmissions,   symbolDir,
-  AnalysisFlagsKey, analysisHash,
-  appendHistory,
-} from './cache.js';
-import { historyPointFromAnalysis } from './history.js';
+  recordRunData,
+  AnalysisFlagsKey,  analysisHash,
+} from './db/store.js';
+import { readSubmissions } from './db/admin.js';
+import { symbolDir } from './files.js';
+import { deriveTechnicalSignals } from './analysis/signals.js';
 import { fetchEdgarFilings } from './data/edgar.js';
 import { getMarketRates } from './data/fred.js';
 import { getMacroBundle } from './data/macro.js';
@@ -181,6 +182,8 @@ export interface AnalysisRunInput {
    * and "Re-run" would be a no-op.
    */
   force?:     boolean;
+  /** Pipeline run this analysis belongs to; recorded on everything it writes. */
+  runId?:     number | null;
   onProgress?: (event: ProgressEvent) => void;
 }
 
@@ -291,7 +294,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   // ── 1. Fetch Financials ───────────────────────────────────────────────────
   logger.step('Fetching market data...');
 
-  let financials: StockFinancials | null = readFinancials(cfg.cacheDir, symbol);
+  let financials: StockFinancials | null = await readFinancials(symbol);
   let financialsCached = !!financials;
 
   let bundleDailyBars: DailyBar[] | null = null;
@@ -313,7 +316,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     financials       = bundle.financials;
     bundleDailyBars  = bundle.dailyBars;
     bundleRevisions  = bundle.revisions;
-    writeFinancials(cfg.cacheDir, symbol, financials);
+    await writeFinancials(symbol, financials, input.runId);
   }
   emit({ stage: 'financials', message: `${financials.companyName} · $${financials.price.toFixed(2)} · ${fmtBig(financials.marketCap)}`, cached: financialsCached });
 
@@ -329,9 +332,9 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     + (useDistill ? ' + Distill briefings' : '')
     + '…' });
 
-  let news: NewsItem[] = readNews(cfg.cacheDir, symbol) ?? [];
-  let perplexity = usePplx ? readPerplexity(cfg.cacheDir, symbol) : null;
-  let distill: DistillBundle | null = useDistill ? readDistill(cfg.cacheDir, symbol) : null;
+  let news: NewsItem[] = (await readNews(symbol)) ?? [];
+  let perplexity = usePplx ? await readPerplexity(symbol) : null;
+  let distill: DistillBundle | null = useDistill ? await readDistill(symbol) : null;
 
   const [freshNews, marketRates, sectorMedians, freshPerplexity, freshDistill] = await Promise.all([
     news.length === 0 && cfg.finnhubApiKey
@@ -344,7 +347,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       ? getMarketRates(cfg.fredApiKey)
       : Promise.resolve(null),
     cfg.finnhubApiKey
-      ? getSectorMediansCached(cfg.cacheDir, symbol, cfg.finnhubApiKey)
+      ? getSectorMediansCached(symbol, cfg.finnhubApiKey)
       : Promise.resolve(null),
     usePplx && !perplexity
       ? fetchPerplexity(symbol, financials.companyName, requireApiKey('perplexity'), pplxModel)
@@ -355,7 +358,6 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       : Promise.resolve(null),
     useDistill && !distill
       ? loadDistillBundle(
-          cfg.cacheDir,
           distillHintsFor(symbol, financials),
           cfg.distillApiKey!,
           cfg.distillApiUrl,
@@ -370,21 +372,21 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
 
   if (freshNews && freshNews.length > 0) {
     news = freshNews;
-    writeNews(cfg.cacheDir, symbol, news);
+    await writeNews(symbol, news, input.runId);
   }
   if (freshPerplexity) {
     perplexity = freshPerplexity;
-    writePerplexity(cfg.cacheDir, symbol, perplexity);
+    await writePerplexity(symbol, perplexity, input.runId);
   }
   if (freshDistill) {
     distill = freshDistill;
-    writeDistill(cfg.cacheDir, symbol, distill);
+    await writeDistill(symbol, distill, input.runId);
   }
 
   logger.success(`${financials.companyName}  $${financials.price.toFixed(2)}  ${fmtBig(financials.marketCap)}`);
 
   // ── 1c. Market Signals (technicals + revisions + options + macro) ────────
-  let marketSignals: MarketSignals | null = readMarketSignals(cfg.cacheDir, symbol);
+  let marketSignals: MarketSignals | null = await readMarketSignals(symbol);
 
   if (!marketSignals) {
     logger.step('Computing market signals...');
@@ -425,7 +427,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       options,
       macro: macro.context,
     };
-    writeMarketSignals(cfg.cacheDir, symbol, marketSignals);
+    await writeMarketSignals(symbol, marketSignals, input.runId);
     logger.success('Market signals ready');
   }
 
@@ -492,11 +494,11 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   };
   // Honour `force` — caller explicitly asked for a fresh LLM call. We still
   // call readAnalysis for symmetry/debug but discard the result.
-  const cachedAnalysis = input.force ? null : readAnalysis(cfg.cacheDir, symbol, flags);
+  const cachedAnalysis = input.force ? null : await readAnalysis(symbol, flags);
   let llmAnalysis: LLMAnalysis | null = cachedAnalysis?.llmAnalysis ?? null;
   const llmFromCache = llmAnalysis !== null;
 
-  const edgarNeeded = !readSubmissions(cfg.cacheDir, symbol);
+  const edgarNeeded = !(await readSubmissions(symbol));
 
   if (!llmAnalysis) {
     emit({ stage: 'llm', message: `Calling ${modelId}…`, cached: false });
@@ -512,7 +514,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       // EDGAR is a non-essential sidecar — never let its failure reject the
       // Promise.all and throw away the (paid-for) LLM result.
       edgarNeeded
-        ? fetchEdgarFilings(symbol, cfg.cacheDir).catch((e) => {
+        ? fetchEdgarFilings(symbol, cfg.dataDir).catch((e) => {
             logger.warn(`EDGAR filings unavailable: ${(e as Error).message}`);
             return null;
           })
@@ -539,7 +541,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     const trace: SearchTrace | undefined = searchTrace.length > 0
       ? { providers: searchTrace }
       : undefined;
-    writeAnalysis(cfg.cacheDir, symbol, flags, llmAnalysis, trace);
+    await writeAnalysis(symbol, flags, llmAnalysis, trace, input.runId);
     logger.success('LLM analysis complete');
     emit({
       stage:   'llm',
@@ -548,7 +550,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     });
   } else {
     if (edgarNeeded) {
-      await fetchEdgarFilings(symbol, cfg.cacheDir).catch((e) =>
+      await fetchEdgarFilings(symbol, cfg.dataDir).catch((e) =>
         logger.warn(`EDGAR filings unavailable: ${(e as Error).message}`));
     }
     logger.success('LLM analysis loaded from cache');
@@ -569,10 +571,23 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     perplexity: perplexity ?? null,
   };
 
-  // Record where this stock stood today. A cache-served verdict still counts:
-  // the market numbers around it are fresh, and the series is per (source, day),
-  // so a re-open of the same analysis just refreshes today's point.
-  appendHistory(cfg.cacheDir, symbol, historyPointFromAnalysis(result));
+  // Record where this stock stood today. A stored verdict still counts: the
+  // market numbers around it are fresh, and the projection is keyed by
+  // (symbol, metric, timestamp), so re-opening the same analysis updates
+  // today's points rather than inventing new ones.
+  await recordRunData({
+    symbol,
+    runId:            input.runId,
+    financials,
+    marketSignals,
+    sectorMedians,
+    marketRates,
+    metrics,
+    verdict:          llmAnalysis!,
+    technicalSignals: marketSignals?.technicals
+      ? deriveTechnicalSignals(marketSignals.technicals, financials.price)
+      : null,
+  });
 
   const meta: AnalysisRunMeta = {
     symbol,
@@ -616,12 +631,12 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
         bundle.financials.epsGrowth3Y          = finnhubMetrics.epsGrowth3Y;
         bundle.financials.dividendGrowthRate5Y = finnhubMetrics.dividendGrowthRate5Y;
       }
-      writeFinancials(cfg.cacheDir, symbol, bundle.financials);
+      await writeFinancials(symbol, bundle.financials);
     }
     if (fetchMode === 'submissions' || fetchMode === 'all') {
-      await fetchEdgarFilings(symbol, cfg.cacheDir);
+      await fetchEdgarFilings(symbol, cfg.dataDir);
     }
-    logger.success(`Data saved → ${symbolDir(cfg.cacheDir, symbol)}`);
+    logger.success(`Data saved for ${symbol} (filings → ${symbolDir(cfg.dataDir, symbol)})`);
     return;
   }
 

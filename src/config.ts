@@ -18,7 +18,19 @@ const ConfigSchema = z.object({
   // process; a bad LOG_LEVEL should fall back to 'info'. `.catch()` degrades
   // gracefully instead of failing safeParse for the whole config.
   distillBriefingTypeId: z.string().uuid().optional().catch(undefined),
-  cacheDir: z.string().default('~/.investment-cli-cache'),
+  /**
+   * Postgres connection string. Required — the app has no second store to fall
+   * back to. Absence is reported by `getPool()` with an actionable message
+   * rather than failing config parsing at import time, so `--help` still works
+   * without a database.
+   */
+  databaseUrl: z.string().optional(),
+  /**
+   * Where the two file-shaped things live (EDGAR filings, generated reports).
+   * Named `dataDir` because it is no longer a cache: deleting it now loses
+   * downloaded filings rather than a rebuildable copy.
+   */
+  dataDir: z.string().default('~/.investment-cli-data'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info').catch('info'),
 });
 
@@ -46,7 +58,10 @@ export function getConfig(): EnvConfig {
     distillApiKey: process.env.DISTILL_API_KEY,
     distillApiUrl: process.env.DISTILL_API_URL,
     distillBriefingTypeId: process.env.DISTILL_BRIEFING_TYPE_ID,
-    cacheDir: process.env.CACHE_DIR,
+    databaseUrl: process.env.DATABASE_URL,
+    // CACHE_DIR is still honoured so an existing deployment keeps finding its
+    // downloaded filings after the rename.
+    dataDir: process.env.DATA_DIR ?? process.env.CACHE_DIR,
     logLevel: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error' | undefined,
   };
 

@@ -24,6 +24,10 @@ export type {
   StockBundle,
   OverviewRow,
   AnalysisListEntry,
+  MetricCatalogEntry,
+  MetricSeries,
+  SeriesPoint,
+  DocumentVersion,
   ConfigResponse,
   ConfigSaveResponse,
   AddStockResponse,
@@ -58,9 +62,7 @@ export type {
   AnalysisFlagsKey,
   AnalysisManifestEntry,
   CachedAnalysisEntry,
-} from '../../src/cache';
-
-export type { HistoryPoint, HistorySource } from '../../src/history';
+} from '../../src/db/store';
 
 export type {
   DistillBriefing,
@@ -72,6 +74,8 @@ export type { DistillEntityRef, DistillMatchTier } from '../../src/data/distill-
 
 export type { AppConfig, DistillMode } from '../../src/app-config';
 
+export type { SchedulerStatus } from '../../src/scheduler';
+
 export type {
   JobStep,
   StepStatus,
@@ -79,8 +83,7 @@ export type {
   JobSymbolResult,
   JobRun,
   JobRunStatus,
-  SchedulerStatus,
-} from '../../src/scheduler';
+} from '../../src/db/admin';
 
 export type { ProgressEvent, AnalysisRunMeta } from '../../src/cli';
 

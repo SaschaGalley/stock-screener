@@ -2,8 +2,8 @@
  * Cached access to the Finnhub peer-group medians.
  *
  * Lives above the data layer for the same reason the Distill orchestration
- * does: `data/finnhub.ts` stays pure HTTP, `cache.ts` stays pure filesystem,
- * and the policy that joins them sits here.
+ * does: `data/finnhub.ts` stays pure HTTP, `db/store.ts` stays pure
+ * persistence, and the policy that joins them sits here.
  *
  * The policy is small but load-bearing. One call costs nine Finnhub requests
  * against a 60/min free tier, and it used to run on every stock the web UI
@@ -13,7 +13,7 @@
 
 import { SectorMedians } from './types.js';
 import { logger } from './utils/logger.js';
-import { readSectorMedians, writeSectorMedians } from './cache.js';
+import { readSectorMedians, writeSectorMedians } from './db/store.js';
 import { getSectorMedians } from './data/finnhub.js';
 
 /** Coalesces concurrent requests for the same symbol into one upstream call. */
@@ -27,14 +27,13 @@ const inFlight = new Map<string, Promise<SectorMedians | null>>();
  * day because Finnhub hiccuped once would be a worse outcome than retrying.
  */
 export async function getSectorMediansCached(
-  cacheDir: string,
   symbol: string,
   apiKey: string | undefined,
 ): Promise<SectorMedians | null> {
   if (!apiKey) return null;
 
-  const cached = readSectorMedians(cacheDir, symbol);
-  if (cached) return cached;
+  const stored = await readSectorMedians(symbol);
+  if (stored) return stored;
 
   const pending = inFlight.get(symbol);
   if (pending) return pending;
@@ -42,7 +41,7 @@ export async function getSectorMediansCached(
   const request = (async () => {
     try {
       const medians = await getSectorMedians(symbol, apiKey);
-      if (medians) writeSectorMedians(cacheDir, symbol, medians);
+      if (medians) await writeSectorMedians(symbol, medians);
       return medians;
     } catch (e) {
       logger.debug(`Sector medians unavailable for ${symbol}: ${(e as Error).message}`);

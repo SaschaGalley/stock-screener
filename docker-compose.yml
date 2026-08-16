@@ -1,5 +1,6 @@
-# Coolify deploys this directly (Build Pack: Docker Compose). Everything the
-# app needs is one service, one port and one volume.
+# Coolify deploys this directly (Build Pack: Docker Compose). Two services now:
+# the app and its Postgres. Postgres is what holds the record of how every
+# number moved — the app container itself is disposable.
 #
 # Secrets are NOT in this file: set them in Coolify's Environment Variables tab
 # (or an .env next to this file for a plain `docker compose up`). Only
@@ -7,16 +8,53 @@
 # to "that data source is unavailable" rather than failing the app.
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-stockcli}
+      POSTGRES_USER:     ${POSTGRES_USER:-stockcli}
+      # No default: an unset password would silently create a database anyone
+      # on the compose network can open.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      # Postgres interprets its own timestamps in this zone; the app stores
+      # everything as timestamptz, so this only affects server-side logging.
+      TZ:                ${TZ:-Europe/Berlin}
+    volumes:
+      - stock-db:/var/lib/postgresql/data
+    ports:
+      # Bound to the loopback interface only. The app container reaches Postgres
+      # over the compose network and does not need this; it exists so `npm run
+      # serve` on the host (and psql) can connect. Publishing it as plain
+      # '5432:5432' would put the database on every interface of the host,
+      # which on a deployed server means the public internet.
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-stockcli} -d ${POSTGRES_DB:-stockcli}']
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
   stock-cli:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    depends_on:
+      postgres:
+        # Wait for the healthcheck, not just the container: the app runs its
+        # migrations on boot and would otherwise race an initialising server.
+        # It also retries on its own (see waitForDatabase), so this is belt and
+        # braces rather than the only guard.
+        condition: service_healthy
     environment:
       PORT: 4317
-      CACHE_DIR: /data
-      # Cron schedules are interpreted in the timezone stored in app-config.json;
-      # this only sets the container's own clock display.
+      DATABASE_URL: postgres://${POSTGRES_USER:-stockcli}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stockcli}
+      # Only EDGAR filings and generated reports live on disk now.
+      DATA_DIR: /data
+      # Cron schedules are interpreted in the timezone stored in the settings
+      # row; this only sets the container's own clock display.
       TZ: ${TZ:-Europe/Berlin}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -32,9 +70,11 @@ services:
     ports:
       - '${PORT:-4317}:4317'
     volumes:
-      # Named volume, not a bind mount: Docker seeds it from the image, so /data
-      # arrives owned by the unprivileged `node` user the container runs as.
-      - stock-cache:/data
+      # Named volume, not a bind mount: Docker seeds it from the image, so
+      # /data arrives owned by the unprivileged `node` user the container runs
+      # as. Much smaller than it used to be — the measurements moved to
+      # Postgres and only the downloaded filings remain.
+      - stock-files:/data
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4317/api/health']
       interval: 30s
@@ -43,4 +83,5 @@ services:
       retries: 3
 
 volumes:
-  stock-cache:
+  stock-db:
+  stock-files:

@@ -2,106 +2,54 @@
  * The nightly pipeline: one cron, one queue, one symbol at a time.
  *
  * Serial on purpose. Every step here talks to a rate-limited third party
- * (Yahoo, Finnhub, Distill, an LLM) and writes into the same per-symbol cache
- * directory; running symbols in parallel would multiply the ways those two
- * facts can collide for a run that has all night to finish anyway. The only
- * concurrency control needed is therefore "is a run active?" — a second
- * trigger, cron or manual, is refused rather than queued, because two runs of
- * the same pipeline would do the same work twice.
+ * (Yahoo, Finnhub, Distill, an LLM) and writes into the same symbol's history;
+ * running symbols in parallel would multiply the ways those two facts can
+ * collide for a run that has all night to finish anyway. The only concurrency
+ * control needed is therefore "is a run active?" — a second trigger, cron or
+ * manual, is refused rather than queued, because two runs of the same pipeline
+ * would do the same work twice.
  *
  * Per symbol, in order:
- *   1. data     — Yahoo/Finnhub/FRED/macro refresh + technicals (writes history)
+ *   1. data     — Yahoo/Finnhub/FRED/macro refresh + technicals + models
  *   2. distill  — refresh (POST, generates briefings) or fetch (GET, free)
  *   3. analysis — only when the newest verdict is older than `maxAgeDays`,
- *                 forced past the LLM cache so it produces an actual new one
+ *                 forced past the stored verdict so it produces an actual new one
  *
- * Runs are recorded to `$CACHE_DIR/job-runs.json` so the admin page can show
- * what happened last night after a restart.
+ * Runs are rows in `runs` / `run_steps`, so the admin page can show what
+ * happened last night after a restart — and so every observation written
+ * during the run can point back at the run that produced it.
  */
 
-import { mkdirSync } from 'fs';
-import { join } from 'path';
 import cron, { type ScheduledTask } from 'node-cron';
 
 import { getConfig } from './config.js';
 import { logger } from './utils/logger.js';
 import { AppConfig, isWatched, readAppConfig } from './app-config.js';
 import {
-  listAnalyses, listCachedSymbols, readFinancialsLax,
-  readJsonFile, resolveCacheRoot, writeJsonAtomic,
-} from './cache.js';
+  finishRun, JobRun, JobRunStatus, JobStep, JobStepResult, JobSymbolResult,
+  listRuns, pruneRuns, reapStaleRuns, recordRunSteps, setRunSymbol, startRun, StepStatus,
+} from './db/admin.js';
+import { listAnalyses, listSymbols, readFinancialsLax } from './db/store.js';
 import { refreshStockData } from './refresh.js';
 import { runAnalysis } from './cli.js';
 import { distillHintsFor, syncDistillBriefing } from './distill-service.js';
 
-export type JobStep = 'data' | 'distill' | 'analysis';
-export type StepStatus = 'ok' | 'skipped' | 'failed';
-
-export interface JobStepResult {
-  step:   JobStep;
-  status: StepStatus;
-  /** One line of human-readable outcome ("still-current, $0.0000", "3d old"). */
-  detail: string;
-  ms:     number;
-}
-
-export interface JobSymbolResult {
-  symbol: string;
-  steps:  JobStepResult[];
-  ms:     number;
-}
-
-export type JobRunStatus = 'running' | 'ok' | 'partial' | 'failed' | 'stopped';
-
-export interface JobRun {
-  id:         string;
-  trigger:    'cron' | 'manual';
-  startedAt:  string;
-  finishedAt: string | null;
-  status:     JobRunStatus;
-  /** Symbol currently being worked on, while status is 'running'. */
-  currentSymbol: string | null;
-  symbols:    JobSymbolResult[];
-  totals:     { symbols: number; data: number; distill: number; analysis: number; failed: number };
-  /** Set when the run itself (not a single step) blew up. */
-  error?:     string;
-}
-
-const MAX_KEPT_RUNS = 20;
+export type { JobRun, JobRunStatus, JobStep, JobStepResult, JobSymbolResult, StepStatus };
 
 // ── Module state ─────────────────────────────────────────────────────────────
 // A single active run and a single installed cron task. Both are per-process,
 // which is exactly right for the single-container deployment this ships as.
+// The live run is mirrored in memory so polling /api/jobs during a run doesn't
+// reassemble it from the database on every tick.
 
 let task: ScheduledTask | null = null;
 let activeRun: JobRun | null = null;
 let stopRequested = false;
 
-function runsFile(cacheDir: string): string {
-  return join(resolveCacheRoot(cacheDir), 'job-runs.json');
-}
-
-export function readJobRuns(cacheDir: string): JobRun[] {
-  const parsed = readJsonFile<{ runs?: JobRun[] }>(runsFile(cacheDir));
-  return Array.isArray(parsed?.runs) ? parsed.runs : [];
-}
-
-function persistRun(cacheDir: string, run: JobRun): void {
-  try {
-    const root = resolveCacheRoot(cacheDir);
-    mkdirSync(root, { recursive: true });
-    const runs = readJobRuns(cacheDir).filter((r) => r.id !== run.id);
-    runs.unshift(run);
-    writeJsonAtomic(runsFile(cacheDir), { runs: runs.slice(0, MAX_KEPT_RUNS) });
-  } catch (e) {
-    logger.warn(`Could not persist job run: ${(e as Error).message}`);
-  }
-}
-
 // ── Step helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Age of the newest cached verdict across *all* flag combinations, or null when
+ * Age of the newest stored verdict across *all* flag combinations, or null when
  * the stock was never analysed.
  *
  * Deliberately combination-blind: the question the schedule asks is "does this
@@ -109,8 +57,8 @@ function persistRun(cacheDir: string, run: JobRun): void {
  * Keying it to the configured model would re-analyse the whole watchlist the
  * day someone switches models.
  */
-function newestAnalysisAgeDays(cacheDir: string, symbol: string): number | null {
-  const entries = listAnalyses(cacheDir, symbol);
+async function newestAnalysisAgeDays(symbol: string): Promise<number | null> {
+  const entries = await listAnalyses(symbol);
   if (entries.length === 0) return null;
   const newest = entries
     .map((e) => new Date(e.generatedAt).getTime())
@@ -128,9 +76,9 @@ async function timed(fn: () => Promise<string>): Promise<{ detail: string; ms: n
 
 /** Run every enabled step for one symbol, in order, collecting per-step outcomes. */
 async function processSymbol(
-  cacheDir: string,
   config: AppConfig,
   symbol: string,
+  runId: number,
 ): Promise<JobSymbolResult> {
   const cfg = getConfig();
   const startedAt = Date.now();
@@ -145,7 +93,7 @@ async function processSymbol(
       const { detail, ms } = await timed(async () => {
         // Distill is its own step below — skip the courtesy fetch inside the
         // data refresh so a symbol never hits Distill twice in one run.
-        const data = await refreshStockData(symbol, { includeDistill: false });
+        const data = await refreshStockData(symbol, { includeDistill: false, runId });
         return `$${data.financials.price.toFixed(2)} · ${data.news.length} news`;
       });
       record('data', 'ok', detail, ms);
@@ -164,9 +112,8 @@ async function processSymbol(
   } else {
     try {
       const { detail, ms } = await timed(async () => {
-        const financials = readFinancialsLax(cacheDir, symbol);
+        const financials = await readFinancialsLax(symbol);
         const result = await syncDistillBriefing(
-          cacheDir,
           distillHintsFor(symbol, financials),
           cfg.distillApiKey!,
           cfg.distillApiUrl,
@@ -188,7 +135,7 @@ async function processSymbol(
   if (!analysis.enabled) {
     record('analysis', 'skipped', 'step disabled', 0);
   } else {
-    const age = newestAnalysisAgeDays(cacheDir, symbol);
+    const age = await newestAnalysisAgeDays(symbol);
     const stale = age === null || age > analysis.maxAgeDays;
     if (!stale) {
       record('analysis', 'skipped', `verdict is ${age!.toFixed(1)}d old (limit ${analysis.maxAgeDays}d)`, 0);
@@ -200,8 +147,9 @@ async function processSymbol(
             model:  analysis.model,
             search: analysis.search,
             pplx:   analysis.pplx,
-            // The LLM cache is hash-keyed with no TTL, so a plain run would
-            // serve the very verdict we consider stale. Force means force.
+            runId,
+            // A stored verdict has no TTL, so a plain run would serve the very
+            // one we consider stale. Force means force.
             force:  true,
           });
           return `${result.llmAnalysis.recommendation} · score ${result.llmAnalysis.score}/10 · ${result.provider}`;
@@ -213,6 +161,7 @@ async function processSymbol(
     }
   }
 
+  await recordRunSteps(runId, symbol, steps);
   return { symbol, steps, ms: Date.now() - startedAt };
 }
 
@@ -220,7 +169,7 @@ async function processSymbol(
 
 export interface RunOptions {
   trigger: 'cron' | 'manual';
-  /** Explicit subset; defaults to every watched symbol with cached financials. */
+  /** Explicit subset; defaults to every watched symbol with stored financials. */
   symbols?: string[];
 }
 
@@ -232,10 +181,20 @@ export class JobBusyError extends Error {
 }
 
 /** Symbols the nightly run covers, in the order it will walk them. */
-export function scheduledSymbols(cacheDir: string, config: AppConfig): string[] {
-  return listCachedSymbols(cacheDir)
-    .filter((s) => isWatched(config, s))
-    .sort();
+export async function scheduledSymbols(config: AppConfig): Promise<string[]> {
+  return (await listSymbols()).filter((s) => isWatched(config, s)).sort();
+}
+
+/** Running tally, so the live view matches what the database will report. */
+function tally(symbols: JobSymbolResult[]): JobRun['totals'] {
+  const totals = { symbols: symbols.length, data: 0, distill: 0, analysis: 0, failed: 0 };
+  for (const sym of symbols) {
+    for (const step of sym.steps) {
+      if (step.status === 'ok') totals[step.step]++;
+      if (step.status === 'failed') totals.failed++;
+    }
+  }
+  return totals;
 }
 
 /**
@@ -246,14 +205,14 @@ export function scheduledSymbols(cacheDir: string, config: AppConfig): string[] 
 export async function runPipeline(opts: RunOptions): Promise<JobRun> {
   if (activeRun) throw new JobBusyError();
 
-  const cacheDir = getConfig().cacheDir;
-  const config = readAppConfig(cacheDir);
+  const config = await readAppConfig();
   const symbols = opts.symbols?.length
     ? opts.symbols.map((s) => s.toUpperCase())
-    : scheduledSymbols(cacheDir, config);
+    : await scheduledSymbols(config);
 
+  const runId = await startRun(opts.trigger);
   const run: JobRun = {
-    id:            new Date().toISOString(),
+    id:            String(runId),
     trigger:       opts.trigger,
     startedAt:     new Date().toISOString(),
     finishedAt:    null,
@@ -264,7 +223,6 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
   };
   activeRun = run;
   stopRequested = false;
-  persistRun(cacheDir, run);
 
   logger.info(`Pipeline run started (${opts.trigger}) — ${symbols.length} symbol(s)`);
 
@@ -275,15 +233,10 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
         break;
       }
       run.currentSymbol = symbol;
-      const result = await processSymbol(cacheDir, config, symbol);
+      await setRunSymbol(runId, symbol);
+      const result = await processSymbol(config, symbol, runId);
       run.symbols.push(result);
-      for (const step of result.steps) {
-        if (step.status === 'ok') run.totals[step.step]++;
-        if (step.status === 'failed') run.totals.failed++;
-      }
-      // Persist after every symbol: a container restart mid-run should still
-      // leave a truthful record of how far it got.
-      persistRun(cacheDir, run);
+      run.totals = { ...tally(run.symbols), symbols: symbols.length };
     }
 
     if (run.status !== 'stopped') {
@@ -296,7 +249,9 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
   } finally {
     run.currentSymbol = null;
     run.finishedAt = new Date().toISOString();
-    persistRun(cacheDir, run);
+    await finishRun(runId, run.status, run.error).catch((e) =>
+      logger.warn(`Could not finalise run ${runId}: ${(e as Error).message}`));
+    await pruneRuns().catch(() => { /* retention is best effort */ });
     activeRun = null;
     stopRequested = false;
     const secs = ((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(0);
@@ -334,17 +289,19 @@ export interface SchedulerStatus {
   watched:   string[];
 }
 
-export function getSchedulerStatus(cacheDir: string): SchedulerStatus {
-  const config = readAppConfig(cacheDir);
+export async function getSchedulerStatus(): Promise<SchedulerStatus> {
+  const config = await readAppConfig();
   const next = task?.getNextRun() ?? null;
+  const [runs, watched] = await Promise.all([listRuns(), scheduledSymbols(config)]);
   return {
     cron:     task ? config.schedule.cron : null,
     timezone: config.schedule.timezone,
     nextRun:  next ? next.toISOString() : null,
     running:  activeRun !== null,
+    // The in-memory run is ahead of the stored one mid-symbol; prefer it.
     current:  activeRun,
-    runs:     readJobRuns(cacheDir),
-    watched:  scheduledSymbols(cacheDir, config),
+    runs,
+    watched,
   };
 }
 
@@ -352,13 +309,13 @@ export function getSchedulerStatus(cacheDir: string): SchedulerStatus {
  * Install (or remove) the cron task for the current config. Idempotent — call
  * it at boot and again after every config change.
  */
-export function applySchedule(cacheDir: string): void {
+export async function applySchedule(): Promise<void> {
   if (task) {
     task.destroy();
     task = null;
   }
 
-  const config = readAppConfig(cacheDir);
+  const config = await readAppConfig();
   if (!config.schedule.enabled) {
     logger.info('Pipeline schedule is disabled — no cron installed.');
     return;
@@ -391,4 +348,12 @@ export function applySchedule(cacheDir: string): void {
     `Pipeline scheduled: "${config.schedule.cron}" (${config.schedule.timezone})`
     + `${next ? ` — next run ${next.toISOString()}` : ''}`,
   );
+}
+
+/**
+ * Boot-time cleanup: a run interrupted by a restart is still marked `running`
+ * in the database, and nothing in this process is executing it.
+ */
+export async function recoverInterruptedRuns(): Promise<void> {
+  await reapStaleRuns();
 }

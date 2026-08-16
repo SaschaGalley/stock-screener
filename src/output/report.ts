@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { marked } from 'marked';
-import { symbolDir } from '../cache.js';
+import { symbolDir } from '../files.js';
 import { logger } from '../utils/logger.js';
 
 // ── Chrome discovery ──────────────────────────────────────────────────────────
@@ -114,10 +114,10 @@ async function htmlToPdf(html: string, outputPath: string): Promise<void> {
 
 export async function saveReports(
   symbol: string,
-  cacheDir: string,
+  dataDir: string,
   terminalOutput: string,
 ): Promise<void> {
-  const dir      = symbolDir(cacheDir, symbol);
+  const dir      = symbolDir(dataDir, symbol);
   mkdirSync(dir, { recursive: true });
 
   const mdPath   = join(dir, 'report.md');

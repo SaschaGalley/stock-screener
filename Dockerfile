@@ -1,7 +1,8 @@
-# Single container: the Express API also serves the built SPA (see the static
-# handler at the end of src/server.ts), so one image and one port is the whole
-# deployment. The nightly pipeline runs in-process, which is why this must be a
-# long-lived service and not a scale-to-zero function.
+# One image, one port: the Express API also serves the built SPA (see the
+# static handler at the end of src/server.ts). The nightly pipeline runs
+# in-process, which is why this must be a long-lived service and not a
+# scale-to-zero function. State lives in Postgres (a separate service, see
+# docker-compose.yml) plus the small /data volume for downloaded filings.
 
 # ── Build ────────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS build
@@ -39,12 +40,12 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/web/dist ./web/dist
 
-# The cache directory holds everything worth keeping: per-symbol data, the
-# analysis cache, the recorded history, app-config.json and job-runs.json.
-# Owned by `node` so the unprivileged runtime user can write to a fresh named
-# volume (Docker seeds a new named volume from the image path, ownership
-# included). A bind mount keeps the host's ownership — chown it to 1000:1000.
-ENV CACHE_DIR=/data \
+# /data now holds only the two file-shaped things: EDGAR filings and generated
+# reports. Everything measurable is in Postgres. Owned by `node` so the
+# unprivileged runtime user can write to a fresh named volume (Docker seeds a
+# new named volume from the image path, ownership included). A bind mount keeps
+# the host's ownership — chown it to 1000:1000.
+ENV DATA_DIR=/data \
     PORT=4317 \
     TZ=Europe/Berlin
 RUN mkdir -p /data && chown -R node:node /data /app

@@ -8,14 +8,17 @@
   },
   "scripts": {
     "dev": "tsx watch src/cli.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-migrations.mjs",
     "start": "node dist/cli.js",
     "serve": "tsx src/server.ts",
     "serve:watch": "tsx watch src/server.ts",
     "web": "concurrently -n api,web -c blue,green \"npm:serve:watch\" \"npm:web:dev\"",
     "web:dev": "cd web && npm run dev",
     "web:build": "cd web && npm run build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/db/migrate-cli.ts",
+    "backfill": "tsx src/db/backfill.ts",
+    "db:up": "docker compose up -d postgres"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.28.0",
@@ -28,6 +31,7 @@
     "node-cron": "^4.6.0",
     "node-fetch": "^3.3.0",
     "openai": "^4.60.0",
+    "pg": "^8.23.0",
     "puppeteer-core": "^24.42.0",
     "yahoo-finance2": "^3.14.0",
     "zod": "^3.22.0"
@@ -36,6 +40,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.21.0",
     "concurrently": "^9.2.1",
     "tsx": "^4.10.0",
     "typescript": "^5.4.0"

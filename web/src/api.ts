@@ -10,7 +10,9 @@ import type {
   ProgressEvent,
   DistillRefreshResponse,
   OverviewRow,
-  HistoryPoint,
+  MetricCatalogEntry,
+  MetricSeries,
+  DocumentVersion,
   AppConfig,
   ConfigResponse,
   ConfigSaveResponse,
@@ -108,9 +110,34 @@ export const api = {
   listOverview: () =>
     jsonFetch<{ rows: OverviewRow[] }>(`${BASE}/overview`),
 
-  getHistory: (symbol: string) =>
-    jsonFetch<{ symbol: string; points: HistoryPoint[] }>(
-      `${BASE}/stocks/${encodeURIComponent(symbol)}/history`,
+  // ── Recorded history ──────────────────────────────────────────────────────
+  // The set of chartable numbers is a query parameter now, not a fixed shape:
+  // `listMetrics` is the picker's data source and `getSeries` draws whatever
+  // was picked.
+
+  listMetrics: (domain?: string) =>
+    jsonFetch<{ metrics: MetricCatalogEntry[] }>(
+      `${BASE}/metrics${domain ? `?domain=${encodeURIComponent(domain)}` : ''}`,
+    ),
+
+  getSeries: (symbol: string, keys: string[], range?: { from?: string; to?: string }) => {
+    const params = new URLSearchParams({ keys: keys.join(',') });
+    if (range?.from) params.set('from', range.from);
+    if (range?.to)   params.set('to', range.to);
+    return jsonFetch<{ symbol: string; series: MetricSeries[] }>(
+      `${BASE}/stocks/${encodeURIComponent(symbol)}/series?${params}`,
+    );
+  },
+
+  /** Version history of a text output — Distill, Perplexity, verdicts. */
+  getDocuments: (symbol: string, kind: 'distill' | 'perplexity' | 'verdict' | 'search_trace', limit = 20) =>
+    jsonFetch<{ symbol: string; kind: string; documents: DocumentVersion[] }>(
+      `${BASE}/stocks/${encodeURIComponent(symbol)}/documents/${kind}?limit=${limit}`,
+    ),
+
+  getFundamentals: (symbol: string, period: 'annual' | 'quarter' | 'estimate' = 'annual') =>
+    jsonFetch<{ symbol: string; period: string; rows: { periodEnd: string; key: string; value: number; observedAt: string }[] }>(
+      `${BASE}/stocks/${encodeURIComponent(symbol)}/fundamentals?period=${period}`,
     ),
 
   // ── Administration ────────────────────────────────────────────────────────

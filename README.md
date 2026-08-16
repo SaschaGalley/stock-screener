@@ -39,7 +39,11 @@ Minimum to get started: `ANTHROPIC_API_KEY` + `FINNHUB_API_KEY`.
 
 With `FRED_API_KEY`, Graham Revised, DDM, EPV, the 2-Stage DCF, RIM and Sortino models pull live rates instead of hardcoded fallbacks. Also unlocks the macro context block (VIX regime, yield curve, HY spreads, DXY).
 
-Optional env: `CACHE_DIR=.cache` (default), `LOG_LEVEL=info|debug|warn|error`.
+`DATABASE_URL` is required — everything the app records lives in Postgres.
+`docker compose up -d postgres` starts one matching the URL in `.env.example`.
+
+Optional env: `DATA_DIR=.data` (EDGAR filings and generated reports — the only
+things still stored as files), `LOG_LEVEL=info|debug|warn|error`.
 
 ## Web UI
 
@@ -223,11 +227,18 @@ src/
 ├── refresh.ts             Force-refresh data layer without LLM (web "↻ Refresh" button)
 ├── config.ts              Env vars (Zod validated)
 ├── types.ts               Zod schemas — types inferred via z.infer<>
-├── cache.ts               File-based JSON cache (versioned, no TTL on analyses)
-├── sector-medians.ts      Cached peer-group medians (the app's most expensive read)
+├── db/
+│   ├── client.ts          Postgres pool
+│   ├── migrate.ts         Numbered .sql migrations, applied once, in order
+│   ├── walk.ts            Generic zod-schema walker — every leaf becomes a metric
+│   ├── catalog.ts         Metric catalogue derived from the schemas (418 series)
+│   ├── store.ts           Symbols, snapshots, observations, documents
+│   ├── admin.ts           Runs, settings, entity mappings, filing index
+│   └── backfill.ts        One-shot import of the old file cache
+├── files.ts               The two things that stay files (filings, reports)
+├── sector-medians.ts      Peer-group medians (the app's most expensive read)
 ├── app-config.ts          Operational settings edited from the admin page
 ├── scheduler.ts           Nightly pipeline — one cron, one queue, one symbol at a time
-├── history.ts             Recorded time series (score, target, fair value) per symbol
 ├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
 ├── models.ts              Model registry — single source for CLI, server and web UI
 ├── providers/             LLM abstraction layer (anthropic, openai, factory)
@@ -284,34 +295,62 @@ web/
 │                                  NewsAndResearch, CompanyInfo
 ```
 
-## Cache layout
+## Storage
 
-Each stock lives under `$CACHE_DIR/$SYMBOL/`:
+One rule runs through the schema: **snapshots are the truth, observations are a
+projection.** The raw payload of every run lands in `snapshots` as JSONB; the
+narrow rows in `observations` are derived from it by walking the same zod schema
+the app validates with. Because the projection is derived, it can be dropped and
+rebuilt at any time — which is what makes a schema change cheap. The file cache
+this replaced could only grow its history by bumping a version number, and its
+reader discarded the entire series on a mismatch. Extending history must never
+cost history.
+
+| Table | Holds |
+| --- | --- |
+| `symbols` | The registry, plus slow-moving identity (name, sector, ISIN) |
+| `metrics` | The catalogue — one row per series, generated from the `.describe()` strings in `types.ts` |
+| `snapshots` | Raw payloads (financials, market signals, models, peers, news), deduplicated by content hash |
+| `observations` | `(symbol, metric, timestamp, value)` — the chart surface, ~325 values per symbol per run |
+| `documents` | Distill briefings, Perplexity syntheses, verdicts, search traces — one row per version that actually changed |
+| `fundamental_periods` | Reported figures keyed by fiscal period *and* observation date, so restatements are visible |
+| `macro_observations` | VIX, yield curve, HY spread, DXY, FRED rates — global, stored once rather than per symbol |
+| `runs` / `run_steps` | Pipeline provenance; every row above can point at the run that produced it |
+| `distill_entities`, `filings`, `settings` | Mappings and operational state |
+
+Nothing in the codebase lists field names. Adding a valuation model to
+`AnalysisResultSchema` adds its outputs to the catalogue on the next boot, and
+they are historised from the next run — no `HistoryPoint` to extend, no version
+to bump.
+
+Two things stay files, under `$DATA_DIR/$SYMBOL/`:
 
 ```
-financials.json        # versioned (v15) — Yahoo + Finnhub + ISIN
-market-signals.json    # versioned — technicals + revisions + options + macro
-news.json              # 30-min TTL
-sector-medians.json    # Finnhub peer medians (24h TTL — 9 upstream calls each)
-perplexity.json        # keyed by prompt hash
-distill.json           # Distill briefing for this ticker (30 min TTL)
-distill-entity.json    # ticker → Distill entity UUID (no TTL — see below)
-history.json           # recorded series: score, verdict, target, fair value (no TTL)
-analyses/<hash>.json   # one per (model, search, pplx) combo — no TTL, hash-only
-submissions.json       # EDGAR
-report.md/.html/.pdf   # last full CLI analysis output (CLI only)
+submissions/           # EDGAR filings — immutable documents, indexed in `filings`
+report.md/.html/.pdf   # last full CLI analysis output (CLI only, regenerable)
 ```
 
-Two files sit at the cache **root**, next to the symbol directories, because they
-describe the installation rather than a stock:
+### Migrating an existing install
 
-```
-app-config.json        # schedule, pipeline steps, watchlist (edited in the admin page)
-job-runs.json          # last 20 pipeline runs with per-symbol, per-step outcomes
+```bash
+docker compose up -d postgres          # or point DATABASE_URL at an existing server
+npm run migrate                        # apply the schema, seed the catalogue
+npm run backfill -- --data-dir .cache --dry-run   # see what it would import
+npm run backfill -- --data-dir .cache
 ```
 
-Everything worth keeping therefore lives under one directory — mount that as the
-container volume and a redeploy keeps data, settings and run history together.
+Afterwards, point `DATA_DIR` at the old cache directory (`DATA_DIR=.cache`) so
+the downloaded EDGAR filings under `.cache/$SYMBOL/submissions/` stay where the
+`filings` index expects them — or move those directories to a fresh `DATA_DIR`.
+Once the backfill has run, every `.json` file in there is inert and can be
+deleted; only `submissions/` and `report.*` are still read.
+
+The backfill distinguishes what it is rescuing: `history.json` is real past and
+is imported at its original timestamps, everything else is current state and is
+imported at the file's mtime. The 19 valuation models are re-run over the stored
+financials on the way in, so the series that were never persisted at all start
+with a value rather than a gap. It is idempotent — running it twice changes
+nothing.
 
 The web UI never silently invalidates an analysis — outdated entries stay selectable but show a ⚠ marker and a stale banner that prompts a one-click re-run.
 
@@ -331,7 +370,7 @@ Per symbol, in order:
 Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).
 
 Serial by design: every step talks to a rate-limited third party and writes into
-the same per-symbol cache directory, and a run that has all night has nothing to
+the same symbol's history, and a run that has all night has nothing to
 gain from racing itself. A second trigger while a run is active is refused, not
 queued — cron ticks that land on a busy pipeline are skipped with a log line.
 
@@ -369,9 +408,10 @@ docker compose up -d --build          # http://localhost:4317
 
 In **Coolify**: new resource → *Docker Compose* (or *Dockerfile*) → point it at
 this repository. Set the port to `4317`, add your API keys under *Environment
-Variables*, and mount a persistent volume at **`/data`** — that path is
-`CACHE_DIR`, and it holds the stock caches, the analyses, the recorded history,
-`app-config.json` and `job-runs.json`.
+Variables* (including `POSTGRES_PASSWORD`), and let compose create both named
+volumes: `stock-db` holds Postgres — the record of how every number moved, and
+the one thing that cannot be refetched — and `stock-files` holds `/data`, which
+is now just downloaded EDGAR filings and generated reports.
 
 Notes that matter in production:
 
