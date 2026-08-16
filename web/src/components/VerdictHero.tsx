@@ -1,5 +1,6 @@
+import type { ReactNode } from 'react';
 import type { CompositeFairValue } from '../types';
-import { fmtPrice, fmtSignedPct, mosColor, mosBgColor, recommendationBarColor } from '../format';
+import { fmtPrice, fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
 import RecommendationBadge from './RecommendationBadge';
 
 interface Props {
@@ -10,6 +11,10 @@ interface Props {
     recommendation: string;
     thesis: string;
   } | null;
+  /** When the shown verdict was generated (ISO), or null when none is cached. */
+  llmGeneratedAt?: string | null;
+  /** Model that produced it — the verdict is only interpretable with both. */
+  llmModel?: string | null;
   analyst: {
     targetMeanPrice: number | null;
     analystTargetLow: number | null;
@@ -24,7 +29,7 @@ interface Props {
   };
 }
 
-export default function VerdictHero({ price, composite, llm, analyst }: Props) {
+export default function VerdictHero({ price, composite, llm, llmGeneratedAt, llmModel, analyst }: Props) {
   const compositeMoS = composite.primary.median !== null
     ? (composite.primary.median - price) / price
     : null;
@@ -36,7 +41,19 @@ export default function VerdictHero({ price, composite, llm, analyst }: Props) {
   return (
     <section className="grid gap-3 lg:grid-cols-3">
       {/* AI Verdict */}
-      <Card title="AI Verdict">
+      <Card
+        title="AI Verdict"
+        // An LLM verdict is a point-in-time opinion: without its date it reads
+        // as current even when it predates the last earnings report.
+        meta={llm && llmGeneratedAt ? (
+          <time
+            dateTime={llmGeneratedAt}
+            title={`Generiert am ${new Date(llmGeneratedAt).toLocaleString()}${llmModel ? ` · ${llmModel}` : ''}`}
+          >
+            {relativeTime(llmGeneratedAt)}
+          </time>
+        ) : null}
+      >
         {llm ? (
           <div className="flex h-full flex-col">
             <div className="flex items-center gap-3">
@@ -146,10 +163,14 @@ export default function VerdictHero({ price, composite, llm, analyst }: Props) {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+/** `meta` sits right-aligned in the header — provenance, not content. */
+function Card({ title, meta, children }: { title: string; meta?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col rounded-lg border border-ink-800 bg-ink-900 p-4">
-      <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+        {meta && <span className="shrink-0 text-[10px] text-ink-500">{meta}</span>}
+      </div>
       <div className="flex-1">{children}</div>
     </div>
   );

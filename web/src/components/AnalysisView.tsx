@@ -183,6 +183,8 @@ export default function AnalysisView({
             price={f.price}
             composite={m.composite}
             llm={llm}
+            llmGeneratedAt={analysis?.generatedAt ?? null}
+            llmModel={analysis?.flags.model ?? null}
             analyst={{
               targetMeanPrice: f.targetMeanPrice,
               analystTargetLow: f.analystTargetLow,
