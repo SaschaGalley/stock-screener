@@ -61,7 +61,13 @@ services:
       start_period: 20s
       retries: 5
 
-  stock-cli:
+  # Named `stockcli`, not `stock-cli`: Coolify derives its magic variable names
+  # from the service name, and how it folds a hyphen is not something this file
+  # should have to guess. With no hyphen, SERVICE_FQDN_STOCKCLI_4317 below is
+  # unambiguous. (The mismatched spelling is why the first deploy came up with
+  # no domain to manage — Coolify passed SERVICE_PASSWORD_POSTGRES through to
+  # the build but never matched the FQDN variable.)
+  stockcli:
     build:
       context: .
       dockerfile: Dockerfile
@@ -102,6 +108,14 @@ services:
       DISTILL_API_KEY: ${DISTILL_API_KEY:-}
       DISTILL_API_URL: ${DISTILL_API_URL:-http://localhost:3000}
       DISTILL_BRIEFING_TYPE_ID: ${DISTILL_BRIEFING_TYPE_ID:-}
+    # `expose` is what Coolify's reverse proxy binds a domain to; `ports`
+    # publishes straight onto the host and bypasses it. Both are declared: the
+    # proxy gets what it needs, and the published port stays as a way in by
+    # IP:port if the domain is not configured yet. If Coolify still shows no
+    # domain to manage, drop the `ports` block — a service that publishes its
+    # own port is one some Coolify versions decline to route.
+    expose:
+      - '4317'
     ports:
       - '${PORT:-4317}:4317'
     volumes:
