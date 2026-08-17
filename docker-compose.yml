@@ -6,6 +6,15 @@
 # (or an .env next to this file for a plain `docker compose up`). Only
 # ANTHROPIC_API_KEY or OPENAI_API_KEY is strictly required — the rest degrade
 # to "that data source is unavailable" rather than failing the app.
+#
+# Every knob the app reads appears here as a ${VAR} reference even when it has a
+# usable default, because that is what Coolify parses to pre-populate its
+# Environment Variables tab. A variable the app reads but this file never names
+# is one nobody can set from the UI — they have to know it exists first.
+#
+# Two identifiers use Coolify's generated-value syntax (SERVICE_*): Coolify
+# fills them on first deploy and keeps them stable afterwards. On a plain
+# `docker compose up` they are ordinary variables you set yourself.
 
 services:
   postgres:
@@ -14,9 +23,14 @@ services:
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:-stockcli}
       POSTGRES_USER:     ${POSTGRES_USER:-stockcli}
-      # No default: an unset password would silently create a database anyone
-      # on the compose network can open.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      # Still no usable default — an unset password would silently create a
+      # database anyone on the compose network can open. But `:?` aborts the
+      # deploy before Coolify ever renders its Environment Variables tab, so a
+      # first deploy fails with a compose error instead of an empty field to
+      # fill in. SERVICE_PASSWORD_POSTGRES asks Coolify to generate one and keep
+      # it; the `:?` guard stays as the fallback for a plain `docker compose up`,
+      # where nothing generates anything.
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD or SERVICE_PASSWORD_POSTGRES}}
       # Postgres interprets its own timestamps in this zone; the app stores
       # everything as timestamptz, so this only affects server-side logging.
       TZ:                ${TZ:-Europe/Berlin}
@@ -49,10 +63,20 @@ services:
         # braces rather than the only guard.
         condition: service_healthy
     environment:
+      # Asks Coolify to allocate a domain and route it to this port. Coolify
+      # sets the value; the app never reads it. Without it the deploy comes up
+      # reachable only by IP:port.
+      SERVICE_FQDN_STOCKCLI_4317: ${SERVICE_FQDN_STOCKCLI_4317:-}
       PORT: 4317
-      DATABASE_URL: postgres://${POSTGRES_USER:-stockcli}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-stockcli}
+      # Must resolve to the same password the postgres service above received,
+      # including when Coolify generated it.
+      DATABASE_URL: postgres://${POSTGRES_USER:-stockcli}:${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-stockcli}
       # Only EDGAR filings and generated reports live on disk now.
       DATA_DIR: /data
+      # Postgres connections held open by the pool. The nightly pipeline is
+      # serial and the API is light, so 10 is ample; it is here because the app
+      # reads it, and a knob nobody can see is a knob nobody can turn.
+      PGPOOL_MAX: ${PGPOOL_MAX:-10}
       # Cron schedules are interpreted in the timezone stored in the settings
       # row; this only sets the container's own clock display.
       TZ: ${TZ:-Europe/Berlin}
