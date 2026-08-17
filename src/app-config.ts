@@ -62,6 +62,20 @@ export const AppConfigSchema = z.object({
       /** Search providers, same vocabulary as the CLI's `--search`. */
       search:  z.array(z.string()).default([]),
       pplx:    z.enum(['sonar', 'sonar-pro']).nullable().default(null),
+      /**
+       * Escalate to web search for symbols with no sell-side coverage, even when
+       * `search` is empty.
+       *
+       * Without this, a nightly run on the defaults gives an uncovered stock the
+       * worst of both worlds: no analyst consensus *and* no external context, so
+       * the verdict rests entirely on our own arithmetic. That is how a FACC
+       * analysis came out as SELL on three-year-old numbers with nothing to
+       * contradict them. Covered symbols are unaffected — they already have an
+       * independent check and don't need the extra call.
+       */
+      searchWhenUncovered: z.boolean().default(true),
+      /** Provider used by the escalation above. Ignored when it is disabled. */
+      uncoveredSearchProvider: z.string().default('tavily'),
     }).default({}),
   }).default({}),
 

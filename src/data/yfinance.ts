@@ -10,10 +10,19 @@ import {
   StockFinancials,
 } from '../types.js';
 import { DailyBar } from '../analysis/technical.js';
+import { auditFinancials, isFundamentalsStale } from '../analysis/data-quality.js';
 import { logger } from '../utils/logger.js';
 import { toFiniteNumber as num } from '../utils/num.js';
 
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'], validation: { logErrors: false, logOptionsErrors: false } } as any);
+
+/**
+ * How far Yahoo's reported enterprise value may sit from `marketCap + net debt`
+ * before we replace it with the identity. Wide enough to absorb Yahoo's own
+ * as-of-date drift between the quote and the balance sheet, narrow enough to
+ * reject a figure that is off by a factor.
+ */
+const EV_IDENTITY_TOLERANCE = 0.15;
 
 
 function str(v: unknown): string | null {
@@ -53,12 +62,55 @@ async function fetchFxRate(from: string, to: string): Promise<number | null> {
   }
 }
 
+const SUMMARY_MODULES = [
+  'financialData', 'defaultKeyStatistics', 'summaryDetail', 'assetProfile', 'price',
+  'recommendationTrend', 'earningsHistory', 'earningsTrend', 'insiderTransactions',
+  'calendarEvents', 'majorHoldersBreakdown',
+] as const;
+
+/**
+ * Fetch the summary modules, degrading per module rather than all at once.
+ *
+ * All eleven in one request is the fast path and normally works. But Yahoo
+ * validates the whole response as one object, so a single module coming back in
+ * an unexpected shape throws — and the old handler turned that into `null`,
+ * silently dropping analyst coverage, ownership, estimates and key statistics
+ * together. Air Liquide's Paris line (`AI.PA`) hit exactly this: 20 analysts
+ * upstream, zero in our payload, indistinguishable from a genuinely uncovered
+ * stock and therefore from the bug this whole change set exists to fix.
+ *
+ * So on failure, refetch module by module and keep what parses. Slower, but it
+ * only runs when the combined request already failed, and losing one module is
+ * a far better outcome than losing eleven.
+ */
 async function safeSummary(symbol: string): Promise<any> {
   try {
-    return await yf.quoteSummary(symbol, {
-      modules: ['financialData', 'defaultKeyStatistics', 'summaryDetail', 'assetProfile', 'price', 'recommendationTrend', 'earningsHistory', 'earningsTrend', 'insiderTransactions', 'calendarEvents', 'majorHoldersBreakdown'],
-    } as any);
-  } catch (e) { logger.warn(`Summary: ${(e as Error).message}`); return null; }
+    return await yf.quoteSummary(symbol, { modules: SUMMARY_MODULES as unknown as string[] } as any);
+  } catch (e) {
+    logger.warn(`Summary[combined]: ${(e as Error).message} — refetching per module for ${symbol}`);
+  }
+
+  const results = await Promise.all(SUMMARY_MODULES.map(async (m) => {
+    try {
+      const r = await yf.quoteSummary(symbol, { modules: [m] } as any);
+      return [m, (r as any)?.[m] ?? null] as const;
+    } catch (e) {
+      logger.debug(`Summary[${m}] for ${symbol}: ${(e as Error).message}`);
+      return [m, null] as const;
+    }
+  }));
+
+  const merged: Record<string, unknown> = {};
+  const lost: string[] = [];
+  for (const [m, value] of results) {
+    if (value !== null) merged[m] = value; else lost.push(m);
+  }
+  if (Object.keys(merged).length === 0) {
+    logger.warn(`Summary: every module failed for ${symbol}`);
+    return null;
+  }
+  if (lost.length > 0) logger.warn(`Summary: ${symbol} missing ${lost.join(', ')}`);
+  return merged;
 }
 
 interface HistoricalData {
@@ -198,6 +250,100 @@ async function yahooSearch(query: string, count = 8): Promise<YFSearchQuote[]> {
 function pickBestEquity(quotes: YFSearchQuote[]): YFSearchQuote | undefined {
   const equities = quotes.filter((q) => q.quoteType === 'EQUITY' && q.symbol);
   return equities.find((q) => q.sector) ?? equities[0];
+}
+
+/** What makes one listing of a company better than another to analyse. */
+export interface ListingQuality {
+  symbol: string;
+  /** Newest quarter Yahoo reports for this listing (YYYY-MM-DD), or null. */
+  mostRecentQuarter: string | null;
+  /** True when that quarter is old enough to poison every trailing ratio. */
+  stale: boolean;
+  /** Sell-side analysts covering this listing. */
+  analystCount: number;
+  currency: string | null;
+  exchange: string | null;
+}
+
+async function listingQuality(symbol: string): Promise<ListingQuality | null> {
+  try {
+    const [q, sum] = await Promise.all([
+      yf.quote(symbol).catch(() => null),
+      yf.quoteSummary(symbol, { modules: ['financialData', 'defaultKeyStatistics', 'price'] }).catch(() => null),
+    ]);
+    if (!q && !sum) return null;
+    const ks: any = (sum as any)?.defaultKeyStatistics ?? {};
+    const fd: any = (sum as any)?.financialData ?? {};
+    const mrq = ks.mostRecentQuarter instanceof Date && !isNaN(ks.mostRecentQuarter.getTime())
+      ? ks.mostRecentQuarter.toISOString().slice(0, 10)
+      : null;
+    return {
+      symbol,
+      mostRecentQuarter: mrq,
+      stale: isFundamentalsStale(mrq, Date.now()),
+      analystCount: num(fd.numberOfAnalystOpinions) ?? 0,
+      currency: str((q as any)?.currency) ?? str((sum as any)?.price?.currency),
+      exchange: str((q as any)?.fullExchangeName),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find a listing of the same company with data worth analysing.
+ *
+ * The problem this solves: a company can be quoted on several venues, and Yahoo
+ * only maintains the fundamentals behind *some* of them. FACC's London IOB line
+ * (`0QW9.IL`) served a market-side block from Q2 2023 and zero analyst coverage,
+ * while Vienna (`FACC.VI`) had current statements and four analysts — same
+ * company, same currency, one usable and one not. Nothing in the pipeline could
+ * tell the difference, because each individual figure looked fine.
+ *
+ * Returns null when the current listing is already the best available, so the
+ * caller can treat a non-null result as "there is something strictly better".
+ * Candidates are found by company name, which is what Yahoo's search indexes
+ * across venues.
+ */
+export async function findBetterListing(
+  symbol: string,
+  companyName: string | null,
+): Promise<ListingQuality | null> {
+  const current = await listingQuality(symbol);
+  if (!current) return null;
+  // A fresh, covered listing is not worth replacing, whatever else exists.
+  if (!current.stale && current.analystCount > 0) return null;
+
+  const query = companyName ?? symbol;
+  let candidates: YFSearchQuote[] = [];
+  try {
+    candidates = await yahooSearch(query, 10);
+  } catch (e) {
+    logger.debug(`Listing search for "${query}" failed: ${(e as Error).message}`);
+    return null;
+  }
+
+  const symbols = candidates
+    .filter((c) => c.quoteType === 'EQUITY' && c.symbol && c.symbol !== symbol)
+    .map((c) => c.symbol!)
+    .slice(0, 6);
+  if (symbols.length === 0) return null;
+
+  const probed = (await Promise.all(symbols.map(listingQuality))).filter((x): x is ListingQuality => x !== null);
+
+  // Ranking, in order: usable data first (a stale listing is disqualified no
+  // matter how well covered), then coverage depth, then keep the currency the
+  // caller already has — switching venues is one change, switching currency is
+  // two, and the second silently reinterprets stored price history.
+  const better = probed
+    .filter((c) => !c.stale)
+    .filter((c) => c.analystCount > current.analystCount || (current.stale && c.analystCount >= current.analystCount))
+    .sort((a, b) => {
+      const sameCur = (c: ListingQuality) => (c.currency === current.currency ? 1 : 0);
+      return (b.analystCount - a.analystCount) || (sameCur(b) - sameCur(a));
+    })[0];
+
+  return better ?? null;
 }
 
 export async function resolveSymbol(input: string): Promise<string> {
@@ -818,6 +964,64 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     return pes.length >= 2 ? pes.reduce((a, b) => a + b, 0) / pes.length : null;
   })();
 
+  // ── Freshness of the market-side modules ─────────────────────────────────
+  // `quote` and `financialData` are a different data path from the statement
+  // series, and Yahoo does not age them together. On a thin secondary listing
+  // it will happily keep serving a `financialData` block from years ago next to
+  // current statements — FACC's London IOB line (0QW9.IL) sat at Q2 2023 while
+  // Vienna was at Q1 2026. Since every TTM ratio in the payload comes from that
+  // block, a stale one silently poisons P/E, margins, ROE, FCF and EV at once.
+  //
+  // So: date the block, and when it is too old, take the consistency-critical
+  // figures from the statements instead. Yahoo's TTM is genuinely better than an
+  // annual figure when it is current, which is why this is a fallback and not
+  // the default — a healthy ticker keeps the TTM view it had before.
+  const isoDay = (v: unknown): string | null => {
+    const d = v instanceof Date ? v : typeof v === 'string' || typeof v === 'number' ? new Date(v as any) : null;
+    return d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null;
+  };
+  const mostRecentQuarter = isoDay(ks.mostRecentQuarter);
+  const lastFiscalYearEnd = isoDay(ks.lastFiscalYearEnd);
+  const fundamentalsStale = isFundamentalsStale(mostRecentQuarter, Date.now());
+  if (fundamentalsStale) {
+    logger.warn(
+      `${symbol}: Yahoo's market-side modules are stale (newest quarter ${mostRecentQuarter}) — `
+      + `falling back to the annual statements for revenue/EPS/margins/EV. Consider the primary listing.`,
+    );
+  }
+
+  /** Newest value of one of the `fundamentalsHistory` series. */
+  const latestOf = (s: { year: number; value: number }[]): number | null =>
+    s.length > 0 ? num(s[s.length - 1]?.value) : null;
+
+  /**
+   * YoY growth from the last two annual points, as a fraction.
+   *
+   * Null when the base year is not positive: growth off a loss or a zero is not
+   * a percentage, it is an artefact. Yahoo's own `earningsGrowth` for FACC was
+   * 123.2 (i.e. +12,320%) for exactly this reason, and the LLM quoted it as
+   * evidence of momentum.
+   */
+  const statementGrowth = (s: { year: number; value: number }[]): number | null => {
+    if (s.length < 2) return null;
+    const prev = num(s[s.length - 2]?.value);
+    const curr = num(s[s.length - 1]?.value);
+    if (prev === null || curr === null || prev <= 0) return null;
+    return (curr - prev) / prev;
+  };
+
+  /**
+   * Pick between the market-side (TTM) figure and the statement-derived one.
+   * Fresh: TTM wins, as before. Stale: the statement wins when it exists.
+   */
+  const preferStatement = <T>(ttm: T | null, statement: T | null): T | null =>
+    fundamentalsStale && statement !== null ? statement : ttm ?? statement;
+
+  const statementRevenue   = latestOf(fundamentalsHistory.revenue);
+  const statementNetIncome = latestOf(fundamentalsHistory.netIncome);
+  const statementEps       = latestOf(fundamentalsHistory.eps);
+  const statementOcf       = latestOf(fundamentalsHistory.operatingCashFlow);
+
   // Resolve the parallel ISIN lookup. By the time we get here the parsing
   // above has been doing its work in parallel, so this rarely blocks.
   const isin = await isinPromise;
@@ -828,11 +1032,20 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     price: num(quote?.regularMarketPrice) ?? 0,
     marketCap: num(quote?.marketCap) ?? 0,
 
-    peRatio:     (() => { const v = num(quote?.trailingPE); return v !== null && v > 0 ? v : null; })(),
+    // A stale quote's trailingPE is built on a stale EPS, so recompute it from
+    // whichever EPS we actually end up trusting rather than shipping a ratio
+    // whose numerator and denominator come from different years.
+    peRatio:     (() => {
+      const e = preferStatement(num(quote?.epsTrailingTwelveMonths), statementEps);
+      const px = num(quote?.regularMarketPrice);
+      if (fundamentalsStale && e !== null && e > 0 && px !== null) return px / e;
+      const v = num(quote?.trailingPE);
+      return v !== null && v > 0 ? v : null;
+    })(),
     forwardPE:   (() => { const v = num(quote?.forwardPE);  return v !== null && v > 0 ? v : null; })(),
     avgPE5Y,
     pegRatio:    num(ks.pegRatio),
-    eps:         num(quote?.epsTrailingTwelveMonths),
+    eps:         preferStatement(num(quote?.epsTrailingTwelveMonths), statementEps),
     // ks.bookValue is per-share in the reporting currency on an ambiguous basis
     // for ADRs; when currencies differ, derive BVPS from the (already FX-
     // converted) latest equity ÷ shares so it bridges cleanly to the $-price.
@@ -846,16 +1059,51 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
         : fxc(num(ks.bookValue));
     })(),
 
-    roe:              num(fd.returnOnEquity),
-    roa:              num(fd.returnOnAssets),
-    operatingMargin:  num(fd.operatingMargins) ?? num(quote?.operatingMargins),
-    netMargin:        num(fd.profitMargins),
-    revenueGrowth:    num(fd.revenueGrowth),
-    revenueGrowthYoY: num(fd.revenueGrowth),
-    earningsGrowth:   num(fd.earningsGrowth),
+    // Each of these is a ratio Yahoo computed inside the market-side block. When
+    // that block is stale they are not merely old but inconsistent with the
+    // statement figures shipped alongside them, so recompute from the statements.
+    roe:              preferStatement(
+                        num(fd.returnOnEquity),
+                        (() => {
+                          const eq = latestOf(fundamentalsHistory.stockholdersEquity);
+                          return statementNetIncome !== null && eq !== null && eq > 0 ? statementNetIncome / eq : null;
+                        })(),
+                      ),
+    roa:              preferStatement(
+                        num(fd.returnOnAssets),
+                        (() => {
+                          const ta = latestOf(fundamentalsHistory.totalAssets);
+                          return statementNetIncome !== null && ta !== null && ta > 0 ? statementNetIncome / ta : null;
+                        })(),
+                      ),
+    operatingMargin:  preferStatement(
+                        num(fd.operatingMargins) ?? num(quote?.operatingMargins),
+                        (() => {
+                          const oi = latestOf(fundamentalsHistory.operatingIncome);
+                          return oi !== null && statementRevenue !== null && statementRevenue > 0 ? oi / statementRevenue : null;
+                        })(),
+                      ),
+    netMargin:        preferStatement(
+                        num(fd.profitMargins),
+                        statementNetIncome !== null && statementRevenue !== null && statementRevenue > 0
+                          ? statementNetIncome / statementRevenue : null,
+                      ),
+    revenueGrowth:    preferStatement(num(fd.revenueGrowth), statementGrowth(fundamentalsHistory.revenue)),
+    revenueGrowthYoY: preferStatement(num(fd.revenueGrowth), statementGrowth(fundamentalsHistory.revenue)),
+    earningsGrowth:   preferStatement(num(fd.earningsGrowth), statementGrowth(fundamentalsHistory.netIncome)),
 
-    freeCashFlow:      fxc(num(fd.freeCashflow)),
-    operatingCashFlow: fxc(num(fd.operatingCashflow)),
+    // A stale negative FCF is the most destructive single field in the payload:
+    // it suppresses the DCF entirely and turns every P/FCF multiple negative.
+    freeCashFlow:      preferStatement(
+                         fxc(num(fd.freeCashflow)),
+                         (() => {
+                           const ocf = statementOcf;
+                           const cx = fxc(capex);
+                           if (ocf === null) return null;
+                           return cx !== null ? ocf - cx : ocf;
+                         })(),
+                       ),
+    operatingCashFlow: preferStatement(fxc(num(fd.operatingCashflow)), statementOcf),
     totalCash:         fxc(num(fd.totalCash)),
     totalDebt:         fxc(num(fd.totalDebt) ?? num(bs.totalDebt)),
     longTermDebt:      fxc(longTermDebt),
@@ -863,11 +1111,17 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     currentRatio:      num(fd.currentRatio),
     quickRatio:        num(fd.quickRatio),
 
-    revenue:          fxc(num(fd.totalRevenue) ?? num(inc.totalRevenue)),
+    revenue:          preferStatement(fxc(num(fd.totalRevenue)), statementRevenue ?? fxc(num(inc.totalRevenue))),
     grossProfit:      fxc(num(fd.grossProfits) ?? grossProfit),
     ebit:             fxc(ebit),
-    netIncome:        fxc(num(fd.netIncomeToCommon) ?? num(inc.netIncome)),
-    ebitda:           fxc(num(fd.ebitda)),
+    netIncome:        preferStatement(fxc(num(fd.netIncomeToCommon)), statementNetIncome ?? fxc(num(inc.netIncome))),
+    // EBITDA = EBIT + D&A. Yahoo's figure lives in the market-side block, so
+    // pairing a stale one with a current statement EBIT is what produced an
+    // EBITDA *below* EBIT — arithmetically impossible, and nothing caught it.
+    ebitda:           preferStatement(
+                        fxc(num(fd.ebitda)),
+                        ebit !== null ? fxc(ebit + (depreciation ?? 0)) : null,
+                      ),
     interestExpense:  fxc(interestExpense),
     incomeTaxExpense: fxc(incomeTaxExpense),
     incomeBeforeTax:  fxc(incomeBeforeTax),
@@ -884,25 +1138,40 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     capex:                   fxc(capex),
     depreciation:            fxc(depreciation),
 
-    // EV = trading-currency market cap + converted net debt. For mismatched
-    // currencies Yahoo's ks.enterpriseValue mixes a $-market-cap with ¥-debt,
-    // so recompute it from the converted figures; otherwise trust Yahoo's.
-    enterpriseValue:   fxRate === 1
-      ? num(ks.enterpriseValue)
-      : (() => {
-          // Reconstruct EV from trading-currency equity + converted net debt.
-          // marketCap (and price×shares) are already trading currency; never
-          // FX-scale them. ks.enterpriseValue is unusable here because it mixes
-          // a trading-currency market cap with reporting-currency debt, so
-          // multiplying it by fxRate would double-convert the equity portion.
-          const px = num(quote?.regularMarketPrice);
-          const sh = num(ks.sharesOutstanding);
-          const equity = num(quote?.marketCap) ?? (px !== null && sh !== null ? px * sh : null);
-          if (equity === null) return null;
-          const debt = fxc(num(fd.totalDebt) ?? num(bs.totalDebt)) ?? 0;
-          const cash = fxc(num(fd.totalCash)) ?? 0;
-          return equity + debt - cash;
-        })(),
+    // EV = trading-currency market cap + converted net debt.
+    //
+    // Two ways Yahoo's own `ks.enterpriseValue` goes wrong, and both used to be
+    // shipped unchecked whenever the currencies happened to match:
+    //   - mismatched currencies mix a $-market-cap with ¥-debt (the original
+    //     reason this branch exists);
+    //   - a stale market-side block reports an EV from an older, smaller market
+    //     cap — FACC's London line served 483M against a 858M cap on +226M net
+    //     debt, i.e. an EV *below* equity value, which cannot happen.
+    //
+    // So rather than deciding by currency, compute the identity and use Yahoo's
+    // figure only when it agrees with it. Same result as before for a healthy
+    // same-currency ticker, without trusting the field on faith.
+    enterpriseValue:   (() => {
+      // marketCap (and price×shares) are already trading currency; never
+      // FX-scale them. Only the debt and cash legs get converted.
+      const px = num(quote?.regularMarketPrice);
+      const sh = num(ks.sharesOutstanding);
+      const equity = num(quote?.marketCap) ?? (px !== null && sh !== null ? px * sh : null);
+      const reported = num(ks.enterpriseValue);
+      if (equity === null || equity <= 0) return reported;
+
+      const debt = fxc(num(fd.totalDebt) ?? num(bs.totalDebt)) ?? 0;
+      const cash = fxc(num(fd.totalCash)) ?? 0;
+      const derived = equity + debt - cash;
+
+      // Mismatched currencies: Yahoo's figure double-converts the equity leg
+      // and is unusable regardless of how close it looks.
+      if (fxRate !== 1) return derived;
+      if (reported === null) return derived;
+
+      const off = Math.abs(reported - derived) / Math.max(Math.abs(reported), Math.abs(derived));
+      return off > EV_IDENTITY_TOLERANCE ? derived : reported;
+    })(),
     sharesOutstanding: num(ks.sharesOutstanding),
     targetMeanPrice:   num(fd.targetMeanPrice),
 
@@ -976,7 +1245,47 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     insiderSellValue:  insiderSellCount > 0 ? insiderSellValue  : null,
     insiderBuyCount:   insiderBuyCount  > 0 ? insiderBuyCount   : null,
     insiderSellCount:  insiderSellCount > 0 ? insiderSellCount  : null,
+
+    mostRecentQuarter,
+    lastFiscalYearEnd,
+    fundamentalsStale,
+    // Filled in below: the audit needs the assembled payload to compare fields
+    // against each other.
+    dataQualityWarnings: [],
   };
+
+  // ── Cross-field audit ─────────────────────────────────────────────────────
+  // Runs on the finished payload, because every check is a comparison between
+  // two fields that individually look fine. Findings ride along into the prompt.
+  financials.dataQualityWarnings = auditFinancials(financials);
+
+  // When the problem is the *listing* rather than the company, name the ticker
+  // that fixes it. Costs a search plus a few probes, so it only runs on a
+  // payload that already came back degraded — never on a healthy one.
+  const degraded = financials.dataQualityWarnings.some(
+    (w) => w.code === 'stale-fundamentals' || w.code === 'no-analyst-coverage',
+  );
+  if (degraded) {
+    const better = await findBetterListing(symbol, financials.companyName);
+    if (better) {
+      const suffix = better.currency && better.currency !== tradingCurrency
+        ? ` Note: it trades in ${better.currency} rather than ${tradingCurrency}, so switching reinterprets stored price history.`
+        : '';
+      financials.dataQualityWarnings.push({
+        code: 'better-listing-available',
+        severity: 'warn',
+        fields: ['symbol'],
+        message: `${better.symbol} (${better.exchange ?? 'unknown venue'}) is the same company with `
+          + `${better.analystCount} analyst${better.analystCount === 1 ? '' : 's'} and fundamentals through `
+          + `${better.mostRecentQuarter ?? 'an unknown quarter'}. Analyse that listing instead.${suffix}`,
+      });
+    }
+  }
+
+  for (const w of financials.dataQualityWarnings) {
+    const line = `${symbol}: [${w.code}] ${w.message}`;
+    if (w.severity === 'error') logger.warn(line); else logger.info(line);
+  }
 
   return { financials, dailyBars, revisions };
 }

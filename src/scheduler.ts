@@ -68,6 +68,39 @@ async function newestAnalysisAgeDays(symbol: string): Promise<number | null> {
   return (Date.now() - newest) / 86_400_000;
 }
 
+/**
+ * The search providers to use for one symbol, escalated when the symbol has no
+ * sell-side coverage.
+ *
+ * The nightly defaults are deliberately cheap: no search, no Perplexity. For a
+ * covered stock that is fine — the analyst consensus is an independent check on
+ * the computed models. For an uncovered one it is not: the models become the
+ * only voice in the room, and any error in their shared inputs goes unchallenged
+ * all the way to the verdict.
+ *
+ * Reads coverage from the stored financials, which the data step has just
+ * refreshed. A missing or unreadable payload escalates too — not knowing whether
+ * a symbol is covered is not a reason to assume it is.
+ */
+async function escalateSearchIfUncovered(config: AppConfig, symbol: string): Promise<string[]> {
+  const { search, searchWhenUncovered, uncoveredSearchProvider } = config.steps.analysis;
+  if (!searchWhenUncovered || search.length > 0) return search;
+
+  let covered: boolean;
+  try {
+    const f = await readFinancialsLax(symbol);
+    const ratings = (f?.analystStrongBuy ?? 0) + (f?.analystBuy ?? 0) + (f?.analystHold ?? 0)
+      + (f?.analystSell ?? 0) + (f?.analystStrongSell ?? 0);
+    covered = ratings > 0 || (f?.targetMeanPrice ?? null) !== null;
+  } catch {
+    covered = false;
+  }
+  if (covered) return search;
+
+  logger.info(`${symbol}: no analyst coverage — escalating to search "${uncoveredSearchProvider}" for this symbol.`);
+  return [uncoveredSearchProvider];
+}
+
 async function timed(fn: () => Promise<string>): Promise<{ detail: string; ms: number }> {
   const started = Date.now();
   const detail = await fn();
@@ -140,12 +173,18 @@ async function processSymbol(
     if (!stale) {
       record('analysis', 'skipped', `verdict is ${age!.toFixed(1)}d old (limit ${analysis.maxAgeDays}d)`, 0);
     } else {
+      // With no sell-side coverage the verdict would rest entirely on our own
+      // computed models — no consensus to triangulate against, and on the
+      // shipped defaults no web context either. Spend one search call to buy
+      // back an independent input rather than analyse in a closed loop.
+      const search = await escalateSearchIfUncovered(config, symbol);
+
       try {
         const { detail, ms } = await timed(async () => {
           const { result } = await runAnalysis({
             symbol,
             model:  analysis.model,
-            search: analysis.search,
+            search,
             pplx:   analysis.pplx,
             runId,
             // A stored verdict has no TTL, so a plain run would serve the very

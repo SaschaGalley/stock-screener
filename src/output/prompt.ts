@@ -22,6 +22,7 @@ import {
   fmtPct,
   fmtBig,
 } from '../analysis/metrics.js';
+import { fmtPrice } from '../format.js';
 import { MarketSignals, SectorMedians, StockFinancials } from '../types.js';
 import { PerplexityContext } from '../data/perplexity.js';
 import { DistillBundle } from '../data/distill.js';
@@ -111,6 +112,43 @@ function optionsSection(s: MarketSignals): string {
 }
 
 /**
+ * Contradictions found in the payload, stated before any of the numbers they
+ * affect.
+ *
+ * Placed first in the prompt on purpose. The failure this exists to prevent was
+ * a model reading a stale P/E of 107.88x, a stale negative FCF and a stale 2.07%
+ * operating margin as three independent bear arguments and writing a confident
+ * SELL — each figure was plausible on its own, and nothing in the prompt said
+ * they all came from a data block three years out of date.
+ */
+function dataQualitySection(f: StockFinancials): string {
+  const warnings = f.dataQualityWarnings ?? [];
+  if (warnings.length === 0) return '';
+
+  const errors = warnings.filter((w) => w.severity === 'error');
+  const notes  = warnings.filter((w) => w.severity === 'warn');
+  const line = (w: typeof warnings[number]) => `- **${w.code}** (${w.fields.join(', ')}): ${w.message}`;
+
+  return `### ⚠ Data Quality — READ BEFORE USING THE NUMBERS BELOW
+
+Automated cross-checks found ${warnings.length} problem${warnings.length === 1 ? '' : 's'} in this payload${
+  errors.length > 0 ? `, ${errors.length} of them invalidating` : ''
+}. These are contradictions *between* fields, so the individual figures below still look plausible — that is exactly why they need flagging.
+
+${errors.length > 0 ? `**Invalidating — do not build a conclusion on the listed fields:**
+${errors.map(line).join('\n')}
+` : ''}${notes.length > 0 ? `**Qualifying — usable, but temper the conclusion:**
+${notes.map(line).join('\n')}
+` : ''}
+How to handle this:
+- Any model whose inputs appear in an invalidating finding is **out of evidence**, however precise its output looks. Say so explicitly in the bear or bull case instead of quoting the number.
+- Prefer the annual statement series (revenue/EPS/FCF history) over trailing figures wherever they conflict.
+- Reduce conviction: a flagged payload does not support a STRONG BUY or STRONG SELL. Widen the fair-value range to reflect what you cannot verify.
+- Never present a flagged figure as a finding of fact about the company. "Reported FCF is negative" is a statement about the data, not about the business.
+`;
+}
+
+/**
  * Wall Street consensus distilled to a single directional verdict + score.
  * Designed to be hard for the LLM to ignore: a one-line verdict label, the
  * weighted score (Strong Buy = +2 down to Strong Sell = −2, normalized to
@@ -119,6 +157,7 @@ function optionsSection(s: MarketSignals): string {
  * first-class signal alongside DCF/Composite — not an afterthought.
  */
 function analystConsensusSection(f: StockFinancials): string {
+  const P = (n: number | null | undefined) => fmtPrice(n, f.tradingCurrency);
   const sb = f.analystStrongBuy  ?? 0;
   const b  = f.analystBuy        ?? 0;
   const h  = f.analystHold       ?? 0;
@@ -126,8 +165,29 @@ function analystConsensusSection(f: StockFinancials): string {
   const ss = f.analystStrongSell ?? 0;
   const total = sb + b + h + s + ss;
 
+  // No coverage is not a neutral absence — it removes the only input that is
+  // independent of our own arithmetic. Left as a bare "N/A" the weighting
+  // guidance below silently hands the models 100% of the vote, which is how a
+  // stale-data SELL got written with no counterweight. Spell out the cap.
   if (total === 0 && f.targetMeanPrice === null) {
-    return `### Analyst Consensus (Wall Street view — independent signal)\n- No analyst coverage available.`;
+    return `### Analyst Consensus (Wall Street view — independent signal)
+- **No analyst coverage on this listing** — no ratings, no price target, no forward estimates.
+
+This removes the independent cross-check on the calculated models, so the models below are
+**unvalidated, not confirmed**. They agree with each other because they share inputs, not
+because two independent methods converged.
+
+Required handling:
+- Treat the computed fair values as one hypothesis, not as consensus. Agreement among models
+  that share an EPS or FCF input is not corroboration.
+- Cap conviction at BUY / HOLD / SELL. A **STRONG** rating requires either sell-side
+  confirmation or a Distill/Perplexity briefing that independently supports it.
+- Widen \`fairValueEstimate\` relative to a covered name to reflect the missing validation.
+- Weight management guidance, order book, segment disclosure and the annual statement series
+  higher than usual — with no consensus, the company's own reported trajectory is the best
+  independent evidence available.
+- If the absence looks like a listing artefact (a thin secondary line of a covered company),
+  name that in the bear case as an information gap rather than treating the company as uncovered.`;
   }
 
   // Weighted score: Strong Buy = +2, Buy = +1, Hold = 0, Sell = −1, Strong Sell = −2.
@@ -161,9 +221,9 @@ function analystConsensusSection(f: StockFinancials): string {
   ].filter(Boolean).join(' + ');
 
   const targetLine = f.targetMeanPrice !== null
-    ? `$${f.targetMeanPrice.toFixed(2)} mean${upside !== null ? ` (${signedPct(upside)} vs current $${f.price.toFixed(2)})` : ''}${
+    ? `${P(f.targetMeanPrice)} mean${upside !== null ? ` (${signedPct(upside)} vs current ${P(f.price)})` : ''}${
         f.analystTargetLow !== null && f.analystTargetHigh !== null
-          ? ` · range $${f.analystTargetLow.toFixed(2)}–$${f.analystTargetHigh.toFixed(2)}`
+          ? ` · range ${P(f.analystTargetLow)}–${P(f.analystTargetHigh)}`
           : ''
       }`
     : 'no consensus target';
@@ -199,6 +259,14 @@ export function buildAnalysisPrompt(
   perplexity?: PerplexityContext,
   distill?: DistillBundle,
 ): string {
+  // Every price and currency amount in this prompt is denominated in the stock's
+  // trading currency. It used to be printed with a hardcoded `$`, so a German
+  // research note about an Austrian company quoted dollar figures throughout.
+  const cur = f.tradingCurrency;
+  const P = (n: number | null | undefined) => fmtPrice(n, cur);
+
+  // Empty string for a clean payload, so the section disappears entirely.
+  const dataQuality = dataQualitySection(f);
 
   const piotroskiLine = `${d.piotroski.score}/${d.piotroski.maxScore} (${d.piotroski.interpretation})`;
   const altmanLine = d.altmanZ.score !== null
@@ -231,11 +299,11 @@ ${distillBriefing.body.trim()}
     : '';
 
   return `## Stock Analysis: ${f.symbol} — ${f.companyName}
-
+${dataQuality ? `\n${dataQuality}` : ''}
 ### Market Overview
-- Price: $${f.price.toFixed(2)} | Market Cap: ${fmtBig(f.marketCap)}
+- Price: ${P(f.price)} | Market Cap: ${fmtBig(f.marketCap, cur)}
 - Sector: ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}
-- 52W Range: $${fmt(f.fiftyTwoWeekLow)} – $${fmt(f.fiftyTwoWeekHigh)}
+- 52W Range: ${P(f.fiftyTwoWeekLow)} – ${P(f.fiftyTwoWeekHigh)}
 - Beta: ${fmt(f.beta)}
   (Wall Street consensus — see dedicated section below.)
 
@@ -248,42 +316,42 @@ ${distillBriefing.body.trim()}
 ### Profitability & Growth
 - ROE: ${fmtPct(d.ratios.roe)} | ROA: ${fmtPct(d.ratios.roa)} | ROIC: ${fmtPct(f.roic)}
 - Operating Margin: ${fmtPct(f.operatingMargin)} | Net Margin: ${fmtPct(f.netMargin)}
-- Revenue: ${fmtBig(f.revenue)} (${fmtPct(f.revenueGrowth)} growth)
+- Revenue: ${fmtBig(f.revenue, cur)} (${fmtPct(f.revenueGrowth)} growth)
 - Earnings Growth TTM: ${fmtPct(f.earningsGrowth)} | EPS Growth 3Y: ${fmtPct(f.epsGrowth3Y)}
-- FCF: ${fmtBig(f.freeCashFlow)} | EBITDA: ${fmtBig(f.ebitda)}
+- FCF: ${fmtBig(f.freeCashFlow, cur)} | EBITDA: ${fmtBig(f.ebitda, cur)}
 
 ### Balance Sheet & Liquidity
-- Cash: ${fmtBig(f.totalCash)} | Total Debt: ${fmtBig(f.totalDebt)}
+- Cash: ${fmtBig(f.totalCash, cur)} | Total Debt: ${fmtBig(f.totalDebt, cur)}
 - Current Ratio: ${fmt(f.currentRatio, 'x')} | Quick Ratio: ${fmt(f.quickRatio, 'x')}
 - Debt/Equity: ${fmt(f.debtToEquity, 'x')} | Interest Coverage: ${d.interestCoverage.ratio !== null ? `${d.interestCoverage.ratio.toFixed(1)}x (${d.interestCoverage.interpretation})` : d.interestCoverage.interpretation}
 
 ### Composite Intrinsic Value (headline anchor)
-- Median fair value across ${d.composite.contributingModels.length} applicable models: ${d.composite.median !== null ? `$${d.composite.median.toFixed(2)} (${fmtPct(d.composite.marginOfSafety)} MoS)` : 'N/A'}
-- IQR (25–75%): ${d.composite.p25 !== null && d.composite.p75 !== null ? `$${d.composite.p25.toFixed(2)} – $${d.composite.p75.toFixed(2)}` : 'N/A'}  |  Min/Max: ${d.composite.min !== null && d.composite.max !== null ? `$${d.composite.min.toFixed(2)} / $${d.composite.max.toFixed(2)}` : 'N/A'}
+- Median fair value across ${d.composite.contributingModels.length} applicable models: ${d.composite.median !== null ? `${P(d.composite.median)} (${fmtPct(d.composite.marginOfSafety)} MoS)` : 'N/A'}
+- IQR (25–75%): ${d.composite.p25 !== null && d.composite.p75 !== null ? `${P(d.composite.p25)} – ${P(d.composite.p75)}` : 'N/A'}  |  Min/Max: ${d.composite.min !== null && d.composite.max !== null ? `${P(d.composite.min)} / ${P(d.composite.max)}` : 'N/A'}
 - Confidence: ${d.composite.confidence}/10 (based on coverage, IQR tightness, and Beneish status)
 - ${d.composite.pctModelsUndervalued !== null ? `${(d.composite.pctModelsUndervalued * 100).toFixed(0)}% of models indicate undervaluation` : ''}
-- Contributing: ${d.composite.contributingModels.map((c) => `${c.name} $${c.fairValue.toFixed(2)}`).join(' | ') || 'none'}
+- Contributing: ${d.composite.contributingModels.map((c) => `${c.name} ${P(c.fairValue)}`).join(' | ') || 'none'}
 - Excluded: ${d.composite.excludedModels.map((e) => `${e.name} (${e.reason})`).join(' | ') || 'none'}
 
 ${analystConsensusSection(f)}
 
 ### Single-Equation Intrinsic Value Models
 - DCF (2-Stage FCFF): ${d.dcf.fairValue !== null
-  ? `$${d.dcf.fairValue.toFixed(2)}` +
+  ? `${P(d.dcf.fairValue)}` +
     (d.dcf.fairValueBear !== null && d.dcf.fairValueBull !== null
-      ? ` [bear $${d.dcf.fairValueBear.toFixed(2)} – bull $${d.dcf.fairValueBull.toFixed(2)}]`
+      ? ` [bear ${P(d.dcf.fairValueBear)} – bull ${P(d.dcf.fairValueBull)}]`
       : '') +
     ` · r=${(d.dcf.discountRate * 100).toFixed(1)}% (CAPM, β=${fmt(d.dcf.beta)}) · g_stage1=${(d.dcf.stage1Growth * 100).toFixed(1)}% fading to ${(d.dcf.terminalGrowthRate * 100).toFixed(1)}%`
   : `N/A — ${d.dcf.assumptions}`}
 - Reverse DCF: ${d.reverseDCF.isPossible && d.reverseDCF.impliedGrowthRate !== null ? `${(d.reverseDCF.impliedGrowthRate * 100).toFixed(1)}%/yr stage-1 FCF growth implied at r=${(d.reverseDCF.discountRate * 100).toFixed(1)}%` : 'N/A'}
-- Graham Number: ${d.grahamNumber.grahamNumber ? `$${d.grahamNumber.grahamNumber.toFixed(2)} (${fmtPct(d.grahamNumber.marginOfSafety)} MoS)` : 'N/A'}
-- Graham Revised (V*): ${d.grahamRevised.fairValue ? `$${d.grahamRevised.fairValue.toFixed(2)} (${fmtPct(d.grahamRevised.marginOfSafety)} MoS, AAA yield ${(d.grahamRevised.bondYield * 100).toFixed(2)}%)` : 'N/A'}
-- Peter Lynch Fair Value: ${d.peterLynch.fairValue ? `$${d.peterLynch.fairValue.toFixed(2)}` : 'N/A'}
-- EPV (Greenwald): ${d.epv.fairValue ? `$${d.epv.fairValue.toFixed(2)} (${fmtPct(d.epv.marginOfSafety)} MoS, r=${(d.epv.wacc * 100).toFixed(1)}%)` : 'N/A'}
-- Residual Income (RIM): ${d.rim.isApplicable && d.rim.fairValue ? `$${d.rim.fairValue.toFixed(2)} (${fmtPct(d.rim.marginOfSafety)} MoS, ROE−r excess ${fmtPct(d.rim.excessReturn)})` : 'N/A — requires positive book value and ROE'}
-- DDM: ${d.ddm.isApplicable && d.ddm.fairValue ? `$${d.ddm.fairValue.toFixed(2)}` : d.ddm.isApplicable ? 'Model constraint (g≥r)' : 'No dividend'}
-- Peer Multiples (median fair price across ${d.peerMultiples.count} multiples): ${d.peerMultiples.medianFairPrice ? `$${d.peerMultiples.medianFairPrice.toFixed(2)} (${fmtPct(d.peerMultiples.marginOfSafety)} MoS)` : 'N/A — no peer-group data'}
-- NCAV (Graham floor): ${d.ncav.isApplicable && d.ncav.ncavPerShare !== null && d.ncav.buyThreshold !== null ? `$${d.ncav.ncavPerShare.toFixed(2)}/sh, buy below $${d.ncav.buyThreshold.toFixed(2)}` : 'N/A — current assets ≤ total liabilities (typical for healthy firms)'}
+- Graham Number: ${d.grahamNumber.grahamNumber ? `${P(d.grahamNumber.grahamNumber)} (${fmtPct(d.grahamNumber.marginOfSafety)} MoS)` : 'N/A'}
+- Graham Revised (V*): ${d.grahamRevised.fairValue ? `${P(d.grahamRevised.fairValue)} (${fmtPct(d.grahamRevised.marginOfSafety)} MoS, AAA yield ${(d.grahamRevised.bondYield * 100).toFixed(2)}%)` : 'N/A'}
+- Peter Lynch Fair Value: ${d.peterLynch.fairValue ? `${P(d.peterLynch.fairValue)}` : 'N/A'}
+- EPV (Greenwald): ${d.epv.fairValue ? `${P(d.epv.fairValue)} (${fmtPct(d.epv.marginOfSafety)} MoS, r=${(d.epv.wacc * 100).toFixed(1)}%)` : 'N/A'}
+- Residual Income (RIM): ${d.rim.isApplicable && d.rim.fairValue ? `${P(d.rim.fairValue)} (${fmtPct(d.rim.marginOfSafety)} MoS, ROE−r excess ${fmtPct(d.rim.excessReturn)})` : 'N/A — requires positive book value and ROE'}
+- DDM: ${d.ddm.isApplicable && d.ddm.fairValue ? `${P(d.ddm.fairValue)}` : d.ddm.isApplicable ? 'Model constraint (g≥r)' : 'No dividend'}
+- Peer Multiples (median fair price across ${d.peerMultiples.count} multiples): ${d.peerMultiples.medianFairPrice ? `${P(d.peerMultiples.medianFairPrice)} (${fmtPct(d.peerMultiples.marginOfSafety)} MoS)` : 'N/A — no peer-group data'}
+- NCAV (Graham floor): ${d.ncav.isApplicable && d.ncav.ncavPerShare !== null && d.ncav.buyThreshold !== null ? `${P(d.ncav.ncavPerShare)}/sh, buy below ${P(d.ncav.buyThreshold)}` : 'N/A — current assets ≤ total liabilities (typical for healthy firms)'}
 
 ### Quality Scores
 - Piotroski F-Score: ${piotroskiLine}
@@ -303,7 +371,7 @@ ${macroSection(d.marketSignals)}
 ### Earnings Surprises (last ≤4 quarters)
 ${f.earningsSurprises.length > 0
   ? f.earningsSurprises.map((q) =>
-      `- ${q.quarter}: estimate $${q.epsEstimate?.toFixed(2) ?? 'N/A'} → actual $${q.epsActual?.toFixed(2) ?? 'N/A'} (${q.surprisePct !== null ? (q.surprisePct >= 0 ? '+' : '') + (q.surprisePct * 100).toFixed(1) + '% surprise' : 'N/A'})`
+      `- ${q.quarter}: estimate ${P(q.epsEstimate)} → actual ${P(q.epsActual)} (${q.surprisePct !== null ? (q.surprisePct >= 0 ? '+' : '') + (q.surprisePct * 100).toFixed(1) + '% surprise' : 'N/A'})`
     ).join('\n')
   : '- No earnings history available'}
 
@@ -312,10 +380,10 @@ ${f.earningsEstimates.length > 0
   ? f.earningsEstimates.map((e) => {
       const label: Record<string, string> = { '0q': 'Current Qtr', '+1q': 'Next Qtr', '0y': 'Current Year', '+1y': 'Next Year' };
       const period = (label[e.period] ?? e.period) + (e.endDate ? ` (ends ${e.endDate})` : '');
-      const eps = e.epsEstimate !== null ? `EPS $${e.epsEstimate.toFixed(2)}` : 'EPS N/A';
-      const range = e.epsLow !== null && e.epsHigh !== null ? ` [$${e.epsLow.toFixed(2)}–$${e.epsHigh.toFixed(2)}]` : '';
+      const eps = e.epsEstimate !== null ? `EPS ${P(e.epsEstimate)}` : 'EPS N/A';
+      const range = e.epsLow !== null && e.epsHigh !== null ? ` [${P(e.epsLow)}–${P(e.epsHigh)}]` : '';
       const epsGrowth = e.epsGrowth !== null ? ` (${e.epsGrowth >= 0 ? '+' : ''}${(e.epsGrowth * 100).toFixed(1)}% YoY)` : '';
-      const rev = e.revenueEstimate !== null ? `  Rev ${fmtBig(e.revenueEstimate)}` : '';
+      const rev = e.revenueEstimate !== null ? `  Rev ${fmtBig(e.revenueEstimate, cur)}` : '';
       const revGrowth = e.revenueGrowth !== null ? ` (${e.revenueGrowth >= 0 ? '+' : ''}${(e.revenueGrowth * 100).toFixed(1)}% YoY)` : '';
       const analysts = e.numberOfAnalysts !== null ? `  ${e.numberOfAnalysts} analysts` : '';
       return `- ${period}: ${eps}${range}${epsGrowth}${rev}${revGrowth}${analysts}`;
@@ -356,6 +424,7 @@ Bullet writing rules — Alphaspread-style:
 Focus on: competitive moat, valuation vs. intrinsic value (Composite + single-equation models), **Wall Street analyst consensus and price target as an independent triangulation signal — do not let it be drowned out by the calculated models**, growth quality, financial health, technical posture (trend, RSI/MACD, relative strength), earnings-revision momentum, and macro context (VIX regime, yield curve, HY spreads) when material.
 
 Weighting guidance for the recommendation (in descending order of authority):
+0. **Data Quality findings** (when the section is present) — these outrank everything below, because they say which of the inputs below are not evidence. A model built on a flagged field does not get a vote no matter where it sits in this list.
 1. **Composite + single-equation valuation models** — your quantitative anchor (intrinsic-value lens).
 2. **Analyst Consensus** — market-aligned sell-side lens; independent of the calculated models.
 3. **Distill Briefing** (when present) — curated multi-source qualitative narrative that has already passed an editorial filter. Strongest qualitative input.
@@ -365,6 +434,10 @@ Weighting guidance for the recommendation (in descending order of authority):
 A strong divergence between any two of these classes is itself a signal — flag it in the bull or bear case.
 
 Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken). A Distill briefing flagging the same concern qualifies as a concrete reason.
+
+When there is **no** analyst consensus, that guard does not become permission to lean harder on the models — it means the models lost their only independent check. Follow the caps stated in the Analyst Consensus section: no STRONG rating, a wider fair-value range, and the company's own reported trajectory weighted above the computed fair values.
+
+Composite confidence is a first-class input, not a footnote: below 4/10 the composite median is an average of models that disagree, and quoting it as a single fair value overstates what is known. Say the models diverge and give a range instead.
 
 ---
 

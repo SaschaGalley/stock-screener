@@ -32,7 +32,12 @@ import { coerce, LeafKind, readPath } from './walk.js';
 // unreadable for the models. Crucially it no longer touches `observations` —
 // history outlives every version bump now.
 
-export const FINANCIALS_VERSION     = 17;
+// 18: adds mostRecentQuarter / lastFiscalYearEnd / fundamentalsStale /
+//     dataQualityWarnings, and changes how revenue, EPS, margins, EBITDA, FCF
+//     and enterprise value are sourced when Yahoo's market-side modules are
+//     stale. Old payloads carry none of the provenance, so they must not be
+//     served to the models as if they had been checked.
+export const FINANCIALS_VERSION     = 18;
 export const ANALYSIS_VERSION       = 5;
 export const NEWS_VERSION           = 1;
 export const MARKET_SIGNALS_VERSION = 2;

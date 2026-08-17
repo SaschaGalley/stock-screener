@@ -46,6 +46,20 @@ export const EarningsEstimateSchema = z.object({
 });
 export type EarningsEstimate = z.infer<typeof EarningsEstimateSchema>;
 
+/**
+ * A contradiction found between fields of the same payload, or a coverage gap
+ * that limits how far the numbers can be trusted. Produced by
+ * `analysis/data-quality.ts` and surfaced to the model in the prompt, so a
+ * verdict is never built on stale inputs without saying so.
+ */
+export const DataQualityWarningSchema = z.object({
+  code:     z.string().describe('Stable machine-readable check id (e.g. "stale-fundamentals", "ebitda-below-ebit")'),
+  severity: z.enum(['error', 'warn']).describe('"error" = the affected figures are unusable; "warn" = usable but qualify the conclusion'),
+  fields:   z.array(z.string()).describe('StockFinancials field names this finding invalidates'),
+  message:  z.string().describe('Human- and model-readable explanation, including the conflicting values'),
+});
+export type DataQualityWarning = z.infer<typeof DataQualityWarningSchema>;
+
 export const StockFinancialsSchema = z.object({
   // ── Identity ────────────────────────────────────────────────────────────────
   symbol:      z.string().describe('Exchange ticker symbol as used by Yahoo Finance (e.g. AAPL, 0QW9.IL)'),
@@ -54,6 +68,16 @@ export const StockFinancialsSchema = z.object({
   marketCap:   z.number().describe('Total market capitalisation: shares outstanding × price'),
   tradingCurrency:   z.string().nullable().optional().describe('Currency of price/marketCap/analyst targets (the quote/trading currency, e.g. USD for an ADR)'),
   financialCurrency: z.string().nullable().optional().describe('Reporting currency of the financial statements (e.g. CNY). When it differs from tradingCurrency, all statement-sourced figures below are FX-converted into tradingCurrency so per-share models stay consistent.'),
+
+  // ── Data provenance & quality ───────────────────────────────────────────────
+  // How current Yahoo's market-side modules are for *this listing*. A secondary
+  // line can serve a `financialData` block years out of date while the
+  // statement series stay fresh, which makes every trailing ratio wrong in a
+  // way no single field reveals — see `analysis/data-quality.ts`.
+  mostRecentQuarter:   z.string().nullable().optional().describe('End date (YYYY-MM-DD) of the newest quarter Yahoo reports for this listing. Older than ~9 months means the market-side modules are stale and trailing ratios are unreliable.'),
+  lastFiscalYearEnd:   z.string().nullable().optional().describe('End date (YYYY-MM-DD) of the newest fiscal year Yahoo reports for this listing'),
+  fundamentalsStale:   z.boolean().optional().describe('True when mostRecentQuarter is old enough that revenue/EPS/margins/EV were taken from the annual statements instead of Yahoo financialData'),
+  dataQualityWarnings: z.array(DataQualityWarningSchema).default([]).describe('Contradictions found between fields of this payload, plus coverage gaps. Empty for a clean payload.'),
 
   // ── Valuation ───────────────────────────────────────────────────────────────
   peRatio:   z.number().nullable().describe('Trailing 12-month P/E ratio (price / EPS TTM)'),
