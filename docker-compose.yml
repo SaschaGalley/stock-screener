@@ -23,14 +23,25 @@ services:
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:-stockcli}
       POSTGRES_USER:     ${POSTGRES_USER:-stockcli}
-      # Still no usable default — an unset password would silently create a
-      # database anyone on the compose network can open. But `:?` aborts the
-      # deploy before Coolify ever renders its Environment Variables tab, so a
-      # first deploy fails with a compose error instead of an empty field to
-      # fill in. SERVICE_PASSWORD_POSTGRES asks Coolify to generate one and keep
-      # it; the `:?` guard stays as the fallback for a plain `docker compose up`,
-      # where nothing generates anything.
-      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD or SERVICE_PASSWORD_POSTGRES}}
+      # Deliberately no `:?` guard, despite an unset password being genuinely
+      # dangerous — it would create a database anyone on the compose network can
+      # open.
+      #
+      # The reason is that `:?` is enforced during *interpolation*, and compose
+      # interpolates on every command including `build`. Coolify builds with its
+      # own build-time.env, which carries no runtime secrets, so the guard
+      # aborted the deploy at the build step with a compose error — before the
+      # image existed, and before the Environment Variables tab it told you to
+      # use had been rendered.
+      #
+      # Nothing is lost by removing it: postgres:17-alpine already refuses to
+      # initialise on an unset *or* empty password ("Database is uninitialized
+      # and superuser password is not specified"), which is the same guarantee
+      # enforced at the right moment, by the component that owns it. Empty
+      # defaults keep interpolation total so no phase can fail on a missing
+      # value; SERVICE_PASSWORD_POSTGRES is Coolify's generated secret and wins
+      # when present.
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-}}
       # Postgres interprets its own timestamps in this zone; the app stores
       # everything as timestamptz, so this only affects server-side logging.
       TZ:                ${TZ:-Europe/Berlin}
@@ -70,7 +81,7 @@ services:
       PORT: 4317
       # Must resolve to the same password the postgres service above received,
       # including when Coolify generated it.
-      DATABASE_URL: postgres://${POSTGRES_USER:-stockcli}:${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-stockcli}
+      DATABASE_URL: postgres://${POSTGRES_USER:-stockcli}:${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-}}@postgres:5432/${POSTGRES_DB:-stockcli}
       # Only EDGAR filings and generated reports live on disk now.
       DATA_DIR: /data
       # Postgres connections held open by the pool. The nightly pipeline is
