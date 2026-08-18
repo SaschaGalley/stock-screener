@@ -24,7 +24,7 @@ import {
 } from '../types.js';
 import { logger } from '../utils/logger.js';
 import { query } from './client.js';
-import { KeyedArray, LeafDef, leavesOf } from './walk.js';
+import { KeyedArray, LeafDef, fieldsOf, leavesOf } from './walk.js';
 
 // ── Domains ──────────────────────────────────────────────────────────────────
 
@@ -103,12 +103,6 @@ export function keyedArraysFor(domain: string): readonly KeyedArray[] {
 // ── Fiscal-period metrics ────────────────────────────────────────────────────
 // These come out of arrays, so the walker skips them; their element schemas
 // still supply the field set and the descriptions.
-
-/** Field names of a zod object, in declaration order. */
-function fieldsOf(schema: z.ZodTypeAny): [string, z.ZodTypeAny][] {
-  const def = (schema as unknown as { _def: { shape?: () => Record<string, z.ZodTypeAny> } })._def;
-  return Object.entries(def?.shape?.() ?? {});
-}
 
 /**
  * Element schemas whose fields become fiscal metrics, minus the field that

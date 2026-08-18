@@ -1,3 +1,8 @@
+/* Tailwind v4. `@import` must precede every other rule, so it leads the file;
+   the theme block below it defines the CSS vars the config maps onto. */
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
 /* ─────────────────────────────────────────────────────────────────────────
    THEME — edit any HEX value below. Your editor (Zed/WebStorm/VS Code)
    shows a color swatch and opens a picker when you click the value.
@@ -58,12 +63,9 @@
         "Cascadia Mono", monospace;
     --font-display: var(--font-sans);
 
-    --text-xs: 0.7rem;
-    --text-sm: 0.8rem;
-    --text-base: 0.875rem;
-    --text-lg: 1.05rem;
-    --text-xl: 1.25rem;
-    --text-2xl: 1.5rem;
+    /* NB: no --text-* here. In Tailwind v4 that namespace *is* the font-size
+       scale, so defining it would silently resize every `text-xs`/`text-sm`
+       utility in the app. These were unused leftovers under v3. */
 
     /* ─── Sizing & motion ─── */
     --radius-sm: 0.25rem;
@@ -71,10 +73,6 @@
     --radius-lg: 0.6rem;
     --transition: 150ms ease-out;
 }
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 html,
 body,

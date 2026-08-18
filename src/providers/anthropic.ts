@@ -37,7 +37,7 @@ export class AnthropicProvider extends LLMProvider {
 
     const text = message.content
       .filter((b) => b.type === 'text')
-      .map((b) => (b as { type: 'text'; text: string }).text)
+      .map((b) => b.text)
       .join('\n');
 
     logger.debug('Claude raw response:', text.substring(0, 200));
@@ -53,52 +53,39 @@ export class AnthropicProvider extends LLMProvider {
     const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
     let text = '';
 
-    // Agentic loop — Claude may call web_search multiple times
+    // web_search is a *server* tool: Anthropic runs the fetch itself and feeds
+    // the results back into the same turn, so there is never a tool_result for
+    // us to return. The one reason to loop is `pause_turn` — Anthropic ends the
+    // turn early on a long search run and expects it handed straight back.
     for (let round = 0; round < 5; round++) {
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: 4096,
         system: SYSTEM_PROMPT,
-        // web_search_20250305 is a built-in tool not yet reflected in SDK v0.28 types
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }] as any,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages,
       });
 
-      if (response.stop_reason === 'end_turn') {
-        text = response.content
-          .filter((b) => b.type === 'text')
-          .map((b) => (b as { type: 'text'; text: string }).text)
-          .join('\n');
-        break;
-      }
-
-      if (response.stop_reason !== 'tool_use') break;
-
-      // Capture the query Claude issued — the tool's `input.query` is the
-      // only visible breadcrumb (Anthropic processes the actual fetch
-      // server-side and never streams the raw results back to us).
+      // Capture the query Claude issued — the server tool's `input.query` is
+      // the only visible breadcrumb, since the results never stream back to us.
       for (const b of response.content) {
-        if (b.type === 'tool_use') {
-          const input = (b as { type: 'tool_use'; input: unknown }).input;
-          const q = (input && typeof input === 'object' && 'query' in input)
-            ? String((input as { query: unknown }).query)
+        if (b.type === 'server_tool_use' && b.name === 'web_search') {
+          const q = (b.input && typeof b.input === 'object' && 'query' in b.input)
+            ? String((b.input as { query: unknown }).query)
             : null;
           if (q) this._nativeSearchQueries.push(q);
         }
       }
 
+      // Accumulate: a paused turn splits the answer across rounds.
+      text += response.content
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n');
+
+      if (response.stop_reason !== 'pause_turn') break;
+
       messages.push({ role: 'assistant', content: response.content });
-
-      const toolResults: Anthropic.ToolResultBlockParam[] = response.content
-        .filter((b) => b.type === 'tool_use')
-        .map((b) => ({
-          type: 'tool_result' as const,
-          tool_use_id: (b as { type: 'tool_use'; id: string }).id,
-          content: 'Search completed.',
-        }));
-
-      messages.push({ role: 'user', content: toolResults });
     }
 
     return parseJsonFromResponse(text);

@@ -43,16 +43,16 @@ export const AppConfigSchema = z.object({
     cron:     z.string().regex(CRON_RE, 'expected a 5-field cron expression').default('0 0 * * *'),
     /** IANA zone the cron is interpreted in. */
     timezone: z.string().min(1).default('Europe/Berlin'),
-  }).default({}),
+  }).prefault({}),
 
   steps: z.object({
     data: z.object({
       enabled: z.boolean().default(true),
-    }).default({}),
+    }).prefault({}),
     distill: z.object({
       enabled: z.boolean().default(true),
       mode:    z.enum(DISTILL_MODES).default('refresh'),
-    }).default({}),
+    }).prefault({}),
     analysis: z.object({
       enabled: z.boolean().default(true),
       /** Re-run only when the newest cached analysis is older than this. */
@@ -76,8 +76,8 @@ export const AppConfigSchema = z.object({
       searchWhenUncovered: z.boolean().default(true),
       /** Provider used by the escalation above. Ignored when it is disabled. */
       uncoveredSearchProvider: z.string().default('tavily'),
-    }).default({}),
-  }).default({}),
+    }).prefault({}),
+  }).prefault({}),
 
   /**
    * Per-symbol opt-out. Absent means "included" — a newly analysed stock joins

@@ -44,41 +44,44 @@ export interface WalkOptions {
 }
 
 // ── zod introspection ────────────────────────────────────────────────────────
-// zod v3 keeps its type tag on `_def.typeName` and wraps modifiers (optional,
-// nullable, default, effects) around the inner type. Unwrapping is the only
-// part of this file that depends on zod internals.
+// zod v4 keeps its type tag on `_def.type` (a lowercase string) and wraps
+// modifiers (optional, nullable, default, catch, pipe) around the inner type.
+// Unwrapping is the only part of this file that depends on zod internals — and
+// this file is the only place in the codebase that touches them at all.
 
 interface ZodDefLike {
-  typeName?:  string;
+  type?:      string;
+  /** optional / nullable / default / catch / readonly wrappers. */
   innerType?: z.ZodTypeAny;
-  schema?:    z.ZodTypeAny;
-  type?:      z.ZodTypeAny;
-  shape?:     () => Record<string, z.ZodTypeAny>;
-  values?:    unknown[];
-  description?: string;
+  /** The source side of a pipe — what `.transform()` produces in v4. */
+  in?:        z.ZodTypeAny;
+  /** Array element type. */
+  element?:   z.ZodTypeAny;
+  /** Object fields. A plain object in v4; it was a thunk in v3. */
+  shape?:     Record<string, z.ZodTypeAny>;
 }
+
+const WRAPPER_TYPES = new Set([
+  'optional', 'nullable', 'default', 'prefault', 'catch', 'readonly', 'nonoptional',
+]);
 
 function defOf(schema: z.ZodTypeAny): ZodDefLike {
   return (schema as unknown as { _def: ZodDefLike })._def ?? {};
 }
 
-/** Strip optional/nullable/default/effects wrappers down to the real type. */
+/** The schema one wrapper layer in, or undefined when this isn't a wrapper. */
+function innerOf(def: ZodDefLike): z.ZodTypeAny | undefined {
+  if (def.type === 'pipe') return def.in;
+  return def.type && WRAPPER_TYPES.has(def.type) ? def.innerType : undefined;
+}
+
+/** Strip optional/nullable/default/catch/pipe wrappers down to the real type. */
 function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
   let cur = schema;
   for (;;) {
-    const def = defOf(cur);
-    const inner = def.typeName === 'ZodEffects' ? def.schema : def.innerType;
-    if (
-      inner
-      && (def.typeName === 'ZodOptional'
-        || def.typeName === 'ZodNullable'
-        || def.typeName === 'ZodDefault'
-        || def.typeName === 'ZodEffects')
-    ) {
-      cur = inner;
-      continue;
-    }
-    return cur;
+    const inner = innerOf(defOf(cur));
+    if (!inner) return cur;
+    cur = inner;
   }
 }
 
@@ -86,11 +89,15 @@ function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
 function describeOf(schema: z.ZodTypeAny): string | null {
   let cur: z.ZodTypeAny | undefined = schema;
   while (cur) {
-    const def = defOf(cur);
-    if (def.description) return def.description;
-    cur = def.typeName === 'ZodEffects' ? def.schema : def.innerType;
+    if (cur.description) return cur.description;
+    cur = innerOf(defOf(cur));
   }
   return null;
+}
+
+/** Field names of a zod object, in declaration order. */
+export function fieldsOf(schema: z.ZodTypeAny): [string, z.ZodTypeAny][] {
+  return Object.entries(defOf(unwrap(schema)).shape ?? {});
 }
 
 // ── Unit inference ───────────────────────────────────────────────────────────
@@ -160,29 +167,27 @@ export function leavesOf(schema: z.ZodTypeAny, opts: WalkOptions = {}): LeafDef[
     const inner = unwrap(node);
     const def = defOf(inner);
 
-    switch (def.typeName) {
-      case 'ZodObject': {
-        for (const [key, child] of Object.entries(def.shape?.() ?? {})) {
+    switch (def.type) {
+      case 'object': {
+        for (const [key, child] of Object.entries(def.shape ?? {})) {
           visit(child, path ? `${path}.${key}` : key);
         }
         return;
       }
-      case 'ZodArray': {
+      case 'array': {
         const spec = keyed.get(path);
-        if (!spec || !def.type) return;   // unkeyed arrays are not a metric
-        const element = unwrap(def.type);
-        const shape = defOf(element).shape?.() ?? {};
+        if (!spec || !def.element) return;   // unkeyed arrays are not a metric
         for (const key of spec.keys) {
-          for (const [field, child] of Object.entries(shape)) {
+          for (const [field, child] of fieldsOf(def.element)) {
             if (field === spec.keyField) continue;
             visit(child, `${path}.${key}.${field}`);
           }
         }
         return;
       }
-      case 'ZodNumber':  emit(path, 'number',  description); return;
-      case 'ZodBoolean': emit(path, 'boolean', description); return;
-      case 'ZodEnum':    emit(path, 'enum',    description); return;
+      case 'number':  emit(path, 'number',  description); return;
+      case 'boolean': emit(path, 'boolean', description); return;
+      case 'enum':    emit(path, 'enum',    description); return;
       default: return;   // strings, arrays of scalars, unions, anything else
     }
   };

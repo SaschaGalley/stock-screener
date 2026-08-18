@@ -11,6 +11,8 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
+    // Vite's ambient types: declares CSS/asset side-effect imports and import.meta.env.
+    "types": ["vite/client"],
     "allowImportingTsExtensions": false,
     "noEmit": true,
     "useDefineForClassFields": true,

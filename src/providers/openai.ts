@@ -50,9 +50,7 @@ export class OpenAIProvider extends LLMProvider {
     // Reset per-call so a reused provider doesn't accumulate across runs.
     this._nativeSearchQueries = [];
 
-    // Responses API with web_search_preview tool
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await (this.client as any).responses.create({
+    const response = await this.client.responses.create({
       model: SEARCH_MODEL,
       tools: [{ type: 'web_search_preview' }],
       instructions: SYSTEM_PROMPT,
@@ -60,14 +58,13 @@ export class OpenAIProvider extends LLMProvider {
     });
 
     // Capture the queries OpenAI issued. The Responses API surfaces each
-    // web_search call as an output item of type 'web_search_call' with the
-    // chosen query in `.action.query`. Shape isn't typed in the SDK yet; treat
-    // defensively.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const output: any[] = Array.isArray(response.output) ? response.output : [];
+    // web_search call as an output item of type 'web_search_call'. Its action
+    // is a union — only the 'search' variant carries a query; 'open_page' and
+    // 'find' are follow-up steps on a page it already opened.
+    const output = Array.isArray(response.output) ? response.output : [];
     for (const item of output) {
-      if (item?.type === 'web_search_call') {
-        const q = item?.action?.query ?? item?.arguments?.query ?? item?.query;
+      if (item.type === 'web_search_call' && item.action.type === 'search') {
+        const q = item.action.query;
         if (typeof q === 'string' && q.length > 0) this._nativeSearchQueries.push(q);
       }
     }
