@@ -38,7 +38,7 @@ Minimum to get started: `ANTHROPIC_API_KEY` + `FINNHUB_API_KEY`.
 With `FRED_API_KEY`, Graham Revised, DDM, EPV, the 2-Stage DCF, RIM and Sortino models pull live rates instead of hardcoded fallbacks. Also unlocks the macro context block (VIX regime, yield curve, HY spreads, DXY).
 
 `DATABASE_URL` is required — everything the app records lives in Postgres.
-`docker compose up -d postgres` starts one matching the URL in `.env.example`.
+`pnpm dev` starts one matching the URL in `.env.example` and migrates it.
 
 Optional env: `DATA_DIR=.data` (EDGAR filings and generated reports — the only
 things still stored as files), `LOG_LEVEL=info|debug|warn|error`.
@@ -46,17 +46,25 @@ things still stored as files), `LOG_LEVEL=info|debug|warn|error`.
 ## Web UI
 
 ```bash
-pnpm run web         # starts both API server + Vite dev server, hot-reload
+pnpm dev             # Postgres + migrations + API + Vite, in that order
 ```
 
-That alias runs `tsx watch src/server.ts` (port 3000) and `vite` (port 5173) in parallel via [concurrently](https://www.npmjs.com/package/concurrently). Open <http://localhost:5173>.
+One command brings the whole stack up: it starts the `postgres` container and
+waits for its healthcheck, applies any pending migrations, then runs `tsx watch
+src/server.ts` (port 4317) and `vite` (port 4316) in parallel via
+[concurrently](https://www.npmjs.com/package/concurrently). Open
+<http://localhost:4316>.
 
-Run them separately if you prefer:
+Run the pieces separately if you prefer:
 
 ```bash
-pnpm run serve:watch     # API on :3000 (auto-restarts on file changes)
-pnpm run web:dev         # Vite dev server on :5173 with HMR
+pnpm dev:infra           # just the Postgres container (waits for healthy)
+pnpm dev:apps            # just API + Vite, assumes the DB is already up
+pnpm run serve:watch     # API on :4317 (auto-restarts on file changes)
+pnpm run web:dev         # Vite dev server on :4316 with HMR
 ```
+
+Stop the container again with `pnpm dev:stop`.
 
 Production build:
 
@@ -467,9 +475,10 @@ Refresh button.
 ## Development
 
 ```bash
-pnpm run dev          # CLI watch mode (tsx)
+pnpm dev              # everything: Postgres + migrations + API + Vite
+pnpm dev:stop         # stop the Postgres container again
+pnpm dev:cli          # CLI watch mode (tsx)
 pnpm run serve:watch  # API server watch mode
-pnpm run web          # CLI server + Vite together
 pnpm run build        # compile TypeScript → dist/
 pnpm run web:build    # build the Vite bundle
 pnpm run typecheck    # type-check without emitting

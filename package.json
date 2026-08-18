@@ -8,18 +8,20 @@
     "investment-cli": "./dist/cli.js"
   },
   "scripts": {
-    "dev": "tsx watch src/cli.ts",
+    "dev": "pnpm dev:infra && pnpm migrate && pnpm dev:apps",
+    "dev:infra": "docker compose up -d --wait postgres",
+    "dev:apps": "concurrently -n api,web -c blue,green \"pnpm run serve:watch\" \"pnpm run web:dev\"",
+    "dev:cli": "tsx watch src/cli.ts",
+    "dev:stop": "docker compose down",
     "build": "tsc && node scripts/copy-migrations.mjs",
     "start": "node dist/cli.js",
     "serve": "tsx src/server.ts",
     "serve:watch": "tsx watch src/server.ts",
-    "web": "concurrently -n api,web -c blue,green \"pnpm run serve:watch\" \"pnpm run web:dev\"",
     "web:dev": "pnpm --filter stock-cli-web dev",
     "web:build": "pnpm --filter stock-cli-web build",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/db/migrate-cli.ts",
-    "backfill": "tsx src/db/backfill.ts",
-    "db:up": "docker compose up -d postgres"
+    "backfill": "tsx src/db/backfill.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
