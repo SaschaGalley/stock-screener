@@ -25,6 +25,8 @@
  *     claim the connection is good.
  */
 
+import { connect } from 'net';
+
 import chalk from 'chalk';
 
 import { getConfig } from '../config.js';
@@ -78,6 +80,43 @@ async function isHatchetServer(apiUrl: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * The gRPC endpoint the SDK will dial: an explicit override wins, else the
+ * address the token carries.
+ */
+function effectiveGrpcTarget(claims: Record<string, unknown>): { host: string; port: number } | null {
+  const raw = process.env.HATCHET_CLIENT_HOST_PORT
+    ?? (claims.grpc_broadcast_address as string | undefined);
+  if (!raw) return null;
+  const at = raw.lastIndexOf(':');
+  if (at < 1) return null;
+  const port = Number(raw.slice(at + 1));
+  return Number.isFinite(port) ? { host: raw.slice(0, at), port } : null;
+}
+
+/**
+ * Can a TCP socket be opened to the gRPC port at all?
+ *
+ * Deliberately below the SDK. gRPC failures surface as a generic UNAVAILABLE
+ * that reads the same whether the port is closed, the name does not resolve or
+ * a proxy answered with plain HTTP — and those have nothing in common as
+ * fixes. A raw socket separates "nothing is listening" from everything else.
+ */
+function probeTcp(host: string, port: number, ms = 6_000): Promise<'open' | 'refused' | 'dns' | 'timeout'> {
+  return new Promise((resolve) => {
+    const socket = connect({ host, port });
+    const done = (r: 'open' | 'refused' | 'dns' | 'timeout') => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(r);
+    };
+    const timer = setTimeout(() => done('timeout'), ms);
+    socket.on('connect', () => done('open'));
+    socket.on('error', (e: NodeJS.ErrnoException) =>
+      done(e.code === 'ENOTFOUND' || e.code === 'EAI_AGAIN' ? 'dns' : 'refused'));
+  });
 }
 
 /** Turn a gRPC/HTTP failure into the thing to go and change. */
@@ -163,6 +202,35 @@ async function main(): Promise<void> {
   }
   ok(`Hatchet confirmed at ${apiUrl}`);
 
+  // ── 3. Reachability (gRPC) ─────────────────────────────────────────────────
+  // Checked separately because it is a different port, and on a proxied
+  // deployment usually a different route: the dashboard can be perfectly
+  // healthy while nothing forwards gRPC at all.
+  const grpc = effectiveGrpcTarget(claims);
+  if (!grpc) {
+    warn('No gRPC address in the token and no HATCHET_CLIENT_HOST_PORT set.');
+  } else {
+    const reach = await probeTcp(grpc.host, grpc.port);
+    const where = `${grpc.host}:${grpc.port}`;
+    if (reach === 'open') {
+      ok(`gRPC port reachable at ${where}`);
+    } else {
+      bad(`gRPC port not reachable at ${where} (${reach})`);
+      if (reach === 'dns') {
+        note('That name does not resolve from here.');
+      } else {
+        note('Nothing is listening there. On a container deployment the engine');
+        note('binds 7077 inside the container — the port still has to be');
+        note('published to the host, which a broadcast-address setting does not do.');
+        note('Publish it on a private interface rather than 0.0.0.0, e.g.');
+        note('  <tailscale-ip>:7077:7077');
+      }
+      note('Until this opens, no task can be queued or run.');
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   let workers;
   try {
     workers = (await hatchet.workers.list()).rows ?? [];
@@ -175,7 +243,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // ── 3. Is anything listening? ──────────────────────────────────────────────
+  // ── 4. Is anything listening? ──────────────────────────────────────────────
   const active = workers.filter((w) => w.status === 'ACTIVE');
   if (workers.length === 0) {
     warn('No workers are registered with this tenant.');
@@ -198,7 +266,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // ── 4. Round trip ──────────────────────────────────────────────────────────
+  // ── 5. Round trip ──────────────────────────────────────────────────────────
   console.log(chalk.bold('\nEnqueuing a ping…\n'));
   const sentAt = Date.now();
   const { ping } = await import('./tasks/ping.js');
