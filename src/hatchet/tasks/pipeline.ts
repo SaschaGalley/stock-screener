@@ -20,8 +20,6 @@
  * Postgres.
  */
 
-import { ConcurrencyLimitStrategy } from '@hatchet-dev/typescript-sdk';
-
 import { readAppConfig } from '../../app-config.js';
 import { finishRun, JobStepResult, pruneRuns, recordRunSteps, setRunSymbol, startRun } from '../../db/admin.js';
 import {
@@ -29,6 +27,7 @@ import {
 } from '../../pipeline/steps.js';
 import { logger } from '../../utils/logger.js';
 import { getHatchet } from '../client.js';
+import { Gate } from '../gate.js';
 import {
   ANALYSIS_CONCURRENCY, DISTILL_CONCURRENCY,
   FINNHUB_UNITS_PER_SYMBOL, YAHOO_UNITS_PER_SYMBOL,
@@ -41,6 +40,27 @@ const hatchet = getHatchet();
 const DATA_RETRIES     = 3;
 const DISTILL_RETRIES  = 3;
 const ANALYSIS_RETRIES = 2;
+
+// How many may be in flight, enforced by waiting. See `gate.ts` for why this is
+// not Hatchet's own concurrency option.
+const distillGate  = new Gate(DISTILL_CONCURRENCY);
+const analysisGate = new Gate(ANALYSIS_CONCURRENCY);
+
+/**
+ * How long a task may take before Hatchet decides the worker lost it.
+ *
+ * The default is a minute, which is shorter than the work: a Distill refresh
+ * has been measured at 113s, and the first run of this pipeline duly had one
+ * restarted mid-flight and generate the same briefing twice.
+ *
+ * These have to cover the wait at the gate as well as the work itself, because
+ * a task holds its slot while queueing. Distill is the extreme case — capped at
+ * one in flight, a full watchlist means the last symbol waits behind every
+ * other, so the budget is sized for the queue rather than for one call.
+ */
+const DATA_TIMEOUT     = '10m';
+const DISTILL_TIMEOUT  = '3h';
+const ANALYSIS_TIMEOUT = '2h';
 
 export type SymbolInput = {
   symbol: string;
@@ -80,6 +100,7 @@ export const symbolPipeline = hatchet.workflow<SymbolInput, {
 const data = symbolPipeline.task({
   name:    'data',
   retries: DATA_RETRIES,
+  executionTimeout: DATA_TIMEOUT,
   // Yahoo and Finnhub are billed to separate budgets; the step spends from both.
   rateLimits: [
     { staticKey: 'finnhub', units: FINNHUB_UNITS_PER_SYMBOL },
@@ -98,21 +119,15 @@ const distill = symbolPipeline.task({
   name:    'distill',
   parents: [data],
   retries: DISTILL_RETRIES,
-  // A constant expression means every run shares one key, which is how a
-  // global cap is spelled. QUEUE_NEWEST rather than the default
-  // CANCEL_IN_PROGRESS: cancelling would leave the night with a single
-  // briefing, since each new symbol would kill the one before it.
-  concurrency: {
-    expression:    "'distill'",
-    maxRuns:       DISTILL_CONCURRENCY,
-    limitStrategy: ConcurrencyLimitStrategy.QUEUE_NEWEST,
-  },
+  executionTimeout: DISTILL_TIMEOUT,
+  // Long enough for the whole queue to drain ahead of it, not just the call.
+  scheduleTimeout:  DISTILL_TIMEOUT,
   fn: async (input: SymbolInput, ctx) => {
     const config = await readAppConfig();
-    return settle(
+    return distillGate.run(async () => settle(
       await runDistillStep(config, input.symbol, input.runId),
       input.runId, input.symbol, ctx.retryCount(), DISTILL_RETRIES,
-    );
+    ));
   },
 });
 
@@ -120,17 +135,14 @@ symbolPipeline.task({
   name:    'analysis',
   parents: [distill],
   retries: ANALYSIS_RETRIES,
-  concurrency: {
-    expression:    "'analysis'",
-    maxRuns:       ANALYSIS_CONCURRENCY,
-    limitStrategy: ConcurrencyLimitStrategy.QUEUE_NEWEST,
-  },
+  executionTimeout: ANALYSIS_TIMEOUT,
+  scheduleTimeout:  ANALYSIS_TIMEOUT,
   fn: async (input: SymbolInput, ctx) => {
     const config = await readAppConfig();
-    return settle(
+    return analysisGate.run(async () => settle(
       await runAnalysisStep(config, input.symbol, input.runId, input.ageDays),
       input.runId, input.symbol, ctx.retryCount(), ANALYSIS_RETRIES,
-    );
+    ));
   },
 });
 
@@ -191,8 +203,11 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
       // other symbols completed is already in run_steps, so the run is partial
       // rather than lost.
       failed++;
-      logger.error(`Pipeline run ${runId}: ${(e as Error).message}`);
-      await finishRun(runId, 'partial', (e as Error).message);
+      // Not always an Error: a rejected bulk run can surface as a bare value,
+      // and `undefined` in the run row helps nobody.
+      const reason = e instanceof Error ? e.message : String(e ?? 'unknown failure');
+      logger.error(`Pipeline run ${runId}: ${reason}`);
+      await finishRun(runId, 'partial', reason);
     } finally {
       await setRunSymbol(runId, null).catch(() => { /* cosmetic */ });
       await pruneRuns().catch(() => { /* retention is best effort */ });
