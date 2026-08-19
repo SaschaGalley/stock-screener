@@ -7,12 +7,14 @@ import ConsensusBar from './ConsensusBar';
 
 interface Props {
   stocks: StockSummary[];
+  /** Symbol → stages the queue currently has in flight for it. */
+  activity?: Record<string, string[]>;
   selectedSymbol: string | null;
   onSelect: (symbol: string) => void;
   onDeleted: (symbol: string) => void;
 }
 
-export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDeleted }: Props) {
+export default function StockSidebar({ stocks, activity = {}, selectedSymbol, onSelect, onDeleted }: Props) {
   const [filter, setFilter] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -65,6 +67,7 @@ export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDelet
             {filtered.map((s) => {
               const active = s.symbol === selectedSymbol;
               const isDeleting = deleting === s.symbol;
+              const stages = activity[s.symbol] ?? [];
               return (
                 <li key={s.symbol} className="group relative">
                   <button
@@ -88,7 +91,20 @@ export default function StockSidebar({ stocks, selectedSymbol, onSelect, onDelet
                       <span className={`truncate text-sm font-medium ${active ? 'text-ink-50' : 'text-ink-200'}`}>
                         {s.companyName}
                       </span>
-                      <span className="shrink-0 font-mono text-[11px] text-ink-500">{s.symbol}</span>
+                      {stages.length > 0 ? (
+                        // Replaces the ticker rather than sitting beside it:
+                        // the row is narrow, and while something is running
+                        // that is the more useful of the two.
+                        <span
+                          className="shrink-0 flex items-center gap-1 font-mono text-[11px] text-accent"
+                          title={`Running: ${stages.join(', ')}`}
+                        >
+                          <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                          {stages[0]}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 font-mono text-[11px] text-ink-500">{s.symbol}</span>
+                      )}
                     </div>
                   </button>
                   <button

@@ -79,6 +79,8 @@ export default function App() {
   // Above `lg` both panels are always visible in the flex flow and this state
   // is irrelevant.
   const [mobileMenu, setMobileMenu] = useState<'stocks' | 'settings' | null>(null);
+  /** Symbols the queue is working on, keyed by symbol → the stages in flight. */
+  const [activity, setActivity] = useState<Record<string, string[]>>({});
 
   // Selecting a symbol always means "show it" — from the overview table too, so
   // a click there lands on the analysis tab rather than silently changing state
@@ -183,6 +185,41 @@ export default function App() {
       .catch(() => { /* keep current settings on error */ });
     return () => { cancelled = true; };
   }, [selected]);
+
+  /**
+   * Poll what the queue is doing.
+   *
+   * The work runs in a worker, so this is the only way the page can know about
+   * it — a reload, or a second tab, has no local state to go on. Five seconds
+   * is a compromise: a data refresh takes seconds and an analysis minutes, so
+   * anything faster mostly asks a question whose answer has not changed.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const { entries } = await api.activity();
+        if (cancelled) return;
+        const bySymbol: Record<string, string[]> = {};
+        for (const e of entries) {
+          if (!e.symbol) continue;
+          // The namespace prefix is an environment detail, not something to
+          // put in front of a user.
+          const stage = e.workflow.replace(/^[a-z0-9]+_/, '');
+          (bySymbol[e.symbol] ??= []).push(stage);
+        }
+        setActivity(bySymbol);
+      } catch {
+        // A failed poll is not worth an error banner; the next one may work.
+        if (!cancelled) setActivity({});
+      }
+    };
+
+    void poll();
+    const timer = setInterval(poll, 5_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
 
   /**
    * Start an analyze run. `force` bypasses the LLM cache — used by the
@@ -296,6 +333,7 @@ export default function App() {
         >
           <StockSidebar
             stocks={stocks}
+            activity={activity}
             selectedSymbol={selected}
             onSelect={handleSelectAndClose}
             onDeleted={(s) => {

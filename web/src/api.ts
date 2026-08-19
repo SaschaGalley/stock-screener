@@ -18,6 +18,7 @@ import type {
   ConfigSaveResponse,
   AddStockResponse,
   SchedulerStatus,
+  ActivityEntry,
 } from './types';
 
 const BASE = '/api';
@@ -52,6 +53,17 @@ export const api = {
 
   listModels: () =>
     jsonFetch<ModelInfo>(`${BASE}/models`),
+
+  /**
+   * What the queue is working on right now.
+   *
+   * Asked of the server rather than tracked in the browser, because the state
+   * outlives the tab: the work runs in a worker, so a reload — or a second
+   * window — should still see the refresh that is in flight. Local state can
+   * only ever know about requests this page started.
+   */
+  activity: () =>
+    jsonFetch<{ hatchet: boolean; busy: boolean; entries: ActivityEntry[] }>(`${BASE}/activity`),
 
   deleteStock: (symbol: string) =>
     jsonFetch<{ ok: boolean; symbol: string }>(`${BASE}/stocks/${encodeURIComponent(symbol)}`, {

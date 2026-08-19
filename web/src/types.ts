@@ -106,3 +106,15 @@ export interface Settings {
 export function searchesKey(searches: SearchChoice[]): string {
   return searches.length === 0 ? 'none' : [...searches].sort().join(',');
 }
+
+/** One thing the queue is currently working on. */
+export interface ActivityEntry {
+  id:        string;
+  /** Task name, e.g. `analyze` or `refresh-data` (namespace-prefixed in dev). */
+  workflow:  string;
+  status:    string;
+  symbol:    string | null;
+  runId:     string | null;
+  trigger:   string | null;
+  startedAt: string | null;
+}
