@@ -13,6 +13,16 @@
  * fails fast and cheaply; only then is a task enqueued. Doing it the other way
  * round — enqueue and wait — cannot tell "queued but unattended" from "never
  * connected", because both present as silence.
+ *
+ * Two traps this walked into, hence the extra steps:
+ *
+ *   - "Something answered" is not "Hatchet answered". Pointed at an unrelated
+ *     dev server on localhost:8080, the worker listing came back as a cheerful
+ *     empty list. The meta endpoint is checked to confirm what is on the line.
+ *   - REST reachable does not imply gRPC reachable. A reverse proxy that
+ *     serves the dashboard happily can still refuse to route gRPC, and only
+ *     the round trip goes over gRPC — so a run without a worker must not
+ *     claim the connection is good.
  */
 
 import chalk from 'chalk';
@@ -42,6 +52,31 @@ function describeToken(token: string): Record<string, unknown> | null {
     return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
   } catch {
     return null;
+  }
+}
+
+/**
+ * The REST base the SDK will actually use: an explicit override wins, else the
+ * address baked into the token.
+ */
+function effectiveApiUrl(claims: Record<string, unknown>): string | null {
+  return process.env.HATCHET_CLIENT_API_URL ?? (claims.server_url as string | undefined) ?? null;
+}
+
+/**
+ * Confirm the thing on the other end is Hatchet and not merely something that
+ * returns 200. `/api/v1/meta` is unauthenticated and shaped distinctively.
+ */
+async function isHatchetServer(apiUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch(new URL('/api/v1/meta', apiUrl), {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return false;
+    const body = await res.json() as Record<string, unknown>;
+    return 'auth' in body && 'allowSignup' in body;
+  } catch {
+    return false;
   }
 }
 
@@ -80,11 +115,25 @@ async function main(): Promise<void> {
   if (claims.aud) note(`tenant/audience:   ${String(claims.aud)}`);
 
   for (const [label, key] of [
+    ['API override',  'HATCHET_CLIENT_API_URL'],
     ['host override', 'HATCHET_CLIENT_HOST_PORT'],
     ['TLS strategy',  'HATCHET_CLIENT_TLS_STRATEGY'],
     ['namespace',     'HATCHET_CLIENT_NAMESPACE'],
   ] as const) {
     if (process.env[key]) note(`${label}: ${process.env[key]} (${key})`);
+  }
+
+  // A server deployed without its public URLs configured mints tokens that
+  // point at its own loopback. Harmless on the server, useless anywhere else,
+  // and the symptom is otherwise a baffling connection error.
+  const embedded = `${claims.grpc_broadcast_address ?? ''} ${claims.server_url ?? ''}`;
+  if (/localhost|127\.0\.0\.1/.test(embedded)) {
+    console.log('');
+    warn('The token points at localhost — the server does not know its own public address.');
+    note('Fine if Hatchet runs on this machine. Otherwise override both:');
+    note('  HATCHET_CLIENT_API_URL=https://hatchet.example.com');
+    note('  HATCHET_CLIENT_HOST_PORT=hatchet.example.com:443');
+    note('The lasting fix is SERVER_URL and GRPC_BROADCAST_ADDRESS on the server.');
   }
 
   // A diagnostic should report a failure, not sit in a retry loop printing it.
@@ -97,12 +146,27 @@ async function main(): Promise<void> {
   const { getHatchet } = await import('./client.js');
   const hatchet = getHatchet();
 
-  // ── 2. Reachability ────────────────────────────────────────────────────────
+  // ── 2. Reachability (REST) ─────────────────────────────────────────────────
   console.log('');
+  const apiUrl = effectiveApiUrl(claims);
+  if (!apiUrl) {
+    bad('No REST address: none in the token and no HATCHET_CLIENT_API_URL set.');
+    process.exitCode = 1;
+    return;
+  }
+  if (!await isHatchetServer(apiUrl)) {
+    bad(`Nothing that looks like Hatchet is answering at ${apiUrl}`);
+    note('Its /api/v1/meta did not respond the way Hatchet does — wrong address,');
+    note('or something else is occupying that port. Set HATCHET_CLIENT_API_URL.');
+    process.exitCode = 1;
+    return;
+  }
+  ok(`Hatchet confirmed at ${apiUrl}`);
+
   let workers;
   try {
     workers = (await hatchet.workers.list()).rows ?? [];
-    ok('Reached the Hatchet API and the token was accepted.');
+    ok('The REST API accepted the token.');
   } catch (e) {
     const msg = (e as Error).message;
     bad(`Could not reach Hatchet: ${msg}`);
@@ -124,9 +188,12 @@ async function main(): Promise<void> {
   }
 
   if (active.length === 0) {
-    warn('The connection works, but nothing is available to run tasks.');
+    warn('REST works, but nothing is available to run tasks.');
     note('Start one in another terminal: pnpm hatchet:worker');
-    note('Then run this check again to complete the round trip.');
+    // Said plainly because the two travel over different ports and a proxy
+    // that serves the dashboard can still refuse to route gRPC.
+    note('Note that this has only proved REST. Tasks travel over gRPC, which');
+    note('is a separate route — the round trip below is what proves it.');
     process.exitCode = 1;
     return;
   }
