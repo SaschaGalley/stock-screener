@@ -964,16 +964,47 @@ export function createApp(): express.Express {
       const opts = isSymbol ? { symbol: input.toUpperCase() } : { query: input };
       send('progress', { stage: 'init', message: 'Starting analysis…' });
 
-      const { result, meta } = await runAnalysis({
-        ...opts,
-        model, search, pplx,
-        force,
-        verbose: false,
-        onProgress: (ev) => {
-          if (closed) return;
-          send('progress', ev);
+      const { result, meta } = await viaHatchet(
+        // Through the queue the analysis runs in the worker, so its progress
+        // has to travel back: the task writes each event to the run's stream
+        // and this subscribes to it. The events forwarded are the same ones the
+        // in-process path emitted, so the client cannot tell the difference.
+        async () => {
+          const { analyze } = await import('./hatchet/tasks/single.js');
+          const { getHatchet } = await import('./hatchet/client.js');
+          const ref = await analyze.runNoWait(
+            { input, model, search, pplx, force },
+            interactive(isSymbol ? { symbol: input.toUpperCase() } : { query: input }),
+          );
+          // `workflowRunId` resolves to either the id or a wrapper around it,
+          // depending on how the run was triggered.
+          const resolved = await ref.workflowRunId;
+          const runId = typeof resolved === 'string' ? resolved : resolved.workflowRunId;
+
+          // Consumed until the run ends, which is what closes the iterator.
+          void (async () => {
+            try {
+              for await (const chunk of getHatchet().runs.subscribeToStream(runId)) {
+                if (closed) return;
+                try { send('progress', JSON.parse(chunk)); }
+                catch { send('progress', { stage: 'info', message: chunk }); }
+              }
+            } catch { /* the result below is what decides the outcome */ }
+          })();
+
+          return ref.result();
         },
-      });
+        async () => await runAnalysis({
+          ...opts,
+          model, search, pplx,
+          force,
+          verbose: false,
+          onProgress: (ev) => {
+            if (closed) return;
+            send('progress', ev);
+          },
+        }) as never,
+      );
 
       if (!closed) {
         send('result', { result, meta });
@@ -1027,6 +1058,12 @@ export function createApp(): express.Express {
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     logger.error(`Server error: ${err.message}`);
     if (process.env.LOG_LEVEL === 'debug') console.error(err.stack);
+    // A missing worker is a deployment state, not a bug in the request: 503
+    // so the caller can tell "come back later" from "this will never work".
+    if (err.name === 'NoWorkerError') {
+      res.status(503).json({ error: 'no_worker', message: err.message });
+      return;
+    }
     res.status(500).json({ error: err.message });
   });
 
@@ -1053,7 +1090,25 @@ export function createApp(): express.Express {
  * it always did.
  */
 async function viaHatchet<O>(enqueue: () => Promise<O>, inline: () => Promise<O>): Promise<O> {
-  return isHatchetConfigured() ? enqueue() : inline();
+  if (!isHatchetConfigured()) return inline();
+
+  // Checked first, because the failure without it is the unhelpful kind: the
+  // task is accepted, nothing picks it up, and the browser waits on a request
+  // that will never answer. Before this work moved to the queue that click
+  // simply ran, so an unattended queue must say so rather than hang.
+  const { hasActiveWorker } = await import('./hatchet/activity.js');
+  if (!await hasActiveWorker()) throw new NoWorkerError();
+
+  return enqueue();
+}
+
+/** No worker is listening, so there is no point queueing the work. */
+export class NoWorkerError extends Error {
+  constructor() {
+    super('No Hatchet worker is running — start one with `pnpm hatchet:worker` '
+      + '(in production, the stockcli-worker container).');
+    this.name = 'NoWorkerError';
+  }
 }
 
 /**

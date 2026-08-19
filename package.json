@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "pnpm dev:infra && pnpm migrate && pnpm dev:apps",
     "dev:infra": "docker compose up -d --wait postgres",
-    "dev:apps": "concurrently -n api,web -c blue,green \"pnpm run serve:watch\" \"pnpm run web:dev\"",
+    "dev:apps": "concurrently -n api,web,worker -c blue,green,magenta \"pnpm run serve:watch\" \"pnpm run web:dev\" \"pnpm run hatchet:worker\"",
     "dev:cli": "tsx watch src/cli.ts",
     "dev:stop": "docker compose down",
     "hatchet:worker": "tsx watch src/hatchet/worker.ts",

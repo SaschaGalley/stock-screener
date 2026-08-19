@@ -143,7 +143,7 @@ export const analyze = hatchet.task<AnalyzeInput, AnalyzeOutput>({
   retries: 1,
   executionTimeout: ANALYSIS_TIMEOUT,
   scheduleTimeout:  ANALYSIS_TIMEOUT,
-  fn: async (input): Promise<AnalyzeOutput> => {
+  fn: async (input, ctx): Promise<AnalyzeOutput> => {
     const config = await readAppConfig();
     return analysisGate.run(async () => {
       const target = looksLikeSymbol(input.input)
@@ -156,6 +156,11 @@ export const analyze = hatchet.task<AnalyzeInput, AnalyzeOutput>({
         pplx:    input.pplx ?? null,
         force:   input.force ?? false,
         verbose: false,
+        // Progress leaves the worker the only way it can reach a browser that
+        // is connected to the API rather than to us: over the run's stream,
+        // which the API subscribes to and forwards as SSE. Fire-and-forget —
+        // an analysis must not fail because a progress line did not land.
+        onProgress: (ev) => { void ctx.putStream(JSON.stringify(ev)); },
       });
       return { result: result as unknown as JsonPayload, meta: meta as unknown as JsonPayload };
     });

@@ -21,6 +21,7 @@
  */
 
 import { getHatchet } from './client.js';
+import { WORKER_NAME } from './worker.js';
 
 /** `refresh-data-1787176529920` → `refresh-data`. */
 function stripRunSuffix(name?: string | null): string | null {
@@ -92,4 +93,46 @@ export async function symbolActivity(symbol: string): Promise<{
     stages:  [...new Set(entries.map((e) => e.workflow))],
     entries,
   };
+}
+
+// ── Is anyone home? ──────────────────────────────────────────────────────────
+
+/**
+ * Whether a worker in *our* namespace is listening.
+ *
+ * Asked before handing an interactive request to the queue. Without it the
+ * endpoint enqueues happily and then waits on a task nobody will pick up: the
+ * browser hangs, and the work sits Queued until someone notices. Before the
+ * move that request would simply have run, so failing silently slower is the
+ * one regression worth spending a check to avoid.
+ *
+ * Namespace-aware on purpose. `workers.list()` spans the tenant, so a
+ * production worker would otherwise answer for a developer machine that has
+ * none of its own — the exact false positive that makes this check worthless.
+ */
+let lastLook: { at: number; ok: boolean } | null = null;
+const LOOK_CACHE_MS = 10_000;
+
+export async function hasActiveWorker(): Promise<boolean> {
+  const now = Date.now();
+  if (lastLook && now - lastLook.at < LOOK_CACHE_MS) return lastLook.ok;
+
+  const namespace = process.env.HATCHET_CLIENT_NAMESPACE?.trim().toLowerCase();
+  const belongsToUs = (name: string): boolean => {
+    const n = name.toLowerCase();
+    return namespace ? n.startsWith(namespace) && n.endsWith(WORKER_NAME) : n === WORKER_NAME;
+  };
+
+  let ok = false;
+  try {
+    const { rows } = await getHatchet().workers.list();
+    ok = (rows ?? []).some((w) => w.status === 'ACTIVE' && belongsToUs(w.name ?? ''));
+  } catch {
+    // Cannot tell: let the request through rather than refuse on a hiccup in
+    // the check itself. A genuinely absent worker still surfaces, just slower.
+    ok = true;
+  }
+
+  lastLook = { at: now, ok };
+  return ok;
 }

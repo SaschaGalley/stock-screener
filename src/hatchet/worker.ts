@@ -20,6 +20,10 @@
 import { logger } from '../utils/logger.js';
 import { getHatchet, isHatchetConfigured } from './client.js';
 
+/** The name this worker registers under. Hatchet prefixes it with the
+ *  namespace, so on a dev machine it appears as `dev_stock-cli`. */
+export const WORKER_NAME = 'stock-cli';
+
 /** Worker ceiling; the per-task limits do the real pacing. */
 const SLOTS = Number(process.env.HATCHET_WORKER_SLOTS ?? 20);
 
@@ -27,9 +31,12 @@ async function main(): Promise<void> {
   // Checked before the tasks are pulled in: a task declaration builds the
   // client as a side effect of being imported, so a static import would throw
   // past this handler and print a stack trace where a sentence belongs.
+  // Not an error: Hatchet is optional, and this process is part of the default
+  // dev stack. Exiting quietly keeps `pnpm dev` working on a checkout that has
+  // never been given a token, where the in-process scheduler is the whole app.
   if (!isHatchetConfigured()) {
-    const { HatchetNotConfiguredError } = await import('./client.js');
-    throw new HatchetNotConfiguredError();
+    logger.info('Hatchet not configured — worker idle. Set HATCHET_CLIENT_TOKEN to enable it.');
+    return;
   }
   const { ping } = await import('./tasks/ping.js');
   const { pipeline, symbolPipeline } = await import('./tasks/pipeline.js');
@@ -40,13 +47,13 @@ async function main(): Promise<void> {
   // the server has never heard of cannot be scheduled.
   await ensureRateLimits();
 
-  const worker = await getHatchet().worker('stock-cli', {
+  const worker = await getHatchet().worker(WORKER_NAME, {
     slots:     SLOTS,
     workflows: [ping, pipeline, symbolPipeline, refreshData, distillRefresh, analyze],
   });
 
   logger.success(
-    `Hatchet worker "stock-cli" starting — ${SLOTS} slot(s), tasks: ping, pipeline, `
+    `Hatchet worker "${WORKER_NAME}" starting — ${SLOTS} slot(s), tasks: ping, pipeline, `
     + 'symbol-pipeline, refresh-data, distill-refresh, analyze',
   );
 
