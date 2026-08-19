@@ -27,9 +27,8 @@ import {
 } from '../../pipeline/steps.js';
 import { logger } from '../../utils/logger.js';
 import { getHatchet } from '../client.js';
-import { Gate } from '../gate.js';
 import {
-  ANALYSIS_CONCURRENCY, DISTILL_CONCURRENCY,
+  analysisGate, distillGate,
   FINNHUB_UNITS_PER_SYMBOL, YAHOO_UNITS_PER_SYMBOL,
 } from '../limits.js';
 
@@ -40,11 +39,6 @@ const hatchet = getHatchet();
 const DATA_RETRIES     = 3;
 const DISTILL_RETRIES  = 3;
 const ANALYSIS_RETRIES = 2;
-
-// How many may be in flight, enforced by waiting. See `gate.ts` for why this is
-// not Hatchet's own concurrency option.
-const distillGate  = new Gate(DISTILL_CONCURRENCY);
-const analysisGate = new Gate(ANALYSIS_CONCURRENCY);
 
 /**
  * How long a task may take before Hatchet decides the worker lost it.
@@ -208,9 +202,20 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
       // Fired together; the rate limits and concurrency caps decide the real
       // pace. `run` waits for each child to finish so the run row closes on
       // the truth rather than on "everything was queued".
-      const results = await symbolPipeline.run(
-        symbols.map((symbol) => ({ symbol, runId, ageDays: ages.get(symbol) ?? null })),
-      );
+      // Tagged, not just passed as input: Hatchet can filter on metadata, and
+      // that filter is what makes "is AAPL busy?" answerable without pulling
+      // the whole queue back and sifting it here.
+      const results = await Promise.all(symbols.map((symbol) =>
+        symbolPipeline.run(
+          { symbol, runId, ageDays: ages.get(symbol) ?? null },
+          {
+            additionalMetadata: {
+              symbol,
+              runId:   String(runId),
+              trigger: input.trigger,
+            },
+          },
+        )));
       for (const r of results) {
         for (const step of [r.data, r.distill, r.analysis]) {
           if (step?.status === 'failed') failed++;

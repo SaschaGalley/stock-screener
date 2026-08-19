@@ -7,7 +7,8 @@
  * worker cannot make the admin page time out, and either can be restarted
  * without the other.
  *
- * Registers the nightly pipeline plus `ping`, which stays because it is what
+ * Registers the nightly pipeline, the interactive single-symbol tasks the API
+ * now hands over, and `ping`, which stays because it is what
  * `pnpm hatchet:check` uses to prove the round trip.
  *
  * Slots are the worker's own ceiling and deliberately generous: the real pacing
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
   }
   const { ping } = await import('./tasks/ping.js');
   const { pipeline, symbolPipeline } = await import('./tasks/pipeline.js');
+  const { refreshData, distillRefresh, analyze } = await import('./tasks/single.js');
   const { ensureRateLimits } = await import('./limits.js');
 
   // Declared before the worker accepts anything: a task that spends from a key
@@ -40,11 +42,12 @@ async function main(): Promise<void> {
 
   const worker = await getHatchet().worker('stock-cli', {
     slots:     SLOTS,
-    workflows: [ping, pipeline, symbolPipeline],
+    workflows: [ping, pipeline, symbolPipeline, refreshData, distillRefresh, analyze],
   });
 
   logger.success(
-    `Hatchet worker "stock-cli" starting — ${SLOTS} slot(s), tasks: ping, pipeline, symbol-pipeline`,
+    `Hatchet worker "stock-cli" starting — ${SLOTS} slot(s), tasks: ping, pipeline, `
+    + 'symbol-pipeline, refresh-data, distill-refresh, analyze',
   );
 
   // Blocks until the process is signalled; the SDK handles SIGTERM/SIGINT.

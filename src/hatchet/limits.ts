@@ -21,6 +21,7 @@ import { RateLimitDuration } from '@hatchet-dev/typescript-sdk';
 
 import { logger } from '../utils/logger.js';
 import { getHatchet } from './client.js';
+import { Gate } from './gate.js';
 
 /** Rate-limit keys, declared server-side once per worker boot. */
 export const RATE_LIMITS = [
@@ -39,6 +40,18 @@ export const YAHOO_UNITS_PER_SYMBOL   = 1;
 /** How many symbols may sit in each stage at once. */
 export const DISTILL_CONCURRENCY  = 1;
 export const ANALYSIS_CONCURRENCY = 3;
+
+/**
+ * The live gates, shared by everything that runs in a worker.
+ *
+ * Instantiated here rather than beside the pipeline because the nightly run is
+ * no longer the only caller: a refresh clicked in the UI goes through the same
+ * queue and must count against the same ceiling. Two gates would let a manual
+ * Distill refresh run alongside the pipeline's one, which is exactly the case
+ * the limit of one exists to prevent.
+ */
+export const distillGate  = new Gate(DISTILL_CONCURRENCY);
+export const analysisGate = new Gate(ANALYSIS_CONCURRENCY);
 
 /**
  * Register the rate limits with the server.

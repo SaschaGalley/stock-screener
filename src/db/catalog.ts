@@ -202,29 +202,55 @@ let idByKey: Map<string, number> | null = null;
 export async function syncCatalog(): Promise<Map<string, number>> {
   const defs = buildCatalog();
 
-  // One statement, unnested arrays — 300-odd single INSERTs would make boot
-  // noticeably slower for no benefit.
+  // Two statements rather than one upsert, and the reason is the id sequence.
+  //
+  // `metrics.id` is a smallserial, capped at 32767, and `ON CONFLICT DO UPDATE`
+  // calls nextval() for every row it considers — not just the ones it inserts.
+  // Upserting all 421 metrics on each boot therefore spent 421 ids per restart
+  // whether or not anything had changed, and around the seventy-seventh the
+  // sequence ran out and the process refused to start. Inserting only what is
+  // missing spends an id only when there is genuinely a new metric.
+  //
+  // Still one round trip each, on unnested arrays; 300-odd single statements
+  // would make boot noticeably slower for no benefit.
+  const columns = [
+    defs.map((d) => d.key),
+    defs.map((d) => d.domain),
+    defs.map((d) => d.valueKind),
+    defs.map((d) => d.label),
+    defs.map((d) => d.unit),
+    defs.map((d) => d.description),
+    defs.map((d) => d.cadence),
+  ];
+
   await query(
     `INSERT INTO metrics (key, domain, value_kind, label, unit, description, cadence)
-     SELECT * FROM unnest(
+     SELECT t.* FROM unnest(
        $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[]
-     )
-     ON CONFLICT (key) DO UPDATE SET
-       domain      = EXCLUDED.domain,
-       value_kind  = EXCLUDED.value_kind,
-       label       = EXCLUDED.label,
-       unit        = EXCLUDED.unit,
-       description = EXCLUDED.description,
-       cadence     = EXCLUDED.cadence`,
-    [
-      defs.map((d) => d.key),
-      defs.map((d) => d.domain),
-      defs.map((d) => d.valueKind),
-      defs.map((d) => d.label),
-      defs.map((d) => d.unit),
-      defs.map((d) => d.description),
-      defs.map((d) => d.cadence),
-    ],
+     ) AS t(key, domain, value_kind, label, unit, description, cadence)
+     WHERE NOT EXISTS (SELECT 1 FROM metrics m WHERE m.key = t.key)`,
+    columns,
+  );
+
+  // Descriptions, labels and units are presentation and do change between
+  // versions, so existing rows are still brought up to date — by key, which
+  // touches no sequence.
+  await query(
+    `UPDATE metrics m SET
+       domain      = t.domain,
+       value_kind  = t.value_kind,
+       label       = t.label,
+       unit        = t.unit,
+       description = t.description,
+       cadence     = t.cadence
+     FROM unnest(
+       $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[]
+     ) AS t(key, domain, value_kind, label, unit, description, cadence)
+     WHERE m.key = t.key
+       AND (m.domain, m.value_kind, m.label, m.unit, m.description, m.cadence)
+           IS DISTINCT FROM
+           (t.domain, t.value_kind, t.label, t.unit, t.description, t.cadence)`,
+    columns,
   );
 
   const rows = (await query<{ id: number; key: string }>('SELECT id, key FROM metrics')).rows;

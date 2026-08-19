@@ -7,6 +7,7 @@ import { dirname } from 'path';
 
 import { getConfig } from './config.js';
 import { logger } from './utils/logger.js';
+import { isHatchetConfigured } from './hatchet/client.js';
 import { runAnalysis } from './cli.js';
 import {
   AnalysisFlagsKey, analysisHash,
@@ -248,11 +249,21 @@ export function createApp(): express.Express {
       const symbol = looksLikeSymbol(raw) ? raw.toUpperCase() : await searchByQuery(raw);
       logger.info(`Add stock: "${raw}" → ${symbol}`);
 
-      const data = await refreshStockData(symbol);
+      const { refreshData } = await import('./hatchet/tasks/single.js');
+      // The refresh resolves the ticker once more internally and may tidy it,
+      // so the response names the stock by what came back rather than by what
+      // went in.
+      const { symbol: resolved } = await viaHatchet(
+        () => refreshData.run({ symbol, includeDistill: true }, interactive({ symbol })),
+        async () => {
+          const d = await refreshStockData(symbol);
+          return { data: d as never, symbol: d.symbol };
+        },
+      );
       res.status(201).json({
         ok:      true,
-        symbol:  data.symbol,
-        summary: await buildStockSummary(data.symbol),
+        symbol:  resolved,
+        summary: await buildStockSummary(resolved),
       });
     } catch (e) {
       next(e);
@@ -265,8 +276,15 @@ export function createApp(): express.Express {
   app.post('/api/stocks/:symbol/refresh-data', async (req, res, next) => {
     try {
       const symbol = req.params.symbol.toUpperCase();
-      const data = await refreshStockData(symbol);
-      res.json({ ok: true, ...data });
+      const { refreshData } = await import('./hatchet/tasks/single.js');
+      const out = await viaHatchet(
+        () => refreshData.run({ symbol, includeDistill: true }, interactive({ symbol })),
+        async () => {
+          const d = await refreshStockData(symbol);
+          return { data: d as never, symbol: d.symbol };
+        },
+      );
+      res.json({ ok: true, ...out.data });
     } catch (e) {
       next(e);
     }
@@ -298,12 +316,16 @@ export function createApp(): express.Express {
 
       // Same merge-and-persist path the nightly job takes (an empty pool keeps
       // the briefing already stored), so both routes can never drift apart.
-      const result = await syncDistillBriefing(
-        distillHintsFor(symbol, financials),
-        cfg.distillApiKey,
-        cfg.distillApiUrl,
-        cfg.distillBriefingTypeId,
-        'refresh',
+      const { distillRefresh } = await import('./hatchet/tasks/single.js');
+      const { result } = await viaHatchet(
+        () => distillRefresh.run({ symbol }, interactive({ symbol })),
+        async () => ({ result: await syncDistillBriefing(
+          distillHintsFor(symbol, financials),
+          cfg.distillApiKey!,
+          cfg.distillApiUrl,
+          cfg.distillBriefingTypeId,
+          'refresh',
+        ) as never }),
       );
 
       res.json({
@@ -508,6 +530,32 @@ export function createApp(): express.Express {
       return;
     }
     res.status(202).json({ ok: true, started: true, symbols: symbols ?? null });
+  });
+
+  // ── GET /api/activity ──────────────────────────────────────────────────────
+  // What is in flight right now, optionally for one symbol. Answered from
+  // Hatchet rather than from `runs`/`run_steps`: the queue is the only thing
+  // that knows about work which is accepted but not yet started, and mirroring
+  // that into Postgres would mean reconciling rows no process ever finished.
+  //
+  // The history stays where it was. A queue is not an archive.
+  app.get('/api/activity', async (req, res, next) => {
+    try {
+      if (!isHatchetConfigured()) {
+        res.json({ hatchet: false, busy: isPipelineRunning(), entries: [] });
+        return;
+      }
+      const symbol = typeof req.query.symbol === 'string' ? req.query.symbol : undefined;
+      const { inFlight, symbolActivity } = await import('./hatchet/activity.js');
+      if (symbol) {
+        res.json({ hatchet: true, ...(await symbolActivity(symbol)) });
+        return;
+      }
+      const entries = await inFlight();
+      res.json({ hatchet: true, busy: entries.length > 0, entries });
+    } catch (e) {
+      next(e);
+    }
   });
 
   // ── POST /api/jobs/stop ────────────────────────────────────────────────────
@@ -850,14 +898,23 @@ export function createApp(): express.Express {
       const opts = isSymbol ? { symbol: input.toUpperCase() } : { query: input };
       logger.info(`Analyze ${isSymbol ? 'symbol' : 'query'}=${input} model=${model ?? 'claude'} search=${JSON.stringify(search ?? 'none')} pplx=${pplx ?? 'none'}${force ? ' force=true' : ''}`);
 
-      const { result, meta } = await runAnalysis({
-        ...opts,
-        model:   model ?? 'claude',
-        search:  search ?? 'none',
-        pplx:    pplx ?? null,
-        force:   !!force,
-        verbose: false,
-      });
+      const { analyze } = await import('./hatchet/tasks/single.js');
+      const { result, meta } = await viaHatchet(
+        () => analyze.run(
+          { input, model, search, pplx, force },
+          // Tagged by ticker where there is one; a free-text query has no
+          // symbol to file the run under until the analysis resolves it.
+          interactive(isSymbol ? { symbol: input.toUpperCase() } : { query: input }),
+        ),
+        async () => await runAnalysis({
+          ...opts,
+          model:   model ?? 'claude',
+          search:  search ?? 'none',
+          pplx:    pplx ?? null,
+          force:   !!force,
+          verbose: false,
+        }) as never,
+      );
       res.json({ result, meta });
     } catch (e) {
       next(e);
@@ -983,6 +1040,35 @@ export function createApp(): express.Express {
  * idempotent — the catalogue in particular has to run before anything writes an
  * observation, because it owns the key → id mapping those writes need.
  */
+/**
+ * How an interactive job is dispatched.
+ *
+ * The endpoints below still await their result and answer with it, so the web
+ * UI is unchanged — what moves is *where* the work happens. In the worker it
+ * counts against the same rate limits and the same Distill gate as the nightly
+ * pipeline, which is the whole point: a refresh clicked at 2am used to slip
+ * past both.
+ *
+ * Without a token there is no queue to use, so the work runs inline exactly as
+ * it always did.
+ */
+async function viaHatchet<O>(enqueue: () => Promise<O>, inline: () => Promise<O>): Promise<O> {
+  return isHatchetConfigured() ? enqueue() : inline();
+}
+
+/**
+ * Trigger options for work a person is waiting on.
+ *
+ * HIGH priority because they are waiting: with Distill serialised, a click
+ * during a nightly pass would otherwise queue behind every remaining symbol.
+ * Spelled numerically (3 = Priority.HIGH) to keep the SDK's enum out of the
+ * server's imports; the value is part of the wire protocol.
+ */
+const interactive = (meta: Record<string, string>) => ({
+  additionalMetadata: { ...meta, trigger: 'api' },
+  priority: 3,
+});
+
 export async function prepareDatabase(): Promise<void> {
   await waitForDatabase();
   await migrate();
@@ -1016,6 +1102,7 @@ if (isMain) {
         logger.info(`  POST /api/analyze                      — run analysis (body: {input, model, search, pplx})`);
         logger.info(`  GET  /api/config · PUT /api/config     — operational settings`);
         logger.info(`  GET  /api/jobs · POST /api/jobs/run    — pipeline status / manual run`);
+        logger.info(`  GET  /api/activity?symbol=             — what is in flight right now`);
 
         // Install the cron only once the port is bound: if the process is going
         // to die on EADDRINUSE, it should do so without having kicked off a run.
