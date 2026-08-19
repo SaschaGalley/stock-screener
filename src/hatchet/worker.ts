@@ -7,15 +7,20 @@
  * worker cannot make the admin page time out, and either can be restarted
  * without the other.
  *
- * Registers `ping` only, for now. Real pipeline tasks land here as they move
- * over from `scheduler.ts`.
+ * Registers the nightly pipeline plus `ping`, which stays because it is what
+ * `pnpm hatchet:check` uses to prove the round trip.
+ *
+ * Slots are the worker's own ceiling and deliberately generous: the real pacing
+ * comes from the per-task rate limits and concurrency caps, which Hatchet
+ * enforces across every worker rather than per process. A tight slot count here
+ * would just add a second, invisible limit.
  */
 
 import { logger } from '../utils/logger.js';
 import { getHatchet, isHatchetConfigured } from './client.js';
 
-/** One slot while the only task is `ping`; the pipeline will want more. */
-const SLOTS = Number(process.env.HATCHET_WORKER_SLOTS ?? 1);
+/** Worker ceiling; the per-task limits do the real pacing. */
+const SLOTS = Number(process.env.HATCHET_WORKER_SLOTS ?? 20);
 
 async function main(): Promise<void> {
   // Checked before the tasks are pulled in: a task declaration builds the
@@ -26,13 +31,21 @@ async function main(): Promise<void> {
     throw new HatchetNotConfiguredError();
   }
   const { ping } = await import('./tasks/ping.js');
+  const { pipeline, symbolPipeline } = await import('./tasks/pipeline.js');
+  const { ensureRateLimits } = await import('./limits.js');
+
+  // Declared before the worker accepts anything: a task that spends from a key
+  // the server has never heard of cannot be scheduled.
+  await ensureRateLimits();
 
   const worker = await getHatchet().worker('stock-cli', {
     slots:     SLOTS,
-    workflows: [ping],
+    workflows: [ping, pipeline, symbolPipeline],
   });
 
-  logger.success(`Hatchet worker "stock-cli" starting — ${SLOTS} slot(s), tasks: ping`);
+  logger.success(
+    `Hatchet worker "stock-cli" starting — ${SLOTS} slot(s), tasks: ping, pipeline, symbol-pipeline`,
+  );
 
   // Blocks until the process is signalled; the SDK handles SIGTERM/SIGINT.
   await worker.start();

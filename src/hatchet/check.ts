@@ -243,7 +243,35 @@ async function main(): Promise<void> {
     return;
   }
 
-  // ── 4. Is anything listening? ──────────────────────────────────────────────
+  // ── 4. Does gRPC accept the token? ─────────────────────────────────────────
+  // Enqueuing needs no worker, so this proves the gRPC half on its own. Worth
+  // separating: REST and gRPC are served by different Hatchet components, and
+  // they can disagree about a token — the engine validates it against its own
+  // configured server URL, which a deployment can leave pointing somewhere the
+  // issuing dashboard has since moved away from.
+  const { ping } = await import('./tasks/ping.js');
+  try {
+    await ping.runNoWait({ message: `check from ${process.env.USER ?? 'unknown'}` });
+    ok('gRPC accepted the token and queued a task.');
+  } catch (e) {
+    const msg = (e as Error).message;
+    bad(`gRPC refused the task: ${msg}`);
+    if (/UNAUTHENTICATED|invalid auth token/i.test(msg)) {
+      note('REST took this token and gRPC did not, so it is not the token —');
+      note('the engine disagrees about who issued it. Its SERVER_URL must match');
+      note(`the token's issuer (${claims.iss ?? 'unknown'}); check that the engine`);
+      note('service actually has SERVER_URL in its environment, not just the API.');
+    } else if (/wrong version number|SSL|TLS/i.test(msg)) {
+      note('A TLS handshake against a plaintext port, or the reverse.');
+      note('Engine on SERVER_GRPC_INSECURE=t? set HATCHET_CLIENT_TLS_STRATEGY=none');
+    } else {
+      explain(msg);
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  // ── 5. Is anything listening? ──────────────────────────────────────────────
   const active = workers.filter((w) => w.status === 'ACTIVE');
   if (workers.length === 0) {
     warn('No workers are registered with this tenant.');
@@ -256,20 +284,16 @@ async function main(): Promise<void> {
   }
 
   if (active.length === 0) {
-    warn('REST works, but nothing is available to run tasks.');
+    warn('Both routes work, but nothing is available to run tasks.');
     note('Start one in another terminal: pnpm hatchet:worker');
-    // Said plainly because the two travel over different ports and a proxy
-    // that serves the dashboard can still refuse to route gRPC.
-    note('Note that this has only proved REST. Tasks travel over gRPC, which');
-    note('is a separate route — the round trip below is what proves it.');
+    note('The ping just queued will run as soon as one connects.');
     process.exitCode = 1;
     return;
   }
 
-  // ── 5. Round trip ──────────────────────────────────────────────────────────
+  // ── 6. Round trip ──────────────────────────────────────────────────────────
   console.log(chalk.bold('\nEnqueuing a ping…\n'));
   const sentAt = Date.now();
-  const { ping } = await import('./tasks/ping.js');
 
   let timer: NodeJS.Timeout | undefined;
   try {

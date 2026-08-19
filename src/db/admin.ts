@@ -159,8 +159,13 @@ export async function listRuns(limit = MAX_KEPT_RUNS): Promise<JobRun[]> {
     'SELECT * FROM runs ORDER BY started_at DESC LIMIT $1', [limit],
   )).rows;
   if (runs.length === 0) return [];
+  // Ordered by id, not seq. `seq` is assigned by reading MAX and adding one,
+  // which is safe only while a single writer walks the watchlist; with symbols
+  // running in parallel two writers can read the same MAX and collide. `id` is
+  // a bigserial, so it is monotonic by construction and gives the same order
+  // as seq ever did for a serial run.
   const steps = (await query<StepRow>(
-    'SELECT * FROM run_steps WHERE run_id = ANY($1::bigint[]) ORDER BY seq',
+    'SELECT * FROM run_steps WHERE run_id = ANY($1::bigint[]) ORDER BY id',
     [runs.map((r) => r.id)],
   )).rows;
   return assemble(runs, steps);

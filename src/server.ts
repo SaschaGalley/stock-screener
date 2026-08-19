@@ -40,9 +40,10 @@ import {
   applySchedule,
   getSchedulerStatus,
   isPipelineRunning,
+  JobBusyError,
   recoverInterruptedRuns,
   requestStop,
-  runPipeline,
+  startPipeline,
 } from './scheduler.js';
 import { reportExists, reportPath, symbolDir } from './files.js';
 import { pctChange } from './utils/num.js';
@@ -408,6 +409,9 @@ export function createApp(): express.Express {
     res.json({
       ok:        true,
       uptimeSec: Math.round(process.uptime()),
+      // In-process only, deliberately: this probe must not touch the database,
+      // and under Hatchet the run lives in the worker. GET /api/jobs is the
+      // endpoint that answers "is a pipeline running anywhere".
       scheduler: { running: isPipelineRunning() },
     });
   });
@@ -483,19 +487,26 @@ export function createApp(): express.Express {
   // Fire-and-poll: a full watchlist pass runs for minutes to hours, far past
   // any sane HTTP timeout, so this returns as soon as the run is claimed and
   // the client watches GET /api/jobs for progress.
-  app.post('/api/jobs/run', (req, res) => {
-    if (isPipelineRunning()) {
-      res.status(409).json({ error: 'job_running', message: 'A pipeline run is already in progress.' });
-      return;
-    }
+  app.post('/api/jobs/run', async (req, res) => {
     const body = req.body as { symbols?: unknown };
     const symbols = Array.isArray(body?.symbols)
       ? body.symbols.filter((s): s is string => typeof s === 'string')
       : undefined;
 
-    runPipeline({ trigger: 'manual', symbols }).catch((e) => {
+    // Fire-and-poll: `startPipeline` resolves once the run is accepted — the
+    // pass itself outlives this request by hours, and the client watches
+    // GET /api/jobs for progress.
+    try {
+      await startPipeline({ trigger: 'manual', symbols });
+    } catch (e) {
+      if (e instanceof JobBusyError) {
+        res.status(409).json({ error: 'job_running', message: e.message });
+        return;
+      }
       logger.error(`Manual run failed: ${(e as Error).message}`);
-    });
+      res.status(500).json({ error: 'run_failed', message: (e as Error).message });
+      return;
+    }
     res.status(202).json({ ok: true, started: true, symbols: symbols ?? null });
   });
 
