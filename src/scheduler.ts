@@ -22,6 +22,7 @@
 
 import cron, { type ScheduledTask } from 'node-cron';
 
+import { getConfig } from './config.js';
 import { logger } from './utils/logger.js';
 import { isHatchetConfigured } from './hatchet/client.js';
 import { AppConfig, readAppConfig } from './app-config.js';
@@ -281,6 +282,10 @@ export async function applySchedule(): Promise<void> {
   // One scheduler or the other, never both — two crons would run the watchlist
   // twice a night.
   if (isHatchetConfigured()) {
+    if (!getConfig().hatchetScheduleEnabled) {
+      logger.info('HATCHET_SCHEDULE_ENABLED=false — leaving the nightly cron to production.');
+      return;
+    }
     const { syncHatchetCron } = await import('./hatchet/cron.js');
     await syncHatchetCron(config);
     return;

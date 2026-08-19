@@ -71,6 +71,9 @@ export type SymbolInput = {
 
 type StepOutput = { status: string; detail: string; ms: number };
 
+/** Just enough of the task context to report progress; keeps `settle` testable. */
+type StepContext = { retryCount(): number; log(message: string, level?: 'INFO' | 'WARN' | 'ERROR'): unknown };
+
 /**
  * Record a step, or throw to buy another attempt.
  *
@@ -79,14 +82,30 @@ type StepOutput = { status: string; detail: string; ms: number };
  * retries on a thrown error, so a failure is re-thrown while attempts remain
  * and recorded once they are spent. The row therefore describes the final
  * outcome, and the retries are visible in Hatchet rather than in the run log.
+ *
+ * The same line goes to `ctx.log`, which attaches it to the task run in
+ * Hatchet's dashboard. Worth the duplication: `run_steps` keeps only the final
+ * outcome, so without this the attempts that led there are visible in neither
+ * place — and a run being retried is exactly when someone goes looking.
  */
 async function settle(
-  result: JobStepResult, runId: number, symbol: string, attempt: number, retries: number,
+  result: JobStepResult, runId: number, symbol: string, ctx: StepContext, retries: number,
 ): Promise<StepOutput> {
+  const attempt = ctx.retryCount();
+  const where   = `${symbol} ${result.step}`;
+
   if (result.status === 'failed' && attempt < retries) {
-    logger.warn(`${symbol} ${result.step} failed (attempt ${attempt + 1}/${retries + 1}): ${result.detail}`);
+    const line = `${where} failed (attempt ${attempt + 1}/${retries + 1}): ${result.detail}`;
+    logger.warn(line);
+    // Best effort: losing a log line must not cost the retry it describes.
+    await Promise.resolve(ctx.log(line, 'WARN')).catch(() => { /* ignore */ });
     throw new Error(`${result.step} failed: ${result.detail}`);
   }
+
+  const line = `${where} ${result.status} in ${result.ms}ms — ${result.detail}`;
+  await Promise.resolve(ctx.log(line, result.status === 'failed' ? 'ERROR' : 'INFO'))
+    .catch(() => { /* ignore */ });
+
   await recordRunSteps(runId, symbol, [result]);
   return { status: result.status, detail: result.detail, ms: result.ms };
 }
@@ -110,7 +129,7 @@ const data = symbolPipeline.task({
     const config = await readAppConfig();
     return settle(
       await runDataStep(config, input.symbol, input.runId),
-      input.runId, input.symbol, ctx.retryCount(), DATA_RETRIES,
+      input.runId, input.symbol, ctx, DATA_RETRIES,
     );
   },
 });
@@ -126,7 +145,7 @@ const distill = symbolPipeline.task({
     const config = await readAppConfig();
     return distillGate.run(async () => settle(
       await runDistillStep(config, input.symbol, input.runId),
-      input.runId, input.symbol, ctx.retryCount(), DISTILL_RETRIES,
+      input.runId, input.symbol, ctx, DISTILL_RETRIES,
     ));
   },
 });
@@ -141,7 +160,7 @@ symbolPipeline.task({
     const config = await readAppConfig();
     return analysisGate.run(async () => settle(
       await runAnalysisStep(config, input.symbol, input.runId, input.ageDays),
-      input.runId, input.symbol, ctx.retryCount(), ANALYSIS_RETRIES,
+      input.runId, input.symbol, ctx, ANALYSIS_RETRIES,
     ));
   },
 });
@@ -167,7 +186,7 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
   // second pass over the whole watchlist, which is never the right repair.
   retries: 0,
   executionTimeout: '12h',
-  fn: async (input): Promise<PipelineOutput> => {
+  fn: async (input, ctx): Promise<PipelineOutput> => {
     const config  = await readAppConfig();
     const symbols = input.symbols.length
       ? input.symbols.map((s) => s.toUpperCase())
@@ -179,10 +198,10 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
     const stale = symbols.filter((s) => isVerdictStale(config, ages.get(s) ?? null));
 
     const runId = await startRun(input.trigger);
-    logger.info(
-      `Pipeline run ${runId} started (${input.trigger}) — ${symbols.length} symbol(s), `
-      + `${stale.length} due for analysis`,
-    );
+    const opening = `Run ${runId} (${input.trigger}) — ${symbols.length} symbol(s), `
+      + `${stale.length} due for analysis`;
+    logger.info(`Pipeline ${opening}`);
+    await Promise.resolve(ctx.log(opening)).catch(() => { /* ignore */ });
 
     let failed = 0;
     try {
@@ -198,6 +217,10 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
         }
       }
       await finishRun(runId, failed > 0 ? 'partial' : 'ok');
+      await Promise.resolve(ctx.log(
+        `Run ${runId} finished — ${symbols.length} symbol(s), ${failed} failed step(s)`,
+        failed > 0 ? 'WARN' : 'INFO',
+      )).catch(() => { /* ignore */ });
     } catch (e) {
       // A child that exhausts its retries rejects the whole bulk run. The work
       // other symbols completed is already in run_steps, so the run is partial
@@ -207,6 +230,7 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
       // and `undefined` in the run row helps nobody.
       const reason = e instanceof Error ? e.message : String(e ?? 'unknown failure');
       logger.error(`Pipeline run ${runId}: ${reason}`);
+      await Promise.resolve(ctx.log(`Run ${runId} failed: ${reason}`, 'ERROR')).catch(() => { /* ignore */ });
       await finishRun(runId, 'partial', reason);
     } finally {
       await setRunSymbol(runId, null).catch(() => { /* cosmetic */ });

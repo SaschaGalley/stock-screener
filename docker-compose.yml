@@ -16,6 +16,53 @@
 # fills them on first deploy and keeps them stable afterwards. On a plain
 # `docker compose up` they are ordinary variables you set yourself.
 
+# Everything both the API and the worker need to run the pipeline. Declared once
+# and merged into both: the worker executes the same code against the same
+# database and the same third parties, and two copies of this list would drift
+# the first time one of them gained a key.
+x-app-env: &app-env
+  # Must resolve to the same password the postgres service received, including
+  # when Coolify generated it.
+  DATABASE_URL: postgres://${POSTGRES_USER:-stockcli}:${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-}}@postgres:5432/${POSTGRES_DB:-stockcli}
+  # Only EDGAR filings and generated reports live on disk now.
+  DATA_DIR: /data
+  # Postgres connections held open by the pool. Read by the app, and a knob
+  # nobody can see is a knob nobody can turn.
+  PGPOOL_MAX: ${PGPOOL_MAX:-10}
+  # Cron schedules are interpreted in the timezone stored in the settings row;
+  # this only sets the container's own clock display.
+  TZ: ${TZ:-Europe/Berlin}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+  FRED_API_KEY: ${FRED_API_KEY:-}
+  PPLX_API_KEY: ${PPLX_API_KEY:-}
+  BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  DISTILL_API_KEY: ${DISTILL_API_KEY:-}
+  DISTILL_API_URL: ${DISTILL_API_URL:-http://localhost:3000}
+  DISTILL_BRIEFING_TYPE_ID: ${DISTILL_BRIEFING_TYPE_ID:-}
+  # ── Hatchet ────────────────────────────────────────────────────────────────
+  # Optional: without a token the app falls back to its own in-process cron and
+  # runs the watchlist serially, exactly as it did before.
+  #
+  # The token already carries the server address, so it is usually the only one
+  # of these you set. Mint a separate token per deployment — not for isolation
+  # (a token grants the whole tenant either way) but so a laptop's can be
+  # revoked without touching production's.
+  HATCHET_CLIENT_TOKEN: ${HATCHET_CLIENT_TOKEN:-}
+  # Required while the engine runs with SERVER_GRPC_INSECURE=t.
+  HATCHET_CLIENT_TLS_STRATEGY: ${HATCHET_CLIENT_TLS_STRATEGY:-}
+  # What actually keeps environments apart. The SDK prefixes workflow, cron and
+  # worker names with it, so a dev worker cannot pick up a production task.
+  # Leave empty here and set it to something like `dev` on a developer machine.
+  #
+  # Rate limits are deliberately *not* namespaced by Hatchet, which is the
+  # behaviour we want: there is one Finnhub quota, and dev and production draw
+  # from the same budget rather than each assuming it has all of it.
+  HATCHET_CLIENT_NAMESPACE: ${HATCHET_CLIENT_NAMESPACE:-}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -80,34 +127,16 @@ services:
         # braces rather than the only guard.
         condition: service_healthy
     environment:
+      <<: *app-env
       # Asks Coolify to allocate a domain and route it to this port. Coolify
       # sets the value; the app never reads it. Without it the deploy comes up
       # reachable only by IP:port.
       SERVICE_FQDN_STOCKCLI_4317: ${SERVICE_FQDN_STOCKCLI_4317:-}
       PORT: 4317
-      # Must resolve to the same password the postgres service above received,
-      # including when Coolify generated it.
-      DATABASE_URL: postgres://${POSTGRES_USER:-stockcli}:${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-}}@postgres:5432/${POSTGRES_DB:-stockcli}
-      # Only EDGAR filings and generated reports live on disk now.
-      DATA_DIR: /data
-      # Postgres connections held open by the pool. The nightly pipeline is
-      # serial and the API is light, so 10 is ample; it is here because the app
-      # reads it, and a knob nobody can see is a knob nobody can turn.
-      PGPOOL_MAX: ${PGPOOL_MAX:-10}
-      # Cron schedules are interpreted in the timezone stored in the settings
-      # row; this only sets the container's own clock display.
-      TZ: ${TZ:-Europe/Berlin}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
-      FRED_API_KEY: ${FRED_API_KEY:-}
-      PPLX_API_KEY: ${PPLX_API_KEY:-}
-      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
-      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
-      DISTILL_API_KEY: ${DISTILL_API_KEY:-}
-      DISTILL_API_URL: ${DISTILL_API_URL:-http://localhost:3000}
-      DISTILL_BRIEFING_TYPE_ID: ${DISTILL_BRIEFING_TYPE_ID:-}
+      # This container owns the nightly schedule; the worker only executes it.
+      # Set false on a machine that shares a Hatchet tenant with production, or
+      # it will install a competing cron of its own.
+      HATCHET_SCHEDULE_ENABLED: ${HATCHET_SCHEDULE_ENABLED:-true}
     # `expose` is what Coolify's reverse proxy binds a domain to; `ports`
     # publishes straight onto the host and bypasses it. Both are declared: the
     # proxy gets what it needs, and the published port stays as a way in by
@@ -130,6 +159,38 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 3
+
+  # The Hatchet worker: same image, same code, different entrypoint.
+  #
+  # A separate container rather than a thread inside the API, because the two
+  # fail differently. The API must stay responsive to answer the admin page; a
+  # worker spends its time inside minute-long analysis runs. Apart, a saturated
+  # worker cannot make the dashboard time out, and either can be restarted
+  # without the other.
+  #
+  # Does nothing without HATCHET_CLIENT_TOKEN — it exits with a clear message,
+  # and `restart: unless-stopped` would loop it, so it stays `on-failure` with
+  # a bounded count while Hatchet is optional.
+  stockcli-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: on-failure:3
+    depends_on:
+      # Not just postgres: the API applies the migrations on boot, and a worker
+      # that connected first would find tables that are not there yet.
+      stockcli:
+        condition: service_healthy
+    command: ['node', 'dist/hatchet/worker.js']
+    environment:
+      <<: *app-env
+      # The worker's own ceiling. The real pacing is per-task — rate limits for
+      # the APIs, and an in-process gate for Distill and analysis — so this only
+      # needs to be comfortably above the number of symbols in flight.
+      HATCHET_WORKER_SLOTS: ${HATCHET_WORKER_SLOTS:-20}
+    volumes:
+      # Same filings the API reads; the data step writes them.
+      - stock-files:/data
 
 volumes:
   stock-db:

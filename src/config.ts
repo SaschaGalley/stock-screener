@@ -40,6 +40,16 @@ const ConfigSchema = z.object({
    * Hatchet is configured at all, which the presence of a token answers.
    */
   hatchetToken: z.string().optional(),
+  /**
+   * Whether this deployment may install the nightly cron in Hatchet.
+   *
+   * A deployment-level switch above the admin page's own `schedule.enabled`,
+   * and it exists because a developer machine sharing a tenant would otherwise
+   * install a cron of its own. Tasks would then queue against a laptop that is
+   * usually asleep, and fire all at once when it wakes — against the dev
+   * database. Set `HATCHET_SCHEDULE_ENABLED=false` outside production.
+   */
+  hatchetScheduleEnabled: z.boolean().default(true),
 });
 
 /**
@@ -72,6 +82,8 @@ export function getConfig(): EnvConfig {
     dataDir: process.env.DATA_DIR ?? process.env.CACHE_DIR,
     logLevel: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error' | undefined,
     hatchetToken: process.env.HATCHET_CLIENT_TOKEN,
+    // Opt-out rather than opt-in: production should not have to remember it.
+    hatchetScheduleEnabled: process.env.HATCHET_SCHEDULE_ENABLED !== 'false',
   };
 
   const result = ConfigSchema.safeParse(raw);
