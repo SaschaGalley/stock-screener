@@ -5,7 +5,12 @@
 packages:
   - 'web'
 
-# pnpm blocks postinstall scripts unless a package is listed here. esbuild needs
-# its platform binary; nothing else in this tree does real work at install time.
+# pnpm blocks postinstall scripts unless a package is answered for here, and an
+# unanswered one fails the install rather than warning. esbuild needs its
+# platform binary. The other two were inspected and neither does work we need:
+# Hatchet's postinstall is a version-compatibility notice, and protobufjs runs
+# fine unbuilt — both are recorded as a deliberate `false`, not left open.
 allowBuilds:
   esbuild: true
+  '@hatchet-dev/typescript-sdk': false
+  protobufjs: false

@@ -32,6 +32,14 @@ const ConfigSchema = z.object({
    */
   dataDir: z.string().default('~/.investment-cli-data'),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info').catch('info'),
+  /**
+   * Hatchet task-queue token. Only the token lives here, because the SDK reads
+   * every `HATCHET_CLIENT_*` variable out of the environment itself — copying
+   * host, namespace and TLS settings into this schema would be a second place
+   * to keep them right. What the app needs to know is narrower: whether
+   * Hatchet is configured at all, which the presence of a token answers.
+   */
+  hatchetToken: z.string().optional(),
 });
 
 /**
@@ -63,6 +71,7 @@ export function getConfig(): EnvConfig {
     // downloaded filings after the rename.
     dataDir: process.env.DATA_DIR ?? process.env.CACHE_DIR,
     logLevel: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error' | undefined,
+    hatchetToken: process.env.HATCHET_CLIENT_TOKEN,
   };
 
   const result = ConfigSchema.safeParse(raw);

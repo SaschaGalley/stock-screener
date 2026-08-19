@@ -13,6 +13,8 @@
     "dev:apps": "concurrently -n api,web -c blue,green \"pnpm run serve:watch\" \"pnpm run web:dev\"",
     "dev:cli": "tsx watch src/cli.ts",
     "dev:stop": "docker compose down",
+    "hatchet:worker": "tsx watch src/hatchet/worker.ts",
+    "hatchet:check": "tsx src/hatchet/check.ts",
     "build": "tsc && node scripts/copy-migrations.mjs",
     "start": "node dist/cli.js",
     "serve": "tsx src/server.ts",
@@ -25,6 +27,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
+    "@hatchet-dev/typescript-sdk": "^1.28.2",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
     "cors": "^2.8.6",
