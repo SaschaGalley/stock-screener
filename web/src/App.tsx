@@ -187,39 +187,42 @@ export default function App() {
   }, [selected]);
 
   /**
-   * Poll what the queue is doing.
+   * Ask the server what the queue is doing.
    *
-   * The work runs in a worker, so this is the only way the page can know about
-   * it — a reload, or a second tab, has no local state to go on. Five seconds
-   * is a compromise: a data refresh takes seconds and an analysis minutes, so
-   * anything faster mostly asks a question whose answer has not changed.
+   * A `useCallback` rather than a closure inside the effect, because the
+   * interval is the fallback and not the mechanism: the moments that actually
+   * change this are known — a run finishing, a refresh returning — and waiting
+   * up to five seconds to notice something we were told about is the kind of
+   * lag that makes an interface feel broken.
+   */
+  const pollActivity = useCallback(async () => {
+    try {
+      const { entries } = await api.activity();
+      const bySymbol: Record<string, string[]> = {};
+      for (const e of entries) {
+        if (!e.symbol) continue;
+        // The namespace prefix is an environment detail, not something to put
+        // in front of a user.
+        const stage = e.workflow.replace(/^[a-z0-9]+_/, '');
+        (bySymbol[e.symbol] ??= []).push(stage);
+      }
+      setActivity(bySymbol);
+    } catch {
+      // A failed poll is not worth an error banner; the next one may work.
+      setActivity({});
+    }
+  }, []);
+
+  /**
+   * The fallback loop: work this page never started, or that outlived it.
+   * Immediate on mount, so a reload shows the true state at once rather than
+   * five seconds later.
    */
   useEffect(() => {
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const { entries } = await api.activity();
-        if (cancelled) return;
-        const bySymbol: Record<string, string[]> = {};
-        for (const e of entries) {
-          if (!e.symbol) continue;
-          // The namespace prefix is an environment detail, not something to
-          // put in front of a user.
-          const stage = e.workflow.replace(/^[a-z0-9]+_/, '');
-          (bySymbol[e.symbol] ??= []).push(stage);
-        }
-        setActivity(bySymbol);
-      } catch {
-        // A failed poll is not worth an error banner; the next one may work.
-        if (!cancelled) setActivity({});
-      }
-    };
-
-    void poll();
-    const timer = setInterval(poll, 5_000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, []);
+    void pollActivity();
+    const timer = setInterval(() => { void pollActivity(); }, 5_000);
+    return () => clearInterval(timer);
+  }, [pollActivity]);
 
   /**
    * Start an analyze run. `force` bypasses the LLM cache — used by the
@@ -247,11 +250,14 @@ export default function App() {
         if (!isCurrent()) return;
         setError(msg);
         setLoading(false);
+        void pollActivity();
       },
       onDone: () => {
         if (!isCurrent()) return;
         setLoading(false);
         setRefreshTick((t) => t + 1);
+        // The run just ended; say so now rather than on the next tick.
+        void pollActivity();
       },
     }, { force });
     closeStreamRef.current = close;
@@ -368,6 +374,7 @@ export default function App() {
               analyzing={loading
                 || (activity[selected] ?? []).some((s) => s === 'analyze' || s === 'symbol-pipeline')}
               activity={activity[selected] ?? []}
+              onActivityChanged={() => { void pollActivity(); }}
             />
           ) : (
             <div className="flex flex-1 items-center justify-center p-8 text-center text-ink-400">

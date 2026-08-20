@@ -10,6 +10,8 @@ interface Props {
   onRefreshed?: () => void;
   /** Stages the queue has in flight for this symbol, from GET /api/activity. */
   activity?: string[];
+  /** Re-read the queue now, rather than waiting for the next poll. */
+  onActivityChanged?: () => void;
 }
 
 export default function StockHeader({
@@ -17,6 +19,7 @@ export default function StockHeader({
   financials: f,
   onRefreshed,
   activity = [],
+  onActivityChanged,
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
 
@@ -39,6 +42,11 @@ export default function StockHeader({
   async function handleRefresh() {
     if (busy) return;
     setRefreshing(true);
+    // Shortly after, not now: the task does not exist until the request reaches
+    // the server, so asking in the same tick reliably finds nothing. Half a
+    // second later it is queued, and every other view learns the symbol is busy
+    // without waiting for the next poll.
+    const announce = setTimeout(() => onActivityChanged?.(), 500);
     try {
       // Fire both refreshes in parallel — data refresh is cheap (~seconds),
       // Distill can be slow (up to 5 min on first-touch tickers) but the user
@@ -62,7 +70,9 @@ export default function StockHeader({
     } catch (e) {
       alert(`Refresh failed: ${(e as Error).message}`);
     } finally {
+      clearTimeout(announce);
       setRefreshing(false);
+      onActivityChanged?.();
     }
   }
   return (

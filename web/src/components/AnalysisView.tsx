@@ -35,6 +35,8 @@ interface Props {
   analyzing: boolean;
   /** Stages the queue has in flight for this symbol, from GET /api/activity. */
   activity?: string[];
+  /** Re-read the queue now, rather than waiting for the next poll. */
+  onActivityChanged?: () => void;
 }
 
 export default function AnalysisView({
@@ -45,6 +47,7 @@ export default function AnalysisView({
   onRunAnalysis,
   analyzing,
   activity = [],
+  onActivityChanged,
 }: Props) {
   const [bundle, setBundle] = useState<StockBundle | null>(null);
   const [analysis, setAnalysis] = useState<CachedAnalysisEntry | null>(null);
@@ -156,6 +159,7 @@ export default function AnalysisView({
         financials={f}
         onRefreshed={() => setLocalRefresh((x) => x + 1)}
         activity={activity}
+        onActivityChanged={onActivityChanged}
       />
 
       {(dataStale || analysisStale) && (
