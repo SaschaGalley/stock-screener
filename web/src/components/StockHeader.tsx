@@ -8,17 +8,36 @@ interface Props {
   summary: StockSummary;
   financials: any;
   onRefreshed?: () => void;
+  /** Stages the queue has in flight for this symbol, from GET /api/activity. */
+  activity?: string[];
 }
 
 export default function StockHeader({
   summary,
   financials: f,
   onRefreshed,
+  activity = [],
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
 
+  /**
+   * Busy according to the server as well as to this component.
+   *
+   * The local flag only knows about a refresh this page started, and it dies
+   * with the page. The work does not: it runs in a worker, so after a reload —
+   * or in a second tab — the button would otherwise look ready while the
+   * refresh it triggered is still going, and clicking again would queue a
+   * second one.
+   */
+  // Any stage counts, not just the two this button starts. An analysis reads
+  // the data a refresh would replace underneath it, the nightly pipeline
+  // refreshes the same symbol as its first step, and the "Refresh data" button
+  // in the stale banner already greys out for a running analysis — one rule
+  // for the symbol is easier to trust than two that disagree on the same page.
+  const busy = refreshing || activity.length > 0;
+
   async function handleRefresh() {
-    if (refreshing) return;
+    if (busy) return;
     setRefreshing(true);
     try {
       // Fire both refreshes in parallel — data refresh is cheap (~seconds),
@@ -78,11 +97,12 @@ export default function StockHeader({
         <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={handleRefresh}
-            disabled={refreshing}
+            disabled={busy}
             className="rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
             title="Refresh raw data (Yahoo, Finnhub, FRED, technicals) AND Distill briefing — does not call LLM or Perplexity. Distill drain can take up to ~5 min on first-touch tickers."
           >
-            {refreshing ? "⟳" : "↻"}<span className="ml-1 hidden sm:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
+            {busy ? '⟳' : '↻'}
+            <span className="ml-1 hidden sm:inline">{busy ? 'Refreshing…' : 'Refresh'}</span>
           </button>
         </div>
       </div>

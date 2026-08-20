@@ -362,7 +362,12 @@ export default function App() {
               refreshKey={refreshTick}
               // StaleBanner's Re-run = force fresh LLM call (cache is stale by data).
               onRunAnalysis={() => startAnalyze(selected, true)}
-              analyzing={loading}
+              // `loading` only covers a run this page is streaming; the queue
+              // knows about the ones it is not — after a reload, or in another
+              // tab. Either is reason enough to call the buttons busy.
+              analyzing={loading
+                || (activity[selected] ?? []).some((s) => s === 'analyze' || s === 'symbol-pipeline')}
+              activity={activity[selected] ?? []}
             />
           ) : (
             <div className="flex flex-1 items-center justify-center p-8 text-center text-ink-400">

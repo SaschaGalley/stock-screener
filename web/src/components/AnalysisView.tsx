@@ -33,6 +33,8 @@ interface Props {
   onRunAnalysis: () => void;
   /** True while an analyze run is in flight (parent owns the SSE stream). */
   analyzing: boolean;
+  /** Stages the queue has in flight for this symbol, from GET /api/activity. */
+  activity?: string[];
 }
 
 export default function AnalysisView({
@@ -42,6 +44,7 @@ export default function AnalysisView({
   refreshKey,
   onRunAnalysis,
   analyzing,
+  activity = [],
 }: Props) {
   const [bundle, setBundle] = useState<StockBundle | null>(null);
   const [analysis, setAnalysis] = useState<CachedAnalysisEntry | null>(null);
@@ -152,6 +155,7 @@ export default function AnalysisView({
         summary={bundle.summary ?? summary!}
         financials={f}
         onRefreshed={() => setLocalRefresh((x) => x + 1)}
+        activity={activity}
       />
 
       {(dataStale || analysisStale) && (
