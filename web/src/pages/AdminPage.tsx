@@ -216,7 +216,14 @@ export default function AdminPage() {
             checked={config.schedule.enabled}
             onChange={(v) => patch((d) => { d.schedule.enabled = v; })}
             label="Zeitplan aktiv"
-            hint={jobs?.nextRun ? `Nächster Lauf: ${fmtDateTime(jobs.nextRun)}` : 'Kein Cron installiert'}
+            // Three states, not two. `nextRun` is only known when the
+            // in-process scheduler owns the cron; Hatchet does not report one,
+            // so an installed Hatchet cron would otherwise read as "none".
+            hint={jobs?.nextRun
+              ? `Nächster Lauf: ${fmtDateTime(jobs.nextRun)}`
+              : jobs?.cron
+                ? `Installiert: ${jobs.cron} (${jobs.timezone})`
+                : 'Kein Cron installiert'}
           />
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-[11px] text-ink-400">Cron</label>

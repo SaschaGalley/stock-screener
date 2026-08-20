@@ -44,6 +44,7 @@ import {
   JobBusyError,
   recoverInterruptedRuns,
   requestStop,
+  stopHatchetRun,
   startPipeline,
 } from './scheduler.js';
 import { reportExists, reportPath, symbolDir } from './files.js';
@@ -559,9 +560,16 @@ export function createApp(): express.Express {
   });
 
   // ── POST /api/jobs/stop ────────────────────────────────────────────────────
-  app.post('/api/jobs/stop', (_req, res) => {
-    const stopping = requestStop();
-    res.json({ ok: true, stopping });
+  app.post('/api/jobs/stop', async (_req, res, next) => {
+    try {
+      // The in-process flag only reaches a run this process is walking; under
+      // Hatchet the run is in the worker and has to be cancelled through the
+      // queue. Both are tried, since either scheduler may own the run.
+      const stopping = requestStop() || await stopHatchetRun();
+      res.json({ ok: true, stopping });
+    } catch (e) {
+      next(e);
+    }
   });
 
   // ── GET /api/overview ──────────────────────────────────────────────────────

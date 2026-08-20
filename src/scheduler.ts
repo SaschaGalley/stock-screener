@@ -223,11 +223,48 @@ export function isPipelineRunning(): boolean {
   return activeRun !== null;
 }
 
-/** Ask the active run to stop after the symbol it is currently on. */
+/**
+ * Ask the active run to stop after the symbol it is currently on.
+ *
+ * In-process only. Under Hatchet the run lives in the worker and nothing here
+ * can reach it — `stopHatchetRun()` is what the endpoint calls instead.
+ */
 export function requestStop(): boolean {
   if (!activeRun) return false;
   stopRequested = true;
   logger.warn('Pipeline stop requested — finishing the current symbol first.');
+  return true;
+}
+
+/**
+ * Cancel whatever the queue is still holding for the newest run.
+ *
+ * Cancels rather than asks: Hatchet has no cooperative stop, and the symbols
+ * that have not started are the bulk of what a stop is for. Work already in
+ * flight finishes — the SDK is clear that JavaScript cannot be interrupted
+ * mid-task — so this stops the *rest* of the watchlist, which is what the
+ * button meant when the walk was serial.
+ *
+ * Everything already written to `run_steps` stays; the run is closed as
+ * stopped so the admin page does not show it running forever.
+ */
+export async function stopHatchetRun(): Promise<boolean> {
+  const [latest] = await listRuns(1);
+  if (!latest || latest.status !== 'running') return false;
+
+  const { getHatchet } = await import('./hatchet/client.js');
+  await getHatchet().runs.cancel({
+    filters: {
+      // Scoped to this run: another symbol refreshed by hand must not be
+      // collateral damage.
+      additionalMetadata: { runId: latest.id },
+      statuses: ['QUEUED', 'RUNNING'] as never,
+    },
+  });
+
+  const { finishRun } = await import('./db/admin.js');
+  await finishRun(Number(latest.id), 'stopped', 'cancelled from the admin page');
+  logger.warn(`Pipeline run ${latest.id} cancelled.`);
   return true;
 }
 
@@ -287,8 +324,10 @@ export async function applySchedule(): Promise<void> {
       return;
     }
     const { syncHatchetCron } = await import('./hatchet/cron.js');
-    await syncHatchetCron(config);
-    return;
+    if (await syncHatchetCron(config)) return;
+    // Fell through: Hatchet could not express this schedule in UTC. node-cron
+    // can, so it installs it here instead — one of the two always owns it.
+    logger.info('Falling back to the in-process cron for this schedule.');
   }
 
   if (!config.schedule.enabled) {

@@ -96,12 +96,21 @@ export async function recordRunSteps(
   );
 }
 
+/**
+ * Close a run — the first caller to do so decides how it ended.
+ *
+ * Guarded on `status = 'running'` because there are now two closers. Cancelling
+ * from the admin page marks the run stopped, and the parent task then reaches
+ * the end of its own work and would report whatever it saw — overwriting
+ * "stopped" with "partial" and losing the only record that someone asked for
+ * it. A finished run does not get re-finished.
+ */
 export async function finishRun(
   runId: number, status: JobRunStatus, error?: string,
 ): Promise<void> {
   await query(
     `UPDATE runs SET status = $2, finished_at = now(), current_symbol = NULL, error = $3
-      WHERE id = $1`,
+      WHERE id = $1 AND status = 'running'`,
     [runId, status, error ?? null],
   );
 }

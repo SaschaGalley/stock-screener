@@ -15,6 +15,7 @@
 import { AppConfig } from '../app-config.js';
 import { logger } from '../utils/logger.js';
 import { getHatchet } from './client.js';
+import { cronToUtc } from './cron-utc.js';
 
 /** Name of the cron this app owns. Anything else on the tenant is left alone. */
 export const CRON_NAME = 'stock-cli-nightly';
@@ -42,13 +43,35 @@ export async function syncHatchetCron(config: AppConfig): Promise<string | null>
     return null;
   }
 
+  // Hatchet has no timezone: its crons fire on the engine's UTC clock. The
+  // expression is translated first, and when it cannot be translated faithfully
+  // nothing is installed — the caller falls back to the in-process scheduler,
+  // which does understand timezones.
+  const utc = cronToUtc(config.schedule.cron, config.schedule.timezone);
+  if (!utc) {
+    logger.warn(
+      `Cannot express "${config.schedule.cron}" (${config.schedule.timezone}) as a UTC cron — `
+      + 'leaving the schedule to the in-process scheduler.',
+    );
+    return null;
+  }
+
   await hatchet.crons.create('pipeline', {
     name:       CRON_NAME,
-    expression: config.schedule.cron,
+    expression: utc.expression,
     input:      { trigger: 'cron', symbols: [] },
-    additionalMetadata: { timezone: config.schedule.timezone },
+    // Carried for whoever reads this in the dashboard: the expression there is
+    // UTC and will not match the one in the settings page.
+    additionalMetadata: {
+      timezone: config.schedule.timezone,
+      localCron: config.schedule.cron,
+    },
   });
 
-  logger.success(`Pipeline scheduled in Hatchet: "${config.schedule.cron}"`);
+  const shift = utc.offsetMinutes / 60;
+  logger.success(
+    `Pipeline scheduled in Hatchet: "${utc.expression}" UTC`
+    + (shift ? ` (= "${config.schedule.cron}" in ${config.schedule.timezone})` : ''),
+  );
   return config.schedule.cron;
 }
