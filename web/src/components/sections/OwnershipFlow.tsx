@@ -1,10 +1,11 @@
-import { fmtBig } from '../../format';
+import { useMoney } from '../../currency';
 
 interface Props {
   financials: any;
 }
 
 export default function OwnershipFlow({ financials: f }: Props) {
+  const { fmtBig, fmtCount } = useMoney();
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       {/* Short interest */}
@@ -15,7 +16,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
             <tbody>
               <Row label="% of Float" value={`${(f.shortPercentOfFloat * 100).toFixed(1)}%`}
                 accentColor={f.shortPercentOfFloat > 0.20 ? 'text-red-400' : f.shortPercentOfFloat > 0.08 ? 'text-amber-400' : 'text-emerald-400'} />
-              <Row label="Shares Short"  value={f.sharesShort != null ? fmtBig(f.sharesShort).replace('$', '') : '—'} />
+              <Row label="Shares Short"  value={fmtCount(f.sharesShort)} />
               <Row label="Days to Cover" value={f.shortRatio != null && Number.isFinite(f.shortRatio) ? f.shortRatio.toFixed(1) + 'd' : '—'} />
               {f.sharesShort != null && f.sharesShortPriorMonth != null && f.sharesShortPriorMonth > 0 && (() => {
                 const chg = (f.sharesShort - f.sharesShortPriorMonth) / f.sharesShortPriorMonth * 100;

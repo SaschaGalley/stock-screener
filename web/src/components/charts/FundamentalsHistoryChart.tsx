@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
+import { useMoney } from '../../currency';
 
 type Series = { year: number; value: number }[];
 
@@ -62,17 +63,21 @@ const MODE_PRESETS: Record<NonNullable<Props['initialMode']>, { label: string; s
  * Axis/tooltip label for this chart only: per-share values keep two decimals,
  * absolutes are abbreviated one digit shorter than the app-wide `fmtBig` so the
  * axis stays narrow. Named apart from it so the difference is deliberate.
+ *
+ * `cur` is the trading currency's prefix — the whole series is FX-converted
+ * into it upstream, so one prefix is right for every point.
  */
-function fmtChartValue(n: number, perShare: boolean): string {
-  if (perShare) return `$${n.toFixed(2)}`;
+function fmtChartValue(n: number, perShare: boolean, cur: string): string {
+  if (perShare) return `${cur}${n.toFixed(2)}`;
   const a = Math.abs(n);
-  if (a >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
-  if (a >= 1e9)  return `$${(n / 1e9).toFixed(1)}B`;
-  if (a >= 1e6)  return `$${(n / 1e6).toFixed(0)}M`;
-  return `$${n.toFixed(0)}`;
+  if (a >= 1e12) return `${cur}${(n / 1e12).toFixed(2)}T`;
+  if (a >= 1e9)  return `${cur}${(n / 1e9).toFixed(1)}B`;
+  if (a >= 1e6)  return `${cur}${(n / 1e6).toFixed(0)}M`;
+  return `${cur}${n.toFixed(0)}`;
 }
 
 export default function FundamentalsHistoryChart({ history, initialMode = 'income' }: Props) {
+  const { symbol: cur } = useMoney();
   const [mode, setMode] = useState<NonNullable<Props['initialMode']>>(initialMode);
   const preset = MODE_PRESETS[mode];
 
@@ -138,7 +143,7 @@ export default function FundamentalsHistoryChart({ history, initialMode = 'incom
               backgroundColor: CHART_COLORS.bg,
               borderColor: CHART_COLORS.grid,
               textStyle: { color: CHART_COLORS.text, fontSize: 12 },
-              valueFormatter: (v: any) => v == null ? '—' : fmtChartValue(v, !!preset.isPerShare),
+              valueFormatter: (v: any) => v == null ? '—' : fmtChartValue(v, !!preset.isPerShare, cur),
             },
             legend: {
               textStyle: { color: CHART_COLORS.text, fontSize: 11 },
@@ -155,7 +160,7 @@ export default function FundamentalsHistoryChart({ history, initialMode = 'incom
               type: 'value',
               axisLabel: {
                 color: CHART_COLORS.ink, fontSize: 10,
-                formatter: (v: number) => fmtChartValue(v, !!preset.isPerShare),
+                formatter: (v: number) => fmtChartValue(v, !!preset.isPerShare, cur),
               },
               splitLine: { lineStyle: { color: CHART_COLORS.grid } },
             },

@@ -9,6 +9,7 @@ import { getFinancials, getOptionsSignals, resolveSymbol, searchByQuery } from '
 import { getNews, getBasicFinancials } from './data/finnhub.js';
 import { getSectorMediansCached } from './sector-medians.js';
 import { fmtBig } from './analysis/metrics.js';
+import { fmtPrice } from './format.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { computeTechnicals, DailyBar } from './analysis/technical.js';
 import { createProvider } from './providers/factory.js';
@@ -318,7 +319,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     bundleRevisions  = bundle.revisions;
     await writeFinancials(symbol, financials, input.runId);
   }
-  emit({ stage: 'financials', message: `${financials.companyName} · $${financials.price.toFixed(2)} · ${fmtBig(financials.marketCap)}`, cached: financialsCached });
+  emit({ stage: 'financials', message: `${financials.companyName} · ${fmtPrice(financials.price, financials.tradingCurrency)} · ${fmtBig(financials.marketCap, financials.tradingCurrency)}`, cached: financialsCached });
 
   // ── 1b. News (cached 30 min) + Rates + Sector Medians + Perplexity ────────
   const usePplx   = input.pplx !== null && input.pplx !== undefined;
@@ -383,7 +384,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     await writeDistill(symbol, distill, input.runId);
   }
 
-  logger.success(`${financials.companyName}  $${financials.price.toFixed(2)}  ${fmtBig(financials.marketCap)}`);
+  logger.success(`${financials.companyName}  ${fmtPrice(financials.price, financials.tradingCurrency)}  ${fmtBig(financials.marketCap, financials.tradingCurrency)}`);
 
   // ── 1c. Market Signals (technicals + revisions + options + macro) ────────
   let marketSignals: MarketSignals | null = await readMarketSignals(symbol);

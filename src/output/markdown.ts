@@ -4,6 +4,7 @@ import {
   PeerMultiplesResult, PiotroskiSignals, SectorMedians,
 } from '../types.js';
 import { fmt, fmtPct, fmtBig } from '../analysis/metrics.js';
+import { currencyPrefix, fmtCount, fmtPrice } from '../format.js';
 
 export function formatMarkdown(r: AnalysisResult): string {
   const { financials: f, dcf, grahamNumber: gn, ratios, llmAnalysis: llm, news, perplexity } = r;
@@ -31,6 +32,14 @@ export function formatMarkdown(r: AnalysisResult): string {
   function row(label: string, value: string): string {
     return `| ${label.padEnd(22)} | ${value.padEnd(18)} |`;
   }
+
+  // Every amount in this report is denominated in the stock's trading currency
+  // — the statements are FX-converted into it upstream. Printed with a
+  // hardcoded `$`, a Paris listing (AI.PA) reported its euro prices in dollars.
+  const cur = f.tradingCurrency;
+  const sym = currencyPrefix(cur);
+  const P = (n: number | null | undefined) => fmtPrice(n, cur);
+  const B = (n: number | null | undefined) => fmtBig(n, cur);
 
   const profileRows: string[] = [
     row('Company',       f.companyName),
@@ -64,10 +73,10 @@ export function formatMarkdown(r: AnalysisResult): string {
     '',
     `| Metric                  | Value              |`,
     `|-------------------------|---------------------|`,
-    row('Price',            `$${f.price.toFixed(2)}`),
-    row('Market Cap',       fmtBig(f.marketCap)),
-    row('Enterprise Value', fmtBig(ev.enterpriseValue)),
-    row('52W High / Low',   `$${fmt(f.fiftyTwoWeekHigh)} / $${fmt(f.fiftyTwoWeekLow)}`),
+    row('Price',            P(f.price)),
+    row('Market Cap',       B(f.marketCap)),
+    row('Enterprise Value', B(ev.enterpriseValue)),
+    row('52W High / Low',   `${sym}${fmt(f.fiftyTwoWeekHigh)} / ${sym}${fmt(f.fiftyTwoWeekLow)}`),
     row('Beta',             fmt(f.beta)),
     '',
 
@@ -80,10 +89,10 @@ export function formatMarkdown(r: AnalysisResult): string {
     '',
     `| Metric             | Value        |  | Metric             | Value        |`,
     `|--------------------|--------------|--|--------------------|--------------|`,
-    `| Revenue            | ${fmtBig(f.revenue).padEnd(12)} |  | Revenue Growth     | ${fmtPct(f.revenueGrowth).padEnd(12)} |`,
-    `| Gross Profit       | ${fmtBig(f.grossProfit).padEnd(12)} |  | Earnings Growth    | ${fmtPct(f.earningsGrowth).padEnd(12)} |`,
-    `| EBITDA             | ${fmtBig(f.ebitda).padEnd(12)} |  | Operating Margin   | ${fmtPct(f.operatingMargin).padEnd(12)} |`,
-    `| Free Cash Flow     | ${fmtBig(f.freeCashFlow).padEnd(12)} |  | Net Margin         | ${fmtPct(f.netMargin).padEnd(12)} |`,
+    `| Revenue            | ${B(f.revenue).padEnd(12)} |  | Revenue Growth     | ${fmtPct(f.revenueGrowth).padEnd(12)} |`,
+    `| Gross Profit       | ${B(f.grossProfit).padEnd(12)} |  | Earnings Growth    | ${fmtPct(f.earningsGrowth).padEnd(12)} |`,
+    `| EBITDA             | ${B(f.ebitda).padEnd(12)} |  | Operating Margin   | ${fmtPct(f.operatingMargin).padEnd(12)} |`,
+    `| Free Cash Flow     | ${B(f.freeCashFlow).padEnd(12)} |  | Net Margin         | ${fmtPct(f.netMargin).padEnd(12)} |`,
     `| ROE                | ${fmtPct(ratios.roe).padEnd(12)} |  | ROA                | ${fmtPct(ratios.roa).padEnd(12)} |`,
     `| ROIC               | ${fmtPct(f.roic).padEnd(12)} |  | EPS Growth 3Y      | ${fmtPct(f.epsGrowth3Y).padEnd(12)} |`,
     '',
@@ -92,36 +101,36 @@ export function formatMarkdown(r: AnalysisResult): string {
     '',
     `| Metric             | Value        |  | Metric             | Value        |`,
     `|--------------------|--------------|--|--------------------|--------------|`,
-    `| Total Cash         | ${fmtBig(f.totalCash).padEnd(12)} |  | Total Debt         | ${fmtBig(f.totalDebt).padEnd(12)} |`,
-    `| Working Capital    | ${fmtBig(f.workingCapital).padEnd(12)} |  | Long-term Debt     | ${fmtBig(f.longTermDebt).padEnd(12)} |`,
+    `| Total Cash         | ${B(f.totalCash).padEnd(12)} |  | Total Debt         | ${B(f.totalDebt).padEnd(12)} |`,
+    `| Working Capital    | ${B(f.workingCapital).padEnd(12)} |  | Long-term Debt     | ${B(f.longTermDebt).padEnd(12)} |`,
     `| Current Ratio      | ${fmt(f.currentRatio, 'x').padEnd(12)} |  | Quick Ratio        | ${fmt(f.quickRatio, 'x').padEnd(12)} |`,
     `| Debt / Equity      | ${fmt(f.debtToEquity, 'x').padEnd(12)} |  | Interest Coverage  | ${ic.ratio ? `${ic.ratio.toFixed(1)}x`.padEnd(12) : `${ic.interpretation}`.padEnd(12)} |`,
     '',
 
-    ...formatComposite(composite, f.price),
+    ...formatComposite(composite, f.price, cur),
 
     chalk.bold('## 📐 Single-Equation Intrinsic Value Models'),
     '',
     `| Model                       | Fair Value          | vs. Price            |`,
     `|-----------------------------|---------------------|----------------------|`,
-    fvRow(`DCF (2-Stage, g=${(dcf.stage1Growth * 100).toFixed(1)}%)`, dcf.fairValue, f.price),
-    fvRow('Graham Number',          gn.grahamNumber,     f.price),
-    fvRow('Graham Revised (V*)',    gr.fairValue,        f.price),
-    fvRow('Peter Lynch',            pl.fairValue,        f.price),
-    fvRow('EPV (Greenwald)',        epv.fairValue,       f.price),
-    fvRow('DDM (Gordon Growth)',    ddm.isApplicable ? ddm.fairValue ?? null : null, f.price, ddm.isApplicable ? undefined : 'no dividend'),
-    fvRow('Residual Income (RIM)',  rim.isApplicable ? rim.fairValue : null, f.price, rim.isApplicable ? undefined : 'no positive book/ROE'),
-    fvRow('NCAV (Graham floor)',    ncav.isApplicable ? ncav.ncavPerShare : null, f.price, ncav.isApplicable ? undefined : 'CA ≤ liabilities'),
+    fvRow(`DCF (2-Stage, g=${(dcf.stage1Growth * 100).toFixed(1)}%)`, dcf.fairValue, f.price, cur),
+    fvRow('Graham Number',          gn.grahamNumber,     f.price, cur),
+    fvRow('Graham Revised (V*)',    gr.fairValue,        f.price, cur),
+    fvRow('Peter Lynch',            pl.fairValue,        f.price, cur),
+    fvRow('EPV (Greenwald)',        epv.fairValue,       f.price, cur),
+    fvRow('DDM (Gordon Growth)',    ddm.isApplicable ? ddm.fairValue ?? null : null, f.price, cur, ddm.isApplicable ? undefined : 'no dividend'),
+    fvRow('Residual Income (RIM)',  rim.isApplicable ? rim.fairValue : null, f.price, cur, rim.isApplicable ? undefined : 'no positive book/ROE'),
+    fvRow('NCAV (Graham floor)',    ncav.isApplicable ? ncav.ncavPerShare : null, f.price, cur, ncav.isApplicable ? undefined : 'CA ≤ liabilities'),
     '',
     dcf.fairValue !== null
       ? chalk.gray(`  DCF assumptions: ${dcf.assumptions}`)
       : chalk.gray(`  DCF: ${dcf.assumptions}`),
     dcf.fairValueBear !== null && dcf.fairValueBull !== null
-      ? chalk.gray(`  DCF bear/base/bull: $${dcf.fairValueBear.toFixed(2)} / $${dcf.fairValue!.toFixed(2)} / $${dcf.fairValueBull.toFixed(2)}`)
+      ? chalk.gray(`  DCF bear/base/bull: ${P(dcf.fairValueBear)} / ${P(dcf.fairValue)} / ${P(dcf.fairValueBull)}`)
       : '',
     '',
 
-    ...formatPeerMultiples(pm, f.price),
+    ...formatPeerMultiples(pm, f.price, cur),
 
     chalk.bold('## 🔄 Reverse DCF'),
     '',
@@ -314,6 +323,7 @@ function formatPeerBlock(
 }
 
 function formatAnalystBlock(f: AnalysisResult['financials']): string[] {
+  const P = (n: number | null | undefined) => fmtPrice(n, f.tradingCurrency);
   const total = (f.analystStrongBuy ?? 0) + (f.analystBuy ?? 0)
               + (f.analystHold ?? 0) + (f.analystSell ?? 0) + (f.analystStrongSell ?? 0);
 
@@ -328,11 +338,11 @@ function formatAnalystBlock(f: AnalysisResult['financials']): string[] {
       ? chalk.green(`▲ ${mosPct.toFixed(1)}% upside`)
       : chalk.red(`▼ ${Math.abs(mosPct).toFixed(1)}% downside`);
     lines.push(
-      `  Price Target:   ${chalk.bold('$' + f.targetMeanPrice.toFixed(2))} avg  ${updown}${f.analystCount ? `  (${f.analystCount} analysts)` : ''}`,
+      `  Price Target:   ${chalk.bold(P(f.targetMeanPrice))} avg  ${updown}${f.analystCount ? `  (${f.analystCount} analysts)` : ''}`,
     );
     if (f.analystTargetLow !== null && f.analystTargetHigh !== null) {
-      lines.push(`  Range:          $${f.analystTargetLow.toFixed(2)} – $${f.analystTargetHigh.toFixed(2)}` +
-        (f.analystTargetMedian ? `  |  median $${f.analystTargetMedian.toFixed(2)}` : ''));
+      lines.push(`  Range:          ${P(f.analystTargetLow)} – ${P(f.analystTargetHigh)}` +
+        (f.analystTargetMedian ? `  |  median ${P(f.analystTargetMedian)}` : ''));
     }
   }
 
@@ -366,7 +376,7 @@ function formatKeyDates(f: AnalysisResult['financials']): string[] {
   if (f.nextEarningsDate) items.push(`  Next Earnings:    ${chalk.bold(f.nextEarningsDate)}`);
   if (f.exDividendDate) {
     const divLine = `  Ex-Dividend:      ${chalk.bold(f.exDividendDate)}`
-      + (f.nextDividendAmount ? `   $${f.nextDividendAmount.toFixed(2)}/share` : '');
+      + (f.nextDividendAmount ? `   ${fmtPrice(f.nextDividendAmount, f.tradingCurrency)}/share` : '');
     items.push(divLine);
   }
   if (f.dividendPayDate)  items.push(`  Pay Date:         ${f.dividendPayDate}`);
@@ -375,6 +385,8 @@ function formatKeyDates(f: AnalysisResult['financials']): string[] {
 }
 
 function formatEarningsSurprises(f: AnalysisResult['financials']): string[] {
+  const cur = f.tradingCurrency;
+  const P = (n: number | null | undefined) => fmtPrice(n, cur);
   const es = f.earningsSurprises;
   const ee = f.earningsEstimates;
   if ((!es || es.length === 0) && (!ee || ee.length === 0)) return [];
@@ -386,8 +398,8 @@ function formatEarningsSurprises(f: AnalysisResult['financials']): string[] {
     lines.push(`| ${'Quarter'.padEnd(8)} | ${'Estimate'.padEnd(9)} | ${'Actual'.padEnd(9)} | ${'Surprise'.padEnd(10)} |`);
     lines.push(`|${'-'.repeat(10)}|${'-'.repeat(11)}|${'-'.repeat(11)}|${'-'.repeat(12)}|`);
     for (const q of es) {
-      const est = q.epsEstimate !== null ? `$${q.epsEstimate.toFixed(2)}` : 'N/A';
-      const act = q.epsActual   !== null ? `$${q.epsActual.toFixed(2)}`   : 'N/A';
+      const est = P(q.epsEstimate);
+      const act = P(q.epsActual);
       let surp = 'N/A';
       if (q.surprisePct !== null) {
         const pct = (q.surprisePct * 100).toFixed(1);
@@ -407,13 +419,13 @@ function formatEarningsSurprises(f: AnalysisResult['financials']): string[] {
     lines.push(`|${'-'.repeat(12)}|${'-'.repeat(11)}|${'-'.repeat(17)}|${'-'.repeat(11)}|${'-'.repeat(13)}|${'-'.repeat(11)}|`);
     for (const e of ee) {
       const label = (PERIOD_LABEL[e.period] ?? e.period) + (e.endDate ? ` ${e.endDate.slice(0, 7)}` : '');
-      const eps     = e.epsEstimate !== null ? `$${e.epsEstimate.toFixed(2)}` : 'N/A';
+      const eps     = P(e.epsEstimate);
       const range   = e.epsLow !== null && e.epsHigh !== null
-        ? `$${e.epsLow.toFixed(2)}–$${e.epsHigh.toFixed(2)}` : 'N/A';
+        ? `${P(e.epsLow)}–${P(e.epsHigh)}` : 'N/A';
       const epsYoY  = e.epsGrowth !== null
         ? (e.epsGrowth >= 0 ? chalk.green : chalk.red)(`${e.epsGrowth >= 0 ? '+' : ''}${(e.epsGrowth * 100).toFixed(1)}%`)
         : 'N/A';
-      const rev     = e.revenueEstimate !== null ? fmtBig(e.revenueEstimate) : 'N/A';
+      const rev     = e.revenueEstimate !== null ? fmtBig(e.revenueEstimate, cur) : 'N/A';
       const revYoY  = e.revenueGrowth !== null
         ? (e.revenueGrowth >= 0 ? chalk.green : chalk.red)(`${e.revenueGrowth >= 0 ? '+' : ''}${(e.revenueGrowth * 100).toFixed(1)}%`)
         : 'N/A';
@@ -443,7 +455,7 @@ function formatShortInterest(f: AnalysisResult['financials']): string[] {
                 : chalk.green(pct);
     lines.push(`  Short % of Float:   ${level}${trend}`);
   }
-  if (f.sharesShort !== null)  lines.push(`  Shares Short:       ${fmtBig(f.sharesShort).replace('$', '')}`);
+  if (f.sharesShort !== null)  lines.push(`  Shares Short:       ${fmtCount(f.sharesShort)}`);
   if (f.shortRatio  !== null)  lines.push(`  Days to Cover:      ${f.shortRatio.toFixed(1)} days`);
   lines.push('');
   return lines;
@@ -464,6 +476,7 @@ function formatOwnership(f: AnalysisResult['financials']): string[] {
 }
 
 function formatInsiderActivity(f: AnalysisResult['financials']): string[] {
+  const B = (n: number | null | undefined) => fmtBig(n, f.tradingCurrency);
   const hasBuys  = f.insiderBuyCount  !== null && f.insiderBuyCount  > 0;
   const hasSells = f.insiderSellCount !== null && f.insiderSellCount > 0;
   if (!hasBuys && !hasSells) return [];
@@ -473,23 +486,24 @@ function formatInsiderActivity(f: AnalysisResult['financials']): string[] {
   lines.push(`|-----------|-------------|----------------|----------------|`);
 
   if (hasBuys) {
-    lines.push(`| ${chalk.green('Buy')}       | ${String(f.insiderBuyCount).padEnd(11)} | +${fmtBig(f.insiderBuyShares).replace('$','').padEnd(13)} | +${fmtBig(f.insiderBuyValue).padEnd(14)} |`);
+    lines.push(`| ${chalk.green('Buy')}       | ${String(f.insiderBuyCount).padEnd(11)} | +${fmtCount(f.insiderBuyShares).padEnd(13)} | +${B(f.insiderBuyValue).padEnd(14)} |`);
   }
   if (hasSells) {
-    lines.push(`| ${chalk.red('Sell')}      | ${String(f.insiderSellCount).padEnd(11)} | -${fmtBig(f.insiderSellShares).replace('$','').padEnd(13)} | -${fmtBig(f.insiderSellValue).padEnd(14)} |`);
+    lines.push(`| ${chalk.red('Sell')}      | ${String(f.insiderSellCount).padEnd(11)} | -${fmtCount(f.insiderSellShares).padEnd(13)} | -${B(f.insiderSellValue).padEnd(14)} |`);
   }
   if (hasBuys && hasSells) {
     const netShares = (f.insiderBuyShares ?? 0) - (f.insiderSellShares ?? 0);
     const netValue  = (f.insiderBuyValue  ?? 0) - (f.insiderSellValue  ?? 0);
     const sign = netShares >= 0 ? '+' : '-';
     const col  = netShares >= 0 ? chalk.green : chalk.red;
-    lines.push(`| Net       | ${''.padEnd(11)} | ${col(sign + fmtBig(Math.abs(netShares)).replace('$','').padEnd(13))} | ${col(sign + fmtBig(Math.abs(netValue)).padEnd(14))} |`);
+    lines.push(`| Net       | ${''.padEnd(11)} | ${col(sign + fmtCount(Math.abs(netShares)).padEnd(13))} | ${col(sign + B(Math.abs(netValue)).padEnd(14))} |`);
   }
   lines.push('');
   return lines;
 }
 
-function formatComposite(c: CompositeFairValueResult, price: number): string[] {
+function formatComposite(c: CompositeFairValueResult, price: number, cur: string | null | undefined): string[] {
+  const P = (n: number | null | undefined) => fmtPrice(n, cur);
   const lines: string[] = [chalk.bold('## 🎯 Composite Intrinsic Value'), ''];
 
   if (c.median === null) {
@@ -515,12 +529,12 @@ function formatComposite(c: CompositeFairValueResult, price: number): string[] {
   const confColor = c.confidence >= 7 ? chalk.green : c.confidence >= 4 ? chalk.yellow : chalk.red;
   const confBar = '█'.repeat(Math.round(c.confidence)) + '░'.repeat(10 - Math.round(c.confidence));
 
-  lines.push(`  Median Fair Value:  ${chalk.bold('$' + c.median.toFixed(2))}   ${mosLabel}`);
+  lines.push(`  Median Fair Value:  ${chalk.bold(P(c.median))}   ${mosLabel}`);
   if (c.p25 !== null && c.p75 !== null) {
-    lines.push(`  IQR (25–75%):       $${c.p25.toFixed(2)} – $${c.p75.toFixed(2)}` +
-      (c.min !== null && c.max !== null ? `   (full range $${c.min.toFixed(2)} – $${c.max.toFixed(2)})` : ''));
+    lines.push(`  IQR (25–75%):       ${P(c.p25)} – ${P(c.p75)}` +
+      (c.min !== null && c.max !== null ? `   (full range ${P(c.min)} – ${P(c.max)})` : ''));
   }
-  lines.push(`  Mean Fair Value:    $${c.mean!.toFixed(2)}   |   Current Price: $${price.toFixed(2)}`);
+  lines.push(`  Mean Fair Value:    ${P(c.mean)}   |   Current Price: ${P(price)}`);
   if (c.pctModelsUndervalued !== null) {
     const pctU = (c.pctModelsUndervalued * 100).toFixed(0);
     lines.push(`  Models bullish:     ${pctU}% of ${c.contributingModels.length} applicable models say undervalued`);
@@ -534,7 +548,7 @@ function formatComposite(c: CompositeFairValueResult, price: number): string[] {
     for (const m of sorted) {
       const delta = ((m.fairValue - price) / price) * 100;
       const arrow = m.fairValue > price ? chalk.green(`▲ ${delta.toFixed(1)}%`) : chalk.red(`▼ ${Math.abs(delta).toFixed(1)}%`);
-      lines.push(chalk.gray(`    • ${m.name.padEnd(28)} $${m.fairValue.toFixed(2).padStart(8)}   ${arrow}`));
+      lines.push(chalk.gray(`    • ${m.name.padEnd(28)} ${P(m.fairValue).padStart(9)}   ${arrow}`));
     }
   }
 
@@ -549,8 +563,10 @@ function formatComposite(c: CompositeFairValueResult, price: number): string[] {
   return lines;
 }
 
-function formatPeerMultiples(pm: PeerMultiplesResult, price: number): string[] {
+function formatPeerMultiples(pm: PeerMultiplesResult, price: number, cur: string | null | undefined): string[] {
   if (pm.count === 0) return [];
+
+  const P = (n: number | null | undefined) => fmtPrice(n, cur);
 
   const METRIC_LABEL: Record<string, string> = {
     pe: 'P/E', evEbitda: 'EV/EBITDA', evRevenue: 'EV/Revenue',
@@ -568,13 +584,13 @@ function formatPeerMultiples(pm: PeerMultiplesResult, price: number): string[] {
     if (e.fairPrice === null) continue;
     const delta = ((e.fairPrice - price) / price) * 100;
     const arrow = delta >= 0 ? chalk.green(`▲ ${delta.toFixed(1)}%`) : chalk.red(`▼ ${Math.abs(delta).toFixed(1)}%`);
-    const ownLabel = e.metric === 'pe' ? `EPS $${e.ownMetric?.toFixed(2)}`
-                   : e.metric === 'pb' ? `BV $${e.ownMetric?.toFixed(2)}`
-                   : fmtBig(e.ownMetric);
+    const ownLabel = e.metric === 'pe' ? `EPS ${P(e.ownMetric)}`
+                   : e.metric === 'pb' ? `BV ${P(e.ownMetric)}`
+                   : fmtBig(e.ownMetric, cur);
     const medianLabel = (e.metric === 'pe' || e.metric === 'pb' || e.metric === 'priceFCF' || e.metric === 'evEbitda' || e.metric === 'evRevenue')
       ? `${e.sectorMedian!.toFixed(2)}x`
       : `${e.sectorMedian!.toFixed(2)}`;
-    lines.push(`| ${METRIC_LABEL[e.metric].padEnd(11)} | ${medianLabel.padEnd(13)} | ${ownLabel.padEnd(13)} | $${e.fairPrice.toFixed(2).padStart(18)} | ${arrow.padEnd(11)} |`);
+    lines.push(`| ${METRIC_LABEL[e.metric].padEnd(11)} | ${medianLabel.padEnd(13)} | ${ownLabel.padEnd(13)} | ${P(e.fairPrice).padStart(19)} | ${arrow.padEnd(11)} |`);
   }
 
   if (pm.medianFairPrice !== null) {
@@ -582,7 +598,7 @@ function formatPeerMultiples(pm: PeerMultiplesResult, price: number): string[] {
     const mosLabel = mosPct === null ? '' :
       mosPct >= 0 ? chalk.green(`▲ ${mosPct.toFixed(1)}%`) : chalk.red(`▼ ${Math.abs(mosPct).toFixed(1)}%`);
     lines.push('');
-    lines.push(`  Median fair price across ${pm.count} multiples: ${chalk.bold('$' + pm.medianFairPrice.toFixed(2))}   ${mosLabel}`);
+    lines.push(`  Median fair price across ${pm.count} multiples: ${chalk.bold(P(pm.medianFairPrice))}   ${mosLabel}`);
   }
   lines.push('');
   return lines;
@@ -599,6 +615,7 @@ function fvRow(
   label: string,
   fv: number | null | undefined,
   price: number,
+  cur: string | null | undefined,
   note?: string,
 ): string {
   if (fv === null || fv === undefined) {
@@ -607,7 +624,7 @@ function fvRow(
   }
   const mosPct = ((fv - price) / price * 100).toFixed(1);
   const arrow  = fv > price ? chalk.green(`▲ ${mosPct}%`) : chalk.red(`▼ ${Math.abs(Number(mosPct))}%`);
-  return `| ${label.padEnd(23)} | $${fv.toFixed(2).padEnd(18)} | ${arrow} |`;
+  return `| ${label.padEnd(23)} | ${fmtPrice(fv, cur).padEnd(19)} | ${arrow} |`;
 }
 
 function formatPerplexity(p: AnalysisResult['perplexity']): string[] {

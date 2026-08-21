@@ -78,7 +78,7 @@ export default function StockSidebar({ stocks, activity = {}, selectedSymbol, on
                         ? 'bg-accent-soft border-l-2 border-l-accent'
                         : 'border-l-2 border-l-transparent hover:bg-ink-800'
                     }`}
-                    title={`${s.companyName} · ${s.sector ?? '—'} · ${fmtBig(s.marketCap)}`}
+                    title={`${s.companyName} · ${s.sector ?? '—'} · ${fmtBig(s.marketCap, s.currency)}`}
                   >
                     <ConsensusBar consensus={s.consensus} height={22} />
                     <StockLogo

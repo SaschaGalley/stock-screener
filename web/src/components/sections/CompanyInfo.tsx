@@ -1,4 +1,4 @@
-import { fmtBig } from '../../format';
+import { fmtCount } from '../../format';
 
 interface Props {
   financials: any;
@@ -16,7 +16,7 @@ export default function CompanyInfo({ financials: f }: Props) {
   if (f.isin) items.push({ label: 'ISIN', value: <span className="font-mono">{f.isin}</span> });
   if (f.wkn)  items.push({ label: 'WKN',  value: <span className="font-mono">{f.wkn}</span> });
   if (f.industry) items.push({ label: 'Industry', value: f.industry });
-  if (f.sharesOutstanding) items.push({ label: 'Shares Outstanding', value: fmtBig(f.sharesOutstanding).replace('$', '') });
+  if (f.sharesOutstanding) items.push({ label: 'Shares Outstanding', value: fmtCount(f.sharesOutstanding) });
   if (f.nextEarningsDate) items.push({ label: 'Next Earnings', value: f.nextEarningsDate });
   if (f.exDividendDate)   items.push({ label: 'Ex-Dividend',   value: f.exDividendDate });
   if (f.dividendPayDate)  items.push({ label: 'Pay Date',      value: f.dividendPayDate });

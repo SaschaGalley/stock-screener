@@ -1,6 +1,7 @@
 import ReactECharts from 'echarts-for-react';
 import type { CompositeFairValue } from '../../types';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
+import { useMoney } from '../../currency';
 
 interface Props {
   composite: CompositeFairValue;
@@ -13,6 +14,8 @@ interface Props {
  * price. Color reflects under/overvaluation.
  */
 export default function CompositeChart({ composite, price }: Props) {
+  const { symbol: cur } = useMoney();
+
   type Row = { name: string; value: number; tier: 'primary' | 'conservative' };
   const rows: Row[] = [
     ...composite.primary.models.map((m) => ({ name: m.name, value: m.fairValue, tier: 'primary' as const })),
@@ -50,7 +53,7 @@ export default function CompositeChart({ composite, price }: Props) {
           formatter: (p: any) => {
             const row = rows[p.dataIndex];
             const tierLabel = row.tier === 'primary' ? 'Primary' : 'Conservative';
-            return `${p.name} (${tierLabel}): <b>$${p.value.toFixed(2)}</b><br/>vs price $${price.toFixed(2)}: ` +
+            return `${p.name} (${tierLabel}): <b>${cur}${p.value.toFixed(2)}</b><br/>vs price ${cur}${price.toFixed(2)}: ` +
               `${((p.value - price) / price * 100).toFixed(1)}%`;
           },
         },
@@ -58,7 +61,7 @@ export default function CompositeChart({ composite, price }: Props) {
           type: 'value',
           min: xMin,
           max: xMax,
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 10, formatter: (v: number) => `$${v.toFixed(0)}` },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 10, formatter: (v: number) => `${cur}${v.toFixed(0)}` },
           splitLine: { lineStyle: { color: CHART_COLORS.grid } },
         },
         yAxis: {
@@ -89,7 +92,7 @@ export default function CompositeChart({ composite, price }: Props) {
               color: CHART_COLORS.text,
               fontSize: 10,
               fontFamily: 'monospace',
-              formatter: (p: any) => `$${p.value.toFixed(0)}`,
+              formatter: (p: any) => `${cur}${p.value.toFixed(0)}`,
             },
             markLine: {
               symbol: 'none',
@@ -98,7 +101,7 @@ export default function CompositeChart({ composite, price }: Props) {
                 color: CHART_COLORS.text,
                 fontSize: 10,
                 fontFamily: 'monospace',
-                formatter: () => `Price $${price.toFixed(2)}`,
+                formatter: () => `Price ${cur}${price.toFixed(2)}`,
                 position: 'end',
               },
               data: [{ xAxis: price }],

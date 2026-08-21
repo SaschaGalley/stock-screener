@@ -59,16 +59,27 @@ export function currencyPrefix(code?: string | null): string {
   return CURRENCY_SYMBOL[code] ?? `${code} `;
 }
 
+/**
+ * Magnitude-abbreviated number with no unit at all: 1.23e9 → "1.23B".
+ *
+ * For quantities that are not money — share counts, mostly. Those used to be
+ * printed as `fmtBig(n).replace('$', '')`, which stops working the moment the
+ * prefix is a euro sign: a EUR-quoted stock reported "€1.2B shares short".
+ */
+export function fmtCount(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `${(n / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9)  return `${(n / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6)  return `${(n / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3)  return `${(n / 1e3).toFixed(1)}K`;
+  return n.toFixed(0);
+}
+
 /** Currency amount abbreviated to T/B/M/K, in `currency` (default USD). */
 export function fmtBig(n: number | null | undefined, currency?: string | null): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
-  const c = currencyPrefix(currency);
-  const abs = Math.abs(n);
-  if (abs >= 1e12) return `${c}${(n / 1e12).toFixed(2)}T`;
-  if (abs >= 1e9)  return `${c}${(n / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6)  return `${c}${(n / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3)  return `${c}${(n / 1e3).toFixed(1)}K`;
-  return `${c}${n.toFixed(0)}`;
+  return `${currencyPrefix(currency)}${fmtCount(n)}`;
 }
 
 /** Plain price with two decimals, in `currency` (default USD). */

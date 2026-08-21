@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { StockSummary } from "../types";
-import { fmtBig, fmtPrice, fmt, relativeTime } from "../format";
+import { fmt, relativeTime } from "../format";
+import { useMoney } from "../currency";
 import { api } from "../api"; // refresh endpoint (PDF/MD endpoints unused since report generation is skipped)
 import StockLogo, { initialsFromName } from "./StockLogo";
 
@@ -21,6 +22,7 @@ export default function StockHeader({
   activity = [],
   onActivityChanged,
 }: Props) {
+  const { fmtPrice, fmtBig } = useMoney();
   const [refreshing, setRefreshing] = useState(false);
 
   /**

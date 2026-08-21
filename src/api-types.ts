@@ -49,6 +49,8 @@ export interface StockSummary {
   industry:      string | null;
   price:         number | null;
   marketCap:     number | null;
+  /** Trading currency of `price`/`marketCap` (ISO 4217), null when unknown. */
+  currency:      string | null;
   website:       string | null;
   logoDomain:    string | null;       // domain for clearbit-style lookup
   cachedAt:      string;              // ISO timestamp of financials.json mtime

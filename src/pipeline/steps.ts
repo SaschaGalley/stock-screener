@@ -20,6 +20,7 @@ import { refreshStockData } from '../refresh.js';
 import { runAnalysis } from '../cli.js';
 import { distillHintsFor, syncDistillBriefing } from '../distill-service.js';
 import { logger } from '../utils/logger.js';
+import { fmtPrice } from '../format.js';
 import { query } from '../db/client.js';
 
 /** Symbols the nightly run covers, in the order it will walk them. */
@@ -144,7 +145,7 @@ export async function runDataStep(
       // Distill is its own step — skip the courtesy fetch inside the data
       // refresh so a symbol never hits Distill twice in one run.
       const data = await refreshStockData(symbol, { includeDistill: false, runId });
-      return `$${data.financials.price.toFixed(2)} · ${data.news.length} news`;
+      return `${fmtPrice(data.financials.price, data.financials.tradingCurrency)} · ${data.news.length} news`;
     });
     return result('data', 'ok', detail, ms);
   } catch (e) {

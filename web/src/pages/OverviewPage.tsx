@@ -193,23 +193,23 @@ export default function OverviewPage({ onSelect, refreshKey = 0 }: Props) {
                   </td>
 
                   <td className="px-2 py-2 text-right font-mono text-xs tabular text-ink-200">
-                    {fmtPrice(r.price)}
+                    {fmtPrice(r.price, r.currency)}
                   </td>
 
                   <td className="px-2 py-2 text-right font-mono text-xs tabular">
-                    <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean)}</div>
+                    <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean, r.currency)}</div>
                     <div className={`text-[10px] ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
                   </td>
 
                   <td className="px-2 py-2 text-right font-mono text-xs tabular">
                     <div className="text-ink-300">
-                      {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue)}
+                      {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue, r.currency)}
                     </div>
                     <div className={`text-[10px] ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
                   </td>
 
                   <td className="px-2 py-2 text-right font-mono text-xs tabular text-ink-400">
-                    {fmtBig(r.marketCap)}
+                    {fmtBig(r.marketCap, r.currency)}
                   </td>
 
                   <td className="px-3 py-2 text-right text-[10px] text-ink-500">

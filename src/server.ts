@@ -139,6 +139,7 @@ function toSummary(
     industry:      f.industry ?? null,
     price:         typeof f.price === 'number' ? f.price : null,
     marketCap:     typeof f.marketCap === 'number' ? f.marketCap : null,
+    currency:      f.tradingCurrency ?? null,
     website:       f.website ?? null,
     logoDomain:    logoDomainFromWebsite(f.website ?? null),
     cachedAt:      capturedAt,

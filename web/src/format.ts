@@ -2,7 +2,12 @@ import { isStrongRecommendation, recommendationTone } from '../../src/verdict';
 
 // Numbers are formatted the same way in the terminal and the browser, so the
 // formatters come from the shared module; this file owns only the colours.
-export { fmt, fmtPct, fmtSignedPct, fmtPercentPoints, fmtBig, fmtPrice } from '../../src/format';
+export {
+  fmt, fmtPct, fmtSignedPct, fmtPercentPoints, fmtBig, fmtCount, fmtPrice, currencyPrefix,
+} from '../../src/format';
+// `fmtBig`/`fmtPrice`/`currencyPrefix` take the currency as an argument. Views that
+// show a single stock get it from `useMoney()` (see currency.tsx) instead; the
+// direct imports are for the list views, where every row has its own currency.
 
 // Shared formatting helpers for the React frontend.
 

@@ -1,12 +1,14 @@
 import EarningsSurpriseChart from '../charts/EarningsSurpriseChart';
 import ForwardGrowthChart from '../charts/ForwardGrowthChart';
-import { fmt, fmtBig } from '../../format';
+import { fmt } from '../../format';
+import { useMoney } from '../../currency';
 
 interface Props {
   financials: any;
 }
 
 export default function EarningsBlock({ financials: f }: Props) {
+  const { fmtPrice, fmtBig } = useMoney();
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {f.earningsSurprises?.length > 0 && (
@@ -66,7 +68,7 @@ export default function EarningsBlock({ financials: f }: Props) {
                 return (
                   <tr key={i} className="border-b border-ink-800">
                     <td className="py-1 pr-2 text-ink-300">{map[e.period] ?? e.period}</td>
-                    <td className="py-1 px-2 text-right font-mono text-ink-100">{e.epsEstimate ? `$${e.epsEstimate.toFixed(2)}` : '—'}</td>
+                    <td className="py-1 px-2 text-right font-mono text-ink-100">{e.epsEstimate ? fmtPrice(e.epsEstimate) : '—'}</td>
                     <td className={`py-1 px-2 text-right font-mono ${e.epsGrowth > 0 ? 'text-emerald-400' : e.epsGrowth < 0 ? 'text-red-400' : 'text-ink-400'}`}>
                       {e.epsGrowth === null ? '—' : `${e.epsGrowth >= 0 ? '+' : ''}${(e.epsGrowth * 100).toFixed(1)}%`}
                     </td>

@@ -1,4 +1,5 @@
-import { fmt, fmtPct, fmtBig } from '../../format';
+import { fmt, fmtPct } from '../../format';
+import { useMoney } from '../../currency';
 
 interface Props {
   financials: any;
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export default function FundamentalsGrid({ financials: f, ratios, evMultiples: ev }: Props) {
+  const { fmtBig } = useMoney();
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <Block title="Profitability">

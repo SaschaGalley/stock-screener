@@ -22,7 +22,7 @@ import {
   fmtPct,
   fmtBig,
 } from '../analysis/metrics.js';
-import { fmtPrice } from '../format.js';
+import { currencyPrefix, fmtPrice } from '../format.js';
 import { MarketSignals, SectorMedians, StockFinancials } from '../types.js';
 import { PerplexityContext } from '../data/perplexity.js';
 import { DistillBundle } from '../data/distill.js';
@@ -263,6 +263,7 @@ export function buildAnalysisPrompt(
   // trading currency. It used to be printed with a hardcoded `$`, so a German
   // research note about an Austrian company quoted dollar figures throughout.
   const cur = f.tradingCurrency;
+  const sym = currencyPrefix(cur);
   const P = (n: number | null | undefined) => fmtPrice(n, cur);
 
   // Empty string for a clean payload, so the section disappears entirely.
@@ -413,7 +414,7 @@ Provide a comprehensive investment analysis as valid JSON matching this schema:
 - "thesis":    one sentence summarising the overall view.
 - "score":     0–10.
 - "recommendation": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL".
-- "fairValueEstimate": price range as string (e.g. "$120–$145").
+- "fairValueEstimate": price range as string, in the trading currency used above — ${cur ?? 'USD'} (e.g. "${sym}120–${sym}145").
 
 Bullet writing rules — Alphaspread-style:
 - Lead with the strongest single fact, not setup or hedging.
@@ -445,8 +446,8 @@ Composite confidence is a first-class input, not a footnote: below 4/10 the comp
 
 Keep these unchanged regardless of language:
 - The \`recommendation\` enum: \`"STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL"\` (used as UI tokens — not translated).
-- The \`fairValueEstimate\` format: \`"$120–$145"\` style (price range with US-dollar sign and en-dash).
+- The \`fairValueEstimate\` format: \`"${sym}120–${sym}145"\` style (price range in the stock's trading currency ${cur ?? 'USD'}, with an en-dash). Never convert it to another currency.
 - Established finance terminology in the body text: *Free Cash Flow*, *EBITDA*, *DCF*, *ROE*, *Margin of Safety*, *Forward P/E*, *Piotroski*, *Altman Z*, *Beneish*, ticker symbols, company names. Don't germanise these.
 
-Numbers, ratios, and currency amounts keep their English-style formatting ("$1.2B", "23.4%", "1.8x"). Use German for the surrounding prose only ("Bewertung mit 23% Abschlag zum Composite Fair Value" — not "Valuation with 23% discount …").`;
+Numbers, ratios, and currency amounts keep their English-style formatting ("${sym}1.2B", "23.4%", "1.8x"). Use German for the surrounding prose only ("Bewertung mit 23% Abschlag zum Composite Fair Value" — not "Valuation with 23% discount …").`;
 }

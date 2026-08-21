@@ -9,7 +9,7 @@ Always respond with valid JSON matching this exact structure:
   "thesis": "string (1-2 sentences)",
   "score": number (0-10),
   "recommendation": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL",
-  "fairValueEstimate": "string (e.g. '$120 - $145')"
+  "fairValueEstimate": "string — price range in the stock's trading currency, as stated in the analysis (e.g. '$120 - $145' for a USD listing, '€95 - €110' for a EUR one)"
 }`;
 
 export function buildFullPrompt(prompt: string, searchResults?: SearchResult[]): string {

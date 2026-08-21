@@ -735,7 +735,7 @@ export const LLMAnalysisSchema = z.object({
   thesis:            z.string().describe('Single 1–2 sentence investment thesis summarising the overall view'),
   score:             z.number().min(0).max(10).describe('Overall investment attractiveness score from 0 (avoid) to 10 (strong conviction buy)'),
   recommendation:    z.enum(['STRONG BUY', 'BUY', 'HOLD', 'SELL', 'STRONG SELL']).describe('Structured recommendation label'),
-  fairValueEstimate: z.string().describe('LLM-synthesised fair value range as a string (e.g. "$120 – $145")'),
+  fairValueEstimate: z.string().describe('LLM-synthesised fair value range as a string, in the stock\'s trading currency (e.g. "$120 – $145", "€95 – €110")'),
 });
 export type LLMAnalysis = z.infer<typeof LLMAnalysisSchema>;
 

@@ -1,5 +1,6 @@
 import type { ComputedMetrics, PeerMultiplesEntry } from '../../types';
-import { fmtPrice, fmtSignedPct, mosColor, fmt } from '../../format';
+import { fmtSignedPct, mosColor, fmt } from '../../format';
+import { useMoney } from '../../currency';
 
 interface Props {
   metrics: ComputedMetrics;
@@ -12,6 +13,7 @@ const METRIC_LABEL: Record<string, string> = {
 };
 
 export default function ValuationDetail({ metrics, price }: Props) {
+  const { fmtPrice } = useMoney();
   const { dcf, grahamNumber, grahamRevised, peterLynch, epv, ddm, rim, ncav, peerMultiples, reverseDCF } = metrics;
 
   // Build inline notes defensively — every property might be null/undefined

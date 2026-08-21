@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { CompositeFairValue } from '../types';
-import { fmtPrice, fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
+import { fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
+import { useMoney } from '../currency';
 import RecommendationBadge from './RecommendationBadge';
 
 interface Props {
@@ -30,6 +31,8 @@ interface Props {
 }
 
 export default function VerdictHero({ price, composite, llm, llmGeneratedAt, llmModel, analyst }: Props) {
+  const { fmtPrice } = useMoney();
+
   const compositeMoS = composite.primary.median !== null
     ? (composite.primary.median - price) / price
     : null;
