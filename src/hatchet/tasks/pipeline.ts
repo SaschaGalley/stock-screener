@@ -56,6 +56,18 @@ const DATA_TIMEOUT     = '10m';
 const DISTILL_TIMEOUT  = '3h';
 const ANALYSIS_TIMEOUT = '2h';
 
+/**
+ * How long a task may sit in the queue before Hatchet gives up on it.
+ *
+ * Separate from the execution budgets above, and much larger, because they
+ * measure different things: ten minutes is generous for one data refresh and
+ * absurdly short as a waiting time. The last symbol of a watchlist queues
+ * behind every Distill call ahead of it, which is an hour or more — and the
+ * default, five minutes, cancels it for being patient. That is what happened
+ * on the night of the 22nd.
+ */
+const QUEUE_TIMEOUT = '6h';
+
 export type SymbolInput = {
   symbol: string;
   runId:  number;
@@ -114,6 +126,7 @@ const data = symbolPipeline.task({
   name:    'data',
   retries: DATA_RETRIES,
   executionTimeout: DATA_TIMEOUT,
+  scheduleTimeout:  QUEUE_TIMEOUT,
   // Yahoo and Finnhub are billed to separate budgets; the step spends from both.
   rateLimits: [
     { staticKey: 'finnhub', units: FINNHUB_UNITS_PER_SYMBOL },
@@ -134,7 +147,7 @@ const distill = symbolPipeline.task({
   retries: DISTILL_RETRIES,
   executionTimeout: DISTILL_TIMEOUT,
   // Long enough for the whole queue to drain ahead of it, not just the call.
-  scheduleTimeout:  DISTILL_TIMEOUT,
+  scheduleTimeout:  QUEUE_TIMEOUT,
   fn: async (input: SymbolInput, ctx) => {
     const config = await readAppConfig();
     return distillGate.run(async () => settle(
@@ -149,7 +162,7 @@ symbolPipeline.task({
   parents: [distill],
   retries: ANALYSIS_RETRIES,
   executionTimeout: ANALYSIS_TIMEOUT,
-  scheduleTimeout:  ANALYSIS_TIMEOUT,
+  scheduleTimeout:  QUEUE_TIMEOUT,
   fn: async (input: SymbolInput, ctx) => {
     const config = await readAppConfig();
     return analysisGate.run(async () => settle(
@@ -205,7 +218,14 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
       // Tagged, not just passed as input: Hatchet can filter on metadata, and
       // that filter is what makes "is AAPL busy?" answerable without pulling
       // the whole queue back and sifting it here.
-      const results = await Promise.all(symbols.map((symbol) =>
+      //
+      // `allSettled`, emphatically not `all`. `all` rejects the moment any one
+      // child does, and this task then returns — at which point Hatchet cancels
+      // every sibling it had spawned. A single symbol whose Distill ran out of
+      // retries took the rest of the watchlist with it: three analyses killed
+      // mid-run and four symbols never started, all cancelled within the same
+      // millisecond. One dead ticker costs its own symbol and nothing else.
+      const settled = await Promise.allSettled(symbols.map((symbol) =>
         symbolPipeline.run(
           { symbol, runId, ageDays: ages.get(symbol) ?? null },
           {
@@ -216,8 +236,17 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
             },
           },
         )));
-      for (const r of results) {
-        for (const step of [r.data, r.distill, r.analysis]) {
+
+      for (const [i, outcome] of settled.entries()) {
+        if (outcome.status === 'rejected') {
+          // The steps it did finish are already in run_steps; what is lost is
+          // only the summary, so it counts as one failure and is named.
+          failed++;
+          logger.warn(`${symbols[i]}: pipeline rejected — ${
+            outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`);
+          continue;
+        }
+        for (const step of [outcome.value.data, outcome.value.distill, outcome.value.analysis]) {
           if (step?.status === 'failed') failed++;
         }
       }
