@@ -117,10 +117,19 @@ export async function hasActiveWorker(): Promise<boolean> {
   const now = Date.now();
   if (lastLook && now - lastLook.at < LOOK_CACHE_MS) return lastLook.ok;
 
+  // Match the base name *or* a role suffix: since the stages were split across
+  // workers there is no process called plainly `stock-cli` any more, only
+  // `stock-cli-general` and its siblings. Requiring the bare name recognised
+  // none of them and answered 503 to every click while three workers ran.
   const namespace = process.env.HATCHET_CLIENT_NAMESPACE?.trim().toLowerCase();
   const belongsToUs = (name: string): boolean => {
-    const n = name.toLowerCase();
-    return namespace ? n.startsWith(namespace) && n.endsWith(WORKER_NAME) : n === WORKER_NAME;
+    let n = name.toLowerCase();
+    if (namespace) {
+      if (!n.startsWith(namespace)) return false;
+      // Hatchet joins the namespace with an underscore it adds itself.
+      n = n.slice(namespace.length).replace(/^_/, '');
+    }
+    return n === WORKER_NAME || n.startsWith(`${WORKER_NAME}-`);
   };
 
   let ok = false;
