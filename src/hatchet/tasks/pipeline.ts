@@ -116,13 +116,20 @@ async function settle(
   return { status: result.status, detail: result.detail, ms: result.ms };
 }
 
-// ── One symbol, three stages ─────────────────────────────────────────────────
+// ── The three stages, each on its own ────────────────────────────────────────
+//
+// Standalone tasks rather than steps of one DAG, and the reason is which worker
+// runs them. A worker registers the actions of a whole workflow and pushes that
+// workflow's definition as it does so, so a DAG cannot be split across workers
+// without one of them overwriting the definition with its own partial view.
+// Separate tasks can be registered separately — which is what lets Distill run
+// on a worker with a single slot, and be genuinely limited to one at a time
+// across every process rather than only within one.
+//
+// The order between them is kept by the caller below: each reads what the
+// previous wrote.
 
-export const symbolPipeline = hatchet.workflow<SymbolInput, {
-  data: StepOutput; distill: StepOutput; analysis: StepOutput;
-}>({ name: 'symbol-pipeline' });
-
-const data = symbolPipeline.task({
+export const dataTask = hatchet.task<SymbolInput, StepOutput>({
   name:    'data',
   retries: DATA_RETRIES,
   executionTimeout: DATA_TIMEOUT,
@@ -132,7 +139,7 @@ const data = symbolPipeline.task({
     { staticKey: 'finnhub', units: FINNHUB_UNITS_PER_SYMBOL },
     { staticKey: 'yahoo',   units: YAHOO_UNITS_PER_SYMBOL },
   ],
-  fn: async (input: SymbolInput, ctx) => {
+  fn: async (input, ctx) => {
     const config = await readAppConfig();
     return settle(
       await runDataStep(config, input.symbol, input.runId),
@@ -141,15 +148,17 @@ const data = symbolPipeline.task({
   },
 });
 
-const distill = symbolPipeline.task({
+export const distillTask = hatchet.task<SymbolInput, StepOutput>({
   name:    'distill',
-  parents: [data],
   retries: DISTILL_RETRIES,
   executionTimeout: DISTILL_TIMEOUT,
   // Long enough for the whole queue to drain ahead of it, not just the call.
   scheduleTimeout:  QUEUE_TIMEOUT,
-  fn: async (input: SymbolInput, ctx) => {
+  fn: async (input, ctx) => {
     const config = await readAppConfig();
+    // The gate is belt to the dedicated worker's braces: on a worker with one
+    // slot it never blocks, and on a single worker serving everything (which is
+    // what `pnpm dev` starts) it is the only thing holding the line.
     return distillGate.run(async () => settle(
       await runDistillStep(config, input.symbol, input.runId),
       input.runId, input.symbol, ctx, DISTILL_RETRIES,
@@ -157,13 +166,12 @@ const distill = symbolPipeline.task({
   },
 });
 
-symbolPipeline.task({
+export const analysisTask = hatchet.task<SymbolInput, StepOutput>({
   name:    'analysis',
-  parents: [distill],
   retries: ANALYSIS_RETRIES,
   executionTimeout: ANALYSIS_TIMEOUT,
   scheduleTimeout:  QUEUE_TIMEOUT,
-  fn: async (input: SymbolInput, ctx) => {
+  fn: async (input, ctx) => {
     const config = await readAppConfig();
     return analysisGate.run(async () => settle(
       await runAnalysisStep(config, input.symbol, input.runId, input.ageDays),
@@ -171,6 +179,26 @@ symbolPipeline.task({
     ));
   },
 });
+
+/**
+ * One symbol through all three stages, in order.
+ *
+ * Sequential because each stage reads what the last one wrote: Distill is
+ * looked up from the financials the data step refreshed, and the analysis is
+ * meant to see the new briefing. The waiting costs nothing here — this runs
+ * inside the parent, and the stages themselves are queued on their own workers.
+ */
+async function runSymbol(
+  symbol: string, runId: number, ageDays: number | null, trigger: string,
+): Promise<StepOutput[]> {
+  const meta = { symbol, runId: String(runId), trigger };
+  const input = { symbol, runId, ageDays };
+  const out: StepOutput[] = [];
+  for (const stage of [dataTask, distillTask, analysisTask]) {
+    out.push(await stage.run(input, { additionalMetadata: meta }));
+  }
+  return out;
+}
 
 // ── The whole watchlist ──────────────────────────────────────────────────────
 
@@ -220,33 +248,24 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
       // the whole queue back and sifting it here.
       //
       // `allSettled`, emphatically not `all`. `all` rejects the moment any one
-      // child does, and this task then returns — at which point Hatchet cancels
-      // every sibling it had spawned. A single symbol whose Distill ran out of
-      // retries took the rest of the watchlist with it: three analyses killed
-      // mid-run and four symbols never started, all cancelled within the same
-      // millisecond. One dead ticker costs its own symbol and nothing else.
+      // symbol does, and this task then returns — at which point Hatchet
+      // cancels every stage it had spawned. A single symbol whose Distill ran
+      // out of retries took the rest of the watchlist with it: three analyses
+      // killed mid-run and four symbols never started, all cancelled within the
+      // same millisecond. One dead ticker costs its own symbol and nothing else.
       const settled = await Promise.allSettled(symbols.map((symbol) =>
-        symbolPipeline.run(
-          { symbol, runId, ageDays: ages.get(symbol) ?? null },
-          {
-            additionalMetadata: {
-              symbol,
-              runId:   String(runId),
-              trigger: input.trigger,
-            },
-          },
-        )));
+        runSymbol(symbol, runId, ages.get(symbol) ?? null, input.trigger)));
 
       for (const [i, outcome] of settled.entries()) {
         if (outcome.status === 'rejected') {
           // The steps it did finish are already in run_steps; what is lost is
-          // only the summary, so it counts as one failure and is named.
+          // only the rest of its chain, so it counts once and is named.
           failed++;
           logger.warn(`${symbols[i]}: pipeline rejected — ${
             outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`);
           continue;
         }
-        for (const step of [outcome.value.data, outcome.value.distill, outcome.value.analysis]) {
+        for (const step of outcome.value) {
           if (step?.status === 'failed') failed++;
         }
       }

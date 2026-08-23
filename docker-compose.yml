@@ -63,6 +63,19 @@ x-app-env: &app-env
   # from the same budget rather than each assuming it has all of it.
   HATCHET_CLIENT_NAMESPACE: ${HATCHET_CLIENT_NAMESPACE:-}
 
+x-worker: &worker
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: on-failure:3
+  depends_on:
+    stockcli:
+      condition: service_healthy
+  command: ['node', 'dist/hatchet/worker.js']
+  volumes:
+    # Same filings the API reads; the data step writes them.
+    - stock-files:/data
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -160,37 +173,44 @@ services:
       start_period: 10s
       retries: 3
 
-  # The Hatchet worker: same image, same code, different entrypoint.
+  # ── Hatchet workers ────────────────────────────────────────────────────────
   #
-  # A separate container rather than a thread inside the API, because the two
-  # fail differently. The API must stay responsive to answer the admin page; a
-  # worker spends its time inside minute-long analysis runs. Apart, a saturated
-  # worker cannot make the dashboard time out, and either can be restarted
-  # without the other.
+  # Three processes, same image, same code, different role. Not for throughput —
+  # the work is I/O-bound and one process handles it — but because a worker's
+  # slot count is the only limit Hatchet enforces *across* processes. Distill
+  # gets a worker with one slot, so "one at a time" holds however many replicas
+  # exist; before this it was a promise a single process made to itself.
   #
-  # Does nothing without HATCHET_CLIENT_TOKEN — it exits with a clear message,
-  # and `restart: unless-stopped` would loop it, so it stays `on-failure` with
-  # a bounded count while Hatchet is optional.
+  # Splitting also stops a waiting task from occupying a slot it is not using:
+  # a Distill call queued behind eleven others used to hold a general slot the
+  # whole time, doing nothing.
+  #
+  # All three wait for the API's healthcheck rather than for Postgres: the API
+  # applies the migrations, and a worker connecting first would find tables that
+  # are not there.
+  # Everything that is not rate-limited by a machine or a bill: the nightly
+  # parent (which only waits), the data refreshes (already capped by the Finnhub
+  # and Yahoo budgets), and ping.
   stockcli-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: on-failure:3
-    depends_on:
-      # Not just postgres: the API applies the migrations on boot, and a worker
-      # that connected first would find tables that are not there yet.
-      stockcli:
-        condition: service_healthy
-    command: ['node', 'dist/hatchet/worker.js']
+    <<: *worker
     environment:
       <<: *app-env
-      # The worker's own ceiling. The real pacing is per-task — rate limits for
-      # the APIs, and an in-process gate for Distill and analysis — so this only
-      # needs to be comfortably above the number of symbols in flight.
-      HATCHET_WORKER_SLOTS: ${HATCHET_WORKER_SLOTS:-20}
-    volumes:
-      # Same filings the API reads; the data step writes them.
-      - stock-files:/data
+      HATCHET_WORKER_ROLE: general
+
+  # One slot, deliberately. This reaches a machine at home that answers one
+  # request at a time.
+  stockcli-worker-distill:
+    <<: *worker
+    environment:
+      <<: *app-env
+      HATCHET_WORKER_ROLE: distill
+
+  # Three slots: a spending decision, not a technical one.
+  stockcli-worker-analysis:
+    <<: *worker
+    environment:
+      <<: *app-env
+      HATCHET_WORKER_ROLE: analysis
 
 volumes:
   stock-db:
