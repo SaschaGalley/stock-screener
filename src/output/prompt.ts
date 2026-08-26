@@ -64,6 +64,32 @@ function signedPct(n: number | null): string {
   return `${sign}${v.toFixed(1)}%`;
 }
 
+/**
+ * Push an embedded document's headings below the heading that introduces it.
+ *
+ * The analysis prompt is one markdown document whose top level is
+ * `## Stock Analysis: …`. A Distill briefing is its own document and rightly
+ * heads its sections with `##` — but pasted in verbatim, `## Risks & Concerns`
+ * becomes a *sibling of the whole analysis*, so the briefing's risks read as the
+ * analysis's risks. Demoting keeps the briefing's internal structure intact and
+ * subordinate, which is what the surrounding text ("weight this below the
+ * quantitative models") depends on being true structurally as well as in prose.
+ *
+ * Fenced blocks are skipped: `#` inside one is content, not a heading.
+ */
+export function demoteHeadings(md: string, by: number): string {
+  let inFence = false;
+  return md
+    .split('\n')
+    .map((line) => {
+      if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+      if (inFence) return line;
+      return line.replace(/^(#{1,6})(?=\s)/, (_, hashes: string) =>
+        '#'.repeat(Math.min(6, hashes.length + by)));
+    })
+    .join('\n');
+}
+
 function technicalsSection(s: MarketSignals): string {
   const t = s.technicals;
   const macdSign = t.macdHistogram === null ? 'N/A' : t.macdHistogram > 0 ? `bullish (+${t.macdHistogram.toFixed(2)})` : `bearish (${t.macdHistogram.toFixed(2)})`;
@@ -293,9 +319,9 @@ valuation models and analyst consensus. If the briefing contradicts the
 calculated models or the analyst consensus, surface the divergence explicitly
 in the bull or bear case.
 
-#### ${distillBriefing.briefingTypeName} — ${distillBriefing.createdAt.slice(0, 10)} (${distillBriefing.insightCount} insights, ${distillBriefing.model})
+**${distillBriefing.briefingTypeName}** — ${distillBriefing.createdAt.slice(0, 10)} (${distillBriefing.insightCount} insights, ${distillBriefing.model})
 
-${distillBriefing.body.trim()}
+${demoteHeadings(distillBriefing.body.trim(), 2)}
 `
     : '';
 

@@ -339,7 +339,7 @@ function DistillBriefingBlock({ briefing }: { briefing: DistillBriefing }) {
   );
 }
 
-/** Restricted markdown renderer — Distill only emits **bold** and `- bullets`. */
+/** Restricted markdown renderer — Distill emits `## headings`, `- bullets` and `**bold**`. */
 function renderDistillBody(body: string, format: 'plain' | 'markdown'): React.ReactNode {
   const lines = body.split('\n');
   if (format === 'plain') {
@@ -364,7 +364,22 @@ function renderDistillBody(body: string, format: 'plain' | 'markdown'): React.Re
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
-    if (trimmed.startsWith('- ')) {
+    const heading = /^(#{1,6})\s+(.*)$/.exec(trimmed);
+    if (heading) {
+      // The briefing is its own document and heads its sections with `##`.
+      // Without this branch they rendered as the literal text "## Summary" —
+      // the levels are collapsed to one visual weight here because a briefing
+      // is flat: sections, never subsections.
+      flushBullets(i);
+      out.push(
+        <p
+          key={i}
+          className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-ink-400 first:mt-0"
+        >
+          {heading[2]}
+        </p>,
+      );
+    } else if (trimmed.startsWith('- ')) {
       bulletBuffer.push(trimmed.slice(2));
     } else if (trimmed === '') {
       flushBullets(i);
