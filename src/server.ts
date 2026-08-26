@@ -30,6 +30,7 @@ import {
   DistillEntityUnresolvedError,
 } from './data/distill.js';
 import { distillHintsFor, syncDistillBriefing } from './distill-service.js';
+import { dossiersFollow, noteDossierIntent, watchlistDelta } from './distill-dossiers.js';
 import { getMarketRates } from './data/fred.js';
 import { getSectorMediansCached } from './sector-medians.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
@@ -267,6 +268,16 @@ export function createApp(): express.Express {
         symbol:  resolved,
         summary: await buildStockSummary(resolved),
       });
+
+      // The watchlist just grew, so Distill's dossier switch follows it. After
+      // the response and deliberately not awaited: the stock is added either
+      // way, and a Distill outage must not hold the request open for the length
+      // of a retry budget. `dossiersFollow` records its own failures, and the
+      // next run's full sync repairs whatever this misses.
+      void (async () => {
+        const config = await readAppConfig();
+        await dossiersFollow([{ symbol: resolved, enabled: isWatched(config, resolved) }]);
+      })().catch((e) => logger.warn(`Distill dossier switch for ${resolved} failed: ${(e as Error).message}`));
     } catch (e) {
       next(e);
     }
@@ -384,6 +395,14 @@ export function createApp(): express.Express {
   app.delete('/api/stocks/:symbol', async (req, res, next) => {
     try {
       const symbol = req.params.symbol.toUpperCase();
+
+      // Before the delete, not after. The symbol → entity mapping lives in
+      // `distill_entities`, which cascades away with the row; copying the id
+      // into the dossier ledger first is what lets the off-switch outlive the
+      // stock and be retried until Distill confirms it. Writing the intent is
+      // one statement — the call itself waits until after the response.
+      await noteDossierIntent([{ symbol, enabled: false }]);
+
       const removed = await deleteSymbol(symbol);
       if (!removed) {
         res.status(404).json({ error: `No stored data for ${symbol}` });
@@ -396,6 +415,11 @@ export function createApp(): express.Express {
       }
       logger.info(`Deleted ${symbol}`);
       res.json({ ok: true, symbol });
+
+      // Switching off deletes nothing upstream — existing dossiers stand, they
+      // just stop being extended — so a stock that comes back keeps its history.
+      void dossiersFollow([{ symbol, enabled: false }])
+        .catch((e) => logger.warn(`Distill dossier switch for ${symbol} failed: ${(e as Error).message}`));
     } catch (e) {
       next(e);
     }
@@ -490,9 +514,18 @@ export function createApp(): express.Express {
         });
         return;
       }
+      const before = await readAppConfig();
       const config = await writeAppConfig(parsed.data);
       await applySchedule();
       res.json({ ok: true, config, scheduler: await getSchedulerStatus() });
+
+      // Unticking a stock here is the other way it leaves the watchlist, and it
+      // costs money for as long as Distill keeps building for it. Only the
+      // symbols that actually changed sides are sent.
+      void (async () => {
+        const changes = await watchlistDelta(before, config);
+        await dossiersFollow(changes);
+      })().catch((e) => logger.warn(`Distill dossier switch after a config change failed: ${(e as Error).message}`));
     } catch (e) {
       next(e);
     }

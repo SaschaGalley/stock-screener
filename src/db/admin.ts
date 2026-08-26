@@ -275,6 +275,156 @@ export async function clearDistillEntity(symbol: string, baseUrl?: string): Prom
   }
 }
 
+// ── Distill dossier ledger ───────────────────────────────────────────────────
+
+/**
+ * Why a symbol is or is not in sync upstream. The vocabulary is the migration's
+ * CHECK constraint, restated here as a type so a typo is a build error rather
+ * than a rejected INSERT at 3am.
+ */
+export type DossierState = 'synced' | 'pending' | 'unresolved' | 'ineligible' | 'forbidden';
+
+export interface DossierLedgerRow {
+  symbol:      string;
+  /** Null while the registry does not know this symbol. */
+  entityId:    string | null;
+  desired:     boolean;
+  /** What Distill last confirmed; null until a call has ever succeeded. */
+  applied:     boolean | null;
+  state:       DossierState;
+  detail:      string | null;
+  attempts:    number;
+  attemptedAt: string | null;
+  syncedAt:    string | null;
+}
+
+interface DossierRow {
+  symbol: string; entity_id: string | null; desired: boolean;
+  applied: boolean | null; state: string; detail: string | null;
+  attempts: number; attempted_at: Date | null; synced_at: Date | null;
+}
+
+function toLedgerRow(row: DossierRow): DossierLedgerRow {
+  return {
+    symbol:      row.symbol,
+    entityId:    row.entity_id,
+    desired:     row.desired,
+    applied:     row.applied,
+    state:       row.state as DossierState,
+    detail:      row.detail,
+    attempts:    row.attempts,
+    attemptedAt: row.attempted_at?.toISOString() ?? null,
+    syncedAt:    row.synced_at?.toISOString() ?? null,
+  };
+}
+
+const DOSSIER_COLUMNS =
+  'symbol, entity_id, desired, applied, state, detail, attempts, attempted_at, synced_at';
+
+/** The whole ledger for one Distill deployment — what a full sync reconciles against. */
+export async function listDossiers(baseUrl: string): Promise<DossierLedgerRow[]> {
+  const res = await query<DossierRow>(
+    `SELECT ${DOSSIER_COLUMNS} FROM distill_dossiers WHERE base_url = $1 ORDER BY symbol`,
+    [baseUrl],
+  );
+  return res.rows.map(toLedgerRow);
+}
+
+export async function readDossier(symbol: string, baseUrl: string): Promise<DossierLedgerRow | null> {
+  const row = await queryOne<DossierRow>(
+    `SELECT ${DOSSIER_COLUMNS} FROM distill_dossiers WHERE base_url = $1 AND symbol = $2`,
+    [baseUrl, symbol.toUpperCase()],
+  );
+  return row ? toLedgerRow(row) : null;
+}
+
+/**
+ * Record what the watchlist now says, before anything is sent.
+ *
+ * Written first and on its own so an intent survives a crash between the
+ * watchlist change and the call that mirrors it — which is the whole reason
+ * this table is not keyed by `symbols(id)` with a cascade.
+ *
+ * A desire that matches what Distill already confirmed settles the row without
+ * a call: toggling a stock off and on again before the sync runs leaves nothing
+ * to do, which is the local half of the endpoint's idempotency.
+ */
+export async function recordDossierIntent(
+  baseUrl: string, symbol: string, desired: boolean, entityId?: string | null,
+): Promise<void> {
+  await query(
+    `INSERT INTO distill_dossiers (base_url, symbol, entity_id, desired, state)
+     VALUES ($1, $2, $3, $4, 'pending')
+     ON CONFLICT (base_url, symbol) DO UPDATE SET
+       entity_id  = COALESCE(EXCLUDED.entity_id, distill_dossiers.entity_id),
+       desired    = EXCLUDED.desired,
+       state      = CASE
+                      -- The entity's type will not change because we asked again.
+                      WHEN distill_dossiers.state = 'ineligible' THEN 'ineligible'
+                      WHEN distill_dossiers.applied IS NOT DISTINCT FROM EXCLUDED.desired THEN 'synced'
+                      ELSE 'pending'
+                    END,
+       updated_at = now()`,
+    [baseUrl, symbol.toUpperCase(), entityId ?? null, desired],
+  );
+}
+
+export interface DossierOutcome {
+  /** Set explicitly, not merged: `unresolved` means the id we held is gone. */
+  entityId: string | null;
+  /** What Distill confirmed, or null when the call never got an answer. */
+  applied:  boolean | null;
+  state:    DossierState;
+  detail:   string | null;
+}
+
+/**
+ * Record what came back. `attempts` counts consecutive failures — reset on a
+ * confirmed sync — so a symbol that keeps failing is visible without reading
+ * logs.
+ */
+export async function recordDossierOutcome(
+  baseUrl: string, symbol: string, desired: boolean, outcome: DossierOutcome,
+): Promise<void> {
+  await query(
+    `INSERT INTO distill_dossiers
+       (base_url, symbol, entity_id, desired, applied, state, detail,
+        attempts, attempted_at, synced_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7,
+             CASE WHEN $6 = 'synced' THEN 0 ELSE 1 END, now(),
+             CASE WHEN $6 = 'synced' THEN now() ELSE NULL END)
+     ON CONFLICT (base_url, symbol) DO UPDATE SET
+       entity_id    = EXCLUDED.entity_id,
+       desired      = EXCLUDED.desired,
+       applied      = COALESCE(EXCLUDED.applied, distill_dossiers.applied),
+       state        = EXCLUDED.state,
+       detail       = EXCLUDED.detail,
+       attempts     = CASE WHEN EXCLUDED.state = 'synced' THEN 0
+                           ELSE distill_dossiers.attempts + 1 END,
+       attempted_at = now(),
+       synced_at    = CASE WHEN EXCLUDED.state = 'synced' THEN now()
+                           ELSE distill_dossiers.synced_at END,
+       updated_at   = now()`,
+    [
+      baseUrl, symbol.toUpperCase(), outcome.entityId, desired,
+      outcome.applied, outcome.state, outcome.detail,
+    ],
+  );
+}
+
+/**
+ * Drop rows that have nothing left to say — the switch is off and confirmed, or
+ * it was never on. Keeps the ledger the size of the watchlist rather than of
+ * every stock the screener has ever held.
+ */
+export async function retireDossiers(baseUrl: string, symbols: readonly string[]): Promise<void> {
+  if (symbols.length === 0) return;
+  await query(
+    'DELETE FROM distill_dossiers WHERE base_url = $1 AND symbol = ANY($2::text[])',
+    [baseUrl, symbols.map((s) => s.toUpperCase())],
+  );
+}
+
 // ── EDGAR filing index ───────────────────────────────────────────────────────
 // The documents themselves stay on disk (see src/files.ts): they are immutable,
 // large, and served straight from the filesystem.

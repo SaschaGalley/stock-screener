@@ -87,3 +87,33 @@ export class DistillEntityUnresolvedError extends Error {
     this.entityStatus = opts.entityStatus ?? null;
   }
 }
+
+/**
+ * 403 on the dossier switch — the key exists but was minted without
+ * `dossiers:write`.
+ *
+ * Never retried, and it stops the whole sync rather than just the symbol that
+ * hit it: the scope is a property of the key, so every remaining symbol would
+ * fail identically. The fix is to re-issue the key in the Distill admin.
+ */
+export class DistillDossierScopeError extends Error {
+  constructor(msg = 'Distill key lacks the `dossiers:write` scope — re-issue it in the Distill admin (Projekt-Config → Access Keys) with that box ticked.') {
+    super(msg);
+    this.name = 'DistillDossierScopeError';
+  }
+}
+
+/**
+ * 409 on the dossier switch — this entity's *type* is not allowed to be a
+ * dossier subject.
+ *
+ * A property of the entity, not of the request, so it is a standing condition
+ * rather than a failure: recorded once and skipped from then on. Distinct from
+ * a transport error, which is retried, and from a 404, which re-resolves.
+ */
+export class DistillDossierIneligibleError extends Error {
+  constructor(readonly entityId: string, msg?: string) {
+    super(msg ?? `Distill will not host a dossier on entity ${entityId} — its type is not an allowed subject.`);
+    this.name = 'DistillDossierIneligibleError';
+  }
+}

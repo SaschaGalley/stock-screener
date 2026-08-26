@@ -248,6 +248,7 @@ src/
 ├── app-config.ts          Operational settings edited from the admin page
 ├── scheduler.ts           Nightly pipeline — one cron, one queue, one symbol at a time
 ├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
+├── distill-dossiers.ts    Mirrors the watchlist onto Distill's dossier switches
 ├── models.ts              Model registry — single source for CLI, server and web UI
 ├── providers/             LLM abstraction layer (anthropic, openai, factory)
 ├── search/                Brave + Tavily clients (LLM-native search is in providers/)
@@ -259,7 +260,8 @@ src/
 │   ├── perplexity.ts      Sonar / Sonar-Pro web-research paragraph
 │   ├── distill.ts         Distill briefing service — briefings for a resolved entity
 │   ├── distill-entities.ts Distill entity registry — identifier → entity UUID
-│   ├── distill-errors.ts  Typed Distill failures (shared by both clients)
+│   ├── distill-dossier.ts Distill dossier switch — GET/PUT /entities/{id}/dossier
+│   ├── distill-errors.ts  Typed Distill failures (shared by all three clients)
 │   └── edgar.ts           SEC EDGAR filings
 ├── analysis/
 │   ├── metrics.ts         19 valuation models
@@ -325,6 +327,7 @@ cost history.
 | `macro_observations` | VIX, yield curve, HY spread, DXY, FRED rates — global, stored once rather than per symbol |
 | `runs` / `run_steps` | Pipeline provenance; every row above can point at the run that produced it |
 | `distill_entities`, `filings`, `settings` | Mappings and operational state |
+| `distill_dossiers` | Which dossier switches we have set upstream, and why any are out of sync. Keyed by symbol as text, not by `symbols(id)`: deleting a stock is exactly when the switch has to be turned off, and a cascading row would erase that intent first |
 
 Nothing in the codebase lists field names. Adding a valuation model to
 `AnalysisResultSchema` adds its outputs to the catalogue on the next boot, and
@@ -472,6 +475,54 @@ logs the candidates and runs without the briefing, the server answers `409
 distill_entity_unresolved` with them, and the web UI lists them under a disabled
 Refresh button.
 
+## Distill dossier switch
+
+Distill builds a dossier only while an entity's switch is on, and each one costs
+money per day — so the switch is not set by hand, it follows the watchlist. It
+also gates the build upstream: with nothing switched on, Distill's sweep produces
+no dossiers at all, which makes this sync the thing that feeds the dossier system
+rather than an optimisation of it.
+
+`PUT /api/v1/entities/{id}/dossier` with `{"enabled": true|false}`, on the entity
+UUID resolved above. The watchlist is the truth and Distill follows it, in three
+rules:
+
+1. **A failed switch never fails the watchlist write.** Adding or deleting a
+   stock records the intent in `distill_dossiers` first, then fires the call
+   after the response. `dossiersFollow()` does not throw, by contract — with
+   Distill *and* the database unreachable it still returns quietly.
+2. **The switch is idempotent both ways**, so the full sync may be blunt. What
+   the ledger buys is not correctness but cost: it keeps the sync from
+   re-searching the registry for symbols it already resolved, and makes a repeat
+   sync send nothing at all.
+3. **Off deletes nothing.** Existing dossiers stand; they stop being extended. A
+   stock that comes back still has its history — which is what makes switching
+   off on delete safe to do eagerly.
+
+Wired at the three places a stock actually enters or leaves the watchlist —
+`POST /api/stocks`, `DELETE /api/stocks/:symbol`, and the watchlist checkboxes in
+`PUT /api/config` — so Distill is current within seconds, not at the next cron.
+`syncWatchlistDossiers()` then runs at the *start of every pipeline run* (both the
+in-process scheduler and the Hatchet task, since Hatchet's cron triggers the task
+directly). That full pass is repair, not the mechanism: the switch that failed
+while Distill was down, the symbol the registry did not know last week, the row
+nobody wrote because the process died between the change and the call. Tying it
+to the run means it happens exactly when the night's work is about to depend on it.
+
+The four failure codes are four different actions, not four messages:
+
+| code | meaning | what happens |
+| --- | --- | --- |
+| `401` | token missing or wrong | abort the sync; fix `DISTILL_API_KEY` |
+| `403` | key has no `dossiers:write` | abort the sync — the scope is a property of the key, so every remaining symbol would fail identically. Re-issue the key |
+| `404` | the entity id is stale | re-resolve (following merges) and retry exactly once, never the same call twice |
+| `409` | this entity type may not host a dossier | a standing condition: recorded once, skipped from then on |
+| `5xx` / network | transient | retried with backoff in the transport, then left `pending` for the next full sync |
+
+A symbol Distill's registry does not know is a *state*, not an error: it is
+recorded as `unresolved` and retried on the next run, rather than re-searched on
+every config save.
+
 ## Development
 
 ```bash
@@ -481,7 +532,8 @@ pnpm dev:cli          # CLI watch mode (tsx)
 pnpm run serve:watch  # API server watch mode
 pnpm run build        # compile TypeScript → dist/
 pnpm run web:build    # build the Vite bundle
-pnpm run typecheck    # type-check without emitting
+pnpm run typecheck    # type-check src and test without emitting
+pnpm test             # node:test via tsx — no database or network needed
 ```
 
 ## License

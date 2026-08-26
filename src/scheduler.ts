@@ -31,6 +31,7 @@ import {
   listRuns, pruneRuns, reapStaleRuns, recordRunSteps, setRunSymbol, startRun, StepStatus,
 } from './db/admin.js';
 import { runAnalysisStep, runDataStep, runDistillStep, scheduledSymbols } from './pipeline/steps.js';
+import { syncWatchlistDossiers } from './distill-dossiers.js';
 
 export type { JobRun, JobRunStatus, JobStep, JobStepResult, JobSymbolResult, StepStatus };
 export { scheduledSymbols };
@@ -105,6 +106,7 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
   if (activeRun) throw new JobBusyError();
 
   const config = await readAppConfig();
+
   const symbols = opts.symbols?.length
     ? opts.symbols.map((s) => s.toUpperCase())
     : await scheduledSymbols(config);
@@ -124,6 +126,17 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
   stopRequested = false;
 
   logger.info(`Pipeline run started (${opts.trigger}) — ${symbols.length} symbol(s)`);
+
+  // Mirror the watchlist onto Distill before the walk, not on a cron of its
+  // own: the dossier switch gates whether Distill builds anything at all, so a
+  // switch that failed yesterday has to be repaired now — while the night's
+  // work is about to depend on it — rather than hours later.
+  //
+  // After `activeRun` is set, not before: the busy guard above is the only
+  // thing stopping a second trigger, and a sync of forty symbols in front of it
+  // would be forty symbols' worth of window to slip through.
+  await syncWatchlistDossiers(config)
+    .catch((e) => logger.warn(`Distill dossier sync failed: ${(e as Error).message}`));
 
   try {
     for (const symbol of symbols) {

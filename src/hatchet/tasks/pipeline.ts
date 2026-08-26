@@ -25,6 +25,7 @@ import { finishRun, JobStepResult, pruneRuns, recordRunSteps, setRunSymbol, star
 import {
   isVerdictStale, newestAnalysisAges, runAnalysisStep, runDataStep, runDistillStep, scheduledSymbols,
 } from '../../pipeline/steps.js';
+import { syncWatchlistDossiers } from '../../distill-dossiers.js';
 import { logger } from '../../utils/logger.js';
 import { getHatchet } from '../client.js';
 import {
@@ -223,6 +224,14 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
   executionTimeout: '12h',
   fn: async (input, ctx): Promise<PipelineOutput> => {
     const config  = await readAppConfig();
+
+    // Same reason as in the in-process scheduler: the dossier switch gates
+    // whether Distill builds anything upstream, so the watchlist is mirrored
+    // right before the run that depends on it. Hatchet's cron triggers this
+    // task directly, so the call has to live on both paths.
+    await syncWatchlistDossiers(config)
+      .catch((e) => logger.warn(`Distill dossier sync failed: ${(e as Error).message}`));
+
     const symbols = input.symbols.length
       ? input.symbols.map((s) => s.toUpperCase())
       : await scheduledSymbols(config);
