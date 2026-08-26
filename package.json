@@ -24,6 +24,7 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "node --import tsx --test test/*.test.ts",
     "migrate": "tsx src/db/migrate-cli.ts",
+    "dossiers:sync": "tsx src/distill-dossiers-cli.ts",
     "backfill": "tsx src/db/backfill.ts"
   },
   "dependencies": {

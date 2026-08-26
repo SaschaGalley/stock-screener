@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { writeFileSync } from 'fs';
+import { basename } from 'path';
 import chalk from 'chalk';
 
 import { getConfig, requireApiKey } from './config.js';
@@ -138,11 +139,13 @@ Required API keys (set in .env):
     }
   });
 
-// Only parse argv when this file is the entry point (not when imported by server.ts)
-const invokedDirectly = process.argv[1] && (
-  process.argv[1].endsWith('cli.ts') ||
-  process.argv[1].endsWith('cli.js')
-);
+// Only parse argv when this file is the entry point (not when imported by
+// server.ts). Matched on the basename, not as a suffix: `endsWith('cli.ts')`
+// is also true of `distill-dossiers-cli.ts` and every other `*-cli.ts` entry
+// script, so any of them that reaches this module transitively used to have
+// its own argv parsed by commander and die on "provide a ticker symbol".
+const entry = process.argv[1] ? basename(process.argv[1]) : '';
+const invokedDirectly = entry === 'cli.ts' || entry === 'cli.js';
 if (invokedDirectly) program.parse();
 
 // ─── Public API: runAnalysis ─────────────────────────────────────────────────
