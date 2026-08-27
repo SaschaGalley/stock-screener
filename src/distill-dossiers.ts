@@ -53,10 +53,9 @@ import { distillHintsFor, resolveDistillEntityCached } from './distill-service.j
 import { getDistillEntity } from './data/distill-entities.js';
 import { setDistillDossier } from './data/distill-dossier.js';
 import {
-  auditSectorMapping,
+  auditSectorAliases,
   loadSectorVocabulary,
-  reportSectorMapping,
-  sectorHandlesFor,
+  reportSectorAliases,
   sectorHandlesForSymbol,
   sectorRef,
 } from './distill-sectors.js';
@@ -163,16 +162,19 @@ export async function desiredSubjects(
   const out: DossierSubject[] = symbols.map(company);
 
   const vocabulary = await loadSectorVocabulary(apiKey, baseUrl);
-  reportSectorMapping(auditSectorMapping(vocabulary));
   if (vocabulary.size === 0) return out;
 
-  // One query rather than one per symbol: this decides the shape of the sync.
-  const financials = await latestSnapshotForAll<StockFinancials>('financials');
+  // Once per sync: ask Distill what our sector terms resolve to and say so when
+  // it disagrees with the table. Never acts on the answer — an alias that
+  // arrived from a bad reconciliation must not be able to refile a stock.
+  reportSectorAliases(await auditSectorAliases(apiKey, baseUrl));
+
+  // Serial, and cheap anyway: the sector lookups are cached by term, so forty
+  // stocks share a handful of requests and every repeat is a map hit.
   const handles = new Set<string>();
   for (const symbol of symbols) {
-    const f = financials.get(symbol)?.data;
-    for (const handle of sectorHandlesFor({ sector: f?.sector, industry: f?.industry })) {
-      if (vocabulary.has(handle)) handles.add(handle);
+    for (const handle of await sectorHandlesForSymbol(symbol, apiKey, baseUrl)) {
+      handles.add(handle);
     }
   }
   for (const handle of [...handles].sort()) out.push(sector(handle));

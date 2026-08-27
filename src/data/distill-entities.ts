@@ -108,8 +108,25 @@ interface EntitySearchRow {
 }
 
 interface EntitySearchResponse {
-  data?:  EntitySearchRow[];
-  total?: number;
+  data?:      EntitySearchRow[];
+  total?:     number;
+  ambiguous?: boolean;
+}
+
+/**
+ * What a search answered, beyond the hits.
+ *
+ * `ambiguous` is Distill's own verdict on whether the top hit can be taken
+ * unattended, and it is strictly better information than a hit count: a search
+ * for `MOD` returns two rows, one a symbol match on Modine and one a weaker
+ * name match on something else, and only Distill knows the second does not
+ * compete. Absent on older deployments, which is why the count survives as a
+ * fallback.
+ */
+export interface DistillSearchResult {
+  hits:      DistillEntityHit[];
+  total:     number;
+  ambiguous: boolean | undefined;
 }
 
 function trimBase(baseUrl: string): string {
@@ -156,9 +173,9 @@ export async function searchDistillEntities(
   apiKey: string,
   baseUrl: string,
   opts: { type?: string; limit?: number } = {},
-): Promise<{ hits: DistillEntityHit[]; total: number }> {
+): Promise<DistillSearchResult> {
   const query = normaliseEntityQuery(q);
-  if (!query) return { hits: [], total: 0 };
+  if (!query) return { hits: [], total: 0, ambiguous: undefined };
 
   const limit = Math.min(50, Math.max(1, Math.trunc(opts.limit ?? 10)));
   let url = `${trimBase(baseUrl)}/api/v1/entities/search`
@@ -186,8 +203,9 @@ export async function searchDistillEntities(
     // even if that ever changes. Array#sort is stable, so ties keep API order.
     .sort((a, b) => TIER_ORDER[a.matchedOn] - TIER_ORDER[b.matchedOn]);
   const total = typeof json?.total === 'number' ? json!.total! : hits.length;
+  const ambiguous = typeof json?.ambiguous === 'boolean' ? json!.ambiguous! : undefined;
 
-  return { hits, total };
+  return { hits, total, ambiguous };
 }
 
 /**
@@ -244,20 +262,28 @@ function isUniqueKeyMatch(matchedValue: string): boolean {
 }
 
 /**
- * Per-tier auto-accept policy, straight from Distill's handover table:
+ * Per-tier auto-accept policy, from Distill's handover table:
  *
  *   id / ref     → yes
  *   key          → yes for ISIN/FIGI/LEI; a ticker key only when unambiguous
- *   symbol/alias → only when `total === 1`
+ *   symbol/alias → only when unambiguous
  *   name         → never blindly; a human picks
+ *
+ * "Unambiguous" used to mean `total === 1`, which was the best we could do and
+ * was wrong often enough to matter: searching `MOD` returns Modine on the symbol
+ * tier plus a weaker name-tier hit, `NU` returns four of them, and counting rows
+ * rejected both even though nothing actually competed with the top hit. Distill
+ * now answers with its own `ambiguous` verdict, which knows the difference. The
+ * count stays as the fallback for a deployment that does not send the field.
  */
-export function acceptsAutomatically(hit: DistillEntityHit, total: number): boolean {
+export function acceptsAutomatically(hit: DistillEntityHit, result: DistillSearchResult): boolean {
+  const unambiguous = result.ambiguous === undefined ? result.total === 1 : !result.ambiguous;
   switch (hit.matchedOn) {
     case 'id':
     case 'ref':    return true;
-    case 'key':    return isUniqueKeyMatch(hit.matchedValue) || total === 1;
+    case 'key':    return isUniqueKeyMatch(hit.matchedValue) || unambiguous;
     case 'symbol':
-    case 'alias':  return total === 1;
+    case 'alias':  return unambiguous;
     case 'name':   return false;
   }
 }
@@ -319,11 +345,12 @@ export async function resolveDistillEntity(
   let ambiguous: { query: string; candidates: DistillEntityHit[] } | null = null;
 
   for (const query of queries) {
-    const { hits, total } = await searchDistillEntities(query, apiKey, baseUrl);
+    const result = await searchDistillEntities(query, apiKey, baseUrl);
+    const { hits, total } = result;
     if (hits.length === 0) continue;
 
     const top = hits[0];
-    if (acceptsAutomatically(top, total)) {
+    if (acceptsAutomatically(top, result)) {
       logger.debug(
         `Distill entity: ${hints.symbol} → ${top.id} (${top.displayName}) `
         + `via ${top.matchedOn}="${query}"${total > 1 ? ` of ${total} hits` : ''}`,

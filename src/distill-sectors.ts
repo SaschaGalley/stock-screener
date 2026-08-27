@@ -5,20 +5,32 @@
  * with their own rolling dossiers, so a stock's context is its company dossier
  * *plus* the dossiers of the sectors it sits in. Distill cannot work out that
  * membership itself — the `sector` field on a search hit is a different
- * taxonomy and is often empty — so the classification has to come from us.
+ * taxonomy and is often empty — so the classification comes from us.
  *
- * Ours is Yahoo's. Two vocabularies, and nothing to derive one from the other
- * with, so the correspondence below is a translation table rather than a
- * generated one. It is the only place that correspondence is stated, and
- * `auditSectorMapping` checks it against the live vocabulary on every sync, so a
- * renamed or added handle shows up as a warning instead of a silent miss.
+ * Ours is Yahoo's, and the correspondence is declared here rather than looked
+ * up. Distill does carry our sector names as aliases and they all resolve
+ * correctly today — but aliases there can also arrive from reconciliation, and
+ * a reconciliation that lands wrong is invisible from the outside. This module
+ * has already measured three of them (see `HANDLE_BY_INDUSTRY`), and a single
+ * bad alias on `Technology` would silently misfile fifteen of forty stocks.
+ * A wrong entry here, by contrast, is a diff.
  *
- * The mapping is deliberately a *set*, not a value: a stock can belong to more
- * than one Distill sector, and the moment it does, a single field would have to
- * be torn open.
+ * So the table decides, and Distill's search *checks* it: `auditSectorAliases`
+ * asks Distill what each of our terms resolves to and reports every
+ * disagreement. That is the direction that catches a bad alias instead of
+ * obeying it — and it is what turned up `consumer defensive` pointing at
+ * `consumer_discretionary`.
+ *
+ * The result is a *set*, not a value: a stock can belong to more than one
+ * Distill sector, and the moment it does, a single field would have to be
+ * torn open.
  */
 
-import { getDistillEntityTypes } from './data/distill-entities.js';
+import {
+  acceptsAutomatically,
+  getDistillEntityTypes,
+  searchDistillEntities,
+} from './data/distill-entities.js';
 import { readFinancialsLax } from './db/store.js';
 import { logger } from './utils/logger.js';
 
@@ -33,8 +45,37 @@ export function sectorRef(handle: string): string {
 const norm = (v: string | null | undefined): string => (v ?? '').trim().toLowerCase();
 
 /**
- * Yahoo sector → Distill handle. Eleven of Distill's twelve are reachable this
- * way; the twelfth is below.
+ * Industry labels that name a Distill *sector*.
+ *
+ * Kept by hand, deliberately, because looking industries up the way sectors are
+ * looked up is unsafe — and that is measured, not feared. Searching our industry
+ * strings against `type=sector` returns confident, unambiguous, alias-tier hits
+ * that mean something else:
+ *
+ *   Semiconductors        → materials               (they are Information Technology)
+ *   Consumer Electronics  → consumer_discretionary  (Apple is Technology to us)
+ *   Entertainment         → consumer_discretionary  (Netflix is Communication Services)
+ *
+ * Those are real aliases on Distill's side; they simply describe a different
+ * level of its taxonomy than our industry labels do, and `ambiguous: false`
+ * offers no protection because nothing is competing — the hit is just wrong for
+ * our purpose. Sector *names* have no such collision: all eleven resolve
+ * correctly. So sectors are derived and industries are declared.
+ *
+ * `aerospace_defense` is the only entry: it is a sector in Distill and an
+ * industry in Yahoo, and it is what makes the mapping a set — Airbus is both
+ * `industrials` (from its sector) and `aerospace_defense` (from its industry).
+ */
+const HANDLE_BY_INDUSTRY: Readonly<Record<string, string>> = {
+  'aerospace & defense': 'aerospace_defense',
+};
+
+/**
+ * Our sector vocabulary — Yahoo's eleven — and the Distill handle each names.
+ *
+ * Eleven of Distill's twelve are reachable from here; the twelfth,
+ * `aerospace_defense`, comes from the industry table above, which is what makes
+ * the result a set.
  */
 const HANDLE_BY_SECTOR: Readonly<Record<string, string>> = {
   'basic materials':        'materials',
@@ -50,45 +91,6 @@ const HANDLE_BY_SECTOR: Readonly<Record<string, string>> = {
   'utilities':              'utilities',
 };
 
-/**
- * Handles that are an *industry* in our taxonomy but a *sector* in Distill's.
- *
- * `aerospace_defense` is the only one today, and it is the reason this mapping
- * is a set: Yahoo files Airbus under sector Industrials, industry "Aerospace &
- * Defense", so the handle can only come from the industry field — and it comes
- * *in addition to* the sector's own handle, never instead of it.
- *
- * The limit of deriving this from Yahoo is worth knowing: Honeywell is
- * "Conglomerates" there, so its aerospace business is invisible to this table.
- * Widening it means hand-maintaining exceptions, which is a different trade.
- */
-const HANDLE_BY_INDUSTRY: Readonly<Record<string, string>> = {
-  'aerospace & defense': 'aerospace_defense',
-};
-
-export interface SectorInputs {
-  sector?:   string | null;
-  industry?: string | null;
-}
-
-/** Every Distill sector handle a stock belongs to. Empty when we cannot say. */
-export function sectorHandlesFor(inputs: SectorInputs): string[] {
-  const out = new Set<string>();
-  const bySector   = HANDLE_BY_SECTOR[norm(inputs.sector)];
-  const byIndustry = HANDLE_BY_INDUSTRY[norm(inputs.industry)];
-  if (bySector)   out.add(bySector);
-  if (byIndustry) out.add(byIndustry);
-  return [...out].sort();
-}
-
-/** Every handle the table can ever produce — the audit's left-hand side. */
-export function mappedHandles(): string[] {
-  return [...new Set([
-    ...Object.values(HANDLE_BY_SECTOR),
-    ...Object.values(HANDLE_BY_INDUSTRY),
-  ])].sort();
-}
-
 // ── The live vocabulary ──────────────────────────────────────────────────────
 
 export type SectorVocabulary = ReadonlyMap<string, string>;
@@ -96,11 +98,18 @@ export type SectorVocabulary = ReadonlyMap<string, string>;
 /** Re-read hourly: the list is a project setting, not a constant, but it also
  *  does not move often enough to justify a request per symbol. */
 const VOCABULARY_TTL_MS = 60 * 60 * 1000;
-let cached: { at: number; value: SectorVocabulary } | null = null;
+let cachedVocabulary: { at: number; value: SectorVocabulary } | null = null;
 
-/** Forget the cached vocabulary — for tests and for a deliberate re-read. */
-export function clearSectorVocabulary(): void {
-  cached = null;
+/** Term → handle, for the life of the process. Sector aliases do not churn, and
+ *  a watchlist has a handful of distinct sector strings between forty stocks. */
+const handleByTerm = new Map<string, string | null>();
+const warned = new Set<string>();
+
+/** Forget everything cached — for tests and for a deliberate re-read. */
+export function clearSectorCache(): void {
+  cachedVocabulary = null;
+  handleByTerm.clear();
+  warned.clear();
 }
 
 /**
@@ -114,7 +123,9 @@ export async function loadSectorVocabulary(
   apiKey: string,
   baseUrl: string,
 ): Promise<SectorVocabulary> {
-  if (cached && Date.now() - cached.at < VOCABULARY_TTL_MS) return cached.value;
+  if (cachedVocabulary && Date.now() - cachedVocabulary.at < VOCABULARY_TTL_MS) {
+    return cachedVocabulary.value;
+  }
 
   const types = await getDistillEntityTypes(apiKey, baseUrl);
   const sector = types.find((t) => t.type === SECTOR_TYPE);
@@ -125,57 +136,153 @@ export async function loadSectorVocabulary(
     logger.warn('Distill\'s `sector` type is not dossier-eligible — sector dossiers cannot be switched on.');
   }
 
-  cached = { at: Date.now(), value };
+  cachedVocabulary = { at: Date.now(), value };
   return value;
 }
 
-// ── Audit ────────────────────────────────────────────────────────────────────
+// ── Resolution ───────────────────────────────────────────────────────────────
 
-export interface SectorMappingAudit {
-  /** We map onto these, but Distill's vocabulary has no such handle — our table
-   *  is stale, and every stock routed here would silently get no sector. */
-  unknownTargets: string[];
-  /** Distill has these, and no rule of ours can ever produce them. Not our bug
-   *  to fix — it is the list the handover asks us to report back. */
-  unreachable:    string[];
-}
+/**
+ * Our sector name → Distill's handle, by asking Distill.
+ *
+ * The accept policy is the same one company resolution uses, deliberately: the
+ * question "may I take this hit without a human looking at it" has one answer
+ * in this codebase, and a `name`-tier match is not it. That guard matters here —
+ * before Distill aliased it, `Aerospace & Defense` matched only on the name of
+ * an unrelated entity.
+ *
+ * Null means "we could not say", and the caller drops the sector rather than
+ * guessing. Cached per term, including the misses, so an unmappable sector is
+ * one request per process and not one per symbol.
+ */
+export async function resolveSectorHandle(
+  term: string, apiKey: string, baseUrl: string,
+): Promise<string | null> {
+  const key = norm(term);
+  if (!key) return null;
 
-export function auditSectorMapping(vocabulary: SectorVocabulary): SectorMappingAudit {
-  const ours = mappedHandles();
-  return {
-    unknownTargets: ours.filter((h) => !vocabulary.has(h)),
-    unreachable:    [...vocabulary.keys()].filter((h) => !ours.includes(h)).sort(),
-  };
-}
+  const seen = handleByTerm.get(key);
+  if (seen !== undefined) return seen;
 
-/** Say what the audit found, once per sync, and only when it found something. */
-export function reportSectorMapping(audit: SectorMappingAudit): void {
-  if (audit.unknownTargets.length > 0) {
+  let handle: string | null = null;
+  try {
+    const result = await searchDistillEntities(term, apiKey, baseUrl, { type: SECTOR_TYPE, limit: 5 });
+    const top = result.hits[0];
+    if (top && acceptsAutomatically(top, result)) handle = top.handle || null;
+  } catch (e) {
+    // Not cached: a transport failure is not an answer, and the next sync
+    // should ask again rather than inherit a shrug.
+    logger.debug(`Distill sector lookup for "${term}" failed: ${(e as Error).message}`);
+    return null;
+  }
+
+  handleByTerm.set(key, handle);
+  if (!handle && !warned.has(key)) {
+    warned.add(key);
     logger.warn(
-      `Distill sector mapping targets handles the registry does not have: ${audit.unknownTargets.join(', ')}. `
-      + 'Stocks routed to them get no sector dossier — fix the table in src/distill-sectors.ts.',
+      `Distill has no unambiguous sector for "${term}" — stocks in it get no sector dossier. `
+      + 'Add it as an alias on the right sector entity in the Distill admin.',
     );
   }
-  if (audit.unreachable.length > 0) {
-    logger.debug(`Distill sectors our classification cannot produce: ${audit.unreachable.join(', ')}.`);
-  }
+  return handle;
 }
 
 /**
- * The sector handles one stock sits in, filtered to what the project defines.
+ * Every Distill sector handle a stock belongs to. Empty when we cannot say.
  *
- * Lives here rather than next to either consumer because both the switch sync
- * and the prose assembly need it, and routing one through the other would close
- * an import cycle. A handle our table produces that the vocabulary lacks is
- * dropped — `auditSectorMapping` already names it, and asking Distill about a
- * sector it does not define would only add a 404 per run.
+ * The sector comes from Distill's aliases, the industry from the table above,
+ * and a handle neither the vocabulary knows nor Distill returned is dropped.
  */
 export async function sectorHandlesForSymbol(
   symbol: string, apiKey: string, baseUrl: string,
 ): Promise<string[]> {
   const financials = await readFinancialsLax(symbol);
   if (!financials) return [];
+
   const vocabulary = await loadSectorVocabulary(apiKey, baseUrl);
-  return sectorHandlesFor({ sector: financials.sector, industry: financials.industry })
-    .filter((handle) => vocabulary.has(handle));
+  if (vocabulary.size === 0) return [];
+
+  const out = new Set<string>();
+  for (const handle of [
+    HANDLE_BY_SECTOR[norm(financials.sector)],
+    HANDLE_BY_INDUSTRY[norm(financials.industry)],
+  ]) {
+    if (!handle) continue;
+    if (vocabulary.has(handle)) out.add(handle);
+    else warnOnce(handle, `Distill's vocabulary has no sector "${handle}" — check the table in src/distill-sectors.ts.`);
+  }
+
+  if (financials.sector && !HANDLE_BY_SECTOR[norm(financials.sector)]) {
+    warnOnce(financials.sector, `No Distill sector mapped for "${financials.sector}" — ${symbol} and anything else in it get no sector dossier.`);
+  }
+
+  return [...out].sort();
+}
+
+function warnOnce(key: string, message: string): void {
+  if (warned.has(key)) return;
+  warned.add(key);
+  logger.warn(message);
+}
+
+// ── Audit ────────────────────────────────────────────────────────────────────
+
+export interface SectorAliasFinding {
+  /** The term we asked Distill about. */
+  term:     string;
+  /** What our table says it is. */
+  expected: string;
+  /** What Distill's search answered, or null when it could not say. */
+  actual:   string | null;
+  /** How the hit was found — `name` never counts as an answer. */
+  matchedOn: string | null;
+}
+
+/**
+ * Ask Distill what each of our terms resolves to, and report every case where
+ * it disagrees with the table.
+ *
+ * This is the direction that finds a bad alias rather than obeying one. A
+ * disagreement is not automatically Distill's fault — our table can be the
+ * stale one — but it is always worth a human's eye, and it is the artefact to
+ * hand back to Distill when an alias arrived from a reconciliation that landed
+ * wrong.
+ */
+export async function auditSectorAliases(
+  apiKey: string, baseUrl: string,
+): Promise<SectorAliasFinding[]> {
+  const terms: [string, string][] = [
+    ...Object.entries(HANDLE_BY_SECTOR),
+    ...Object.entries(HANDLE_BY_INDUSTRY),
+  ];
+
+  const findings: SectorAliasFinding[] = [];
+  for (const [term, expected] of terms) {
+    let actual: string | null = null;
+    let matchedOn: string | null = null;
+    try {
+      const result = await searchDistillEntities(term, apiKey, baseUrl, { type: SECTOR_TYPE, limit: 5 });
+      const top = result.hits[0];
+      if (top) {
+        matchedOn = top.matchedOn;
+        if (acceptsAutomatically(top, result)) actual = top.handle || null;
+      }
+    } catch (e) {
+      logger.debug(`Distill sector audit for "${term}" failed: ${(e as Error).message}`);
+      continue;
+    }
+    if (actual !== expected) findings.push({ term, expected, actual, matchedOn });
+  }
+  return findings;
+}
+
+/** Say what the audit found, once per sync, and only when it found something. */
+export function reportSectorAliases(findings: readonly SectorAliasFinding[]): void {
+  for (const f of findings) {
+    logger.warn(
+      `Distill's alias for "${f.term}" resolves to ${f.actual ?? 'nothing'}`
+      + `${f.matchedOn ? ` (${f.matchedOn} tier)` : ''}, we map it to "${f.expected}". `
+      + 'The table decides; this is worth reporting to Distill.',
+    );
+  }
 }
