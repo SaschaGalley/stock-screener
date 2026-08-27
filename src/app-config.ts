@@ -21,6 +21,7 @@
 import { z } from 'zod';
 import { logger } from './utils/logger.js';
 import { readSettingsJson, writeSettingsJson } from './db/admin.js';
+import { listSymbols } from './db/store.js';
 import { DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, resolveModelId } from './models.js';
 
 /** Cron field count we accept: standard 5-field (minute hour dom month dow). */
@@ -153,4 +154,16 @@ export function analysisFlagsFor(config: AppConfig): {
     search: search.length === 0 ? 'none' : [...search].sort().join(','),
     pplx,
   };
+}
+
+/**
+ * The watchlist: symbols the nightly run covers, in the order it walks them.
+ *
+ * Lives beside `isWatched` rather than in `pipeline/steps.ts` because it is the
+ * *definition* of the watchlist, and more than the pipeline needs it — the
+ * Distill dossier sync mirrors exactly this set. Keeping it in the pipeline
+ * module made that sync import the pipeline, which imported it back.
+ */
+export async function scheduledSymbols(config: AppConfig): Promise<string[]> {
+  return (await listSymbols()).filter((s) => isWatched(config, s)).sort();
 }

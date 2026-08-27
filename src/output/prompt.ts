@@ -25,7 +25,7 @@ import {
 import { currencyPrefix, fmtPrice } from '../format.js';
 import { MarketSignals, SectorMedians, StockFinancials } from '../types.js';
 import { PerplexityContext } from '../data/perplexity.js';
-import { DistillBundle } from '../data/distill.js';
+import { DistillBundle, DistillDossierBlock } from '../data/distill.js';
 
 export interface PromptData {
   dcf: ReturnType<typeof calculateDCF>;
@@ -77,6 +77,80 @@ function signedPct(n: number | null): string {
  *
  * Fenced blocks are skipped: `#` inside one is content, not a heading.
  */
+/** One dossier block, headed by what it is *about* — see `distillDossierSection`. */
+function distillBlock(block: DistillDossierBlock, symbol: string): string {
+  const window = block.periodStart && block.periodEnd
+    ? `Window ${block.periodStart.slice(0, 10)} to ${block.periodEnd.slice(0, 10)} (end exclusive)`
+    : 'Window unknown';
+  const built = block.builtAt ? ` · built ${block.builtAt.slice(0, 10)}` : '';
+
+  const scope = block.kind === 'sector'
+    ? `**Scope: the ${block.displayName} sector as a whole — NOT ${symbol}.** `
+      + 'Use it as the backdrop the company is read against: what is true of the sector is not '
+      + 'thereby true of this company, and a sector-level claim never becomes a company-level '
+      + 'finding. Where the company diverges from its sector, that divergence is the signal.'
+    : `**Scope: ${symbol} itself.**`;
+
+  return `#### ${block.kind === 'sector' ? 'Sector dossier' : 'Company dossier'} — ${block.displayName} (\`${block.ref}\`)
+
+${scope}
+${window}${built}${block.stale ? ' · marked stale upstream (a late document landed in a built tile; the window above still holds)' : ''}
+
+${demoteHeadings(block.content!.trim(), 3)}`;
+}
+
+/**
+ * Everything Distill has to say, as blocks that cannot be mistaken for each
+ * other.
+ *
+ * The labelling is not decoration. A sector dossier read as company-specific is
+ * the observed failure mode of this integration, so every block states its
+ * scope before its prose, and the sector blocks say plainly that a sector-level
+ * claim is not a company-level finding.
+ *
+ * The dossier window closes at the start of today by construction, so nothing
+ * here covers the current day. The briefing block, when present, is the one
+ * that does.
+ */
+export function distillDossierSection(symbol: string, distill?: DistillBundle): string {
+  if (!distill) return '';
+
+  const blocks = [distill.company, ...(distill.sectors ?? [])]
+    .filter((b): b is DistillDossierBlock => !!b?.content?.trim());
+  const briefing = distill.briefing;
+  if (blocks.length === 0 && !briefing) return '';
+
+  const briefingBlock = briefing
+    ? `
+#### Briefing — ${briefing.briefingTypeName} (${briefing.createdAt.slice(0, 10)}, ${briefing.insightCount} insights)
+
+**Scope: ${symbol} itself.** Unlike the dossiers above this one *does* include today.
+
+${demoteHeadings(briefing.body.trim(), 3)}`
+    : '';
+
+  return `
+### Distill Dossiers (curated, multi-source — weight HIGHER than Perplexity / search)
+
+Synthesised by Distill from a curated set of sources (vetted RSS, earnings
+transcripts, sell-side research, expert commentary). Because the editorial
+filtering happens upstream, treat these as your **strongest qualitative
+signal** — stronger than raw search or Perplexity, second only to the
+quantitative valuation models and analyst consensus. Where a dossier
+contradicts the calculated models or the analyst consensus, surface the
+divergence explicitly in the bull or bear case.
+
+Each block states its scope. **Company and sector blocks are not
+interchangeable**: a sector dossier describes the industry backdrop, and
+nothing in it is a fact about ${symbol} unless a company block says so.
+
+The dossier windows end at the start of today, so the current day is covered
+only by a Briefing block if one is present.
+${blocks.map((b) => `\n${distillBlock(b, symbol)}\n`).join('')}${briefingBlock}
+`;
+}
+
+
 export function demoteHeadings(md: string, by: number): string {
   let inFence = false;
   return md
@@ -300,30 +374,9 @@ export function buildAnalysisPrompt(
     ? `${d.altmanZ.score.toFixed(2)} — ${d.altmanZ.zone} zone (${d.altmanZ.model} model)`
     : 'N/A';
 
-  // Distill briefing: the single currently-relevant brief for this ticker.
-  // Body is passed through unmodified (plain or markdown — both render
-  // identically to the model). When no briefing is available the section
-  // is dropped entirely.
-  const distillBriefing = distill?.briefing ?? null;
-  const distillSection = distillBriefing
-    ? `
-### Distill Briefing (curated, multi-source — weight HIGHER than Perplexity / search)
-
-The block below is synthesised by the Distill briefing service from a curated
-set of sources (vetted RSS, earnings transcripts, sell-side research, expert
-commentary), aggregating multiple distinct insights into a single narrative.
-Because the editorial filtering happens upstream, treat this briefing as your
-**strongest qualitative signal** — stronger than raw search results or
-Perplexity's general-purpose web summary, second only to the quantitative
-valuation models and analyst consensus. If the briefing contradicts the
-calculated models or the analyst consensus, surface the divergence explicitly
-in the bull or bear case.
-
-**${distillBriefing.briefingTypeName}** — ${distillBriefing.createdAt.slice(0, 10)} (${distillBriefing.insightCount} insights, ${distillBriefing.model})
-
-${demoteHeadings(distillBriefing.body.trim(), 2)}
-`
-    : '';
+  // Distill: the rolling dossier prose for the company and for each sector it
+  // sits in, with the briefing kept as the fallback for what has no dossier yet.
+  const distillSection = distillDossierSection(f.symbol, distill);
 
   return `## Stock Analysis: ${f.symbol} — ${f.companyName}
 ${dataQuality ? `\n${dataQuality}` : ''}
@@ -454,13 +507,14 @@ Weighting guidance for the recommendation (in descending order of authority):
 0. **Data Quality findings** (when the section is present) — these outrank everything below, because they say which of the inputs below are not evidence. A model built on a flagged field does not get a vote no matter where it sits in this list.
 1. **Composite + single-equation valuation models** — your quantitative anchor (intrinsic-value lens).
 2. **Analyst Consensus** — market-aligned sell-side lens; independent of the calculated models.
-3. **Distill Briefing** (when present) — curated multi-source qualitative narrative that has already passed an editorial filter. Strongest qualitative input.
+3. **Distill company dossier / briefing** (when present) — curated multi-source qualitative narrative about *this company*, already past an editorial filter. Strongest qualitative input.
+3b. **Distill sector dossiers** (when present) — the industry backdrop. Context for reading the company, never evidence about it: a sector-wide headwind is a reason to check whether this company shares it, not a finding that it does. Where the company's own numbers diverge from its sector's narrative, say so — that divergence is worth more than either block alone.
 4. **Perplexity Sonar** (when present) — substantive web-sourced synthesis. Weight below Distill (Distill has tighter source curation) but above raw search results.
 5. **Web Search Results** (when present) — raw snippets, useful for fact-checking and recency only. The user opted into these explicitly; treat as colour, not as decision input.
 
 A strong divergence between any two of these classes is itself a signal — flag it in the bull or bear case.
 
-Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken). A Distill briefing flagging the same concern qualifies as a concrete reason.
+Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken). A Distill **company** dossier flagging the same concern qualifies as a concrete reason; a sector dossier does not, on its own.
 
 When there is **no** analyst consensus, that guard does not become permission to lean harder on the models — it means the models lost their only independent check. Follow the caps stated in the Analyst Consensus section: no STRONG rating, a wider fair-value range, and the company's own reported trajectory weighted above the computed fair values.
 

@@ -4,7 +4,9 @@
     {
       "name": "stock-cli",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
+      "runtimeArgs": [
+        "dev"
+      ],
       "port": 4316
     }
   ]

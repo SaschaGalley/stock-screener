@@ -1,6 +1,6 @@
-import { createHash } from 'crypto';
 import { logger } from '../utils/logger.js';
 import type { DistillEntityRef } from './distill-entities.js';
+import type { DistillDossierContentState } from './distill-dossier.js';
 import {
   DistillAmbiguousTypeError,
   DistillEntityGoneError,
@@ -17,6 +17,7 @@ export {
   DistillUnauthorizedError,
 } from './distill-errors.js';
 export type { DistillUnresolvedReason } from './distill-errors.js';
+export type { DistillDossierContentState } from './distill-dossier.js';
 
 /**
  * One briefing as returned by Distill's `GET /api/v1/briefings`. We only keep
@@ -57,6 +58,29 @@ export interface DistillRefreshResult {
 }
 
 /**
+ * One dossier, with enough provenance that the analysis prompt can label it.
+ *
+ * `kind` is not decoration. A sector dossier read as company-specific is the
+ * observed failure mode, not a hypothetical one, so every block says out loud
+ * what it is about and the prompt renders that label.
+ */
+export interface DistillDossierBlock {
+  kind:        'company' | 'sector';
+  /** `company:apple` / `sector:information_technology` — provenance in one string. */
+  ref:         string;
+  entityId:    string;
+  displayName: string;
+  state:       DistillDossierContentState;
+  /** Half-open: the last moment covered lies *before* `periodEnd`. */
+  periodStart: string | null;
+  periodEnd:   string | null;
+  builtAt:     string | null;
+  stale:       boolean;
+  /** Null unless `state` is `ready`. */
+  content:     string | null;
+}
+
+/**
  * Bundle persisted to the per-symbol cache and consumed by the prompt.
  *
  * Single-briefing model: we only ever show / prompt with ONE briefing per
@@ -67,6 +91,14 @@ export interface DistillRefreshResult {
 export interface DistillBundle {
   ticker:    string;
   baseUrl:   string;
+  /**
+   * The rolling dossier prose — the company's own, and the sectors it sits in.
+   * This is the primary payload: it is free where a briefing costs an LLM call,
+   * and it carries a 30-day window rather than a point-in-time summary.
+   * Absent in bundles written before the dossier path existed.
+   */
+  company?:  DistillDossierBlock | null;
+  sectors?:  DistillDossierBlock[];
   /** The registry entity this bundle was fetched for — the UUID we called
    *  with, plus how the symbol mapped onto it. Absent only in bundles written
    *  before entity resolution existed, which the server may still serve from
@@ -75,7 +107,9 @@ export interface DistillBundle {
   briefing:  DistillBriefing | null;
   fetchedAt: string;
   /** Populated only when the bundle was last written by a POST /refresh call.
-   *  Lets the UI render cost + cache-state badges without re-querying. */
+   *  Lets the UI render cost + cache-state badges without re-querying.
+   *  With the dossier path this is the exception rather than the rule: the
+   *  briefing is now a fallback for what the dossier sweep has not covered. */
   lastRefresh?: {
     cacheState:     DistillCacheState;
     distillCostUsd: number;
@@ -88,17 +122,6 @@ export interface DistillBundle {
  *  single-briefing rendering. */
 const DEFAULT_LIMIT = 1;
 
-/**
- * Cache-version hash. `v3` invalidates every bundle fetched under the old
- * guessable `ticker:SYMBOL` refs — those were resolved against an entity model
- * that no longer exists, so the cached briefings can't be trusted to belong to
- * the entity we now resolve to. (`v2` had invalidated the array-shaped schema.)
- * Includes the limit so any later request-shape change also forces a refresh.
- */
-export const DISTILL_FETCH_HASH = createHash('md5')
-  .update(`distill-v3-entity-uuid-single-limit=${DEFAULT_LIMIT}`)
-  .digest('hex')
-  .slice(0, 8);
 
 interface DistillBriefingRow {
   id:                 string;

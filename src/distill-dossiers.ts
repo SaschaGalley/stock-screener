@@ -31,7 +31,7 @@
  */
 
 import { getConfig } from './config.js';
-import { AppConfig, isWatched, readAppConfig } from './app-config.js';
+import { AppConfig, isWatched, readAppConfig, scheduledSymbols } from './app-config.js';
 import {
   clearDistillEntity,
   DossierKind,
@@ -49,7 +49,6 @@ import {
 } from './db/admin.js';
 import { latestSnapshotForAll, listSymbols, readFinancialsLax } from './db/store.js';
 import { StockFinancials } from './types.js';
-import { scheduledSymbols } from './pipeline/steps.js';
 import { distillHintsFor, resolveDistillEntityCached } from './distill-service.js';
 import { getDistillEntity } from './data/distill-entities.js';
 import { setDistillDossier } from './data/distill-dossier.js';
@@ -58,6 +57,7 @@ import {
   loadSectorVocabulary,
   reportSectorMapping,
   sectorHandlesFor,
+  sectorHandlesForSymbol,
   sectorRef,
 } from './distill-sectors.js';
 import {
@@ -183,12 +183,7 @@ export async function desiredSubjects(
 export async function sectorSubjectsFor(symbol: string): Promise<DossierSubject[]> {
   const cfg = getConfig();
   if (!cfg.distillApiKey) return [];
-  const f = await readFinancialsLax(symbol);
-  if (!f) return [];
-  const vocabulary = await loadSectorVocabulary(cfg.distillApiKey, cfg.distillApiUrl);
-  return sectorHandlesFor({ sector: f.sector, industry: f.industry })
-    .filter((h) => vocabulary.has(h))
-    .map(sector);
+  return (await sectorHandlesForSymbol(symbol, cfg.distillApiKey, cfg.distillApiUrl)).map(sector);
 }
 
 // ── Planning ─────────────────────────────────────────────────────────────────

@@ -25,7 +25,8 @@ import type { JsonObject } from '@hatchet-dev/typescript-sdk';
 import { readAppConfig } from '../../app-config.js';
 import { getConfig } from '../../config.js';
 import { readFinancialsLax } from '../../db/store.js';
-import { distillHintsFor, syncDistillBriefing } from '../../distill-service.js';
+import { distillHintsFor } from '../../distill-service.js';
+import { syncDistillDossiers } from '../../distill-content.js';
 import { refreshStockData } from '../../refresh.js';
 import { runAnalysis } from '../../cli.js';
 import { looksLikeSymbol } from '../../symbols.js';
@@ -107,7 +108,7 @@ export const distillRefresh = hatchet.task<DistillRefreshInput, DistillRefreshOu
 
     return distillGate.run(async () => {
       const financials = await readFinancialsLax(input.symbol);
-      const result = await syncDistillBriefing(
+      const result = await syncDistillDossiers(
         distillHintsFor(input.symbol, financials),
         cfg.distillApiKey!,
         cfg.distillApiUrl,

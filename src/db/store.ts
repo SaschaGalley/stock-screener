@@ -476,10 +476,19 @@ export async function readDistillLax(symbol: string): Promise<DistillBundle | nu
 export async function writeDistill(
   symbol: string, data: DistillBundle, runId?: number | null,
 ): Promise<void> {
+  // `content` is the dedup key, so it has to be everything the prompt will
+  // see. Keyed on the briefing alone, a day where only the sector dossiers
+  // moved would look like no change at all and never be stored.
+  const prose = [
+    data.company?.content,
+    ...(data.sectors ?? []).map((s) => s.content),
+    data.briefing?.body,
+  ].filter((p): p is string => !!p?.trim()).join('\n\n');
+
   await saveDocument({
     symbol, kind: 'distill',
     variant: data.briefing?.briefingTypeId ?? '',
-    content: data.briefing?.body ?? '',
+    content: prose,
     data,
     model:   data.briefing?.model ?? null,
     costUsd: data.briefing?.costUsd ?? null,

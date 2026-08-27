@@ -19,6 +19,7 @@
  */
 
 import { getDistillEntityTypes } from './data/distill-entities.js';
+import { readFinancialsLax } from './db/store.js';
 import { logger } from './utils/logger.js';
 
 /** Distill's entity type whose canonical values are the sector vocabulary. */
@@ -158,4 +159,23 @@ export function reportSectorMapping(audit: SectorMappingAudit): void {
   if (audit.unreachable.length > 0) {
     logger.debug(`Distill sectors our classification cannot produce: ${audit.unreachable.join(', ')}.`);
   }
+}
+
+/**
+ * The sector handles one stock sits in, filtered to what the project defines.
+ *
+ * Lives here rather than next to either consumer because both the switch sync
+ * and the prose assembly need it, and routing one through the other would close
+ * an import cycle. A handle our table produces that the vocabulary lacks is
+ * dropped — `auditSectorMapping` already names it, and asking Distill about a
+ * sector it does not define would only add a 404 per run.
+ */
+export async function sectorHandlesForSymbol(
+  symbol: string, apiKey: string, baseUrl: string,
+): Promise<string[]> {
+  const financials = await readFinancialsLax(symbol);
+  if (!financials) return [];
+  const vocabulary = await loadSectorVocabulary(apiKey, baseUrl);
+  return sectorHandlesFor({ sector: financials.sector, industry: financials.industry })
+    .filter((handle) => vocabulary.has(handle));
 }

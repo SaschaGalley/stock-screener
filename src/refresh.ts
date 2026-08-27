@@ -10,7 +10,8 @@ import { deriveTechnicalSignals } from './analysis/signals.js';
 import {
   recordRunData, writeDistill, writeFinancials, writeMarketSignals, writeNews,
 } from './db/store.js';
-import { distillHintsFor, loadDistillBundle } from './distill-service.js';
+import { distillHintsFor } from './distill-service.js';
+import { syncDistillDossiers } from './distill-content.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import {
   MarketSignals, NewsItem, OptionsSignals, StockFinancials,
@@ -84,13 +85,16 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
   // header-refresh just pulls whatever's newest from the upstream corpus.
   if (includeDistill && cfg.distillApiKey) {
     try {
-      const distill = await loadDistillBundle(
+      // `fetch`: a data refresh reads what Distill has already built and never
+      // spends an LLM call on its instance. The nightly step decides otherwise.
+      await syncDistillDossiers(
         distillHintsFor(symbol, bundle.financials),
         cfg.distillApiKey,
         cfg.distillApiUrl,
         cfg.distillBriefingTypeId,
+        'fetch',
+        runId,
       );
-      await writeDistill(symbol, distill, runId);
     } catch (e) {
       logger.warn(`Distill refresh failed: ${(e as Error).message}`);
     }

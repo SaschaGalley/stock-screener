@@ -13,20 +13,20 @@
  */
 
 import { getConfig } from '../config.js';
-import { AppConfig, isWatched } from '../app-config.js';
+import { AppConfig, scheduledSymbols } from '../app-config.js';
 import { JobStep, JobStepResult, StepStatus } from '../db/admin.js';
-import { ANALYSIS_VERSION, listAnalyses, listSymbols, readFinancialsLax } from '../db/store.js';
+import { ANALYSIS_VERSION, listAnalyses, readFinancialsLax } from '../db/store.js';
 import { refreshStockData } from '../refresh.js';
 import { runAnalysis } from '../cli.js';
-import { distillHintsFor, syncDistillBriefing } from '../distill-service.js';
+import { distillHintsFor } from '../distill-service.js';
+import { syncDistillDossiers } from '../distill-content.js';
 import { logger } from '../utils/logger.js';
 import { fmtPrice } from '../format.js';
 import { query } from '../db/client.js';
 
-/** Symbols the nightly run covers, in the order it will walk them. */
-export async function scheduledSymbols(config: AppConfig): Promise<string[]> {
-  return (await listSymbols()).filter((s) => isWatched(config, s)).sort();
-}
+// Re-exported so the pipeline's callers keep taking the watchlist from the
+// module that walks it; the definition itself lives with `isWatched`.
+export { scheduledSymbols };
 
 // ── Staleness ────────────────────────────────────────────────────────────────
 
@@ -153,7 +153,8 @@ export async function runDataStep(
   }
 }
 
-/** Distill briefing: refresh (POST, generates) or fetch (GET, free). */
+/** Distill: the rolling dossiers for the company and its sectors, with the
+ *  briefing as a paid fallback only in `refresh` mode. */
 export async function runDistillStep(
   config: AppConfig, symbol: string, _runId: number,
 ): Promise<JobStepResult> {
@@ -164,16 +165,15 @@ export async function runDistillStep(
   try {
     const { detail, ms } = await timed(async () => {
       const financials = await readFinancialsLax(symbol);
-      const res = await syncDistillBriefing(
+      const res = await syncDistillDossiers(
         distillHintsFor(symbol, financials),
         cfg.distillApiKey!,
         cfg.distillApiUrl,
         cfg.distillBriefingTypeId,
         config.steps.distill.mode,
+        _runId,
       );
-      const state = res.cacheState ? `${res.cacheState}` : 'fetched';
-      const cost = res.distillCostUsd > 0 ? ` · $${res.distillCostUsd.toFixed(4)}` : '';
-      return `${res.mode}: ${state}${res.bundle.briefing ? '' : ', no briefing'}${cost}`;
+      return `${res.mode}: ${res.detail}`;
     });
     return result('distill', 'ok', detail, ms);
   } catch (e) {

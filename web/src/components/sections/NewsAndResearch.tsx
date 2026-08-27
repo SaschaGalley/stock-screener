@@ -6,6 +6,7 @@ import type {
   DistillBundle,
   DistillBriefing,
   DistillCacheState,
+  DistillDossierBlock,
 } from '../../types';
 
 interface Props {
@@ -138,6 +139,10 @@ function DistillSection({
   onRefreshed: () => void;
 }) {
   const briefing = distill?.briefing ?? null;
+  // The company block first, then its sectors — the same order the analysis
+  // prompt uses, and the order that reads company-then-backdrop.
+  const blocks: DistillDossierBlock[] = [distill?.company, ...(distill?.sectors ?? [])]
+    .filter((b): b is DistillDossierBlock => !!b?.content?.trim());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Persistent error states — once tripped, the button stays disabled with a
@@ -235,13 +240,16 @@ function DistillSection({
         />
       )}
 
-      {briefing ? (
-        <DistillBriefingBlock briefing={briefing} />
-      ) : (
+      {blocks.length === 0 && !briefing ? (
         <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
           {last?.cacheState === 'empty-pool'
             ? 'No fresh insights available upstream — Distill has nothing new to summarise.'
-            : 'No briefing cached yet — click Refresh to trigger one.'}
+            : 'No dossier yet — Distill builds these once a night for switched-on entities.'}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {blocks.map((b) => <DossierBlock key={b.ref} block={b} symbol={symbol} />)}
+          {briefing && <DistillBriefingBlock briefing={briefing} />}
         </div>
       )}
     </div>
@@ -312,6 +320,53 @@ function CacheStateBadge({ state }: { state: DistillCacheState }) {
  * **bold** and `- bullet lists` — no headers, no code blocks). We render
  * inline rather than pulling in react-markdown to keep the bundle small.
  */
+/**
+ * One rolling dossier.
+ *
+ * Sector blocks are tinted and captioned differently on purpose: the failure
+ * mode this integration actually hits is a sector dossier being read as though
+ * it described the company, and the reader here makes the same mistake the
+ * model would.
+ */
+function DossierBlock({ block, symbol }: { block: DistillDossierBlock; symbol: string }) {
+  const isSector = block.kind === 'sector';
+  const window = block.periodStart && block.periodEnd
+    ? `${block.periodStart.slice(0, 10)} – ${block.periodEnd.slice(0, 10)}`
+    : null;
+
+  return (
+    <details
+      className={`rounded border border-l-2 border-ink-800 bg-ink-950 ${isSector ? 'border-l-ink-600' : 'border-l-accent'}`}
+      open={!isSector}
+    >
+      <summary className="cursor-pointer px-3 py-2 text-xs">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-semibold text-ink-100">
+            <span className={`mr-1.5 rounded px-1 py-px text-[9px] uppercase tracking-wider ${
+              isSector ? 'bg-ink-800 text-ink-400' : 'bg-accent-soft text-accent'
+            }`}>
+              {isSector ? 'Sektor' : 'Firma'}
+            </span>
+            {block.displayName}
+          </span>
+          <span className="shrink-0 text-[10px] text-ink-500">
+            {window}
+            {block.stale && <span className="ml-1 text-ink-600" title="A late document landed in an already-built tile — the window above still holds.">· stale</span>}
+          </span>
+        </div>
+        {isSector && (
+          <div className="mt-0.5 text-[10px] text-ink-500">
+            Branchenbild, nicht {symbol} — Hintergrund, vor dem die Aktie gelesen wird.
+          </div>
+        )}
+      </summary>
+      <div className="border-t border-ink-800 px-3 py-2 text-[12px] leading-relaxed text-ink-200">
+        {renderDistillBody(block.content ?? '', 'markdown')}
+      </div>
+    </details>
+  );
+}
+
 function DistillBriefingBlock({ briefing }: { briefing: DistillBriefing }) {
   return (
     <details

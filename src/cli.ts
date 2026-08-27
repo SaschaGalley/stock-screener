@@ -34,7 +34,8 @@ import { getMarketRates } from './data/fred.js';
 import { getMacroBundle } from './data/macro.js';
 import { fetchPerplexity } from './data/perplexity.js';
 import { DistillBundle } from './data/distill.js';
-import { distillHintsFor, loadDistillBundle } from './distill-service.js';
+import { distillHintsFor } from './distill-service.js';
+import { buildDistillBundle } from './distill-content.js';
 import { buildAnalysisPrompt } from './output/prompt.js';
 import { formatMarkdown } from './output/markdown.js';
 // import { saveReports } from './output/report.js';  // disabled — see comment in run()
@@ -361,12 +362,13 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
           })
       : Promise.resolve(null),
     useDistill && !distill
-      ? loadDistillBundle(
+      ? buildDistillBundle(
           distillHintsFor(symbol, financials),
           cfg.distillApiKey!,
           cfg.distillApiUrl,
           cfg.distillBriefingTypeId,
-        )
+          'fetch',
+        ).then((r) => r.bundle)
           .catch((e) => {
             logger.warn(`Distill unavailable: ${(e as Error).message}`);
             return null;

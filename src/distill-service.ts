@@ -185,8 +185,14 @@ async function recoverDistillEntity(
   return resolveDistillEntityCached(hints, apiKey, baseUrl, { force: true });
 }
 
-/** Resolve, call, and — on a 404 for the id — re-resolve and retry exactly once. */
-async function withResolvedEntity<T>(
+/**
+ * Resolve, call, and — on a 404 for the id — re-resolve and retry exactly once.
+ *
+ * Exported because every Distill call that takes an entity id needs the same
+ * recovery, and `GET /entities/{id}` is the only thing that follows a merge:
+ * re-searching from the identifiers would find the merge root only by luck.
+ */
+export async function withResolvedEntity<T>(
   hints: DistillEntityHints,
   apiKey: string,
   baseUrl: string,
@@ -202,112 +208,4 @@ async function withResolvedEntity<T>(
     // Single retry: if the freshly resolved id 404s too, the error propagates.
     return { value: await call(recovered), entity: recovered };
   }
-}
-
-/**
- * Fetch the currently-relevant briefing for a symbol, resolving its entity first.
- *
- * `GET /briefings` does not 404 on an unknown `entity_ref` — it answers 200
- * with an empty list, exactly like an entity that simply has no briefing yet.
- * So an empty result from a *cached* id is the one moment where the mapping is
- * worth re-checking: without it, an id that was merged away or quarantined
- * would look like "nothing published" forever. Costs one extra GET, and only
- * when there is no briefing to show.
- */
-export async function loadDistillBundle(
-  hints: DistillEntityHints,
-  apiKey: string,
-  baseUrl: string,
-  briefingTypeId?: string,
-): Promise<DistillBundle> {
-  const fetchFor = (entity: DistillEntityRef) =>
-    fetchDistillBriefings(hints.symbol, entity, apiKey, baseUrl, briefingTypeId);
-
-  const cached = await readDistillEntity(hints.symbol, baseUrl);
-  const { value: bundle, entity } = await withResolvedEntity(hints, apiKey, baseUrl, fetchFor);
-
-  // Only a mapping we took from disk can have gone stale behind our back; one
-  // resolved in this call already reflects the registry.
-  if (bundle.briefing || !cached || cached.id !== entity.id) return bundle;
-
-  let check: Revalidation;
-  try {
-    check = await revalidateEntity(hints, entity, apiKey, baseUrl);
-  } catch (e) {
-    // An inactive entity explains the emptiness — let that surface. A transport
-    // hiccup during the check must not discard a valid (if empty) result.
-    if (e instanceof DistillEntityUnresolvedError) throw e;
-    logger.debug(`Distill entity re-check for ${hints.symbol} failed: ${(e as Error).message}`);
-    return bundle;
-  }
-
-  if (check.status === 'unchanged') return bundle;
-
-  const next = check.status === 'replaced'
-    ? check.entity
-    : await resolveDistillEntityCached(hints, apiKey, baseUrl, { force: true });
-  logger.warn(`Distill: ${hints.symbol} had no briefing under ${entity.id}; retrying with re-resolved ${next.id}.`);
-  return fetchFor(next);
-}
-
-/** Trigger Distill's drain + (re)briefing for a symbol's entity. */
-export async function refreshDistillBriefing(
-  hints: DistillEntityHints,
-  apiKey: string,
-  baseUrl: string,
-  briefingTypeId?: string,
-): Promise<DistillRefreshResult & { entity: DistillEntityRef }> {
-  const { value, entity } = await withResolvedEntity(hints, apiKey, baseUrl, (e) =>
-    triggerDistillRefresh(hints.symbol, e, apiKey, baseUrl, briefingTypeId));
-  return { ...value, entity };
-}
-
-export interface DistillSyncResult {
-  bundle:         DistillBundle;
-  mode:           DistillMode;
-  /** Only set for `refresh`; a plain fetch has no cache-state header. */
-  cacheState:     DistillCacheState | null;
-  distillCostUsd: number;
-}
-
-/**
- * Bring a symbol's cached briefing up to date and write it. Shared by the
- * manual Refresh button and the nightly job so both merge and persist the same
- * way — in particular, an empty pool keeps the briefing already on disk rather
- * than blanking established context over a transient upstream miss.
- */
-export async function syncDistillBriefing(
-  hints: DistillEntityHints,
-  apiKey: string,
-  baseUrl: string,
-  briefingTypeId: string | undefined,
-  mode: DistillMode,
-): Promise<DistillSyncResult> {
-  if (mode === 'fetch') {
-    const bundle = await loadDistillBundle(hints, apiKey, baseUrl, briefingTypeId);
-    const prior = await readDistillLax(hints.symbol);
-    const merged: DistillBundle = {
-      ...bundle,
-      briefing: bundle.briefing ?? prior?.briefing ?? null,
-    };
-    await writeDistill(hints.symbol, merged);
-    return { bundle: merged, mode, cacheState: null, distillCostUsd: 0 };
-  }
-
-  const result = await refreshDistillBriefing(hints, apiKey, baseUrl, briefingTypeId);
-  const prior = await readDistillLax(hints.symbol);
-  const merged: DistillBundle = {
-    ticker:    hints.symbol,
-    baseUrl,
-    entity:    result.entity,
-    briefing:  result.briefing ?? prior?.briefing ?? null,
-    fetchedAt: new Date().toISOString(),
-    lastRefresh: {
-      cacheState:     result.cacheState,
-      distillCostUsd: result.distillCostUsd,
-      refreshedAt:    result.refreshedAt,
-    },
-  };
-  await writeDistill(hints.symbol, merged);
-  return { bundle: merged, mode, cacheState: result.cacheState, distillCostUsd: result.distillCostUsd };
 }

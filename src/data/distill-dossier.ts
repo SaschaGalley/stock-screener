@@ -179,3 +179,108 @@ export async function setDistillDossier(
   if (!res.ok) await classify(res, entityId, 'dossier write');
   return toState(await res.json().catch(() => null), entityId, enabled);
 }
+
+// ── Dossier content ──────────────────────────────────────────────────────────
+
+/**
+ * Where a dossier stands. Distill answers 200 with this rather than a status
+ * code for everything except an entity it does not know, so this field — not
+ * the HTTP status — is what the caller branches on.
+ *
+ *   ready       the prose is there
+ *   not_enabled the switch is off. Deliberately *no* content: switching off
+ *               deletes nothing, so an artefact whose window stopped weeks ago
+ *               is still lying there and would read as the current state
+ *   not_built   switched on, but the nightly sweep has not reached it yet
+ *   empty       built, and nothing happened in the window. Not a failure
+ */
+export type DistillDossierContentState = 'ready' | 'not_enabled' | 'not_built' | 'empty';
+
+const CONTENT_STATES: readonly string[] = ['ready', 'not_enabled', 'not_built', 'empty'];
+
+export interface DistillDossierBody {
+  unit:        string;
+  span:        number | null;
+  /** Half-open: the last moment covered lies *before* `periodEnd`. */
+  periodStart: string | null;
+  periodEnd:   string | null;
+  builtAt:     string | null;
+  /** Common and usually harmless — a late document landing in a built tile.
+   *  Carry it, do not branch on it: the window is still the truth. */
+  stale:       boolean;
+  chars:       number | null;
+  content:     string;
+}
+
+export interface DistillDossierContent {
+  ref:      string;
+  /** The merge root, which may differ from the ref that was asked for. */
+  id:       string;
+  enabled:  boolean;
+  eligible: boolean | null;
+  state:    DistillDossierContentState;
+  dossier:  DistillDossierBody | null;
+}
+
+function toBody(raw: unknown): DistillDossierBody | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const d = raw as Record<string, unknown>;
+  const content = typeof d.content === 'string' ? d.content : '';
+  if (!content.trim()) return null;
+  return {
+    unit:        typeof d.unit === 'string' ? d.unit : 'day',
+    span:        typeof d.span === 'number' ? d.span : null,
+    periodStart: typeof d.period_start === 'string' ? d.period_start : null,
+    periodEnd:   typeof d.period_end === 'string' ? d.period_end : null,
+    builtAt:     typeof d.built_at === 'string' ? d.built_at : null,
+    stale:       d.stale === true,
+    chars:       typeof d.chars === 'number' ? d.chars : content.length,
+    content,
+  };
+}
+
+/**
+ * `GET /api/v1/entities/{ref}/dossier/content` — the rolling dossier prose.
+ *
+ * The reason this path exists at all: it is free, where `POST /briefings/refresh`
+ * spends an LLM call per symbol per night, and it carries a 30-day window rather
+ * than a point-in-time summary. What it cannot carry is *today* — the window
+ * closes at the start of the current day by construction, so a caller that needs
+ * intraday freshness still has to take the briefing path.
+ *
+ * `ref` may be a UUID or `type:handle`; both resolve to the same merge root.
+ * 404 here means one thing only — an entity Distill does not know.
+ */
+export async function getDistillDossierContent(
+  ref: string,
+  apiKey: string,
+  baseUrl: string,
+  opts: DossierRequestOptions = {},
+): Promise<DistillDossierContent> {
+  const url = `${trimBase(baseUrl)}/api/v1/entities/${encodeURIComponent(ref)}/dossier/content`;
+  const res = await request(
+    url,
+    { headers: { 'Authorization': `Bearer ${apiKey}` } },
+    'dossier content',
+    opts,
+  );
+  if (!res.ok) await classify(res, ref, 'dossier content');
+
+  const json = await res.json().catch(() => null) as Record<string, unknown> | null;
+  const row = (json ?? {}) as Record<string, unknown>;
+  const state = typeof row.state === 'string' && CONTENT_STATES.includes(row.state)
+    ? row.state as DistillDossierContentState
+    : 'not_built';
+
+  return {
+    ref:      typeof row.ref === 'string' ? row.ref : ref,
+    id:       typeof row.id === 'string' ? row.id : ref,
+    enabled:  row.enabled === true,
+    eligible: typeof row.eligible === 'boolean' ? row.eligible : null,
+    state,
+    // Only `ready` may carry prose. A `not_enabled` answer can still ship a
+    // stale artefact, and taking it would mean reading a window that stopped
+    // moving weeks ago as though it were current.
+    dossier:  state === 'ready' ? toBody(row.dossier) : null,
+  };
+}

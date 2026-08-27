@@ -249,6 +249,8 @@ src/
 ├── scheduler.ts           Nightly pipeline — one cron, one queue, one symbol at a time
 ├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
 ├── distill-dossiers.ts    Mirrors the watchlist onto Distill's dossier switches
+├── distill-sectors.ts     Yahoo sector/industry → Distill sector handles (1:n)
+├── distill-content.ts     Assembles the company + sector dossier prose for a stock
 ├── models.ts              Model registry — single source for CLI, server and web UI
 ├── providers/             LLM abstraction layer (anthropic, openai, factory)
 ├── search/                Brave + Tavily clients (LLM-native search is in providers/)
@@ -327,7 +329,7 @@ cost history.
 | `macro_observations` | VIX, yield curve, HY spread, DXY, FRED rates — global, stored once rather than per symbol |
 | `runs` / `run_steps` | Pipeline provenance; every row above can point at the run that produced it |
 | `distill_entities`, `filings`, `settings` | Mappings and operational state |
-| `distill_dossiers` | Which dossier switches we have set upstream, and why any are out of sync. Keyed by symbol as text, not by `symbols(id)`: deleting a stock is exactly when the switch has to be turned off, and a cascading row would erase that intent first |
+| `distill_dossiers` | Which dossier switches we have set upstream, and why any are out of sync — for companies *and* the sectors they sit in. Keyed by subject text, not by `symbols(id)`: deleting a stock is exactly when the switch has to be turned off, and a cascading row would erase that intent first |
 
 Nothing in the codebase lists field names. Adding a valuation model to
 `AnalysisResultSchema` adds its outputs to the catalogue on the next boot, and
@@ -375,7 +377,7 @@ Per symbol, in order:
 | # | Step | What it does | Default |
 | --- | --- | --- | --- |
 | 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
-| 2 | **Distill** | `refresh` (POST — drains upstream, may generate a briefing, costs LLM budget there) or `fetch` (GET — free) | on, `refresh` |
+| 2 | **Distill** | The rolling dossiers for the company and each sector it sits in (`GET …/dossier/content`, free). `refresh` additionally falls back to one paid `POST /briefings/refresh` when the company has no dossier prose at all; `fetch` never pays | on, `refresh` |
 | 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-5.6-terra` |
 
 Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).
@@ -522,6 +524,62 @@ The four failure codes are four different actions, not four messages:
 A symbol Distill's registry does not know is a *state*, not an error: it is
 recorded as `unresolved` and retried on the next run, rather than re-searched on
 every config save.
+
+### Sectors
+
+Distill keeps sectors as entities of their own (`sector:information_technology`)
+with their own rolling dossiers, so a stock's context is its company dossier plus
+the dossiers of the sectors it sits in. Distill cannot derive that membership —
+the `sector` field on a search hit is a different taxonomy and is often empty —
+so the classification comes from us.
+
+Ours is Yahoo's, and nothing derives one vocabulary from the other, so
+`src/distill-sectors.ts` holds a translation table. It is audited against the
+live `GET /entity-types` vocabulary on every sync, so a renamed or thirteenth
+handle surfaces as a warning instead of stocks silently losing their sector. All
+twelve are reachable today; `aerospace_defense` only from the *industry* field,
+because it is a sector in Distill but an industry in ours — which is also what
+makes the mapping a set rather than a value: `AIR.PA` is both `industrials` and
+`aerospace_defense`.
+
+The sectors are **derived, not switched on wholesale**. Three of the twelve touch
+no stock we hold, and a dossier nobody reads still bills every day; deriving is
+also the same rule companies already follow, so a sector goes off when its last
+watched stock leaves. Adding a stock switches its sectors on immediately so they
+start building that night; removing one does not switch them off, because whether
+a sector is still wanted is a question about every *other* watched stock — the
+full sync owns that.
+
+### Reading the prose
+
+`GET /entities/{ref}/dossier/content` is the normal path, and the briefing is the
+fallback. Two reasons: the dossier read is **free** where `POST /briefings/refresh`
+spends an LLM call per symbol per night on Distill's instance, and it carries a
+rolling 30-day window rather than a point-in-time summary.
+
+Branch on the `state` field, never on the status code — 404 means only "unknown
+entity", everything else is 200 with a state:
+
+| `state` | what it means | what we do |
+| --- | --- | --- |
+| `ready` | the prose is there | take it |
+| `not_enabled` | switch off | switch it on through the ledger; the fallback covers tonight |
+| `not_built` | on, sweep has not reached it | fallback, and it is there tomorrow |
+| `empty` | built, nothing in the window | not a failure — skip |
+
+`not_enabled` deliberately carries no content: switching off deletes nothing, so
+an artefact whose window stopped weeks ago is still lying there and would read as
+the current state. `stale: true` is common and harmless — a late document landing
+in an already-built tile — so it is carried through to the prompt as a note
+rather than used to discard the block.
+
+What the dossier path cannot give is *today*: the window closes at the start of
+the current day by construction. Only a briefing block covers it.
+
+Every block reaching the analysis prompt states its scope, and sector blocks say
+plainly that a sector-level claim is not a company-level finding. That is not
+decoration — a sector dossier read as company-specific is the observed failure
+mode of this integration.
 
 ## Development
 

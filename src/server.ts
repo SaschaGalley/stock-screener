@@ -29,7 +29,8 @@ import {
   DistillAmbiguousTypeError,
   DistillEntityUnresolvedError,
 } from './data/distill.js';
-import { distillHintsFor, syncDistillBriefing } from './distill-service.js';
+import { distillHintsFor } from './distill-service.js';
+import { syncDistillDossiers } from './distill-content.js';
 import { dossiersFollowStocks, noteDossierIntent, watchlistDelta } from './distill-dossiers.js';
 import { getMarketRates } from './data/fred.js';
 import { getSectorMediansCached } from './sector-medians.js';
@@ -332,7 +333,7 @@ export function createApp(): express.Express {
       const { distillRefresh } = await import('./hatchet/tasks/single.js');
       const { result } = await viaHatchet(
         () => distillRefresh.run({ symbol }, interactive({ symbol })),
-        async () => ({ result: await syncDistillBriefing(
+        async () => ({ result: await syncDistillDossiers(
           distillHintsFor(symbol, financials),
           cfg.distillApiKey!,
           cfg.distillApiUrl,
