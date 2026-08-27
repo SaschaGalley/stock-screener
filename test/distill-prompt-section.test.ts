@@ -11,7 +11,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { distillDossierSection } from '../src/output/prompt.js';
-import type { DistillBundle, DistillDossierBlock } from '../src/data/distill.js';
+import type {
+  DistillBundle,
+  DistillDossierBlock,
+  DistillInsight,
+} from '../src/data/distill.js';
 
 function block(over: Partial<DistillDossierBlock> = {}): DistillDossierBlock {
   return {
@@ -25,9 +29,27 @@ function block(over: Partial<DistillDossierBlock> = {}): DistillDossierBlock {
     builtAt:     '2026-08-27T22:21:45.000Z',
     stale:       false,
     content:     '## Summary\nOrder book grew.',
+    insights:    null,
     ...over,
   };
 }
+
+function insight(over: Partial<DistillInsight> = {}): DistillInsight {
+  return {
+    id:            'i1',
+    at:            '2026-08-27T09:14:00.000Z',
+    content:       'Order intake rose 12% in July.',
+    documentTitle: 'Airbus July orders',
+    documentUrl:   'https://example.test/a',
+    sourceName:    'Reuters',
+    ...over,
+  };
+}
+
+const window = (items: DistillInsight[], truncated = false) => ({
+  from: '2026-07-28T22:00:00.000Z', to: '2026-08-27T20:00:00.000Z',
+  count: items.length, truncated, items,
+});
 
 const bundle = (over: Partial<DistillBundle> = {}): DistillBundle => ({
   ticker: 'AIR.PA', baseUrl: 'https://distill.test',
@@ -49,7 +71,7 @@ describe('distillDossierSection', () => {
 
   it('scopes a company block to the company', () => {
     const out = distillDossierSection('AIR.PA', bundle({ company: block() }));
-    assert.match(out, /Company dossier — Airbus/);
+    assert.match(out, /#### Company — Airbus/);
     assert.match(out, /\*\*Scope: AIR\.PA itself\.\*\*/);
   });
 
@@ -57,7 +79,7 @@ describe('distillDossierSection', () => {
     const out = distillDossierSection('AIR.PA', bundle({
       sectors: [block({ kind: 'sector', ref: 'sector:industrials', displayName: 'Industrials' })],
     }));
-    assert.match(out, /Sector dossier — Industrials/);
+    assert.match(out, /#### Sector — Industrials/);
     assert.match(out, /NOT AIR\.PA/);
     assert.match(out, /never becomes a company-level\s+finding/);
   });
@@ -72,7 +94,7 @@ describe('distillDossierSection', () => {
     }));
     assert.match(out, /sector:aerospace_defense/);
     assert.match(out, /sector:industrials/);
-    assert.equal(out.match(/#### Sector dossier/g)?.length, 2);
+    assert.equal(out.match(/#### Sector — /g)?.length, 2);
   });
 
   it('states the window, and that it is exclusive at the end', () => {
@@ -106,5 +128,71 @@ describe('distillDossierSection', () => {
     }));
     assert.match(out, /#### Briefing — Daily/);
     assert.match(out, /does\* include today/);
+  });
+});
+
+describe('raw insights in the prompt', () => {
+  it('renders them with the news date and the source', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ insights: window([insight()]) }),
+    }));
+
+    assert.match(out, /- 2026-08-27 · Reuters — Airbus July orders: Order intake rose 12% in July\./);
+  });
+
+  it('says they are unsynthesised, so one is one source', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ insights: window([insight()]) }),
+    }));
+
+    assert.match(out, /does NOT reproduce/);
+    assert.match(out, /weigh a single one as a single\s+source/);
+  });
+
+  it('carries a block that has insights but no dossier — the just-switched-on case', () => {
+    // Exactly what the paid briefing fallback used to be for.
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ state: 'not_built', content: null, insights: window([insight()]) }),
+    }));
+
+    assert.match(out, /No dossier has been built for this entity yet/);
+    assert.match(out, /Order intake rose 12%/);
+    assert.doesNotMatch(out, /Window .* to /, 'no window to state without a dossier');
+  });
+
+  it('warns when more exist than are shown, so silence is not read as absence', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ insights: window([insight()], true) }),
+    }));
+
+    assert.match(out, /absence here is not evidence of absence/);
+  });
+
+  it('caps a sector at eight and keeps the newest, without claiming completeness', () => {
+    const many = Array.from({ length: 12 }, (_, n) =>
+      insight({ id: `i${n}`, at: `2026-08-${String(10 + n).padStart(2, '0')}T00:00:00.000Z`, content: `item ${n}` }));
+
+    const out = distillDossierSection('AIR.PA', bundle({
+      sectors: [block({ kind: 'sector', ref: 'sector:industrials', displayName: 'Industrials', insights: window(many) })],
+    }));
+
+    assert.equal(out.match(/^- 2026-08-/gm)?.length, 8);
+    assert.doesNotMatch(out, /item 3\b/, 'the four oldest are dropped');
+    assert.match(out, /item 11\b/, 'the newest survive');
+    assert.match(out, /More exist than are shown/);
+  });
+
+  it('leaves a company uncapped below the limit', () => {
+    const many = Array.from({ length: 12 }, (_, n) => insight({ id: `i${n}`, content: `item ${n}` }));
+
+    const out = distillDossierSection('AIR.PA', bundle({ company: block({ insights: window(many) }) }));
+
+    assert.equal(out.match(/^- 2026-08-27/gm)?.length, 12);
+    assert.doesNotMatch(out, /More exist than are shown/);
+  });
+
+  it('renders nothing extra when a block brought no insights', () => {
+    const out = distillDossierSection('AIR.PA', bundle({ company: block() }));
+    assert.doesNotMatch(out, /Raw source statements/);
   });
 });

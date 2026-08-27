@@ -7,6 +7,7 @@ import type {
   DistillBriefing,
   DistillCacheState,
   DistillDossierBlock,
+  DistillInsight,
 } from '../../types';
 
 interface Props {
@@ -141,8 +142,11 @@ function DistillSection({
   const briefing = distill?.briefing ?? null;
   // The company block first, then its sectors — the same order the analysis
   // prompt uses, and the order that reads company-then-backdrop.
+  // A block with no dossier text but with insights still carries material — that
+  // is a just-switched-on entity, whose dossier arrives with tonight's sweep.
   const blocks: DistillDossierBlock[] = [distill?.company, ...(distill?.sectors ?? [])]
-    .filter((b): b is DistillDossierBlock => !!b?.content?.trim());
+    .filter((b): b is DistillDossierBlock =>
+      !!b && (!!b.content?.trim() || (b.insights?.items.length ?? 0) > 0));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Persistent error states — once tripped, the button stays disabled with a
@@ -361,9 +365,55 @@ function DossierBlock({ block, symbol }: { block: DistillDossierBlock; symbol: s
         )}
       </summary>
       <div className="border-t border-ink-800 px-3 py-2 text-[12px] leading-relaxed text-ink-200">
-        {renderDistillBody(block.content ?? '', 'markdown')}
+        {block.content?.trim()
+          ? renderDistillBody(block.content, 'markdown')
+          : (
+            <p className="text-[11px] italic text-ink-500">
+              Noch kein Dossier gebaut — der Sweep zieht es heute Nacht nach. Unten steht
+              das Rohmaterial, das stattdessen ins Prompt geht.
+            </p>
+          )}
+        <InsightList insights={block.insights?.items ?? []} truncated={!!block.insights?.truncated} />
       </div>
     </details>
+  );
+}
+
+/**
+ * The raw statements a dossier does not reproduce.
+ *
+ * Rendered as a distinct, quieter list because they carry different weight: no
+ * editorial fold happened, so one line is one source. The date shown is the
+ * news date (Distill's period axis), not when it was ingested.
+ */
+function InsightList({ insights, truncated }: { insights: DistillInsight[]; truncated: boolean }) {
+  if (insights.length === 0) return null;
+  return (
+    <div className="mt-3 border-t border-dashed border-ink-800 pt-2">
+      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+        Nicht im Dossier · {insights.length} roh
+        {truncated && <span className="ml-1 font-normal normal-case tracking-normal text-ink-600">(gekappt — es gibt mehr)</span>}
+      </div>
+      <ul className="space-y-1">
+        {insights.map((i) => (
+          <li key={i.id} className="text-[11px] text-ink-400">
+            <span className="font-mono text-ink-600">{i.at?.slice(0, 10) ?? '—'}</span>
+            {i.sourceName && <span className="ml-1 text-ink-500">{i.sourceName}</span>}
+            {i.documentUrl ? (
+              <a
+                href={i.documentUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="ml-1 text-ink-300 underline decoration-ink-700 underline-offset-2 hover:text-ink-100"
+              >
+                {i.documentTitle ?? 'Quelle'}
+              </a>
+            ) : i.documentTitle && <span className="ml-1 text-ink-300">{i.documentTitle}</span>}
+            <div className="text-ink-400">{i.content}</div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

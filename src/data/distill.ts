@@ -1,6 +1,6 @@
 import { logger } from '../utils/logger.js';
 import type { DistillEntityRef } from './distill-entities.js';
-import type { DistillDossierContentState } from './distill-dossier.js';
+import type { DistillDossierContentState, DistillInsightWindow } from './distill-dossier.js';
 import {
   DistillAmbiguousTypeError,
   DistillEntityGoneError,
@@ -17,7 +17,11 @@ export {
   DistillUnauthorizedError,
 } from './distill-errors.js';
 export type { DistillUnresolvedReason } from './distill-errors.js';
-export type { DistillDossierContentState } from './distill-dossier.js';
+export type {
+  DistillDossierContentState,
+  DistillInsight,
+  DistillInsightWindow,
+} from './distill-dossier.js';
 
 /**
  * One briefing as returned by Distill's `GET /api/v1/briefings`. We only keep
@@ -78,6 +82,13 @@ export interface DistillDossierBlock {
   stale:       boolean;
   /** Null unless `state` is `ready`. */
   content:     string | null;
+  /**
+   * What the dossier does not reproduce — raw, unsynthesised, and valid in
+   * every state. When there is no dossier prose these *are* the material.
+   * Never filter them: the membership rule is Distill's and is about
+   * provenance, not dates (see `DistillInsightWindow`).
+   */
+  insights:    DistillInsightWindow | null;
 }
 
 /**

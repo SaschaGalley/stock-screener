@@ -50,6 +50,13 @@ export interface DossierRequestOptions {
   timeoutMs?:     number;
 }
 
+export interface DossierContentOptions extends DossierRequestOptions {
+  /** Ask for the insights the dossier does not reproduce. */
+  includeInsights?: boolean;
+  /** 1…200 upstream, default 25 there. */
+  insightLimit?:    number;
+}
+
 function trimBase(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
 }
@@ -212,6 +219,47 @@ export interface DistillDossierBody {
   content:     string;
 }
 
+/**
+ * One raw insight — an extracted statement, not a synthesis.
+ *
+ * `at` is the *period axis* Distill cuts dossiers on, which is the news date,
+ * not the moment Distill saw it. A document that came in today carrying
+ * yesterday's date is stamped yesterday here — that is deliberate, and it is
+ * what makes these comparable with a dossier's window.
+ */
+export interface DistillInsight {
+  id:            string;
+  at:            string | null;
+  content:       string;
+  documentTitle: string | null;
+  documentUrl:   string | null;
+  sourceName:    string | null;
+}
+
+/**
+ * What the dossier does not (yet) reproduce.
+ *
+ * The membership rule is Distill's and is about *provenance*, not dates: an
+ * insight is excluded when the artefact actually reproduces it through one of
+ * its edges. That is why `from` is the period **start** and not the end — a
+ * late-arriving document whose axis falls inside the window but whose text
+ * never made it into the dossier is exactly the class that makes a dossier
+ * `stale`, and a cut at the window's end would drop it from both sides.
+ *
+ * So: do not filter this list. `from`/`to` are here to tell the model which
+ * span it is looking at, not to derive a boundary from.
+ */
+export interface DistillInsightWindow {
+  from:      string | null;
+  to:        string | null;
+  /** Length of `items`, NOT how many exist. Only `truncated` says there are more. */
+  count:     number;
+  /** `insight_limit` bit. Counts only — Distill applies no character cap. */
+  truncated: boolean;
+  /** Cut newest-first upstream, then handed back in chronological order. */
+  items:     DistillInsight[];
+}
+
 export interface DistillDossierContent {
   ref:      string;
   /** The merge root, which may differ from the ref that was asked for. */
@@ -220,6 +268,40 @@ export interface DistillDossierContent {
   eligible: boolean | null;
   state:    DistillDossierContentState;
   dossier:  DistillDossierBody | null;
+  /** Only present when asked for with `includeInsights`. */
+  insights: DistillInsightWindow | null;
+}
+
+function toInsight(raw: unknown): DistillInsight | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const content = typeof r.content === 'string' ? r.content.trim() : '';
+  if (!content) return null;
+  return {
+    id:            typeof r.id === 'string' ? r.id : '',
+    at:            typeof r.at === 'string' ? r.at : null,
+    content,
+    documentTitle: typeof r.document_title === 'string' ? r.document_title : null,
+    documentUrl:   typeof r.document_url === 'string' ? r.document_url : null,
+    sourceName:    typeof r.source_name === 'string' ? r.source_name : null,
+  };
+}
+
+function toInsights(raw: unknown): DistillInsightWindow | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const w = raw as Record<string, unknown>;
+  const items = (Array.isArray(w.data) ? w.data : [])
+    .map(toInsight)
+    .filter((i): i is DistillInsight => i !== null);
+  return {
+    from:      typeof w.from === 'string' ? w.from : null,
+    to:        typeof w.to === 'string' ? w.to : null,
+    // Reported by Distill as the length of `data`; recomputed from what we
+    // actually parsed so a dropped empty row cannot make the two disagree.
+    count:     items.length,
+    truncated: w.truncated === true,
+    items,
+  };
 }
 
 function toBody(raw: unknown): DistillDossierBody | null {
@@ -255,9 +337,15 @@ export async function getDistillDossierContent(
   ref: string,
   apiKey: string,
   baseUrl: string,
-  opts: DossierRequestOptions = {},
+  opts: DossierContentOptions = {},
 ): Promise<DistillDossierContent> {
-  const url = `${trimBase(baseUrl)}/api/v1/entities/${encodeURIComponent(ref)}/dossier/content`;
+  let url = `${trimBase(baseUrl)}/api/v1/entities/${encodeURIComponent(ref)}/dossier/content`;
+  if (opts.includeInsights) {
+    url += '?include=insights';
+    if (opts.insightLimit) {
+      url += `&insight_limit=${Math.min(200, Math.max(1, Math.trunc(opts.insightLimit)))}`;
+    }
+  }
   const res = await request(
     url,
     { headers: { 'Authorization': `Bearer ${apiKey}` } },
@@ -282,5 +370,9 @@ export async function getDistillDossierContent(
     // stale artefact, and taking it would mean reading a window that stopped
     // moving weeks ago as though it were current.
     dossier:  state === 'ready' ? toBody(row.dossier) : null,
+    // Insights, by contrast, are valid in every state — for anything but
+    // `ready` they *are* the material, covering the same 30 days the paid
+    // briefing used to read.
+    insights: toInsights(row.insights),
   };
 }

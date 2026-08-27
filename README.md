@@ -377,7 +377,7 @@ Per symbol, in order:
 | # | Step | What it does | Default |
 | --- | --- | --- | --- |
 | 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
-| 2 | **Distill** | The rolling dossiers for the company and each sector it sits in (`GET …/dossier/content`, free). `refresh` additionally falls back to one paid `POST /briefings/refresh` when the company has no dossier prose at all; `fetch` never pays | on, `refresh` |
+| 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`, free). `refresh` additionally buys one `POST /briefings/refresh` per symbol — an LLM synthesis of material already in hand, not a repair | on, `fetch` |
 | 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-5.6-terra` |
 
 Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).
@@ -562,10 +562,10 @@ entity", everything else is 200 with a state:
 
 | `state` | what it means | what we do |
 | --- | --- | --- |
-| `ready` | the prose is there | take it |
-| `not_enabled` | switch off | switch it on through the ledger; the fallback covers tonight |
-| `not_built` | on, sweep has not reached it | fallback, and it is there tomorrow |
-| `empty` | built, nothing in the window | not a failure — skip |
+| `ready` | the prose is there | take it, plus the insights it does not reproduce |
+| `not_enabled` | switch off | switch it on through the ledger; the insights already cover tonight |
+| `not_built` | on, sweep has not reached it | the insights carry it until tomorrow |
+| `empty` | built, nothing in the window | not a failure — the insights still come |
 
 `not_enabled` deliberately carries no content: switching off deletes nothing, so
 an artefact whose window stopped weeks ago is still lying there and would read as
@@ -573,8 +573,32 @@ the current state. `stale: true` is common and harmless — a late document land
 in an already-built tile — so it is carried through to the prompt as a note
 rather than used to discard the block.
 
-What the dossier path cannot give is *today*: the window closes at the start of
-the current day by construction. Only a briefing block covers it.
+### Raw insights, and why nothing is filtered
+
+`?include=insights` returns, alongside the dossier, the raw statements that
+dossier does **not** reproduce. They arrive in every state, so a just-switched-on
+entity has material immediately — which is what retired the paid
+`POST /briefings/refresh` as a fallback. Both modes are now free; `refresh` only
+buys an extra LLM *synthesis* of material we already hold, and is off by default.
+
+The membership rule is Distill's and is about **provenance, not dates**, which is
+the one thing easy to get wrong here. It is tempting to think the insights are
+"everything since `period_end`" and to filter on that. They are not: a document
+that arrives late, carrying a date inside the window, never makes it into the
+dossier text — that is precisely what marks a dossier `stale` — and a cut at the
+window's end would drop it from *both* sides. Hence `insights.from` is the period
+**start**, and the list is passed through untouched. `from`/`to` exist to tell the
+model which span it is looking at, not to derive a boundary from.
+
+Three details the prompt depends on: `at` is the news date (Distill's period
+axis), not when it was ingested; `count` is the length of the list, never a
+total, so only `truncated` says more exist; and the list is cut newest-first
+upstream but handed back chronologically.
+
+The prompt renders them under the dossier as a separate, explicitly weaker class
+— unsynthesised single statements, one line is one source — and caps sector
+insights, since two sector blocks of thirty days of industry chatter would
+otherwise outweigh the company's own dossier.
 
 Every block reaching the analysis prompt states its scope, and sector blocks say
 plainly that a sector-level claim is not a company-level finding. That is not

@@ -51,17 +51,30 @@ interface DossierTarget {
 }
 
 /**
+ * How many raw insights to ask for per subject.
+ *
+ * Generous on purpose: for anything but a `ready` dossier these *are* the
+ * material, covering the same thirty days the paid briefing used to read. What
+ * actually reaches the prompt is trimmed at render time, where the difference
+ * between a company and its sector backdrop is known.
+ */
+const INSIGHT_LIMIT = 25;
+
+/**
  * Read one dossier and turn it into a block.
  *
  * The four states are four different situations and only one of them is a
  * problem worth acting on here:
  *
- *   ready       take the prose
- *   empty       built, nothing happened in the window — not a failure, skip
- *   not_built   switched on, sweep has not reached it — the fallback's job
+ *   ready       take the prose, plus the insights it does not reproduce
+ *   empty       built, nothing in the window — the insights still come
+ *   not_built   switched on, sweep has not reached it — insights carry it
  *   not_enabled the switch is off, which should not happen once the sync has
- *               run. Self-heal by switching it on through the ledger, so the
- *               state stays honest, and let the fallback cover tonight.
+ *               run. Self-heal by switching it on through the ledger so the
+ *               state stays honest; the insights already cover tonight.
+ *
+ * Since insights arrive in every state, none of these is a gap any more — which
+ * is what retired the paid briefing call as a fallback.
  *
  * Never throws: Distill prose is optional context, and a stock must still be
  * analysable when its dossier is missing.
@@ -71,7 +84,10 @@ async function readBlock(
 ): Promise<DistillDossierBlock | null> {
   let content;
   try {
-    content = await getDistillDossierContent(target.ref, apiKey, baseUrl);
+    content = await getDistillDossierContent(target.ref, apiKey, baseUrl, {
+      includeInsights: true,
+      insightLimit:    INSIGHT_LIMIT,
+    });
   } catch (e) {
     // A 404 here means Distill does not know the entity at all. For a company
     // that is the resolver's problem and already recorded; for a sector it
@@ -101,12 +117,21 @@ async function readBlock(
     builtAt:     body?.builtAt ?? null,
     stale:       body?.stale ?? false,
     content:     body?.content ?? null,
+    // Handed through untouched. The membership rule is Distill's and is about
+    // provenance, not dates — a client-side filter on `from`/`to` would drop
+    // exactly the late-arriving material that makes a dossier stale.
+    insights:    content.insights,
   };
 }
 
-/** Did this block actually bring prose? */
+/** Did this block bring a dossier text? */
 export function hasProse(block: DistillDossierBlock | null | undefined): boolean {
   return !!block?.content?.trim();
+}
+
+/** Did it bring anything at all — dossier text or raw insights? */
+export function hasMaterial(block: DistillDossierBlock | null | undefined): boolean {
+  return hasProse(block) || (block?.insights?.items.length ?? 0) > 0;
 }
 
 /**
@@ -167,18 +192,15 @@ export interface DistillSyncResult {
 /**
  * Bring a symbol's stored Distill context up to date and write it.
  *
- * `mode` keeps the admin page's two words and changes what they buy, because
- * the expensive half moved:
+ * Both modes read the dossiers *and* the insights those dossiers do not yet
+ * reproduce, which together cover everything up to the moment of the request.
+ * There is therefore no gap left for a paid call to repair:
  *
- *   fetch    dossiers only. Free, and covers everything up to yesterday.
- *   refresh  dossiers, plus one `POST /briefings/refresh` when the company has
- *            no dossier prose at all — a stock added today, or one whose switch
- *            was flipped this afternoon. Costs an LLM call upstream, so it
- *            fires on absence, never as a top-up.
- *
- * The fallback is company-only on purpose: `entity_ref` is singular, so covering
- * the sectors too would mean one paid call per sector per stock, and a sector
- * with no dossier yet is a gap that closes by itself tonight.
+ *   fetch    dossiers + insights. Free. The default.
+ *   refresh  additionally one `POST /briefings/refresh` per symbol — an LLM
+ *            synthesis on Distill's instance. Since insights arrived this buys
+ *            a *different rendering* of material we already have, not missing
+ *            material. Company-only, because `entity_ref` is singular.
  */
 export async function buildDistillBundle(
   hints: DistillEntityHints,
@@ -194,7 +216,7 @@ export async function buildDistillBundle(
   let distillCostUsd = 0;
   let fellBack = false;
 
-  if (mode === 'refresh' && entity && !hasProse(company)) {
+  if (mode === 'refresh' && entity) {
     try {
       const result = await triggerDistillRefresh(hints.symbol, entity, apiKey, baseUrl, briefingTypeId);
       briefing = result.briefing ?? briefing;
@@ -215,12 +237,14 @@ export async function buildDistillBundle(
     briefing,
     fetchedAt: new Date().toISOString(),
   };
-  const withProse = [company, ...sectors].filter(hasProse).length;
+  const blocks = [company, ...sectors];
+  const insightCount = blocks.reduce((n, b) => n + (b?.insights?.items.length ?? 0), 0);
   const detail =
-    `${withProse} dossier(s)`
+    `${blocks.filter(hasProse).length} dossier(s)`
+    + ` · ${insightCount} fresh insight(s)`
     + (company ? '' : ', no company entity')
     + (sectors.length ? ` · ${sectors.length} sector(s)` : '')
-    + (fellBack ? ` · briefing fallback${distillCostUsd > 0 ? ` $${distillCostUsd.toFixed(4)}` : ''}` : '');
+    + (fellBack ? ` · briefing${distillCostUsd > 0 ? ` $${distillCostUsd.toFixed(4)}` : ''}` : '');
 
   return { bundle, mode, distillCostUsd, detail };
 }

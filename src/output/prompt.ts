@@ -25,7 +25,7 @@ import {
 import { currencyPrefix, fmtPrice } from '../format.js';
 import { MarketSignals, SectorMedians, StockFinancials } from '../types.js';
 import { PerplexityContext } from '../data/perplexity.js';
-import { DistillBundle, DistillDossierBlock } from '../data/distill.js';
+import { DistillBundle, DistillDossierBlock, DistillInsight } from '../data/distill.js';
 
 export interface PromptData {
   dcf: ReturnType<typeof calculateDCF>;
@@ -77,6 +77,56 @@ function signedPct(n: number | null): string {
  *
  * Fenced blocks are skipped: `#` inside one is content, not a heading.
  */
+/**
+ * How many raw insights a block is allowed to spend on the prompt.
+ *
+ * A company's own are worth the room. Its sector's are backdrop, there can be
+ * two of them, and thirty days of raw industry chatter would outweigh the
+ * company's entire dossier — so they are capped, newest kept.
+ */
+const INSIGHTS_IN_PROMPT: Record<DistillDossierBlock['kind'], number> = {
+  company: 25,
+  sector:  8,
+};
+
+/** `2026-08-27 · wired.com — Title: statement` */
+function insightLine(i: DistillInsight): string {
+  const when   = i.at ? i.at.slice(0, 10) : 'undated';
+  const source = [i.sourceName, i.documentTitle].filter(Boolean).join(' — ');
+  const body   = i.content.replace(/\s+/g, ' ').trim();
+  return `- ${when}${source ? ` · ${source}` : ''}: ${body}`;
+}
+
+/**
+ * The raw material a dossier does not reproduce.
+ *
+ * Two things the reader has to know and cannot infer. These are *unsynthesised*
+ * — single statements that passed no editorial fold — so they do not carry the
+ * weight the dossier prose does. And they are not simply "today": Distill
+ * excludes by provenance, not by date, so a document that arrived late and
+ * never made it into the window's text shows up here with its original date.
+ * That is the same class of item that marks a dossier stale.
+ */
+function distillInsights(block: DistillDossierBlock): string {
+  const all = block.insights?.items ?? [];
+  if (all.length === 0) return '';
+
+  const cap  = INSIGHTS_IN_PROMPT[block.kind];
+  const kept = all.length > cap ? all.slice(-cap) : all;
+  const more = block.insights?.truncated || kept.length < all.length;
+
+  const heading = block.content?.trim()
+    ? 'Raw source statements the dossier above does NOT reproduce'
+    : 'No dossier has been built for this entity yet — the following raw source statements are all there is';
+
+  return `
+**${heading}** (${kept.length}, oldest first, dated by when the news is from rather than
+when Distill saw it). Unsynthesised and unfiltered: weigh a single one as a single
+source.${more ? ' More exist than are shown — absence here is not evidence of absence.' : ''}
+
+${kept.map(insightLine).join('\n')}`;
+}
+
 /** One dossier block, headed by what it is *about* — see `distillDossierSection`. */
 function distillBlock(block: DistillDossierBlock, symbol: string): string {
   const window = block.periodStart && block.periodEnd
@@ -91,12 +141,14 @@ function distillBlock(block: DistillDossierBlock, symbol: string): string {
       + 'finding. Where the company diverges from its sector, that divergence is the signal.'
     : `**Scope: ${symbol} itself.**`;
 
-  return `#### ${block.kind === 'sector' ? 'Sector dossier' : 'Company dossier'} — ${block.displayName} (\`${block.ref}\`)
+  const prose = block.content?.trim()
+    ? `\n${window}${built}${block.stale ? ' · marked stale upstream (a late document landed in a built tile; the window above still holds)' : ''}\n\n${demoteHeadings(block.content.trim(), 3)}`
+    : '';
 
-${scope}
-${window}${built}${block.stale ? ' · marked stale upstream (a late document landed in a built tile; the window above still holds)' : ''}
+  return `#### ${block.kind === 'sector' ? 'Sector' : 'Company'} — ${block.displayName} (\`${block.ref}\`)
 
-${demoteHeadings(block.content!.trim(), 3)}`;
+${scope}${prose}
+${distillInsights(block)}`.trimEnd();
 }
 
 /**
@@ -115,8 +167,11 @@ ${demoteHeadings(block.content!.trim(), 3)}`;
 export function distillDossierSection(symbol: string, distill?: DistillBundle): string {
   if (!distill) return '';
 
+  // A block with no dossier text but with insights still carries material —
+  // that is exactly the just-switched-on entity the paid briefing used to cover.
   const blocks = [distill.company, ...(distill.sectors ?? [])]
-    .filter((b): b is DistillDossierBlock => !!b?.content?.trim());
+    .filter((b): b is DistillDossierBlock =>
+      !!b && (!!b.content?.trim() || (b.insights?.items.length ?? 0) > 0));
   const briefing = distill.briefing;
   if (blocks.length === 0 && !briefing) return '';
 
@@ -144,8 +199,11 @@ Each block states its scope. **Company and sector blocks are not
 interchangeable**: a sector dossier describes the industry backdrop, and
 nothing in it is a fact about ${symbol} unless a company block says so.
 
-The dossier windows end at the start of today, so the current day is covered
-only by a Briefing block if one is present.
+Each block carries two kinds of thing, and they do not weigh the same. The
+**dossier** is Distill's synthesised 30-day picture and is the strong signal. The
+**raw source statements** beneath it are single unsynthesised items the dossier
+does not reproduce — that includes today, which no dossier window covers, but
+also older material that arrived late. Treat one raw statement as one source.
 ${blocks.map((b) => `\n${distillBlock(b, symbol)}\n`).join('')}${briefingBlock}
 `;
 }

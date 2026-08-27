@@ -69,6 +69,7 @@ export type {
   DistillBundle,
   DistillCacheState,
   DistillDossierBlock,
+  DistillInsight,
 } from '../../src/data/distill';
 
 export type { DistillEntityRef, DistillMatchTier } from '../../src/data/distill-entities';
