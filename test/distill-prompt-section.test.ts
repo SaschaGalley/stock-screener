@@ -116,7 +116,7 @@ describe('distillDossierSection', () => {
     assert.doesNotMatch(out, /^## Summary$/m);
   });
 
-  it('marks the briefing as the one block that includes today', () => {
+  it('renders a legacy briefing from an older bundle', () => {
     const out = distillDossierSection('AIR.PA', bundle({
       company: block(),
       briefing: {
@@ -127,7 +127,7 @@ describe('distillDossierSection', () => {
       },
     }));
     assert.match(out, /#### Briefing — Daily/);
-    assert.match(out, /does\* include today/);
+    assert.match(out, /stored from an earlier run/);
   });
 });
 
@@ -194,5 +194,56 @@ describe('raw insights in the prompt', () => {
   it('renders nothing extra when a block brought no insights', () => {
     const out = distillDossierSection('AIR.PA', bundle({ company: block() }));
     assert.doesNotMatch(out, /Raw source statements/);
+  });
+});
+
+describe('the company / sector split', () => {
+  it('keeps the strong-weight claim off the sector section', () => {
+    // The whole reason for two sections: material filed under a heading that
+    // says "strongest qualitative signal" reads as such however the sentences
+    // inside it hedge.
+    const out = distillDossierSection('AIR.PA', bundle({
+      sectors: [block({ kind: 'sector', ref: 'sector:industrials', displayName: 'Industrials' })],
+    }));
+
+    assert.doesNotMatch(out, /strongest qualitative signal/);
+    assert.match(out, /### Sector Context — Industrials \(background, NOT about AIR\.PA\)/);
+  });
+
+  it('says outright that the sector blocks being longer is not weight', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block(),
+      sectors: [block({ kind: 'sector', ref: 'sector:industrials', displayName: 'Industrials' })],
+    }));
+
+    assert.match(out, /\*\*Length here is not weight\.\*\*/);
+  });
+
+  it('emits both sections, company first', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block(),
+      sectors: [block({ kind: 'sector', ref: 'sector:industrials', displayName: 'Industrials' })],
+    }));
+
+    const company = out.indexOf('### Distill Dossier — AIR.PA');
+    const sector  = out.indexOf('### Sector Context');
+    assert.ok(company >= 0 && sector > company, 'the company section comes first');
+    assert.match(out, /strongest qualitative signal/);
+  });
+
+  it('emits no sector section when the stock has none', () => {
+    const out = distillDossierSection('AIR.PA', bundle({ company: block() }));
+    assert.doesNotMatch(out, /### Sector Context/);
+  });
+
+  it('names every sector in the section heading', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      sectors: [
+        block({ kind: 'sector', ref: 'sector:aerospace_defense', displayName: 'Aerospace & Defense' }),
+        block({ kind: 'sector', ref: 'sector:industrials', displayName: 'Industrials' }),
+      ],
+    }));
+
+    assert.match(out, /### Sector Context — Aerospace & Defense, Industrials/);
   });
 });

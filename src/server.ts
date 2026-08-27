@@ -24,9 +24,7 @@ import { StockFinancials } from './types.js';
 import type { AnalysisListEntry, ConsensusBand, OverviewRow, StockSummary } from './api-types.js';
 import { MODELS } from './models.js';
 import {
-  DistillReadOnlyError,
   DistillUnauthorizedError,
-  DistillAmbiguousTypeError,
   DistillEntityUnresolvedError,
 } from './data/distill.js';
 import { distillHintsFor } from './distill-service.js';
@@ -328,8 +326,9 @@ export function createApp(): express.Express {
       // Lax read: stale financials still carry a valid ISIN/name.
       const financials = await readFinancialsLax(symbol);
 
-      // Same merge-and-persist path the nightly job takes (an empty pool keeps
-      // the briefing already stored), so both routes can never drift apart.
+      // Same path the nightly job takes, so the button and the run can never
+      // drift apart. Free now: it re-reads the dossiers and the insights they
+      // do not reproduce, and buys nothing.
       const { distillRefresh } = await import('./hatchet/tasks/single.js');
       const { result } = await viaHatchet(
         () => distillRefresh.run({ symbol }, interactive({ symbol })),
@@ -337,29 +336,18 @@ export function createApp(): express.Express {
           distillHintsFor(symbol, financials),
           cfg.distillApiKey!,
           cfg.distillApiUrl,
-          cfg.distillBriefingTypeId,
-          'refresh',
         ) as never }),
       );
 
       res.json({
-        ok:             true,
+        ok:     true,
         symbol,
-        cacheState:     result.cacheState,
-        distillCostUsd: result.distillCostUsd,
-        bundle:         result.bundle,
+        detail: result.detail,
+        bundle: result.bundle,
       });
     } catch (e) {
-      if (e instanceof DistillReadOnlyError) {
-        res.status(403).json({ error: 'distill_read_only', message: e.message });
-        return;
-      }
       if (e instanceof DistillUnauthorizedError) {
         res.status(401).json({ error: 'distill_unauthorized', message: e.message });
-        return;
-      }
-      if (e instanceof DistillAmbiguousTypeError) {
-        res.status(422).json({ error: 'distill_ambiguous_type', message: e.message });
         return;
       }
       // The symbol maps to no single entity. 409 rather than 404: the request

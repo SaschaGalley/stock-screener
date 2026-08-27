@@ -17,7 +17,6 @@ const ConfigSchema = z.object({
   // A malformed briefing-type id should disable the feature, not crash the
   // process; a bad LOG_LEVEL should fall back to 'info'. `.catch()` degrades
   // gracefully instead of failing safeParse for the whole config.
-  distillBriefingTypeId: z.string().uuid().optional().catch(undefined),
   /**
    * Postgres connection string. Required — the app has no second store to fall
    * back to. Absence is reported by `getPool()` with an actionable message
@@ -75,7 +74,6 @@ export function getConfig(): EnvConfig {
     pplxApiKey: process.env.PPLX_API_KEY,
     distillApiKey: process.env.DISTILL_API_KEY,
     distillApiUrl: process.env.DISTILL_API_URL,
-    distillBriefingTypeId: process.env.DISTILL_BRIEFING_TYPE_ID,
     databaseUrl: process.env.DATABASE_URL,
     // CACHE_DIR is still honoured so an existing deployment keeps finding its
     // downloaded filings after the rename.

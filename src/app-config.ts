@@ -27,23 +27,6 @@ import { DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, resolveModelId } from './m
 /** Cron field count we accept: standard 5-field (minute hour dom month dow). */
 const CRON_RE = /^(\S+\s+){4}\S+$/;
 
-/**
- * What the Distill step does per symbol.
- *
- * Both modes read the rolling dossiers of the company and its sectors, plus the
- * raw insights those dossiers do not yet reproduce. That covers everything up to
- * the moment of the request and costs nothing.
- *
- *  - `fetch`   → dossiers + insights only. Free. The default, because it is
- *    complete: there is no gap left for a paid call to fill.
- *  - `refresh` → additionally buys one `POST /briefings/refresh` per symbol, an
- *    LLM synthesis on the Distill instance. Since insights arrived this is a
- *    *want*, not a repair — keep it off unless someone actually reads the
- *    synthesised briefing.
- */
-export const DISTILL_MODES = ['refresh', 'fetch'] as const;
-export type DistillMode = (typeof DISTILL_MODES)[number];
-
 export const AppConfigSchema = z.object({
   schedule: z.object({
     enabled:  z.boolean().default(true),
@@ -59,7 +42,6 @@ export const AppConfigSchema = z.object({
     }).prefault({}),
     distill: z.object({
       enabled: z.boolean().default(true),
-      mode:    z.enum(DISTILL_MODES).default('fetch'),
     }).prefault({}),
     analysis: z.object({
       enabled: z.boolean().default(true),

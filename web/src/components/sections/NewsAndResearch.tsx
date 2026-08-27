@@ -5,7 +5,6 @@ import type {
   SearchProviderTrace,
   DistillBundle,
   DistillBriefing,
-  DistillCacheState,
   DistillDossierBlock,
   DistillInsight,
 } from '../../types';
@@ -17,7 +16,7 @@ interface Props {
   distill: DistillBundle | null;
   searches: SearchTrace | null;
   /** Called after a successful Distill refresh so the parent can re-fetch
-   *  the bundle and surface the new briefings + lastRefresh metadata. */
+   *  the freshly read dossiers and insights. */
   onDistillRefreshed: () => void;
 }
 
@@ -152,9 +151,7 @@ function DistillSection({
   // Persistent error states — once tripped, the button stays disabled with a
   // hint until the user fixes the upstream config (no point retrying).
   const [persistent, setPersistent] = useState<
-    | { kind: 'read-only' }
     | { kind: 'unauthorized' }
-    | { kind: 'ambiguous-type' }
     /** Symbol-specific: the server carries the candidate list in `detail`. */
     | { kind: 'entity-unresolved'; detail: string }
     | null
@@ -176,14 +173,8 @@ function DistillSection({
       onRefreshed();
     } catch (e) {
       const msg = (e as Error).message ?? 'Refresh failed';
-      if (msg.includes('distill_read_only') || msg.includes('read-only')) {
-        setPersistent({ kind: 'read-only' });
-      } else if (msg.includes('distill_unauthorized')) {
+      if (msg.includes('distill_unauthorized')) {
         setPersistent({ kind: 'unauthorized' });
-      } else if (msg.includes('distill_ambiguous_type')) {
-        // Match the structured code only — substrings like 'default'/'Ambiguous'
-        // tripped this refresh-disabling state on unrelated errors.
-        setPersistent({ kind: 'ambiguous-type' });
       } else if (msg.includes('distill_entity_unresolved')) {
         // No single Distill entity answers to this ticker. Retrying changes
         // nothing until someone adds the ISIN or picks the right entity, so
@@ -200,7 +191,6 @@ function DistillSection({
     }
   }
 
-  const last = distill?.lastRefresh;
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -208,15 +198,6 @@ function DistillSection({
           Distill Briefing
         </h3>
         <div className="flex items-center gap-2">
-          {last && <CacheStateBadge state={last.cacheState} />}
-          {last && last.distillCostUsd > 0 && (
-            <span
-              className="font-mono text-[10px] text-ink-500 tabular"
-              title="Cost of distill drain batches in this refresh"
-            >
-              +${last.distillCostUsd.toFixed(4)} distill
-            </span>
-          )}
           {distill?.fetchedAt && (
             <span className="text-[10px] text-ink-600">
               {new Date(distill.fetchedAt).toLocaleString()}
@@ -246,9 +227,8 @@ function DistillSection({
 
       {blocks.length === 0 && !briefing ? (
         <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
-          {last?.cacheState === 'empty-pool'
-            ? 'No fresh insights available upstream — Distill has nothing new to summarise.'
-            : 'No dossier yet — Distill builds these once a night for switched-on entities.'}
+          Nichts von Distill — weder ein Dossier noch frische Insights. Der Sweep
+          baut Dossiers einmal pro Nacht für eingeschaltete Entities.
         </div>
       ) : (
         <div className="space-y-2">
@@ -279,16 +259,12 @@ function RefreshButton({ busy, disabled, onClick }: { busy: boolean; disabled: b
  *  upstream (Distill admin or .env) — no point in retrying without action.
  *  `detail` replaces the canned copy when the server sent something specific. */
 function PersistentHint({ kind, detail }: {
-  kind: 'read-only' | 'unauthorized' | 'ambiguous-type' | 'entity-unresolved';
+  kind: 'unauthorized' | 'entity-unresolved';
   detail?: string;
 }) {
   const messages: Record<typeof kind, string> = {
-    'read-only':
-      'The configured Distill key is read-only. Mint a key with `briefings:write` scope in the Distill admin (Project → Access keys) to enable refresh.',
     'unauthorized':
       'Distill rejected the key as invalid. Check `DISTILL_API_KEY` in your .env and confirm the key still exists in the Distill admin.',
-    'ambiguous-type':
-      'The Distill project has multiple briefing types and no default — star one in the Distill admin (Project → Briefing-Typen) and the refresh will pick it up.',
     'entity-unresolved':
       'This ticker does not map to exactly one Distill entity. Add the ISIN or pick the entity in Distill — guessing would attach another company’s briefing.',
   };
@@ -299,23 +275,6 @@ function PersistentHint({ kind, detail }: {
   );
 }
 
-function CacheStateBadge({ state }: { state: DistillCacheState }) {
-  const meta: Record<DistillCacheState, { label: string; cls: string; title: string }> = {
-    'still-current': { label: 'still-current', cls: 'border-emerald-700 bg-emerald-900 text-emerald-400', title: 'Existing briefing still covers all fresh insights — no LLM call needed.' },
-    'generated':     { label: 'generated',     cls: 'border-accent bg-accent-soft text-ink-200',          title: 'Fresh briefing was just generated (LLM call ran).' },
-    'empty-pool':    { label: 'empty-pool',    cls: 'border-amber-700 bg-amber-950 text-amber-300',       title: 'No fresh insights available upstream — nothing to summarise.' },
-    'unknown':       { label: 'unknown',       cls: 'border-ink-800 bg-ink-950 text-ink-500',             title: 'Server did not return a cache-state header.' },
-  };
-  const m = meta[state];
-  return (
-    <span
-      className={`rounded border px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider ${m.cls}`}
-      title={m.title}
-    >
-      {m.label}
-    </span>
-  );
-}
 
 /**
  * A single Distill briefing. Open by default for the most-recent one to keep

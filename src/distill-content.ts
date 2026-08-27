@@ -20,13 +20,8 @@
  */
 
 import { getConfig } from './config.js';
-import type { DistillMode } from './app-config.js';
-import { readDistillLax, writeDistill } from './db/store.js';
-import {
-  DistillBundle,
-  DistillDossierBlock,
-  triggerDistillRefresh,
-} from './data/distill.js';
+import { writeDistill } from './db/store.js';
+import { DistillBundle, DistillDossierBlock } from './data/distill.js';
 import { getDistillDossierContent } from './data/distill-dossier.js';
 import { DistillEntityGoneError } from './data/distill-errors.js';
 import {
@@ -183,49 +178,25 @@ export async function loadDistillDossiers(
 
 export interface DistillSyncResult {
   bundle:         DistillBundle;
-  mode:           DistillMode;
   distillCostUsd: number;
   /** One line for the run log. */
   detail:         string;
 }
 
 /**
- * Bring a symbol's stored Distill context up to date and write it.
+ * Assemble a symbol's Distill context: the company dossier, the dossiers of the
+ * sectors it sits in, and the raw insights none of them reproduce.
  *
- * Both modes read the dossiers *and* the insights those dossiers do not yet
- * reproduce, which together cover everything up to the moment of the request.
- * There is therefore no gap left for a paid call to repair:
- *
- *   fetch    dossiers + insights. Free. The default.
- *   refresh  additionally one `POST /briefings/refresh` per symbol — an LLM
- *            synthesis on Distill's instance. Since insights arrived this buys
- *            a *different rendering* of material we already have, not missing
- *            material. Company-only, because `entity_ref` is singular.
+ * Free, in every case. There used to be a mode here that decided whether to buy
+ * a briefing when the dossier had a gap; since insights arrive in every state
+ * there is no gap, so there is nothing left for the setting to decide.
  */
 export async function buildDistillBundle(
   hints: DistillEntityHints,
   apiKey: string,
   baseUrl: string,
-  briefingTypeId: string | undefined,
-  mode: DistillMode,
 ): Promise<DistillSyncResult> {
   const { company, sectors, entity } = await loadDistillDossiers(hints, apiKey, baseUrl);
-  const prior = await readDistillLax(hints.symbol);
-
-  let briefing = prior?.briefing ?? null;
-  let distillCostUsd = 0;
-  let fellBack = false;
-
-  if (mode === 'refresh' && entity) {
-    try {
-      const result = await triggerDistillRefresh(hints.symbol, entity, apiKey, baseUrl, briefingTypeId);
-      briefing = result.briefing ?? briefing;
-      distillCostUsd = result.distillCostUsd;
-      fellBack = true;
-    } catch (e) {
-      logger.warn(`Distill briefing fallback for ${hints.symbol} failed: ${(e as Error).message}`);
-    }
-  }
 
   const bundle: DistillBundle = {
     ticker:    hints.symbol,
@@ -233,20 +204,18 @@ export async function buildDistillBundle(
     entity,
     company,
     sectors,
-    // An empty pool must not blank context that is already on disk.
-    briefing,
     fetchedAt: new Date().toISOString(),
   };
+
   const blocks = [company, ...sectors];
   const insightCount = blocks.reduce((n, b) => n + (b?.insights?.items.length ?? 0), 0);
   const detail =
     `${blocks.filter(hasProse).length} dossier(s)`
     + ` · ${insightCount} fresh insight(s)`
     + (company ? '' : ', no company entity')
-    + (sectors.length ? ` · ${sectors.length} sector(s)` : '')
-    + (fellBack ? ` · briefing${distillCostUsd > 0 ? ` $${distillCostUsd.toFixed(4)}` : ''}` : '');
+    + (sectors.length ? ` · ${sectors.length} sector(s)` : '');
 
-  return { bundle, mode, distillCostUsd, detail };
+  return { bundle, distillCostUsd: 0, detail };
 }
 
 /**
@@ -258,11 +227,9 @@ export async function syncDistillDossiers(
   hints: DistillEntityHints,
   apiKey: string,
   baseUrl: string,
-  briefingTypeId: string | undefined,
-  mode: DistillMode,
   runId?: number | null,
 ): Promise<DistillSyncResult> {
-  const result = await buildDistillBundle(hints, apiKey, baseUrl, briefingTypeId, mode);
+  const result = await buildDistillBundle(hints, apiKey, baseUrl);
   await writeDistill(hints.symbol, result.bundle, runId);
   return result;
 }

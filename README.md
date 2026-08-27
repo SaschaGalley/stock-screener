@@ -28,7 +28,7 @@ there is no second step and one lockfile describes the whole tree.
 | `FINNHUB_API_KEY` | News, peer medians, sector ETF mapping | yes | [finnhub.io](https://finnhub.io) — free tier |
 | `OPENAI_API_KEY` | OpenAI — `--model terra/luna/mini/gpt-*/o1-*` | optional | [platform.openai.com](https://platform.openai.com) |
 | `PPLX_API_KEY` | Perplexity Sonar — web-sourced context paragraph | optional | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
-| `DISTILL_API_KEY` + `DISTILL_API_URL` | Distill briefing service — curated multi-source briefings per ticker | optional | mint in Distill Admin → Project → Access keys |
+| `DISTILL_API_KEY` + `DISTILL_API_URL` | Distill — rolling dossiers per company and sector, plus raw insights | optional | mint in Distill Admin → Project → Access keys, scope `dossiers:write` (no `briefings:write` needed) |
 | `BRAVE_API_KEY` | Brave web search | optional | [brave.com/search/api](https://brave.com/search/api/) — $5 free credits/mo |
 | `TAVILY_API_KEY` | Tavily web search | optional | [tavily.com](https://tavily.com) |
 | `FRED_API_KEY` | Live macro rates (10Y, AAA, VIX, DXY, yield curve) | optional | [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
@@ -377,7 +377,7 @@ Per symbol, in order:
 | # | Step | What it does | Default |
 | --- | --- | --- | --- |
 | 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
-| 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`, free). `refresh` additionally buys one `POST /briefings/refresh` per symbol — an LLM synthesis of material already in hand, not a repair | on, `fetch` |
+| 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`). Free, with nothing to configure | on |
 | 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-5.6-terra` |
 
 Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).
@@ -577,9 +577,12 @@ rather than used to discard the block.
 
 `?include=insights` returns, alongside the dossier, the raw statements that
 dossier does **not** reproduce. They arrive in every state, so a just-switched-on
-entity has material immediately — which is what retired the paid
-`POST /briefings/refresh` as a fallback. Both modes are now free; `refresh` only
-buys an extra LLM *synthesis* of material we already hold, and is off by default.
+entity has material immediately — which retired `POST /briefings/refresh`
+entirely. Nothing here spends LLM budget on Distill's instance any more, so the
+key needs no `briefings:write` scope, `DISTILL_BRIEFING_TYPE_ID` is gone, and so
+is the `refresh`/`fetch` switch on the admin page: with no paid call left there
+was nothing for it to decide. Bundles written before this still carry a
+`briefing`, and the UI renders one if it finds it; nothing produces them.
 
 The membership rule is Distill's and is about **provenance, not dates**, which is
 the one thing easy to get wrong here. It is tempting to think the insights are
@@ -599,6 +602,22 @@ The prompt renders them under the dossier as a separate, explicitly weaker class
 — unsynthesised single statements, one line is one source — and caps sector
 insights, since two sector blocks of thirty days of industry chatter would
 otherwise outweigh the company's own dossier.
+
+### Why the prompt has two sections, not one
+
+Company and sector prose used to sit under a single heading that called its
+contents "your strongest qualitative signal", and each sector block then spent a
+paragraph walking that back. Structure outweighs prose in a prompt: material
+filed under a strong-weight heading reads as strong-weight material however the
+sentences hedge. So there are two sections — `### Distill Dossier — <symbol>`
+carrying the strong-weight claim, and `### Sector Context (background, NOT about
+<symbol>)` after it.
+
+That also handles the volume problem the labelling alone could not. Two sector
+dossiers routinely outrun the company's several times over — Airbus is 4k
+characters of its own against 32k of industry — and length is a signal in itself.
+Under a heading that says background, length reads as thoroughness about the
+backdrop rather than as importance to the company.
 
 Every block reaching the analysis prompt states its scope, and sector blocks say
 plainly that a sector-level claim is not a company-level finding. That is not

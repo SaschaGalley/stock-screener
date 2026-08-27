@@ -169,11 +169,9 @@ export async function runDistillStep(
         distillHintsFor(symbol, financials),
         cfg.distillApiKey!,
         cfg.distillApiUrl,
-        cfg.distillBriefingTypeId,
-        config.steps.distill.mode,
         _runId,
       );
-      return `${res.mode}: ${res.detail}`;
+      return res.detail;
     });
     return result('distill', 'ok', detail, ms);
   } catch (e) {

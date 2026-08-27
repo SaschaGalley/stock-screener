@@ -16,18 +16,8 @@
  */
 
 import { logger } from './utils/logger.js';
-// The mode vocabulary is the admin page's, so app-config owns it — this module
-// executes what was configured rather than declaring its own copy of the words.
-import type { DistillMode } from './app-config.js';
 import { clearDistillEntity, readDistillEntity, writeDistillEntity } from './db/admin.js';
 import { readDistillLax, writeDistill } from './db/store.js';
-import {
-  DistillBundle,
-  DistillCacheState,
-  DistillRefreshResult,
-  fetchDistillBriefings,
-  triggerDistillRefresh,
-} from './data/distill.js';
 import {
   DistillEntityHints,
   DistillEntityHit,

@@ -67,14 +67,13 @@ export type {
 export type {
   DistillBriefing,
   DistillBundle,
-  DistillCacheState,
   DistillDossierBlock,
   DistillInsight,
 } from '../../src/data/distill';
 
 export type { DistillEntityRef, DistillMatchTier } from '../../src/data/distill-entities';
 
-export type { AppConfig, DistillMode } from '../../src/app-config';
+export type { AppConfig } from '../../src/app-config';
 
 export type { SchedulerStatus } from '../../src/scheduler';
 

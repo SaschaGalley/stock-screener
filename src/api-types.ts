@@ -21,7 +21,7 @@ import type { StockFinancials, MarketSignals, NewsItem, SectorMedians, Technical
 import type { AnalysisManifestEntry } from './db/store.js';
 import type { ComputedMetrics } from './analysis/computeMetrics.js';
 import type { PerplexityContext } from './data/perplexity.js';
-import type { DistillBundle, DistillCacheState } from './data/distill.js';
+import type { DistillBundle } from './data/distill.js';
 import type { DistillEntityHit } from './data/distill-entities.js';
 import type { MarketRates } from './data/fred.js';
 import type { AppConfig } from './app-config.js';
@@ -184,13 +184,13 @@ export interface AddStockResponse {
   summary: StockSummary | null;
 }
 
-/** `POST /api/stocks/:symbol/distill-refresh` */
+/** `POST /api/stocks/:symbol/distill-refresh` — free; re-reads, buys nothing. */
 export interface DistillRefreshResponse {
-  ok:             boolean;
-  symbol:         string;
-  cacheState:     DistillCacheState;
-  distillCostUsd: number;
-  bundle:         DistillBundle;
+  ok:     boolean;
+  symbol: string;
+  /** One line: how many dossiers and insights came back. */
+  detail: string;
+  bundle: DistillBundle;
 }
 
 /** Candidate carried by a 409 `distill_entity_unresolved`. */

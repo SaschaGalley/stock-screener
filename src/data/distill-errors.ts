@@ -10,14 +10,6 @@
 
 import type { DistillEntityHit } from './distill-entities.js';
 
-/** Sentinel thrown when the configured API key lacks `briefings:write` scope. */
-export class DistillReadOnlyError extends Error {
-  constructor(msg = 'Distill key is read-only — mint a write-scoped key to use refresh.') {
-    super(msg);
-    this.name = 'DistillReadOnlyError';
-  }
-}
-
 /** The configured token is missing/invalid (401). Distinct from 403 (key
  *  exists but lacks `briefings:write`) so the UI can guide the user to the
  *  right fix (rotate the env var vs. rescope the existing key). */
@@ -25,16 +17,6 @@ export class DistillUnauthorizedError extends Error {
   constructor(msg = 'Distill key is missing or invalid — check DISTILL_API_KEY in your .env.') {
     super(msg);
     this.name = 'DistillUnauthorizedError';
-  }
-}
-
-/** Server returned 422 — the project has multiple briefing types and no
- *  `default_briefing_type_id` set. Fix is admin-side (star a type in the
- *  Distill admin) OR pass `briefingTypeId` explicitly. */
-export class DistillAmbiguousTypeError extends Error {
-  constructor(msg = 'Distill project has multiple briefing types and no default — star one in the Distill admin (Project → Briefing-Typen) or pass an explicit briefing_type_id.') {
-    super(msg);
-    this.name = 'DistillAmbiguousTypeError';
   }
 }
 

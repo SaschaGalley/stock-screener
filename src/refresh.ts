@@ -85,14 +85,10 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
   // header-refresh just pulls whatever's newest from the upstream corpus.
   if (includeDistill && cfg.distillApiKey) {
     try {
-      // `fetch`: a data refresh reads what Distill has already built and never
-      // spends an LLM call on its instance. The nightly step decides otherwise.
       await syncDistillDossiers(
         distillHintsFor(symbol, bundle.financials),
         cfg.distillApiKey,
         cfg.distillApiUrl,
-        cfg.distillBriefingTypeId,
-        'fetch',
         runId,
       );
     } catch (e) {

@@ -112,8 +112,6 @@ export const distillRefresh = hatchet.task<DistillRefreshInput, DistillRefreshOu
         distillHintsFor(input.symbol, financials),
         cfg.distillApiKey!,
         cfg.distillApiUrl,
-        cfg.distillBriefingTypeId,
-        'refresh',
       );
       return { result: result as unknown as JsonPayload };
     });

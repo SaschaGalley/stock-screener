@@ -269,37 +269,18 @@ export default function AdminPage() {
             />
           </Card>
 
-          <Card title="2 · Distill" hint="Briefings pro Aktie">
+          <Card title="2 · Distill" hint="Dossiers + frische Insights">
             <Toggle
               checked={config.steps.distill.enabled}
               onChange={(v) => patch((d) => { d.steps.distill.enabled = v; })}
               label="Distill einbeziehen"
               hint={meta.keys.distill ? meta.distillApiUrl : 'DISTILL_API_KEY fehlt — Schritt wird übersprungen'}
             />
-            <div className="space-y-1.5">
-              {(['refresh', 'fetch'] as const).map((mode) => (
-                <label key={mode} className="flex cursor-pointer items-start gap-2">
-                  <input
-                    type="radio"
-                    name="distill-mode"
-                    checked={config.steps.distill.mode === mode}
-                    onChange={() => patch((d) => { d.steps.distill.mode = mode; })}
-                    disabled={!config.steps.distill.enabled}
-                    className="mt-0.5 accent-[var(--color-accent)]"
-                  />
-                  <span>
-                    <span className="text-sm text-ink-200">
-                      {mode === 'refresh' ? 'refresh (POST)' : 'fetch (GET)'}
-                    </span>
-                    <span className="block text-[11px] text-ink-500">
-                      {mode === 'refresh'
-                        ? 'Drain + neues Briefing — kostet LLM-Budget auf der Distill-Instanz.'
-                        : 'Nur das aktuell veröffentlichte Briefing holen — kostenlos.'}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
+            <p className="text-[11px] leading-relaxed text-ink-500">
+              Holt das Firmen-Dossier, die Dossiers der Sektoren der Aktie und die rohen
+              Insights, die keines davon wiedergibt. Kostenlos — es gibt nichts mehr
+              einzustellen, weil kein bezahlter Aufruf mehr nötig ist.
+            </p>
           </Card>
 
           <Card title="3 · Analyse" hint="Nur wenn das Verdict zu alt ist">

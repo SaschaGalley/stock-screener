@@ -152,60 +152,83 @@ ${distillInsights(block)}`.trimEnd();
 }
 
 /**
- * Everything Distill has to say, as blocks that cannot be mistaken for each
- * other.
+ * Everything Distill has to say, as two sections that cannot be read as one.
  *
- * The labelling is not decoration. A sector dossier read as company-specific is
- * the observed failure mode of this integration, so every block states its
- * scope before its prose, and the sector blocks say plainly that a sector-level
- * claim is not a company-level finding.
+ * The split is the point. Company and sector prose used to sit under a single
+ * heading that declared its contents "your strongest qualitative signal", and
+ * each sector block then spent a paragraph walking that back. In a prompt,
+ * structure outweighs prose: material filed under a strong-weight heading reads
+ * as strong-weight material however the sentences hedge. So the claim now covers
+ * only the company's own dossier, and the sectors get their own section, headed
+ * as background, placed after.
  *
- * The dossier window closes at the start of today by construction, so nothing
- * here covers the current day. The briefing block, when present, is the one
- * that does.
+ * It also answers the volume problem the labelling alone could not. Two sector
+ * dossiers routinely outweigh a company's several times over — Airbus has 2.9k
+ * characters of its own against 20k of industry — and length is a signal in
+ * itself. Under a heading that says "background", length reads as thoroughness
+ * about the backdrop rather than as importance to the company.
  */
 export function distillDossierSection(symbol: string, distill?: DistillBundle): string {
   if (!distill) return '';
 
   // A block with no dossier text but with insights still carries material —
   // that is exactly the just-switched-on entity the paid briefing used to cover.
-  const blocks = [distill.company, ...(distill.sectors ?? [])]
-    .filter((b): b is DistillDossierBlock =>
-      !!b && (!!b.content?.trim() || (b.insights?.items.length ?? 0) > 0));
+  const carries = (b: DistillDossierBlock | null | undefined): b is DistillDossierBlock =>
+    !!b && (!!b.content?.trim() || (b.insights?.items.length ?? 0) > 0);
+
+  const company  = carries(distill.company) ? distill.company : null;
+  const sectors  = (distill.sectors ?? []).filter(carries);
   const briefing = distill.briefing;
-  if (blocks.length === 0 && !briefing) return '';
+  if (!company && sectors.length === 0 && !briefing) return '';
 
   const briefingBlock = briefing
     ? `
 #### Briefing — ${briefing.briefingTypeName} (${briefing.createdAt.slice(0, 10)}, ${briefing.insightCount} insights)
 
-**Scope: ${symbol} itself.** Unlike the dossiers above this one *does* include today.
+**Scope: ${symbol} itself.** A synthesis stored from an earlier run.
 
 ${demoteHeadings(briefing.body.trim(), 3)}`
     : '';
 
-  return `
-### Distill Dossiers (curated, multi-source — weight HIGHER than Perplexity / search)
+  const companySection = company || briefing
+    ? `
+### Distill Dossier — ${symbol} (curated, multi-source — weight HIGHER than Perplexity / search)
 
 Synthesised by Distill from a curated set of sources (vetted RSS, earnings
 transcripts, sell-side research, expert commentary). Because the editorial
-filtering happens upstream, treat these as your **strongest qualitative
-signal** — stronger than raw search or Perplexity, second only to the
-quantitative valuation models and analyst consensus. Where a dossier
-contradicts the calculated models or the analyst consensus, surface the
-divergence explicitly in the bull or bear case.
+filtering happens upstream, treat this as your **strongest qualitative signal**
+— stronger than raw search or Perplexity, second only to the quantitative
+valuation models and analyst consensus. Where it contradicts the calculated
+models or the analyst consensus, surface the divergence explicitly in the bull
+or bear case.
 
-Each block states its scope. **Company and sector blocks are not
-interchangeable**: a sector dossier describes the industry backdrop, and
-nothing in it is a fact about ${symbol} unless a company block says so.
+The block carries two kinds of thing and they do not weigh the same. The
+**dossier** is Distill's synthesised 30-day picture and is the strong signal.
+The **raw source statements** beneath it are single unsynthesised items the
+dossier does not reproduce — that includes today, which no dossier window
+covers, but also older material that arrived late. Treat one raw statement as
+one source.
+${company ? `\n${distillBlock(company, symbol)}\n` : ''}${briefingBlock}
+`
+    : '';
 
-Each block carries two kinds of thing, and they do not weigh the same. The
-**dossier** is Distill's synthesised 30-day picture and is the strong signal. The
-**raw source statements** beneath it are single unsynthesised items the dossier
-does not reproduce — that includes today, which no dossier window covers, but
-also older material that arrived late. Treat one raw statement as one source.
-${blocks.map((b) => `\n${distillBlock(b, symbol)}\n`).join('')}${briefingBlock}
-`;
+  const sectorSection = sectors.length > 0
+    ? `
+### Sector Context — ${sectors.map((b) => b.displayName).join(', ')} (background, NOT about ${symbol})
+
+Distill dossiers for the *industries* ${symbol} sits in. They are here to give
+you the backdrop the company is read against, and nothing in them is a fact
+about ${symbol}. A sector-wide headwind is a reason to check whether this
+company shares it — never a finding that it does. Where ${symbol}'s own numbers
+diverge from its sector's narrative, that divergence is the signal, and it is
+worth more than either block on its own.
+
+These blocks are usually longer than the company's own dossier, because an
+industry generates more text than one firm. **Length here is not weight.**
+${sectors.map((b) => `\n${distillBlock(b, symbol)}\n`).join('')}`
+    : '';
+
+  return `${companySection}${sectorSection}`;
 }
 
 

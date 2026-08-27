@@ -366,8 +366,6 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
           distillHintsFor(symbol, financials),
           cfg.distillApiKey!,
           cfg.distillApiUrl,
-          cfg.distillBriefingTypeId,
-          'fetch',
         ).then((r) => r.bundle)
           .catch((e) => {
             logger.warn(`Distill unavailable: ${(e as Error).message}`);
