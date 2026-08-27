@@ -278,15 +278,42 @@ export async function clearDistillEntity(symbol: string, baseUrl?: string): Prom
 // ── Distill dossier ledger ───────────────────────────────────────────────────
 
 /**
- * Why a symbol is or is not in sync upstream. The vocabulary is the migration's
+ * What a dossier switch is set on. Companies are the watchlist itself; sectors
+ * are entities of their own in Distill, shared by every stock that sits in
+ * them, and follow the same rules.
+ */
+export type DossierKind = 'company' | 'sector';
+
+/** A subject is a kind plus its identifier — a ticker, or a sector handle. */
+export interface DossierSubject {
+  kind:    DossierKind;
+  subject: string;
+}
+
+/**
+ * Companies are upper-case tickers, sector handles are lower-case snake_case.
+ * Normalising by kind here means every caller writes the same primary key
+ * without having to remember which convention applies.
+ */
+export function normaliseSubject(kind: DossierKind, subject: string): string {
+  const trimmed = subject.trim();
+  return kind === 'company' ? trimmed.toUpperCase() : trimmed.toLowerCase();
+}
+
+/** Stable key for maps and sets: a ticker and a handle could collide as text. */
+export function subjectKey(s: DossierSubject): string {
+  return `${s.kind}:${normaliseSubject(s.kind, s.subject)}`;
+}
+
+/**
+ * Why a subject is or is not in sync upstream. The vocabulary is the migration's
  * CHECK constraint, restated here as a type so a typo is a build error rather
  * than a rejected INSERT at 3am.
  */
 export type DossierState = 'synced' | 'pending' | 'unresolved' | 'ineligible' | 'forbidden';
 
-export interface DossierLedgerRow {
-  symbol:      string;
-  /** Null while the registry does not know this symbol. */
+export interface DossierLedgerRow extends DossierSubject {
+  /** Null while the registry does not know this subject. */
   entityId:    string | null;
   desired:     boolean;
   /** What Distill last confirmed; null until a call has ever succeeded. */
@@ -299,14 +326,15 @@ export interface DossierLedgerRow {
 }
 
 interface DossierRow {
-  symbol: string; entity_id: string | null; desired: boolean;
+  kind: string; subject: string; entity_id: string | null; desired: boolean;
   applied: boolean | null; state: string; detail: string | null;
   attempts: number; attempted_at: Date | null; synced_at: Date | null;
 }
 
 function toLedgerRow(row: DossierRow): DossierLedgerRow {
   return {
-    symbol:      row.symbol,
+    kind:        row.kind as DossierKind,
+    subject:     row.subject,
     entityId:    row.entity_id,
     desired:     row.desired,
     applied:     row.applied,
@@ -319,21 +347,24 @@ function toLedgerRow(row: DossierRow): DossierLedgerRow {
 }
 
 const DOSSIER_COLUMNS =
-  'symbol, entity_id, desired, applied, state, detail, attempts, attempted_at, synced_at';
+  'kind, subject, entity_id, desired, applied, state, detail, attempts, attempted_at, synced_at';
 
 /** The whole ledger for one Distill deployment — what a full sync reconciles against. */
 export async function listDossiers(baseUrl: string): Promise<DossierLedgerRow[]> {
   const res = await query<DossierRow>(
-    `SELECT ${DOSSIER_COLUMNS} FROM distill_dossiers WHERE base_url = $1 ORDER BY symbol`,
+    `SELECT ${DOSSIER_COLUMNS} FROM distill_dossiers WHERE base_url = $1 ORDER BY kind, subject`,
     [baseUrl],
   );
   return res.rows.map(toLedgerRow);
 }
 
-export async function readDossier(symbol: string, baseUrl: string): Promise<DossierLedgerRow | null> {
+export async function readDossier(
+  s: DossierSubject, baseUrl: string,
+): Promise<DossierLedgerRow | null> {
   const row = await queryOne<DossierRow>(
-    `SELECT ${DOSSIER_COLUMNS} FROM distill_dossiers WHERE base_url = $1 AND symbol = $2`,
-    [baseUrl, symbol.toUpperCase()],
+    `SELECT ${DOSSIER_COLUMNS} FROM distill_dossiers
+      WHERE base_url = $1 AND kind = $2 AND subject = $3`,
+    [baseUrl, s.kind, normaliseSubject(s.kind, s.subject)],
   );
   return row ? toLedgerRow(row) : null;
 }
@@ -350,12 +381,12 @@ export async function readDossier(symbol: string, baseUrl: string): Promise<Doss
  * to do, which is the local half of the endpoint's idempotency.
  */
 export async function recordDossierIntent(
-  baseUrl: string, symbol: string, desired: boolean, entityId?: string | null,
+  baseUrl: string, s: DossierSubject, desired: boolean, entityId?: string | null,
 ): Promise<void> {
   await query(
-    `INSERT INTO distill_dossiers (base_url, symbol, entity_id, desired, state)
-     VALUES ($1, $2, $3, $4, 'pending')
-     ON CONFLICT (base_url, symbol) DO UPDATE SET
+    `INSERT INTO distill_dossiers (base_url, kind, subject, entity_id, desired, state)
+     VALUES ($1, $2, $3, $4, $5, 'pending')
+     ON CONFLICT (base_url, kind, subject) DO UPDATE SET
        entity_id  = COALESCE(EXCLUDED.entity_id, distill_dossiers.entity_id),
        desired    = EXCLUDED.desired,
        state      = CASE
@@ -365,7 +396,7 @@ export async function recordDossierIntent(
                       ELSE 'pending'
                     END,
        updated_at = now()`,
-    [baseUrl, symbol.toUpperCase(), entityId ?? null, desired],
+    [baseUrl, s.kind, normaliseSubject(s.kind, s.subject), entityId ?? null, desired],
   );
 }
 
@@ -380,20 +411,20 @@ export interface DossierOutcome {
 
 /**
  * Record what came back. `attempts` counts consecutive failures — reset on a
- * confirmed sync — so a symbol that keeps failing is visible without reading
+ * confirmed sync — so a subject that keeps failing is visible without reading
  * logs.
  */
 export async function recordDossierOutcome(
-  baseUrl: string, symbol: string, desired: boolean, outcome: DossierOutcome,
+  baseUrl: string, s: DossierSubject, desired: boolean, outcome: DossierOutcome,
 ): Promise<void> {
   await query(
     `INSERT INTO distill_dossiers
-       (base_url, symbol, entity_id, desired, applied, state, detail,
+       (base_url, kind, subject, entity_id, desired, applied, state, detail,
         attempts, attempted_at, synced_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7,
-             CASE WHEN $6 = 'synced' THEN 0 ELSE 1 END, now(),
-             CASE WHEN $6 = 'synced' THEN now() ELSE NULL END)
-     ON CONFLICT (base_url, symbol) DO UPDATE SET
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+             CASE WHEN $7 = 'synced' THEN 0 ELSE 1 END, now(),
+             CASE WHEN $7 = 'synced' THEN now() ELSE NULL END)
+     ON CONFLICT (base_url, kind, subject) DO UPDATE SET
        entity_id    = EXCLUDED.entity_id,
        desired      = EXCLUDED.desired,
        applied      = COALESCE(EXCLUDED.applied, distill_dossiers.applied),
@@ -406,7 +437,7 @@ export async function recordDossierOutcome(
                            ELSE distill_dossiers.synced_at END,
        updated_at   = now()`,
     [
-      baseUrl, symbol.toUpperCase(), outcome.entityId, desired,
+      baseUrl, s.kind, normaliseSubject(s.kind, s.subject), outcome.entityId, desired,
       outcome.applied, outcome.state, outcome.detail,
     ],
   );
@@ -417,11 +448,19 @@ export async function recordDossierOutcome(
  * it was never on. Keeps the ledger the size of the watchlist rather than of
  * every stock the screener has ever held.
  */
-export async function retireDossiers(baseUrl: string, symbols: readonly string[]): Promise<void> {
-  if (symbols.length === 0) return;
+export async function retireDossiers(
+  baseUrl: string, subjects: readonly DossierSubject[],
+): Promise<void> {
+  if (subjects.length === 0) return;
   await query(
-    'DELETE FROM distill_dossiers WHERE base_url = $1 AND symbol = ANY($2::text[])',
-    [baseUrl, symbols.map((s) => s.toUpperCase())],
+    `DELETE FROM distill_dossiers
+      WHERE base_url = $1
+        AND (kind, subject) IN (SELECT * FROM unnest($2::text[], $3::text[]))`,
+    [
+      baseUrl,
+      subjects.map((s) => s.kind),
+      subjects.map((s) => normaliseSubject(s.kind, s.subject)),
+    ],
   );
 }
 

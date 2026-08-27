@@ -30,7 +30,7 @@ import {
   DistillEntityUnresolvedError,
 } from './data/distill.js';
 import { distillHintsFor, syncDistillBriefing } from './distill-service.js';
-import { dossiersFollow, noteDossierIntent, watchlistDelta } from './distill-dossiers.js';
+import { dossiersFollowStocks, noteDossierIntent, watchlistDelta } from './distill-dossiers.js';
 import { getMarketRates } from './data/fred.js';
 import { getSectorMediansCached } from './sector-medians.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
@@ -276,7 +276,7 @@ export function createApp(): express.Express {
       // next run's full sync repairs whatever this misses.
       void (async () => {
         const config = await readAppConfig();
-        await dossiersFollow([{ symbol: resolved, enabled: isWatched(config, resolved) }]);
+        await dossiersFollowStocks([{ symbol: resolved, enabled: isWatched(config, resolved) }]);
       })().catch((e) => logger.warn(`Distill dossier switch for ${resolved} failed: ${(e as Error).message}`));
     } catch (e) {
       next(e);
@@ -401,7 +401,7 @@ export function createApp(): express.Express {
       // into the dossier ledger first is what lets the off-switch outlive the
       // stock and be retried until Distill confirms it. Writing the intent is
       // one statement — the call itself waits until after the response.
-      await noteDossierIntent([{ symbol, enabled: false }]);
+      await noteDossierIntent([{ kind: 'company', subject: symbol, enabled: false }]);
 
       const removed = await deleteSymbol(symbol);
       if (!removed) {
@@ -418,7 +418,7 @@ export function createApp(): express.Express {
 
       // Switching off deletes nothing upstream — existing dossiers stand, they
       // just stop being extended — so a stock that comes back keeps its history.
-      void dossiersFollow([{ symbol, enabled: false }])
+      void dossiersFollowStocks([{ symbol, enabled: false }])
         .catch((e) => logger.warn(`Distill dossier switch for ${symbol} failed: ${(e as Error).message}`));
     } catch (e) {
       next(e);
@@ -524,7 +524,7 @@ export function createApp(): express.Express {
       // symbols that actually changed sides are sent.
       void (async () => {
         const changes = await watchlistDelta(before, config);
-        await dossiersFollow(changes);
+        await dossiersFollowStocks(changes);
       })().catch((e) => logger.warn(`Distill dossier switch after a config change failed: ${(e as Error).message}`));
     } catch (e) {
       next(e);

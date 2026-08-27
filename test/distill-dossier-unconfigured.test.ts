@@ -26,13 +26,13 @@ function forbidFetch(): () => number {
 describe('with no DISTILL_API_KEY', () => {
   it('a watchlist change sends nothing', async () => {
     const calls = forbidFetch();
-    await dossiersFollow([{ symbol: 'AAPL', enabled: true }]);
+    await dossiersFollow([{ kind: 'company', subject: 'AAPL', enabled: true }]);
     assert.equal(calls(), 0);
   });
 
   it('resolving reports the missing key rather than pretending to have looked', async () => {
     const calls = forbidFetch();
-    assert.deepEqual(await resolveEntityId('AAPL'), { id: null, detail: 'DISTILL_API_KEY not set' });
+    assert.deepEqual(await resolveEntityId({ kind: 'company', subject: 'AAPL' }), { id: null, detail: 'DISTILL_API_KEY not set' });
     assert.equal(calls(), 0);
   });
 

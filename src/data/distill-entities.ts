@@ -339,3 +339,64 @@ export async function resolveDistillEntity(
   if (ambiguous) return { status: 'ambiguous', ...ambiguous };
   return { status: 'not-found', queries };
 }
+
+/**
+ * One entry of `GET /api/v1/entity-types` — the project's entity-type catalogue.
+ * We read one thing from it, the sector vocabulary, but the shape is the type's.
+ */
+export interface DistillEntityType {
+  type:            string;
+  validationMode:  string | null;
+  dossierEligible: boolean | null;
+  /** `handle → display name`, and for a `fixed_list` type this *is* the vocabulary. */
+  canonicalValues: Record<string, string>;
+}
+
+/**
+ * `GET /api/v1/entity-types`. Read-only, no scope needed.
+ *
+ * Fetched rather than hardcoded because the sector list is a project setting:
+ * a thirteenth sector should surface on the next sync, not on the next deploy.
+ * The endpoint answers with a bare array, not the `{data}` envelope the entity
+ * endpoints use, so both are tolerated.
+ */
+export async function getDistillEntityTypes(
+  apiKey: string,
+  baseUrl: string,
+): Promise<DistillEntityType[]> {
+  const res = await fetch(`${trimBase(baseUrl)}/api/v1/entity-types`, {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (res.status === 401) throw new DistillUnauthorizedError();
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Distill entity-types error ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const json = await res.json().catch(() => null);
+  const rows: unknown[] = Array.isArray(json)
+    ? json
+    : Array.isArray((json as { data?: unknown[] } | null)?.data)
+      ? (json as { data: unknown[] }).data
+      : [];
+
+  return rows.flatMap((raw) => {
+    const row = raw as Record<string, unknown>;
+    if (typeof row.type !== 'string') return [];
+    const values = row.canonical_values;
+    const canonicalValues: Record<string, string> = {};
+    if (values && typeof values === 'object' && !Array.isArray(values)) {
+      for (const [k, v] of Object.entries(values as Record<string, unknown>)) {
+        if (typeof v === 'string') canonicalValues[k] = v;
+      }
+    }
+    return [{
+      type:            row.type,
+      validationMode:  typeof row.validation_mode === 'string' ? row.validation_mode : null,
+      dossierEligible: typeof row.dossier_eligible === 'boolean' ? row.dossier_eligible : null,
+      canonicalValues,
+    }];
+  });
+}

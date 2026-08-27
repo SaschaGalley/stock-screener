@@ -26,18 +26,18 @@ const { dossiersFollow, noteDossierIntent } = await import('../src/distill-dossi
 
 describe('dossiersFollow, with everything underneath it broken', () => {
   it('resolves instead of throwing when a stock is added', async () => {
-    await assert.doesNotReject(() => dossiersFollow([{ symbol: 'AAPL', enabled: true }]));
+    await assert.doesNotReject(() => dossiersFollow([{ kind: 'company', subject: 'AAPL', enabled: true }]));
   });
 
   it('resolves instead of throwing when a stock is deleted', async () => {
-    await assert.doesNotReject(() => dossiersFollow([{ symbol: 'AAPL', enabled: false }]));
+    await assert.doesNotReject(() => dossiersFollow([{ kind: 'company', subject: 'AAPL', enabled: false }]));
   });
 
   it('keeps going through the rest of a batch after one symbol fails', async () => {
     await assert.doesNotReject(() => dossiersFollow([
-      { symbol: 'AAPL', enabled: true },
-      { symbol: 'MSFT', enabled: false },
-      { symbol: 'SAP',  enabled: true },
+      { kind: 'company', subject: 'AAPL', enabled: true },
+      { kind: 'company', subject: 'MSFT', enabled: false },
+      { kind: 'company', subject: 'SAP',  enabled: true },
     ]));
   });
 
@@ -48,6 +48,6 @@ describe('dossiersFollow, with everything underneath it broken', () => {
 
 describe('noteDossierIntent', () => {
   it('swallows a ledger it cannot write — the delete it precedes must still happen', async () => {
-    await assert.doesNotReject(() => noteDossierIntent([{ symbol: 'AAPL', enabled: false }]));
+    await assert.doesNotReject(() => noteDossierIntent([{ kind: 'company', subject: 'AAPL', enabled: false }]));
   });
 });

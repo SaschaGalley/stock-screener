@@ -1,11 +1,18 @@
 /**
- * Mirror the watchlist onto Distill's dossier switches.
+ * Mirror the watchlist onto Distill's dossier switches — companies and the
+ * sectors they sit in.
  *
  * Distill builds a dossier only while an entity's switch is on, and each one
- * costs money per day — so the switch has to follow the watchlist rather than
- * be set by hand: stock added → dossier on, stock gone → dossier off. Since the
- * switch also gates the whole build upstream, this is not an optimisation; it
- * is what feeds the dossier system at all.
+ * costs money per day. Since that switch also gates the build upstream, this is
+ * not an optimisation: it is what feeds the dossier system at all.
+ *
+ * Sectors are entities in their own right, with their own rolling dossiers, and
+ * they obey the same rules — so they live in the same ledger rather than a
+ * parallel one. What differs is only how the desired set is derived: a company
+ * is on the watchlist or it is not, while a sector is wanted exactly as long as
+ * some watched stock sits in it. Deriving that beats switching all twelve on:
+ * three of Distill's sectors touch no stock we hold, and a dossier nobody reads
+ * still bills every day.
  *
  * Three rules shape everything here:
  *
@@ -13,35 +20,46 @@
  *     fails the add or the delete that caused it. The intent is written to the
  *     ledger first and retried by the next full sync.
  *  2. **The switch is idempotent in both directions**, so a full sync may be
- *     blunt. What the ledger buys us is not correctness but cost: it keeps the
- *     sync from re-searching the registry for symbols it already resolved.
+ *     blunt. What the ledger buys is not correctness but cost: it keeps the
+ *     sync from re-resolving subjects it already resolved.
  *  3. **Off deletes nothing.** Existing dossiers stand; they just stop being
  *     extended. A stock that comes back still has its history — which is why
  *     switching off on delete is safe to do eagerly.
  *
  * Layering: `data/distill-dossier.ts` is the transport, `db/admin.ts` the
- * ledger, this module the policy. The entity resolver is not re-implemented —
- * `distill-service.ts` already owns the UUID cache, the tier policy and merge
- * following, and this module borrows it.
+ * ledger, `distill-sectors.ts` the classification, this module the policy.
  */
 
 import { getConfig } from './config.js';
 import { AppConfig, isWatched, readAppConfig } from './app-config.js';
 import {
   clearDistillEntity,
+  DossierKind,
   DossierLedgerRow,
   DossierState,
+  DossierSubject,
   listDossiers,
+  normaliseSubject,
   readDistillEntity,
   readDossier,
   recordDossierIntent,
   recordDossierOutcome,
   retireDossiers,
+  subjectKey,
 } from './db/admin.js';
-import { listSymbols, readFinancialsLax } from './db/store.js';
+import { latestSnapshotForAll, listSymbols, readFinancialsLax } from './db/store.js';
+import { StockFinancials } from './types.js';
 import { scheduledSymbols } from './pipeline/steps.js';
 import { distillHintsFor, resolveDistillEntityCached } from './distill-service.js';
+import { getDistillEntity } from './data/distill-entities.js';
 import { setDistillDossier } from './data/distill-dossier.js';
+import {
+  auditSectorMapping,
+  loadSectorVocabulary,
+  reportSectorMapping,
+  sectorHandlesFor,
+  sectorRef,
+} from './distill-sectors.js';
 import {
   DistillDossierIneligibleError,
   DistillDossierScopeError,
@@ -51,39 +69,64 @@ import {
 } from './data/distill-errors.js';
 import { logger } from './utils/logger.js';
 
-/** One watchlist movement, in the direction Distill should end up in. */
-export interface DossierChange {
-  symbol:  string;
+export type { DossierKind, DossierSubject } from './db/admin.js';
+
+/** One switch movement, in the direction Distill should end up in. */
+export interface DossierChange extends DossierSubject {
   enabled: boolean;
+}
+
+const company = (symbol: string): DossierSubject => ({ kind: 'company', subject: symbol });
+const sector  = (handle: string): DossierSubject => ({ kind: 'sector',  subject: handle });
+
+/** How a subject reads in a log line. */
+function label(s: DossierSubject): string {
+  return s.kind === 'sector' ? sectorRef(s.subject) : s.subject;
 }
 
 // ── Resolution ───────────────────────────────────────────────────────────────
 
-/** The entity a symbol maps to, or why it has none. */
+/** The entity a subject maps to, or why it has none. */
 export interface ResolvedEntity {
   id:     string | null;
   detail: string | null;
 }
 
 /**
- * Symbol → entity UUID, through the existing cache.
+ * Subject → entity UUID.
  *
  * Unlike the briefings path this reports "no entity" as a *state* rather than
  * throwing: a company Distill's registry has never heard of is a normal thing
  * for a screener to hold, and it must not look like a broken sync. The state is
  * written to the ledger so the next full run retries it instead of every config
  * save re-searching the same misses.
+ *
+ * The two kinds resolve differently and neither can stand in for the other. A
+ * company is *searched* for, across ISIN, ticker and name, because we hold
+ * identifiers rather than a Distill handle. A sector already has its handle —
+ * the vocabulary came from Distill — so it is a direct lookup of
+ * `sector:<handle>`, which also follows merges and reports a non-active status.
  */
 export async function resolveEntityId(
-  symbol: string, opts: { force?: boolean } = {},
+  s: DossierSubject, opts: { force?: boolean } = {},
 ): Promise<ResolvedEntity> {
   const cfg = getConfig();
   if (!cfg.distillApiKey) return { id: null, detail: 'DISTILL_API_KEY not set' };
 
+  if (s.kind === 'sector') {
+    const ref = sectorRef(normaliseSubject('sector', s.subject));
+    const detail = await getDistillEntity(ref, cfg.distillApiKey, cfg.distillApiUrl);
+    if (!detail) return { id: null, detail: `Distill has no entity ${ref}` };
+    if (detail.status && detail.status !== 'active') {
+      return { id: null, detail: `${ref} is "${detail.status}" and serves no dossier` };
+    }
+    return { id: detail.id, detail: null };
+  }
+
   try {
-    const financials = await readFinancialsLax(symbol);
+    const financials = await readFinancialsLax(s.subject);
     const entity = await resolveDistillEntityCached(
-      distillHintsFor(symbol, financials),
+      distillHintsFor(s.subject, financials),
       cfg.distillApiKey,
       cfg.distillApiUrl,
       opts,
@@ -103,10 +146,54 @@ export async function setDossier(entityId: string, enabled: boolean): Promise<bo
   return state.enabled;
 }
 
+// ── The desired set ──────────────────────────────────────────────────────────
+
+/**
+ * Everything that should be switched on: the watched stocks, plus every sector
+ * at least one of them sits in.
+ *
+ * A handle our table produces that the project's vocabulary does not have is
+ * dropped rather than sent — `auditSectorMapping` has already named it, and
+ * asking Distill about a sector it does not define would only add a 404 per run.
+ */
+export async function desiredSubjects(
+  config: AppConfig, apiKey: string, baseUrl: string,
+): Promise<DossierSubject[]> {
+  const symbols = await scheduledSymbols(config);
+  const out: DossierSubject[] = symbols.map(company);
+
+  const vocabulary = await loadSectorVocabulary(apiKey, baseUrl);
+  reportSectorMapping(auditSectorMapping(vocabulary));
+  if (vocabulary.size === 0) return out;
+
+  // One query rather than one per symbol: this decides the shape of the sync.
+  const financials = await latestSnapshotForAll<StockFinancials>('financials');
+  const handles = new Set<string>();
+  for (const symbol of symbols) {
+    const f = financials.get(symbol)?.data;
+    for (const handle of sectorHandlesFor({ sector: f?.sector, industry: f?.industry })) {
+      if (vocabulary.has(handle)) handles.add(handle);
+    }
+  }
+  for (const handle of [...handles].sort()) out.push(sector(handle));
+  return out;
+}
+
+/** The sectors one stock sits in, as subjects. Empty when we cannot classify it. */
+export async function sectorSubjectsFor(symbol: string): Promise<DossierSubject[]> {
+  const cfg = getConfig();
+  if (!cfg.distillApiKey) return [];
+  const f = await readFinancialsLax(symbol);
+  if (!f) return [];
+  const vocabulary = await loadSectorVocabulary(cfg.distillApiKey, cfg.distillApiUrl);
+  return sectorHandlesFor({ sector: f.sector, industry: f.industry })
+    .filter((h) => vocabulary.has(h))
+    .map(sector);
+}
+
 // ── Planning ─────────────────────────────────────────────────────────────────
 
-export interface DossierAction {
-  symbol:   string;
+export interface DossierAction extends DossierSubject {
   enabled:  boolean;
   /** Known id, when the ledger already holds one. Null means "resolve first". */
   entityId: string | null;
@@ -115,10 +202,10 @@ export interface DossierAction {
 export interface DossierPlan {
   actions: DossierAction[];
   /** Rows with nothing left to say — off and confirmed, or never on. */
-  retire:  string[];
+  retire:  DossierSubject[];
   /** Rows already in the state we want. */
   settled: number;
-  skipped: { symbol: string; reason: string }[];
+  skipped: { subject: string; reason: string }[];
 }
 
 /**
@@ -127,37 +214,42 @@ export interface DossierPlan {
  * answer without a database or a server.
  *
  * The pivot is `applied`: what Distill last *confirmed*, not what we last
- * wanted. A row whose switch is confirmed on and whose symbol is still watched
+ * wanted. A row whose switch is confirmed on and whose subject is still wanted
  * needs no call, and that is the entire reason a repeated sync is quiet.
  */
 export function planDossierSync(
-  watched: Iterable<string>,
+  desired: Iterable<DossierSubject>,
   ledger: readonly DossierLedgerRow[],
 ): DossierPlan {
-  const want = new Set([...watched].map((s) => s.toUpperCase()));
-  const rows = new Map(ledger.map((r) => [r.symbol.toUpperCase(), r]));
+  const want = new Map<string, DossierSubject>();
+  for (const s of desired) {
+    want.set(subjectKey(s), { kind: s.kind, subject: normaliseSubject(s.kind, s.subject) });
+  }
+  const rows = new Map(ledger.map((r) => [subjectKey(r), r]));
 
   const plan: DossierPlan = { actions: [], retire: [], settled: 0, skipped: [] };
 
-  for (const symbol of want) {
-    const row = rows.get(symbol);
+  for (const [key, s] of want) {
+    const row = rows.get(key);
     if (row?.applied === true) { plan.settled++; continue; }
     // 409 is a property of the entity's type, so asking again cannot change it.
     if (row?.state === 'ineligible') {
-      plan.skipped.push({ symbol, reason: row.detail ?? 'entity may not host a dossier' });
+      plan.skipped.push({ subject: label(s), reason: row.detail ?? 'entity may not host a dossier' });
       continue;
     }
-    plan.actions.push({ symbol, enabled: true, entityId: row?.entityId ?? null });
+    plan.actions.push({ ...s, enabled: true, entityId: row?.entityId ?? null });
   }
 
   for (const row of ledger) {
-    const symbol = row.symbol.toUpperCase();
-    if (want.has(symbol)) continue;
+    if (want.has(subjectKey(row))) continue;
     // Only a switch Distill confirmed as on is worth switching off. Anything
     // else — never resolved, never accepted, already off — has no upstream
     // state to undo, so the row simply goes.
-    if (row.applied === true) plan.actions.push({ symbol, enabled: false, entityId: row.entityId });
-    else plan.retire.push(symbol);
+    if (row.applied === true) {
+      plan.actions.push({ kind: row.kind, subject: row.subject, enabled: false, entityId: row.entityId });
+    } else {
+      plan.retire.push({ kind: row.kind, subject: row.subject });
+    }
   }
 
   return plan;
@@ -177,7 +269,7 @@ export interface SwitchOutcome {
  * status codes Distill uses are genuinely three different actions:
  *
  *   401 / 403 → `abort`      the key is wrong or unscoped; every remaining
- *                            symbol fails identically, so stop and say it once
+ *                            subject fails identically, so stop and say it once
  *   404       → `re-resolve` the id is stale, never the request; look the
  *                            entity up again and try that, exactly once
  *   409       → `record`     the entity's type may not host a dossier. A
@@ -206,7 +298,7 @@ export function classifyDossierFailure(e: unknown, entityId: string | null): Dos
 }
 
 /**
- * The entity behind a symbol is gone from the registry.
+ * The entity behind a subject is gone from the registry.
  *
  * Switching *off* is then already true — Distill cannot be building a dossier
  * for an entity it does not have — so the row settles rather than retrying a
@@ -225,10 +317,12 @@ function entityGone(enabled: boolean, detail: string | null): SwitchOutcome {
  *
  * A 404 is never retried verbatim: the id is re-resolved first (which follows a
  * merge) and the call repeated exactly once. 403 and 401 are re-thrown — they
- * are properties of the key, so every remaining symbol would fail the same way
- * and the sync should stop rather than mark forty stocks as broken.
+ * are properties of the key, so every remaining subject would fail the same way
+ * and the sync should stop rather than mark forty entries as broken.
  */
-async function pushSwitch(symbol: string, enabled: boolean, known: string | null): Promise<SwitchOutcome> {
+async function pushSwitch(
+  s: DossierSubject, enabled: boolean, known: string | null,
+): Promise<SwitchOutcome> {
   let entityId = known;
 
   if (!entityId) {
@@ -236,7 +330,7 @@ async function pushSwitch(symbol: string, enabled: boolean, known: string | null
     // searching the registry for a stock that is being deleted would be an odd
     // way to spend a request.
     if (!enabled) return { entityId: null, applied: false, state: 'synced', detail: 'never switched on' };
-    const resolved = await resolveEntityId(symbol);
+    const resolved = await resolveEntityId(s);
     if (!resolved.id) return { entityId: null, applied: null, state: 'unresolved', detail: resolved.detail };
     entityId = resolved.id;
   }
@@ -248,11 +342,9 @@ async function pushSwitch(symbol: string, enabled: boolean, known: string | null
     if (failure.kind === 'abort')  throw failure.error;
     if (failure.kind === 'record') return failure.outcome;
 
-    // 404: the id, not the request. Drop the mapping, resolve afresh — which
-    // follows a merge — and try once more. A second 404 is not retried again.
-    logger.warn(`Distill no longer knows ${entityId} (${symbol}) — re-resolving before retrying.`);
-    await clearDistillEntity(symbol);
-    const fresh = await resolveEntityId(symbol, { force: true });
+    logger.warn(`Distill no longer knows ${entityId} (${label(s)}) — re-resolving before retrying.`);
+    if (s.kind === 'company') await clearDistillEntity(s.subject);
+    const fresh = await resolveEntityId(s, { force: true });
     if (!fresh.id) return entityGone(enabled, fresh.detail);
 
     try {
@@ -266,11 +358,12 @@ async function pushSwitch(symbol: string, enabled: boolean, known: string | null
   }
 }
 
-/** The id we already hold for a symbol: the ledger first, then the entity cache. */
-async function knownEntityId(symbol: string, baseUrl: string): Promise<string | null> {
-  const row = await readDossier(symbol, baseUrl);
+/** The id we already hold: the ledger first, then the company entity cache. */
+async function knownEntityId(s: DossierSubject, baseUrl: string): Promise<string | null> {
+  const row = await readDossier(s, baseUrl);
   if (row?.entityId) return row.entityId;
-  const cached = await readDistillEntity(symbol, baseUrl);
+  if (s.kind !== 'company') return null;
+  const cached = await readDistillEntity(s.subject, baseUrl);
   return cached?.id ?? null;
 }
 
@@ -290,11 +383,13 @@ export async function noteDossierIntent(changes: readonly DossierChange[]): Prom
   if (!cfg.distillApiKey || changes.length === 0) return;
 
   for (const change of changes) {
-    const symbol = change.symbol.toUpperCase();
     try {
-      await recordDossierIntent(cfg.distillApiUrl, symbol, change.enabled, await knownEntityId(symbol, cfg.distillApiUrl));
+      await recordDossierIntent(
+        cfg.distillApiUrl, change, change.enabled,
+        await knownEntityId(change, cfg.distillApiUrl),
+      );
     } catch (e) {
-      logger.warn(`Could not record the Distill dossier intent for ${symbol}: ${(e as Error).message}`);
+      logger.warn(`Could not record the Distill dossier intent for ${label(change)}: ${(e as Error).message}`);
     }
   }
 }
@@ -305,10 +400,6 @@ export async function noteDossierIntent(changes: readonly DossierChange[]): Prom
  * Never throws, by contract. Adding or deleting a stock must not fail because
  * Distill is down — the intent is on disk before the first request goes out, so
  * the next full sync finishes the job.
- *
- * Call it *before* deleting a symbol: the entity mapping lives in
- * `distill_entities`, which cascades away with the row, and the ledger's own
- * copy of the id is what lets the off-switch survive that.
  */
 export async function dossiersFollow(changes: readonly DossierChange[]): Promise<void> {
   if (changes.length === 0) return;
@@ -321,35 +412,64 @@ export async function dossiersFollow(changes: readonly DossierChange[]): Promise
   const baseUrl = cfg.distillApiUrl;
 
   for (const change of changes) {
-    const symbol = change.symbol.toUpperCase();
     try {
-      const known = await knownEntityId(symbol, baseUrl);
-      await recordDossierIntent(baseUrl, symbol, change.enabled, known);
+      const known = await knownEntityId(change, baseUrl);
+      await recordDossierIntent(baseUrl, change, change.enabled, known);
 
-      const outcome = await pushSwitch(symbol, change.enabled, known);
-      await recordDossierOutcome(baseUrl, symbol, change.enabled, outcome);
+      const outcome = await pushSwitch(change, change.enabled, known);
+      await recordDossierOutcome(baseUrl, change, change.enabled, outcome);
 
       if (outcome.state === 'synced') {
-        logger.info(`Distill dossier ${change.enabled ? 'on' : 'off'} for ${symbol}${outcome.entityId ? ` (${outcome.entityId})` : ''}`);
+        logger.info(`Distill dossier ${change.enabled ? 'on' : 'off'} for ${label(change)}${outcome.entityId ? ` (${outcome.entityId})` : ''}`);
       } else {
         // `ineligible` is a standing condition, not a backlog item — saying it
         // will be retried would be a lie the next sync does not tell either.
         const next = outcome.state === 'ineligible'
           ? 'It will be skipped from now on.'
           : 'The next full sync retries it.';
-        logger.warn(`Distill dossier for ${symbol} left ${outcome.state}: ${outcome.detail ?? 'no detail'} — ${next}`);
+        logger.warn(`Distill dossier for ${label(change)} left ${outcome.state}: ${outcome.detail ?? 'no detail'} — ${next}`);
       }
     } catch (e) {
       // Including the key-level failures: they abort a *sync*, but here there is
       // nothing to abort, and the watchlist write must not notice either way.
-      logger.error(`Distill dossier switch for ${symbol} failed: ${(e as Error).message}`);
-      await recordDossierOutcome(baseUrl, symbol, change.enabled, {
+      logger.error(`Distill dossier switch for ${label(change)} failed: ${(e as Error).message}`);
+      await recordDossierOutcome(baseUrl, change, change.enabled, {
         entityId: null, applied: null,
         state:    e instanceof DistillDossierScopeError ? 'forbidden' : 'pending',
         detail:   (e as Error).message,
       }).catch(() => { /* the ledger is best-effort; the sync reconciles anyway */ });
     }
   }
+}
+
+/**
+ * A stock joined or left the watchlist.
+ *
+ * Asymmetric on purpose. Joining also switches on the sectors it sits in, so
+ * their dossiers start building tonight rather than a run later. Leaving
+ * touches only the stock: whether its sectors are still wanted is a question
+ * about *every other* watched stock, and answering it here would mean turning
+ * off a sector four other holdings still sit in. The full sync owns that.
+ */
+export async function dossiersFollowStocks(
+  changes: readonly { symbol: string; enabled: boolean }[],
+): Promise<void> {
+  const out: DossierChange[] = [];
+  for (const change of changes) {
+    out.push({ ...company(change.symbol), enabled: change.enabled });
+    if (!change.enabled) continue;
+    try {
+      for (const s of await sectorSubjectsFor(change.symbol)) out.push({ ...s, enabled: true });
+    } catch (e) {
+      logger.debug(`Could not classify sectors for ${change.symbol}: ${(e as Error).message}`);
+    }
+  }
+  // Two stocks in one sector would otherwise send the same switch twice.
+  const seen = new Set<string>();
+  await dossiersFollow(out.filter((c) => {
+    const k = `${subjectKey(c)}:${c.enabled}`;
+    return seen.has(k) ? false : (seen.add(k), true);
+  }));
 }
 
 export interface DossierSyncSummary {
@@ -360,13 +480,14 @@ export interface DossierSyncSummary {
   ineligible: number;
   failed:     number;
   retired:    number;
+  sectors:    number;
   /** Set when the sync could not run or had to stop — the reason, verbatim. */
   aborted:    string | null;
 }
 
 const EMPTY_SUMMARY: DossierSyncSummary = {
   enabled: 0, disabled: 0, settled: 0, unresolved: 0,
-  ineligible: 0, failed: 0, retired: 0, aborted: null,
+  ineligible: 0, failed: 0, retired: 0, sectors: 0, aborted: null,
 };
 
 /** One line for the run log and the API. */
@@ -377,6 +498,7 @@ export function describeDossierSync(s: DossierSyncSummary): string {
   if (s.ineligible) parts.push(`${s.ineligible} ineligible`);
   if (s.failed)     parts.push(`${s.failed} failed`);
   if (s.retired)    parts.push(`${s.retired} retired`);
+  parts.push(`${s.sectors} sector(s) wanted`);
   return parts.join(', ');
 }
 
@@ -386,10 +508,8 @@ export function describeDossierSync(s: DossierSyncSummary): string {
  * Runs at the start of every pipeline run rather than on a cron of its own. The
  * event-driven path above already keeps Distill current within seconds of a
  * change; what this adds is repair — the switch that failed while Distill was
- * down, the symbol the registry did not know last week, the row nobody wrote
- * because the process died between the two. Tying it to the run means it
- * happens exactly when the night's work is about to depend on it, and never
- * competes with a run for the same key.
+ * down, the subject the registry did not know last week, the sector that lost
+ * its last watched stock.
  */
 export async function syncWatchlistDossiers(config?: AppConfig): Promise<DossierSyncSummary> {
   const cfg = getConfig();
@@ -397,21 +517,23 @@ export async function syncWatchlistDossiers(config?: AppConfig): Promise<Dossier
 
   const baseUrl = cfg.distillApiUrl;
   const appConfig = config ?? await readAppConfig();
-  const [watched, ledger] = await Promise.all([
-    scheduledSymbols(appConfig),
-    listDossiers(baseUrl),
-  ]);
+  const desired = await desiredSubjects(appConfig, cfg.distillApiKey, baseUrl);
+  const ledger  = await listDossiers(baseUrl);
 
-  const plan = planDossierSync(watched, ledger);
-  const summary: DossierSyncSummary = { ...EMPTY_SUMMARY, settled: plan.settled };
+  const plan = planDossierSync(desired, ledger);
+  const summary: DossierSyncSummary = {
+    ...EMPTY_SUMMARY,
+    settled: plan.settled,
+    sectors: desired.filter((s) => s.kind === 'sector').length,
+  };
   for (const s of plan.skipped) {
     summary.ineligible++;
-    logger.debug(`Distill dossier for ${s.symbol} skipped: ${s.reason}`);
+    logger.debug(`Distill dossier for ${s.subject} skipped: ${s.reason}`);
   }
 
-  // Enables first, and their entity ids are remembered: two symbols can share
+  // Enables first, and their entity ids are remembered: two subjects can share
   // one entity (a dual listing), and a per-entity switch cannot be both on and
-  // off. The watched side wins — the other row is retired rather than fighting
+  // off. The wanted side wins — the other row is retired rather than fighting
   // it on every sync.
   const enabledEntities = new Set<string>();
   const ordered = [...plan.actions].sort((a, b) => Number(b.enabled) - Number(a.enabled));
@@ -419,29 +541,29 @@ export async function syncWatchlistDossiers(config?: AppConfig): Promise<Dossier
 
   for (const action of ordered) {
     if (!action.enabled && action.entityId && enabledEntities.has(action.entityId)) {
-      logger.info(`Distill dossier for ${action.symbol} stays on — entity ${action.entityId} is also watched under another symbol.`);
-      retire.push(action.symbol);
+      logger.info(`Distill dossier for ${label(action)} stays on — entity ${action.entityId} is wanted under another subject.`);
+      retire.push({ kind: action.kind, subject: action.subject });
       continue;
     }
 
     let outcome: SwitchOutcome;
     try {
-      await recordDossierIntent(baseUrl, action.symbol, action.enabled, action.entityId);
-      outcome = await pushSwitch(action.symbol, action.enabled, action.entityId);
+      await recordDossierIntent(baseUrl, action, action.enabled, action.entityId);
+      outcome = await pushSwitch(action, action.enabled, action.entityId);
     } catch (e) {
-      // Key-level: the remaining symbols would fail identically, so stop and say
-      // so once instead of writing the same error onto the whole watchlist.
+      // Key-level: the remaining subjects would fail identically, so stop and
+      // say so once instead of writing the same error onto the whole watchlist.
       summary.aborted = (e as Error).message;
-      await recordDossierOutcome(baseUrl, action.symbol, action.enabled, {
+      await recordDossierOutcome(baseUrl, action, action.enabled, {
         entityId: action.entityId, applied: null,
         state:    e instanceof DistillDossierScopeError ? 'forbidden' : 'pending',
         detail:   (e as Error).message,
       }).catch(() => { /* best effort */ });
-      logger.error(`Distill dossier sync stopped at ${action.symbol}: ${(e as Error).message}`);
+      logger.error(`Distill dossier sync stopped at ${label(action)}: ${(e as Error).message}`);
       break;
     }
 
-    await recordDossierOutcome(baseUrl, action.symbol, action.enabled, outcome);
+    await recordDossierOutcome(baseUrl, action, action.enabled, outcome);
 
     if (outcome.state === 'synced') {
       if (action.enabled) { summary.enabled++; if (outcome.entityId) enabledEntities.add(outcome.entityId); }
@@ -465,13 +587,15 @@ export async function syncWatchlistDossiers(config?: AppConfig): Promise<Dossier
 }
 
 /**
- * Which symbols changed sides between two configs.
+ * Which stocks changed sides between two configs.
  *
  * Derived from `listSymbols()` rather than from the watchlist record's keys:
  * the record is an *opt-out*, so an absent key means watched, and diffing the
  * keys alone would miss every stock that was never toggled.
  */
-export async function watchlistDelta(before: AppConfig, after: AppConfig): Promise<DossierChange[]> {
+export async function watchlistDelta(
+  before: AppConfig, after: AppConfig,
+): Promise<{ symbol: string; enabled: boolean }[]> {
   const symbols = await listSymbols();
   return symbols
     .filter((s) => isWatched(before, s) !== isWatched(after, s))

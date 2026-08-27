@@ -26,7 +26,8 @@ import { logger } from './utils/logger.js';
   const unsettled = (await listDossiers(getConfig().distillApiUrl))
     .filter((r) => r.state !== 'synced');
   for (const r of unsettled) {
-    logger.warn(`${r.symbol}: ${r.state}${r.detail ? ` — ${r.detail}` : ''}`);
+    const name = r.kind === 'sector' ? `sector:${r.subject}` : r.subject;
+    logger.warn(`${name}: ${r.state}${r.detail ? ` — ${r.detail}` : ''}`);
   }
 
   if (summary.aborted) {
