@@ -68,12 +68,11 @@ export interface DistillDossierBlock {
 }
 
 /**
- * Bundle persisted to the per-symbol cache and consumed by the prompt.
+ * Bundle persisted per symbol and consumed by the prompt.
  *
- * Single-briefing model: we only ever show / prompt with ONE briefing per
- * ticker — the currently-relevant one for the pinned `DISTILL_BRIEFING_TYPE_ID`.
- * Distill's GET (with limit=1) and POST /refresh both return exactly that, so
- * there's no need for a list or upsert logic on our side.
+ * The rolling dossiers are the payload: the company's own, the ones for the
+ * sectors it sits in, and the raw insights none of them reproduce. Together
+ * they cover everything up to the moment of the request, for free.
  */
 export interface DistillBundle {
   ticker:    string;
