@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { acceptsAutomatically } from '../src/data/distill-entities.js';
+import { acceptsAutomatically, namesPlausiblyMatch } from '../src/data/distill-entities.js';
 import type { DistillEntityHit, DistillMatchTier, DistillSearchResult } from '../src/data/distill-entities.js';
 
 function hit(matchedOn: DistillMatchTier, matchedValue = ''): DistillEntityHit {
@@ -62,5 +62,34 @@ describe('acceptsAutomatically', () => {
   it('treats a ticker key like any other contested match', () => {
     assert.equal(acceptsAutomatically(hit('key', 'ticker:MOD'), result({ ambiguous: true })), false);
     assert.equal(acceptsAutomatically(hit('key', 'ticker:MOD'), result({ ambiguous: false })), true);
+  });
+});
+
+describe('namesPlausiblyMatch', () => {
+  it('accepts the same company under different legal forms', () => {
+    assert.equal(namesPlausiblyMatch('Airbus SE', 'Airbus'), true);
+    assert.equal(namesPlausiblyMatch('Fresenius Medical Care AG', 'Fresenius Medical Care'), true);
+    assert.equal(namesPlausiblyMatch('Modine Manufacturing Company', 'Modine Manufacturing'), true);
+  });
+
+  it('flags two companies that share nothing', () => {
+    // The shape a mis-attached ISIN produces: confident resolution, wrong firm.
+    assert.equal(namesPlausiblyMatch('EQT Corporation', 'Prudential plc'), false);
+    assert.equal(namesPlausiblyMatch('Modine Manufacturing Company', 'Moderna'), false);
+  });
+
+  it('is undecidable rather than false when a name is all legal form', () => {
+    // "Nu Holdings Ltd." reduces to nothing: `nu` is too short, the rest is
+    // boilerplate. Warning there would be noise, not a finding.
+    assert.equal(namesPlausiblyMatch('Nu Holdings Ltd.', 'Nu Holdings'), null);
+    assert.equal(namesPlausiblyMatch('', 'Anything'), null);
+  });
+
+  it('matches a short name contained in a longer one', () => {
+    assert.equal(namesPlausiblyMatch('Ondas', 'Ondas Autonomous Systems'), true);
+  });
+
+  it('ignores punctuation and case', () => {
+    assert.equal(namesPlausiblyMatch("L'Air Liquide S.A.", 'Air Liquide'), true);
   });
 });

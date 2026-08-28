@@ -255,6 +255,48 @@ export async function getDistillEntity(
   };
 }
 
+/**
+ * Legal-form and grouping words, dropped before comparing two company names.
+ * They are the part every name shares, so they say nothing about identity.
+ */
+const NAME_NOISE = new Set([
+  'the', 'and', 'inc', 'incorporated', 'ltd', 'limited', 'plc', 'corp',
+  'corporation', 'company', 'co', 'ag', 'sa', 'se', 'nv', 'as', 'ab', 'oyj',
+  'kgaa', 'gmbh', 'spa', 'holdings', 'holding', 'group', 'class',
+]);
+
+function nameTokens(name: string): Set<string> {
+  return new Set(
+    (name ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ')
+      .filter((w) => w.length >= 3 && !NAME_NOISE.has(w)),
+  );
+}
+
+/**
+ * Do these two names plausibly denote the same company?
+ *
+ * A weak check on purpose — it only ever produces a warning. What it guards is
+ * the one hole in the tier policy: a `key` match on an ISIN is taken
+ * unconditionally because an ISIN is globally unique, which is true of the
+ * *identifier* and says nothing about whether our source attached it to the
+ * right ticker. Distill's own reference data has at least one row where it did
+ * not — the NYSE line for `EQT` carries EQT AB's Swedish ISIN — and against
+ * that, an unconditional accept resolves confidently to the wrong company.
+ *
+ * Undecidable rather than false when either name reduces to nothing: "Nu
+ * Holdings Ltd." is all legal form and one two-letter word, and a warning there
+ * would be noise, not a finding.
+ */
+export function namesPlausiblyMatch(ours: string, theirs: string): boolean | null {
+  const a = nameTokens(ours);
+  const b = nameTokens(theirs);
+  if (a.size === 0 || b.size === 0) return null;
+  for (const w of a) if (b.has(w)) return true;
+  // A short name inside a longer one — "Airbus" vs "Airbus SE Commercial".
+  const join = (t: Set<string>) => [...t].join(' ');
+  return join(a).includes(join(b)) || join(b).includes(join(a));
+}
+
 /** ISIN / FIGI / LEI are globally unique, so a `key` hit on one is unambiguous
  *  even when the search returns other rows. A ticker key is not. */
 function isUniqueKeyMatch(matchedValue: string): boolean {
@@ -355,6 +397,15 @@ export async function resolveDistillEntity(
         `Distill entity: ${hints.symbol} → ${top.id} (${top.displayName}) `
         + `via ${top.matchedOn}="${query}"${total > 1 ? ` of ${total} hits` : ''}`,
       );
+      // Taken either way — the tier policy decided. But when the name we hold
+      // and the name that came back share nothing, say so: that is what a
+      // mis-attached ISIN in the reference data looks like from here.
+      if (hints.companyName && namesPlausiblyMatch(hints.companyName, top.displayName) === false) {
+        logger.warn(
+          `Distill resolved ${hints.symbol} to "${top.displayName}" via ${top.matchedOn}="${query}", `
+          + `but we hold it as "${hints.companyName}". Check the identifier before trusting the dossier.`,
+        );
+      }
       return { status: 'resolved', entity: toRef(top, query, baseUrl) };
     }
 
