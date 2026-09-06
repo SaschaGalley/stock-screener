@@ -20,6 +20,7 @@ import {
   LLMAnalysis, MarketSignals, NewsItem, SearchTrace, SectorMedians,
   StockFinancials, TechnicalSignals,
 } from '../types.js';
+import type { MarketRates } from '../data/fred.js';
 import type { PerplexityContext } from '../data/perplexity.js';
 import type { DistillBundle } from '../data/distill.js';
 import { logger } from '../utils/logger.js';
@@ -1015,8 +1016,8 @@ export interface RecordRunInput {
   metrics?:          unknown;
   /** LLMAnalysis, when this run produced a verdict. */
   verdict?:          LLMAnalysis | null;
-  /** FRED rates; merged into the global macro series, not stored per symbol. */
-  marketRates?:      { riskFreeRate: number; aaaBondYield: number } | null;
+  /** Market rates; merged into the global macro series, not stored per symbol. */
+  marketRates?:      MarketRates | null;
 }
 
 export async function recordRunData(input: RecordRunInput): Promise<void> {

@@ -49,7 +49,7 @@ export function computeAllMetrics(
   const grahamRevised    = calculateGrahamRevised(financials, marketRates?.aaaBondYield);
   const piotroski        = calculatePiotroski(financials);
   const altmanZ          = calculateAltmanZ(financials);
-  const ddm              = calculateDDM(financials, marketRates?.riskFreeRate);
+  const ddm              = calculateDDM(financials, rates);
   const epv              = calculateEPV(financials, rates);
   const rim              = calculateRIM(financials, rates);
   const ncav             = calculateNCAV(financials);

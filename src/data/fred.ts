@@ -1,3 +1,4 @@
+import { getImpliedERP } from './damodaran.js';
 import { logger } from '../utils/logger.js';
 
 const BASE = 'https://api.stlouisfed.org/fred/series/observations';
@@ -16,7 +17,7 @@ async function fetchLatestRaw(seriesId: string, apiKey: string): Promise<number 
     if (!res.ok) throw new Error(`FRED HTTP ${res.status}`);
     const data = await res.json() as { observations?: Array<{ value: string }> };
     const value = data.observations?.find((o) => o.value !== '.')?.value;
-    // Reject non-finite parses (NaN) so the `?? FALLBACK` guards in
+    // Reject non-finite parses (NaN) so the `?? FALLBACK_RATES` guards in
     // getMarketRates actually engage — NaN is neither null nor undefined.
     const n = value != null ? Number(value) : NaN;
     return Number.isFinite(n) ? n : null;
@@ -31,20 +32,38 @@ async function fetchLatestDecimal(seriesId: string, apiKey: string): Promise<num
   return raw === null ? null : raw / 100;
 }
 
+/**
+ * Everything the valuation models discount with. Two of the three come from
+ * FRED; the equity risk premium is Damodaran's implied series (see
+ * `data/damodaran.ts`) and is grouped here because it is the same kind of
+ * thing — a market-wide input, refetched rather than assumed.
+ */
 export interface MarketRates {
-  riskFreeRate: number;    // 10-year Treasury yield (DGS10)
-  aaaBondYield: number;    // Moody's Aaa Corporate Bond Yield (DAAA)
+  riskFreeRate:      number;   // 10-year Treasury yield (DGS10)
+  aaaBondYield:      number;   // Moody's Aaa Corporate Bond Yield (DAAA)
+  equityRiskPremium: number;   // Damodaran implied ERP, trailing 12 month
 }
 
-const FALLBACK: MarketRates = { riskFreeRate: 0.045, aaaBondYield: 0.05 };
+/**
+ * What to discount with when a feed is unreachable. Exported because the models
+ * need the same numbers when they run without rates at all (an overview row
+ * built from stored financials, a CLI run with no FRED key), and two copies of
+ * a fallback drift apart exactly when nobody is looking.
+ */
+export const FALLBACK_RATES: MarketRates = {
+  riskFreeRate:      0.045,
+  aaaBondYield:      0.05,
+  equityRiskPremium: 0.055,   // Damodaran's long-run mature-market average
+};
 
 /**
  * Process-level memo. These are daily series — refetching them per HTTP request
  * bought nothing but latency, and every stock the web UI opens went through
  * here. In-flight requests are shared too, so N concurrent openers issue one
- * pair of FRED calls, not N.
+ * round of upstream calls, not N. (The monthly ERP keeps its own, longer memo
+ * in `damodaran.ts`, so this hourly one doesn't re-download a spreadsheet.)
  *
- * Memory only, deliberately: two numbers are not worth a cache file, and a
+ * Memory only, deliberately: three numbers are not worth a cache file, and a
  * restart paying ~300ms once is cheaper than reasoning about a stale one.
  */
 const RATES_TTL_MS = 60 * 60 * 1000;
@@ -56,17 +75,19 @@ export async function getMarketRates(apiKey: string): Promise<MarketRates> {
   if (ratesInFlight) return ratesInFlight;
 
   ratesInFlight = (async () => {
-    const [rfr, aaa] = await Promise.all([
+    const [rfr, aaa, erp] = await Promise.all([
       fetchLatestDecimal('DGS10', apiKey),
       fetchLatestDecimal('DAAA', apiKey),
+      getImpliedERP(),
     ]);
 
     const rates: MarketRates = {
-      riskFreeRate: rfr ?? FALLBACK.riskFreeRate,
-      aaaBondYield: aaa ?? FALLBACK.aaaBondYield,
+      riskFreeRate:      rfr ?? FALLBACK_RATES.riskFreeRate,
+      aaaBondYield:      aaa ?? FALLBACK_RATES.aaaBondYield,
+      equityRiskPremium: erp?.premium ?? FALLBACK_RATES.equityRiskPremium,
     };
 
-    logger.debug(`FRED rates — 10Y Treasury: ${(rates.riskFreeRate * 100).toFixed(2)}%, AAA: ${(rates.aaaBondYield * 100).toFixed(2)}%`);
+    logger.debug(`Market rates — 10Y Treasury: ${(rates.riskFreeRate * 100).toFixed(2)}%, AAA: ${(rates.aaaBondYield * 100).toFixed(2)}%, implied ERP: ${(rates.equityRiskPremium * 100).toFixed(2)}%${erp?.asOf ? ` (${erp.asOf})` : ''}`);
     ratesCache = { at: Date.now(), rates };
     return rates;
   })();

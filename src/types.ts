@@ -404,8 +404,9 @@ export const DCFResultSchema = z.object({
   discountRate:       z.number().describe('Discount rate used: WACC = E/V·(CAPM cost of equity) + D/V·kd·(1−tax)'),
   beta:               z.number().nullable().describe('Beta used for CAPM (capped at [0.8, 2.0] per SWS convention)'),
   riskFreeRate:       z.number().describe('Risk-free rate used (10Y Treasury from FRED, decimal)'),
+  equityRiskPremium:  z.number().describe("Equity risk premium used (Damodaran's implied ERP for the latest month, decimal)"),
   stage1Growth:       z.number().describe('Stage-1 (years 1–5) FCF growth rate (decimal)'),
-  terminalGrowthRate: z.number().describe('Stable terminal growth rate after fade (decimal)'),
+  terminalGrowthRate: z.number().describe('Stable terminal growth rate after fade (decimal); capped at the risk-free rate — no firm outgrows the economy forever'),
   stage1Years:        z.number().describe('Number of years in stage 1 (high-growth, default 5)'),
   fadeYears:          z.number().describe('Number of years for linear growth fade (default 5)'),
   projectedFCFs:      z.array(z.number()).describe('Year-by-year projected free cash flows over the full horizon (stage1 + fade)'),
@@ -532,7 +533,7 @@ export const DDMResultSchema = z.object({
   fairValue:           z.number().nullable().describe('Gordon Growth Model fair value: D1 / (r − g); null when g ≥ r − 2% (model unstable) or no dividend'),
   dividendPerShare:    z.number().nullable().describe('Annual dividend per share: price × dividendYield'),
   dividendGrowthRate:  z.number().nullable().describe('Dividend growth rate used in the model (decimal, capped at 10%)'),
-  requiredReturn:      z.number().nullable().describe('CAPM required return: riskFreeRate + beta × 5.5% equity premium (decimal)'),
+  requiredReturn:      z.number().nullable().describe("CAPM required return: riskFreeRate + beta × Damodaran's implied equity risk premium (decimal)"),
   isApplicable:        z.boolean().describe('False when the stock pays no dividend'),
 });
 export type DDMResult = z.infer<typeof DDMResultSchema>;

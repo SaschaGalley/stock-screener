@@ -26,7 +26,7 @@ import {
   SortinoResult,
   StockFinancials,
 } from '../types.js';
-import { MarketRates } from '../data/fred.js';
+import { FALLBACK_RATES, MarketRates } from '../data/fred.js';
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -36,18 +36,40 @@ export { fmt, fmtPct, fmtBig } from '../format.js';
 
 // ─── Shared constants & helpers ──────────────────────────────────────────────
 
-const ERP = 0.055; // Damodaran-style mature-market equity risk premium
-const FALLBACK_RFR = 0.045;
-const FALLBACK_AAA = 0.05; // decimal (5%)
-const TERMINAL_GROWTH_DEFAULT = 0.03;
+// Rates to discount with when the caller has none — a stored-financials
+// overview row, a run without a FRED key. `FALLBACK_RATES` lives with the feeds
+// in `data/fred.ts`, so there is one definition of what we assume when we
+// cannot look a rate up.
 
 /**
  * CAPM cost of equity with SWS-style β floor 0.8 / cap 2.0 to neutralise
  * stale-data outliers and volatility spikes.
+ *
+ * The premium is Damodaran's implied ERP as of the latest month, not a
+ * constant: it is what the market is *currently* paying for equity risk, and it
+ * is quoted against the same T-bond rate we use as the risk-free leg.
  */
-function costOfEquity(beta: number | null, riskFreeRate: number): number {
+function costOfEquity(beta: number | null, rates: MarketRates): number {
   const b = Math.max(0.8, Math.min(beta ?? 1.0, 2.0));
-  return riskFreeRate + b * ERP;
+  return rates.riskFreeRate + b * rates.equityRiskPremium;
+}
+
+/**
+ * Stable growth, as an invariant rather than a constant.
+ *
+ * A firm growing forever faster than the economy eventually *becomes* the
+ * economy, so terminal growth is capped at the risk-free rate — the market's
+ * own estimate of long-run nominal growth, and the standard Damodaran ceiling.
+ * The old fixed 3% was two mistakes at once: too generous when the 10Y sat at
+ * 1%, too stingy at 5%, and in both cases moving independently of the discount
+ * rate built from that same rate.
+ *
+ * The cap doubles as the default, which is what makes it cheaper than a
+ * constant — nothing left to keep in sync, and a caller-supplied rate is
+ * clamped rather than trusted.
+ */
+function terminalGrowth(rates: MarketRates, requested?: number): number {
+  return Math.min(requested ?? rates.riskFreeRate, rates.riskFreeRate);
 }
 
 /**
@@ -63,8 +85,9 @@ function costOfEquity(beta: number | null, riskFreeRate: number): number {
  * to rfr + 1.5% when interest isn't reported). Debt-free firms (D=0) collapse to
  * cost of equity. taxRate defaults to 21% when unavailable.
  */
-function wacc(f: StockFinancials, riskFreeRate: number): number {
-  const ke = costOfEquity(f.beta, riskFreeRate);
+function wacc(f: StockFinancials, rates: MarketRates): number {
+  const riskFreeRate = rates.riskFreeRate;
+  const ke = costOfEquity(f.beta, rates);
   const E = f.marketCap > 0
     ? f.marketCap
     : (f.price > 0 && f.sharesOutstanding ? f.price * f.sharesOutstanding : 0);
@@ -269,12 +292,13 @@ export function calculateDCF(
   const stage1Years = opts.stage1Years ?? 5;
   const fadeYears   = opts.fadeYears ?? 5;
   const baseG       = opts.growthRate ?? deriveStage1Growth(financials);
-  const terminalG   = opts.terminalGrowthRate ?? TERMINAL_GROWTH_DEFAULT;
-  const rfr         = marketRates?.riskFreeRate ?? FALLBACK_RFR;
+  const rates       = marketRates ?? FALLBACK_RATES;
+  const rfr         = rates.riskFreeRate;
+  const terminalG   = terminalGrowth(rates, opts.terminalGrowthRate);
   // FCFF is an unlevered (firm-level) cash flow → discount at WACC, then bridge
   // EV→equity via −netDebt. (Discounting at cost of equity AND subtracting net
   // debt would double-count leverage.)
-  const r           = wacc(financials, rfr);
+  const r           = wacc(financials, rates);
 
   const baseFCF = normalizedFlow(financials.freeCashFlow, financials.fundamentalsHistory.freeCashFlow);
   const shares  = getShares(financials);
@@ -285,6 +309,7 @@ export function calculateDCF(
   const empty = (note: string): DCFResult => ({
     fairValue: null, fairValueBear: null, fairValueBull: null,
     discountRate: r, beta: financials.beta, riskFreeRate: rfr,
+    equityRiskPremium: rates.equityRiskPremium,
     stage1Growth: baseG, terminalGrowthRate: terminalG,
     stage1Years, fadeYears,
     projectedFCFs: [], terminalValue: null, enterpriseValue: null, netDebt,
@@ -317,7 +342,7 @@ export function calculateDCF(
   const bullVal  = discountToEV(bullFCFs, terminalG, bullR);
   const bullFV   = (bullVal.enterpriseValue - netDebt) / shares;
 
-  const assumptions = `Stage-1 ${(baseG * 100).toFixed(1)}% × ${stage1Years}y → fade × ${fadeYears}y → terminal ${(terminalG * 100).toFixed(1)}% · WACC ${(r * 100).toFixed(1)}% (CAPM β ${financials.beta?.toFixed(2) ?? '1.0'} capped, rfr ${(rfr * 100).toFixed(1)}%, ERP ${(ERP * 100).toFixed(1)}%, debt-weighted)`;
+  const assumptions = `Stage-1 ${(baseG * 100).toFixed(1)}% × ${stage1Years}y → fade × ${fadeYears}y → terminal ${(terminalG * 100).toFixed(1)}% · WACC ${(r * 100).toFixed(1)}% (CAPM β ${financials.beta?.toFixed(2) ?? '1.0'} capped, rfr ${(rfr * 100).toFixed(1)}%, implied ERP ${(rates.equityRiskPremium * 100).toFixed(1)}%, debt-weighted)`;
 
   if (!isPlausibleFairValue(baseFV, financials.price)) {
     return empty(`DCF base value implausible vs price — likely a per-share data anomaly.`);
@@ -330,6 +355,7 @@ export function calculateDCF(
     discountRate: r,
     beta: financials.beta,
     riskFreeRate: rfr,
+    equityRiskPremium: rates.equityRiskPremium,
     stage1Growth: baseG,
     terminalGrowthRate: terminalG,
     stage1Years, fadeYears,
@@ -394,9 +420,9 @@ export function calculateReverseDCF(
 ): ReverseDCFResult {
   const stage1Years = 5;
   const fadeYears = 5;
-  const terminalG = TERMINAL_GROWTH_DEFAULT;
-  const rfr = marketRates?.riskFreeRate ?? FALLBACK_RFR;
-  const r   = costOfEquity(financials.beta, rfr);
+  const rates     = marketRates ?? FALLBACK_RATES;
+  const terminalG = terminalGrowth(rates);
+  const r         = costOfEquity(financials.beta, rates);
 
   const fcf    = financials.freeCashFlow;
   const price  = financials.price;
@@ -569,7 +595,7 @@ export function calculateRuleOf40(financials: StockFinancials): RuleOf40Result {
 // g = annual EPS growth rate (%), Y = AAA bond yield (%)
 export function calculateGrahamRevised(
   financials: StockFinancials,
-  bondYield = FALLBACK_AAA, // decimal
+  bondYield = FALLBACK_RATES.aaaBondYield, // decimal
 ): GrahamRevisedResult {
   const eps = normalizedFlow(financials.eps, financials.fundamentalsHistory.eps);
   const price = financials.price;
@@ -744,7 +770,7 @@ export function calculateAltmanZ(financials: StockFinancials): AltmanZResult {
 
 // ─── 11. Dividend Discount Model ─────────────────────────────────────────────
 
-export function calculateDDM(financials: StockFinancials, riskFreeRate = FALLBACK_RFR): DDMResult {
+export function calculateDDM(financials: StockFinancials, marketRates?: MarketRates): DDMResult {
   const dy   = financials.dividendYield;
   const price = financials.price;
 
@@ -754,7 +780,7 @@ export function calculateDDM(financials: StockFinancials, riskFreeRate = FALLBAC
   }
 
   const dividendPerShare = price * dy;
-  const requiredReturn = costOfEquity(financials.beta, riskFreeRate);
+  const requiredReturn = costOfEquity(financials.beta, marketRates ?? FALLBACK_RATES);
 
   const rawGrowth = financials.dividendGrowthRate5Y ?? financials.earningsGrowth ?? financials.revenueGrowth;
   const dividendGrowthRate = rawGrowth !== null
@@ -778,11 +804,10 @@ export function calculateDDM(financials: StockFinancials, riskFreeRate = FALLBAC
 // ─── 12. Earnings Power Value (Greenwald) — simplified ───────────────────────
 
 export function calculateEPV(financials: StockFinancials, marketRates?: MarketRates): EPVResult {
-  const rfr = marketRates?.riskFreeRate ?? FALLBACK_RFR;
   // NOPAT is an unlevered (firm-level) flow capitalised into enterprise value
   // before the equity bridge (epv + cash − debt), so discount at WACC, not cost
   // of equity — otherwise leverage is double-counted.
-  const r   = wacc(financials, rfr);
+  const r = wacc(financials, marketRates ?? FALLBACK_RATES);
   // Greenwald EPV capitalises *sustainable* earnings power, so normalize EBIT
   // against the operating-income history rather than trusting a single trailing
   // figure that may be hit by one-offs.
@@ -816,8 +841,7 @@ export function calculateEPV(financials: StockFinancials, marketRates?: MarketRa
 // ─── 13. Residual Income Model (Edwards–Bell–Ohlson) ─────────────────────────
 
 export function calculateRIM(financials: StockFinancials, marketRates?: MarketRates): RIMResult {
-  const rfr = marketRates?.riskFreeRate ?? FALLBACK_RFR;
-  const r   = costOfEquity(financials.beta, rfr);
+  const r = costOfEquity(financials.beta, marketRates ?? FALLBACK_RATES);
   const bv0 = financials.bookValue;
   const roeRaw = financials.roe;
   const price = financials.price;
@@ -988,7 +1012,7 @@ export function calculatePeerMultiples(
 
 // ─── 16. Sortino Ratio ───────────────────────────────────────────────────────
 
-export function calculateSortino(financials: StockFinancials, riskFreeRate = FALLBACK_RFR): SortinoResult {
+export function calculateSortino(financials: StockFinancials, riskFreeRate = FALLBACK_RATES.riskFreeRate): SortinoResult {
   const returns = financials.monthlyReturns ?? [];
   const unknown: SortinoResult = {
     ratio: null, annualReturn: null, downsideDeviation: null,

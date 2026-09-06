@@ -44,13 +44,15 @@ const ModelResultsSchema = AnalysisResultSchema.omit({
 const SymbolSignalsSchema = MarketSignalsSchema.omit({ macro: true });
 
 /**
- * FRED's two rates, declared here because `data/fred.ts` models them as a plain
- * interface. The catalogue is where a value becomes a series, so this is the
- * right place for the one schema the domain layer never needed.
+ * The rates the models discount with, declared here because `data/fred.ts`
+ * models them as a plain interface. The catalogue is where a value becomes a
+ * series, so this is the right place for the one schema the domain layer never
+ * needed.
  */
 const MarketRatesSchema = z.object({
-  riskFreeRate: z.number().describe('10-year Treasury yield (FRED DGS10) as a decimal'),
-  aaaBondYield: z.number().describe("Moody's Aaa corporate bond yield (FRED DAAA) as a decimal"),
+  riskFreeRate:      z.number().describe('10-year Treasury yield (FRED DGS10) as a decimal'),
+  aaaBondYield:      z.number().describe("Moody's Aaa corporate bond yield (FRED DAAA) as a decimal"),
+  equityRiskPremium: z.number().describe("Damodaran's implied equity risk premium for the latest month, as a decimal"),
 });
 
 /**
