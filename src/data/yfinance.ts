@@ -799,6 +799,20 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   const capex = capexRaw !== null ? Math.abs(capexRaw) : null;
   const depreciation = num((cf as any).depreciationAndAmortization)
     ?? num((cf as any).depreciation);
+  // Where interest paid is classified. IFRS lets a filer put it under operating
+  // or financing activities (AIR.PA: operating, ENR.DE and AI.PA: financing);
+  // US GAAP keeps it in operating and discloses it supplementally.
+  const interestInOperatingCashFlow =
+    num((cf as any).interestPaidCFF) !== null ? false
+    : num((cf as any).interestPaidCFO) !== null || num((cf as any).interestPaidSupplementalData) !== null ? true
+    : null;
+
+  // Share counts for Piotroski F7, one measure for both years: diluted average
+  // shares where both years report them, basic otherwise. Comparing diluted to
+  // basic would count option dilution as an issuance.
+  const shareCounts = (['dilutedAverageShares', 'basicAverageShares'] as const)
+    .map((key) => ({ now: num((inc as any)[key]), prev: inc1 ? num((inc1 as any)[key]) : null }))
+    .find((c) => c.now !== null && c.prev !== null) ?? null;
 
   // ── Earnings surprises ────────────────────────────────────────────────────
   const earningsSurprises = (eh as any[]).slice(0, 4).map((q: any) => ({
@@ -899,6 +913,7 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
       ppe:                fxc(num(bs1.netPPE)),
       sga:                fxc(num((inc1 as any).sellingGeneralAndAdministration)),
       depreciation:       fxc(num((cf1 as any).depreciationAndAmortization) ?? num((cf1 as any).depreciation)),
+      sharesOutstanding:  shareCounts?.prev ?? null,
     };
   }
 
@@ -1173,6 +1188,8 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
       return off > EV_IDENTITY_TOLERANCE ? derived : reported;
     })(),
     sharesOutstanding: num(ks.sharesOutstanding),
+    sharesOutstandingAnnual: shareCounts?.now ?? null,
+    interestInOperatingCashFlow,
     targetMeanPrice:   num(fd.targetMeanPrice),
 
     analystTargetHigh:   num(fd.targetHighPrice),

@@ -41,10 +41,11 @@ export function computeAllMetrics(
   // into the trading currency, so that is the currency whose yield applies.
   const rates = ratesForCurrency(marketRates ?? FALLBACK_RATES, financials.tradingCurrency);
 
-  const dcf              = calculateDCF(financials, rates);
+  const sectorRoic       = sectorMedians?.roic ?? null;
+  const dcf              = calculateDCF(financials, rates, { sectorRoic });
   const grahamNumber     = calculateGraham(financials);
   const ratios           = calculateRatios(financials);
-  const reverseDCF       = calculateReverseDCF(financials, rates);
+  const reverseDCF       = calculateReverseDCF(financials, rates, { sectorRoic });
   const peterLynch       = calculatePeterLynch(financials);
   const evMultiples      = calculateEVMultiples(financials);
   const ruleOf40         = calculateRuleOf40(financials);

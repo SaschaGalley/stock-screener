@@ -162,7 +162,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
           {impliedMargin ? (
             <div className="rounded border border-ink-800 bg-ink-950 p-3">
               <div className="flex items-baseline justify-between">
-                <span className="text-xs text-ink-400">Market implies a steady FCF margin of</span>
+                <span className="text-xs text-ink-400">Market implies a steady margin of</span>
                 <span className="font-mono text-lg font-semibold text-ink-50 tabular">
                   {fmtPct(impliedMargin.fcfMargin)}
                 </span>
@@ -173,7 +173,8 @@ export default function ValuationDetail({ metrics, price }: Props) {
               <p className="mt-1 text-[10px] text-ink-500">
                 On {fmtBig(impliedMargin.revenueBase)} run-rate revenue growing {fmtPct(impliedMargin.revenueGrowth)}/yr
                 ({impliedMargin.growthSource}), fading to terminal, at WACC {fmtPct(impliedMargin.discountRate)}.
-                The margin applies from year one — a firm still ramping up needs more than this at maturity.
+                Free cash flow through the forecast; in steady state the same margin also funds the reinvestment
+                growth needs. It applies from year one — a firm still ramping up needs more than this at maturity.
               </p>
             </div>
           ) : (

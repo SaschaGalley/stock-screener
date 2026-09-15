@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PROVIDERS } from './models.js';
+import { RATINGS, type Rating } from './data/ratings.js';
 
 // ─── Core Financial Data ──────────────────────────────────────────────────────
 
@@ -15,6 +16,7 @@ export const PrevYearSnapshotSchema = z.object({
   receivables:        z.number().nullable().describe('Accounts receivable from the prior fiscal year (Beneish DSRI numerator)'),
   ppe:                z.number().nullable().describe('Net property, plant & equipment from the prior fiscal year (Beneish AQI/DEPI)'),
   sga:                z.number().nullable().describe('Selling, general & administrative expenses from the prior fiscal year (Beneish SGAI)'),
+  sharesOutstanding:  z.number().nullable().optional().describe('Weighted-average shares from the prior fiscal year, on the same measure as sharesOutstandingAnnual (Piotroski F7)'),
   depreciation:       z.number().nullable().describe('Depreciation & amortization from the prior fiscal year (Beneish DEPI)'),
 });
 export type PrevYearSnapshot = z.infer<typeof PrevYearSnapshotSchema>;
@@ -127,6 +129,8 @@ export const StockFinancialsSchema = z.object({
 
   // ── Cash Flow (annual, latest) ───────────────────────────────────────────────
   operatingCashFlowAnnual: z.number().nullable().describe('Operating cash flow from the latest annual cash flow statement (Beneish TATA)'),
+  interestInOperatingCashFlow: z.boolean().nullable().optional().describe('Whether interest paid sits inside operating cash flow — always under US GAAP, by choice under IFRS. Decides whether free cash flow is after interest, and so whether the DCF adds after-tax interest back to reach FCFF. Null when the statement does not say'),
+  sharesOutstandingAnnual: z.number().nullable().optional().describe('Weighted-average shares for the latest fiscal year — diluted where both years report it, basic otherwise (Piotroski F7)'),
   capex:                   z.number().nullable().describe('Capital expenditure (absolute value) from the latest annual cash flow statement'),
   depreciation:            z.number().nullable().describe('Depreciation & amortisation from the latest annual cash flow statement (Beneish DEPI)'),
 
@@ -149,7 +153,7 @@ export const StockFinancialsSchema = z.object({
   // ── Market Data ─────────────────────────────────────────────────────────────
   fiftyTwoWeekHigh: z.number().nullable().describe('Highest closing price over the trailing 52 weeks'),
   fiftyTwoWeekLow:  z.number().nullable().describe('Lowest closing price over the trailing 52 weeks'),
-  beta:             z.number().nullable().describe('5-year monthly beta relative to the S&P 500 (market sensitivity; used in CAPM for DDM/EPV)'),
+  beta:             z.number().nullable().describe('5-year monthly beta relative to the S&P 500 (market sensitivity; the CAPM cost of equity in DCF, DDM, EPV and RIM)'),
   dividendYield:    z.number().nullable().describe('Trailing annual dividend yield (decimal, e.g. 0.005 = 0.5%)'),
   payoutRatio:      z.number().nullable().describe('Dividends paid as a fraction of net income (decimal); null if no dividend'),
 
@@ -166,7 +170,7 @@ export const StockFinancialsSchema = z.object({
   wkn:          z.string().nullable().describe('Wertpapierkennnummer — 6-char German identifier; derived from ISIN for DE0 stocks'),
 
   // ── Finnhub-enriched ─────────────────────────────────────────────────────────
-  roic:                z.number().nullable().describe('Return on invested capital TTM (decimal) from Finnhub /stock/metric roicTTM ÷ 100'),
+  roic:                z.number().nullable().describe('Return on invested capital for the latest fiscal year (decimal), from Finnhub series.annual.roic; caps the DCF terminal ROIC together with the peer median'),
   epsGrowth3Y:         z.number().nullable().describe('3-year EPS compound annual growth rate (decimal) from Finnhub epsGrowth3Y ÷ 100; preferred over TTM earningsGrowth in Graham Revised'),
   dividendGrowthRate5Y: z.number().nullable().describe('5-year dividend per share CAGR (decimal) from Finnhub dividendGrowthRate5Y ÷ 100; used in DDM growth estimate'),
 
@@ -398,19 +402,23 @@ export type TechnicalSignals = z.infer<typeof TechnicalSignalsSchema>;
 // ─── Result Types ─────────────────────────────────────────────────────────────
 
 export const DCFResultSchema = z.object({
-  fairValue:          z.number().nullable().describe('Base-case 2-stage DCF fair value per share (FCFF discounted at cost of equity, equity-bridge applied: + cash − debt)'),
-  fairValueBear:      z.number().nullable().describe('Bear-case fair value: stage-1 growth −2pp, discount rate +1pp'),
-  fairValueBull:      z.number().nullable().describe('Bull-case fair value: stage-1 growth +2pp, discount rate −1pp'),
+  fairValue:          z.number().nullable().describe('Base-case 2-stage DCF fair value per share (FCFF discounted at WACC, equity-bridge applied: + cash − debt); null for banks, insurers and brokers'),
+  fairValueBear:      z.number().nullable().describe('Bear-case fair value: stage-1 growth × 0.5 (floored at terminal + 1pp), WACC + 2pp'),
+  fairValueBull:      z.number().nullable().describe('Bull-case fair value: stage-1 growth × 1.5 (capped at 75%), WACC − 2pp (kept 1pp above terminal growth)'),
   discountRate:       z.number().describe('Discount rate used: WACC = E/V·(CAPM cost of equity) + D/V·kd·(1−tax)'),
+  costOfDebt:         z.number().nullable().describe('Pre-tax cost of debt kd (decimal): risk-free rate + the live ICE BofA spread for the synthetic rating; null for debt-free firms'),
+  syntheticRating:    z.enum(RATINGS as [Rating, ...Rating[]]).nullable().describe("Rating bucket the firm's interest coverage (EBIT ÷ interest) earns on Damodaran's table; null when unrated (priced as BBB) or debt-free"),
   beta:               z.number().nullable().describe('Beta used for CAPM (capped at [0.8, 2.0] per SWS convention)'),
-  riskFreeRate:       z.number().describe('Risk-free rate used (10Y Treasury from FRED, decimal)'),
+  riskFreeRate:       z.number().describe("Risk-free rate used (decimal): the ten-year government yield in the stock's trading currency, the Treasury for dollars"),
   equityRiskPremium:  z.number().describe("Equity risk premium used (Damodaran's implied ERP for the latest month, decimal)"),
   stage1Growth:       z.number().describe('Stage-1 (years 1–5) FCF growth rate (decimal)'),
   terminalGrowthRate: z.number().describe('Stable terminal growth rate after fade (decimal); capped at the risk-free rate — no firm outgrows the economy forever'),
+  terminalRoic:       z.number().describe("Return on new capital in perpetuity (decimal): the firm's ROIC capped at its peer median, never below WACC"),
+  terminalReinvestmentRate: z.number().describe('Share of terminal NOPAT reinvested to grow at the terminal rate: g ÷ terminal ROIC (decimal)'),
   stage1Years:        z.number().describe('Number of years in stage 1 (high-growth, default 5)'),
   fadeYears:          z.number().describe('Number of years for linear growth fade (default 5)'),
   projectedFCFs:      z.array(z.number()).describe('Year-by-year projected free cash flows over the full horizon (stage1 + fade)'),
-  terminalValue:      z.number().nullable().describe('Terminal value at end of fade period: FCF_n × (1+g_t) / (r − g_t)'),
+  terminalValue:      z.number().nullable().describe('Terminal value at end of fade period: NOPAT(n+1) × (1 − g ÷ terminal ROIC) / (r − g); built on FCFF where NOPAT is not positive'),
   enterpriseValue:    z.number().nullable().describe('Sum of PV(FCFs) + PV(terminal) — pre-equity-bridge enterprise value'),
   netDebt:            z.number().nullable().describe('Total debt − total cash; subtracted from EV to get equity value'),
   assumptions:        z.string().describe('Human-readable summary of key DCF assumptions'),
@@ -442,7 +450,7 @@ export const RatioResultSchema = z.object({
 export type RatioResult = z.infer<typeof RatioResultSchema>;
 
 export const ImpliedMarginSchema = z.object({
-  fcfMargin:        z.number().describe('Reverse SVR: the steady free-cash-flow margin (decimal) at which today\'s enterprise value is fair. Revenue follows the DCF\'s stage-1 + fade path and the margin applies from year one, so a firm still ramping up needs a higher mature margin than this'),
+  fcfMargin:        z.number().describe('Reverse SVR: the steady margin on revenue (decimal) at which today\'s enterprise value is fair — free cash flow through the forecast, and in the terminal value the operating margin that also funds stable-growth reinvestment (g ÷ terminal ROIC), as in the forward DCF. Revenue follows the DCF\'s stage-1 + fade path and the margin applies from year one, so a firm still ramping up needs a higher mature margin than this'),
   revenueBase:      z.number().describe('Annual revenue the path starts from: seasonally adjusted run-rate, else latest quarter × 4, else TTM'),
   revenueGrowth:    z.number().describe('Stage-1 revenue growth used (decimal), fading to terminal growth exactly like the DCF'),
   growthSource:     z.enum(['analyst consensus', 'latest quarter YoY', 'trailing 12 months']).describe('Where the revenue growth came from, in order of preference'),
@@ -454,7 +462,7 @@ export type ImpliedMargin = z.infer<typeof ImpliedMarginSchema>;
 
 export const ReverseDCFResultSchema = z.object({
   impliedGrowthRate: z.number().nullable().describe('Stage-1 FCF growth rate (decimal) implied by the current market price, solved by inverting the 2-stage DCF model'),
-  discountRate:      z.number().describe('CAPM-based cost of equity used (decimal)'),
+  discountRate:      z.number().describe('WACC used (decimal) — the forward DCF\'s discount rate, cash flow and terminal value, so the implied growth is what that model would need'),
   terminalGrowthRate: z.number().describe('Terminal growth rate assumption used (decimal)'),
   stage1Years:       z.number().describe('Stage-1 horizon in years (default 5)'),
   fadeYears:         z.number().describe('Fade horizon in years (default 5)'),
@@ -514,17 +522,17 @@ export const PiotroskiSignalsSchema = z.object({
   f4_accruals:             z.boolean().nullable().describe('F4: CFO/Assets > ROA (cash earnings quality)'),
   f5_reducingLeverage:     z.boolean().nullable().describe('F5: Long-term debt / assets ratio declined vs prior year'),
   f6_improvingLiquidity:   z.boolean().nullable().describe('F6: Current ratio improved vs prior year'),
-  f7_noNewShares:          z.boolean().nullable().describe('F7: No dilutive share issuance in the past year (not computed — always null)'),
+  f7_noNewShares:          z.boolean().nullable().describe('F7: weighted-average shares did not rise vs the prior fiscal year (diluted where both years report it)'),
   f8_improvingGrossMargin: z.boolean().nullable().describe('F8: Gross margin improved vs prior year'),
   f9_improvingAssetTurnover: z.boolean().nullable().describe('F9: Asset turnover (revenue / assets) improved vs prior year'),
 });
 export type PiotroskiSignals = z.infer<typeof PiotroskiSignalsSchema>;
 
 export const PiotroskiResultSchema = z.object({
-  score:          z.number().describe('Sum of all true Piotroski signals (0–9; F7 excluded so effective max is 8)'),
-  maxScore:       z.number().describe('Maximum possible score given available data (8 when F7 is excluded)'),
+  score:          z.number().describe('Sum of all true Piotroski signals (0–9)'),
+  maxScore:       z.number().describe('Signals computable from the available data (up to 9)'),
   signals:        PiotroskiSignalsSchema.describe('Individual boolean outcomes for each of the nine Piotroski criteria'),
-  interpretation: z.enum(['strong', 'neutral', 'weak']).describe('strong = score ≥ 7; weak = score ≤ 2; neutral otherwise'),
+  interpretation: z.enum(['strong', 'neutral', 'weak']).describe('strong = score ≥ 75% of computable signals; weak = score ≤ 33%; neutral otherwise'),
 });
 export type PiotroskiResult = z.infer<typeof PiotroskiResultSchema>;
 
@@ -547,7 +555,7 @@ export type AltmanZResult = z.infer<typeof AltmanZResultSchema>;
 export const DDMResultSchema = z.object({
   fairValue:           z.number().nullable().describe('Gordon Growth Model fair value: D1 / (r − g); null when g ≥ r − 2% (model unstable) or no dividend'),
   dividendPerShare:    z.number().nullable().describe('Annual dividend per share: price × dividendYield'),
-  dividendGrowthRate:  z.number().nullable().describe('Dividend growth rate used in the model (decimal, capped at 10%)'),
+  dividendGrowthRate:  z.number().nullable().describe('Perpetual dividend growth used (decimal): 5y dividend CAGR, else earnings or revenue growth, floored at 0 and capped at the risk-free rate like any stable growth'),
   requiredReturn:      z.number().nullable().describe("CAPM required return: riskFreeRate + beta × Damodaran's implied equity risk premium (decimal)"),
   isApplicable:        z.boolean().describe('False when the stock pays no dividend'),
 });
@@ -557,7 +565,7 @@ export const SortinoResultSchema = z.object({
   ratio:              z.number().nullable().describe('Sortino ratio: (annualReturn − riskFreeRate) / downsideDeviation; null when fewer than 6 monthly returns are available'),
   annualReturn:       z.number().nullable().describe('Annualised arithmetic return from monthly price data (decimal)'),
   downsideDeviation:  z.number().nullable().describe('Annualised standard deviation of negative monthly excess returns only (decimal)'),
-  riskFreeRate:       z.number().describe('Risk-free rate used as the MAR (decimal); sourced from FRED DGS10 or defaults to 4.5%'),
+  riskFreeRate:       z.number().describe("Risk-free rate used as the MAR (decimal): the ten-year government yield in the stock's trading currency"),
   interpretation:     z.enum(['excellent', 'good', 'acceptable', 'poor', 'very poor', 'unknown']).describe('excellent ≥ 2; good ≥ 1; acceptable ≥ 0.5; poor ≥ 0; very poor < 0'),
 });
 export type SortinoResult = z.infer<typeof SortinoResultSchema>;
@@ -578,10 +586,10 @@ export const BeneishResultSchema = z.object({
 export type BeneishResult = z.infer<typeof BeneishResultSchema>;
 
 export const EPVResultSchema = z.object({
-  fairValue:       z.number().nullable().describe('Earnings Power Value per share (Greenwald method): NOPAT / discountRate, plus cash − debt bridge'),
+  fairValue:       z.number().nullable().describe('Earnings Power Value per share (Greenwald method): NOPAT / discountRate, plus cash − debt bridge; null for banks, insurers and brokers'),
   normalizedEbit:  z.number().nullable().describe('Sustainable EBIT used as input (= reported EBIT; no D&A boost — true Greenwald uses cycle-averaged EBIT which we approximate with latest annual)'),
   taxRate:         z.number().describe('Effective tax rate applied (decimal); uses computed taxRate or defaults to 21%'),
-  wacc:            z.number().describe('WACC used to capitalise NOPAT (decimal): E/V·CAPM-ke + D/V·kd·(1−tax)'),
+  wacc:            z.number().describe('WACC used to capitalise NOPAT (decimal): E/V·CAPM-ke + D/V·kd·(1−tax), kd from the synthetic rating'),
   marginOfSafety:  z.number().nullable().describe('(fairValue − price) / price'),
 });
 export type EPVResult = z.infer<typeof EPVResultSchema>;
@@ -614,8 +622,8 @@ export type PeerMultiplesEntry = z.infer<typeof PeerMultiplesEntrySchema>;
 
 export const PeerMultiplesResultSchema = z.object({
   byMultiple:      z.array(PeerMultiplesEntrySchema).describe('Per-multiple fair price estimates'),
-  medianFairPrice: z.number().nullable().describe('Median fair price across all applicable multiples'),
-  meanFairPrice:   z.number().nullable().describe('Mean fair price across all applicable multiples'),
+  medianFairPrice: z.number().nullable().describe('Median fair price with one vote per fundamental priced (earnings, EBITDA, revenue, cash flow, book value); EV/Revenue and P/S share the revenue vote'),
+  meanFairPrice:   z.number().nullable().describe('Mean of the same per-fundamental votes'),
   count:           z.number().describe('Number of multiples that produced a valid fair price'),
   marginOfSafety:  z.number().nullable().describe('(medianFairPrice − price) / price'),
 });

@@ -510,11 +510,11 @@ ${analystConsensusSection(f)}
     (d.dcf.fairValueBear !== null && d.dcf.fairValueBull !== null
       ? ` [bear ${P(d.dcf.fairValueBear)} – bull ${P(d.dcf.fairValueBull)}]`
       : '') +
-    ` · r=${(d.dcf.discountRate * 100).toFixed(1)}% (CAPM, β=${fmt(d.dcf.beta)}) · g_stage1=${(d.dcf.stage1Growth * 100).toFixed(1)}% fading to ${(d.dcf.terminalGrowthRate * 100).toFixed(1)}%`
+    ` · r=${(d.dcf.discountRate * 100).toFixed(1)}% (WACC, β=${fmt(d.dcf.beta)}) · g_stage1=${(d.dcf.stage1Growth * 100).toFixed(1)}% fading to ${(d.dcf.terminalGrowthRate * 100).toFixed(1)}%, reinvesting ${fmtPct(d.dcf.terminalReinvestmentRate)} at ROIC ${fmtPct(d.dcf.terminalRoic)}`
   : `N/A — ${d.dcf.assumptions}`}
 - Reverse DCF: ${d.reverseDCF.isPossible && d.reverseDCF.impliedGrowthRate !== null ? `${(d.reverseDCF.impliedGrowthRate * 100).toFixed(1)}%/yr stage-1 FCF growth implied at r=${(d.reverseDCF.discountRate * 100).toFixed(1)}%` : 'N/A'}
-- Reverse SVR (implied FCF margin): ${im
-  ? `the current EV requires a steady ${fmtPct(im.fcfMargin)} FCF margin on ${fmtBig(im.revenueBase, cur)} run-rate revenue growing ${fmtPct(im.revenueGrowth)}/yr (${im.growthSource}) and fading to terminal, at WACC ${fmtPct(im.discountRate)} — ${im.interpretation} Current FCF margin: ${fmtPct(im.currentFcfMargin)}. The margin applies from year one, so a firm still ramping up needs a higher mature margin than this.`
+- Reverse SVR (implied margin): ${im
+  ? `the current EV requires a steady ${fmtPct(im.fcfMargin)} margin (free cash flow through the forecast; in steady state it also funds the reinvestment growth needs) on ${fmtBig(im.revenueBase, cur)} run-rate revenue growing ${fmtPct(im.revenueGrowth)}/yr (${im.growthSource}) and fading to terminal, at WACC ${fmtPct(im.discountRate)} — ${im.interpretation} Current FCF margin: ${fmtPct(im.currentFcfMargin)}. The margin applies from year one, so a firm still ramping up needs a higher mature margin than this.`
   : 'N/A — requires revenue and a revenue growth rate'}
 - Graham Number: ${d.grahamNumber.grahamNumber ? `${P(d.grahamNumber.grahamNumber)} (${fmtPct(d.grahamNumber.marginOfSafety)} MoS)` : 'N/A'}
 - Graham Revised (V*): ${d.grahamRevised.fairValue ? `${P(d.grahamRevised.fairValue)} (${fmtPct(d.grahamRevised.marginOfSafety)} MoS, AAA yield ${(d.grahamRevised.bondYield * 100).toFixed(2)}%)` : 'N/A'}

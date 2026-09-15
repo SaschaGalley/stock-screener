@@ -48,6 +48,28 @@ export async function getNews(symbol: string, apiKey: string, days = 7): Promise
   }));
 }
 
+interface FinnhubMetricResponse {
+  metric?: Record<string, unknown>;
+  series?: { annual?: Record<string, Array<{ period?: string; v?: unknown }>> };
+}
+
+/**
+ * Latest annual ROIC, as a decimal. Finnhub has no `roicTTM` in `metric` — the
+ * key this module read for years never existed, so ROIC was null for every
+ * stock and every peer group. The figure lives in `series.annual.roic`, already
+ * a decimal; the newest period is picked rather than trusting the order.
+ */
+function latestAnnualRoic(data: FinnhubMetricResponse | undefined): number | null {
+  const points = data?.series?.annual?.roic ?? [];
+  let newest: { period: string; v: number } | null = null;
+  for (const p of points) {
+    const v = toFiniteNumber(p.v);
+    if (v === null || typeof p.period !== 'string') continue;
+    if (!newest || p.period > newest.period) newest = { period: p.period, v };
+  }
+  return newest?.v ?? null;
+}
+
 export interface FinnhubBasicMetrics {
   roic: number | null;
   epsGrowth3Y: number | null;
@@ -58,14 +80,14 @@ export async function getBasicFinancials(symbol: string, apiKey: string): Promis
   const empty: FinnhubBasicMetrics = { roic: null, epsGrowth3Y: null, dividendGrowthRate5Y: null };
   try {
     const path = `/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`;
-    const data = await fetchFinnhub(path, apiKey) as { metric?: Record<string, unknown> };
+    const data = await fetchFinnhub(path, apiKey) as FinnhubMetricResponse;
     const m = data?.metric;
     if (!m) return empty;
 
     const pct = (v: unknown) => typeof v === 'number' && isFinite(v) ? v / 100 : null;
 
     return {
-      roic:                pct(m['roicTTM']),
+      roic:                latestAnnualRoic(data),
       epsGrowth3Y:         pct(m['epsGrowth3Y']),
       dividendGrowthRate5Y: pct(m['dividendGrowthRate5Y']),
     };
@@ -89,7 +111,7 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
     // 2. Fetch metrics for all peers in parallel
     const metrics = await Promise.allSettled(
       peers.map((p) =>
-        fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(p)}&metric=all`, apiKey) as Promise<{ metric?: Record<string, unknown> }>,
+        fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(p)}&metric=all`, apiKey) as Promise<FinnhubMetricResponse>,
       ),
     );
 
@@ -109,11 +131,11 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
       pe: 'peTTM', evToEbitda: 'evEbitdaTTM', evToRevenue: 'evRevenueTTM',
       priceToFCF: 'pfcfShareTTM', priceToSales: 'psTTM', pb: 'pb',
       operatingMargin: 'operatingMarginTTM', netMargin: 'netProfitMarginTTM',
-      roe: 'roeTTM', roic: 'roicTTM', revenueGrowthYoY: 'revenueGrowthTTMYoy',
+      roe: 'roeTTM', revenueGrowthYoY: 'revenueGrowthTTMYoy',
     };
 
     // Margin/growth fields come as percentages from Finnhub — convert to decimals
-    const pctFields = new Set(['operatingMargin', 'netMargin', 'roe', 'roic', 'revenueGrowthYoY']);
+    const pctFields = new Set(['operatingMargin', 'netMargin', 'roe', 'revenueGrowthYoY']);
 
     let contributingPeers = 0;
     metrics.forEach((r) => {
@@ -128,6 +150,8 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
         if (v > caps[key] || v < -caps[key]) continue;
         buckets[key].push(v);
       }
+      const roic = latestAnnualRoic(r.value);
+      if (roic !== null && Math.abs(roic) <= caps.roic) buckets.roic.push(roic);
 
       // Run-rate P/S per peer, before the median: we never fetch a peer's
       // quarters, but its P/S TTM and latest-quarter growth pin the figure down.

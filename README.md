@@ -180,21 +180,21 @@ Pass `--search` without a value to auto-select the native search for the active 
 
 | # | Model | Method |
 |---|-------|--------|
-| 1 | **2-Stage DCF (FCFF)** | Stage-1 growth (analyst-forward, capped) → linear fade → terminal. CAPM discount rate from live β + risk-free. Equity bridge (− debt + cash). |
-| 2 | **Reverse DCF + Reverse SVR** | Binary search for FCF growth implied by the current price, same 2-stage geometry. Reverse SVR inverts the same path on revenue instead: the steady FCF margin at which today's EV is fair, on run-rate revenue growing at consensus (else latest-quarter YoY, else TTM) growth. Works for pre-profit firms, where the FCF solve has no answer. |
+| 1 | **2-Stage DCF (FCFF)** | FCFF (FCF + after-tax interest where interest sits in operating cash flow) → stage-1 growth (analyst-forward, capped) → linear fade → terminal growth capped at the risk-free rate, paying for itself: TV = NOPAT × (1 − g ÷ ROIC) / (WACC − g), terminal ROIC = own ROIC capped at the peer median, never below WACC. WACC from live β, Damodaran's implied ERP, the local-currency risk-free rate and a cost of debt from the synthetic rating (interest coverage → live ICE BofA spread). Equity bridge (− debt + cash). Not applied to banks, insurers and brokers. |
+| 2 | **Reverse DCF + Reverse SVR** | Binary search for FCF growth implied by the current price, on the forward DCF's own WACC, FCFF and terminal value. Reverse SVR inverts the same path on revenue instead: the steady margin at which today's EV is fair (free cash flow through the forecast, and in steady state also funding the reinvestment growth needs), on run-rate revenue growing at consensus (else latest-quarter YoY, else TTM) growth. Works for pre-profit firms, where the FCF solve has no answer. |
 | 3 | **Graham Number** | `√(22.5 × EPS × Book Value)` |
 | 4 | **Graham Revised (V\*)** | `EPS × (8.5 + 2g) × 4.4 / AAA_yield` — live FRED rate |
 | 5 | **Peter Lynch** | `EPS × growth_rate_pct`, prefers analyst-forward growth |
-| 6 | **EPV (Greenwald)** | Normalised EBIT × (1 − tax) / WACC + cash − debt |
-| 7 | **DDM** | Gordon Growth with CAPM required return |
+| 6 | **EPV (Greenwald)** | Normalised EBIT × (1 − tax) / WACC + cash − debt; not applied to banks, insurers and brokers |
+| 7 | **DDM** | Gordon Growth with CAPM required return; perpetual dividend growth capped at the risk-free rate |
 | 8 | **RIM (Residual Income / EBO)** | Book value + Σ excess returns over cost of equity |
 | 9 | **NCAV (Graham Net-Net)** | Current assets − total liabilities, ⅔ × NCAV buy threshold |
-| 10 | **Peer Multiples** | P/E, EV/EBITDA, EV/Revenue, P/FCF, P/B, P/S vs Finnhub sector medians — implied fair price per multiple + median fair price |
+| 10 | **Peer Multiples** | P/E, EV/EBITDA, EV/Revenue, P/FCF, P/B, P/S vs Finnhub sector medians — implied fair price per multiple; the median gives each fundamental one vote, so EV/Revenue and P/S share revenue's |
 | 11 | **Composite Fair Value** | Median + IQR over all *applicable* models, split into Primary (market-aligned) and Conservative (value-investor) tiers. Sanity-bounded 0.02× – 30× of price. |
 | 12 | **EV Multiples** | EV/EBITDA, EV/Revenue, EV/FCF, P/FCF, P/S TTM, forward P/S |
 | 13 | **Simple Valuation Ratio (P/S Run-Rate)** | `marketCap / (latest_quarter_revenue × 4)` — reacts to growth inflections faster than TTM P/S. A seasonally adjusted twin (last four quarters grown at the latest quarter's YoY rate) flags quarters that are seasonal highs or lows. Benchmarked against a peer run-rate P/S: each peer's P/S TTM converted with its latest-quarter growth |
 | 14 | **Rule of 40** | Revenue growth % + operating margin % |
-| 15 | **Piotroski F-Score** | 9-signal fundamental quality screen (F1–F9) |
+| 15 | **Piotroski F-Score** | 9-signal fundamental quality screen (F1–F9); F7 compares weighted-average share counts year over year |
 | 16 | **Altman Z-Score** | Original (manufacturing) or Modified Z′ (services/tech) |
 | 17 | **Interest Coverage** | EBIT / interest expense |
 | 18 | **Sortino Ratio** | Risk-adjusted return using downside deviation, live risk-free rate |

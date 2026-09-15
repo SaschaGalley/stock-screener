@@ -38,12 +38,15 @@ import { coerce, LeafKind, readPath } from './walk.js';
 //     and enterprise value are sourced when Yahoo's market-side modules are
 //     stale. Old payloads carry none of the provenance, so they must not be
 //     served to the models as if they had been checked.
-export const FINANCIALS_VERSION     = 18;
+// 19: adds sharesOutstandingAnnual / prevYear.sharesOutstanding (Piotroski F7)
+//     and interestInOperatingCashFlow, which decides the DCF's FCFF add-back.
+export const FINANCIALS_VERSION     = 19;
 export const ANALYSIS_VERSION       = 5;
 export const NEWS_VERSION           = 1;
 export const MARKET_SIGNALS_VERSION = 2;
 // Sector medians 2: adds runRatePriceToSales, the benchmark SVR is compared to.
-export const SECTOR_MEDIANS_VERSION = 2;
+// Sector medians 3: roic is finally populated (it read a Finnhub key that never existed).
+export const SECTOR_MEDIANS_VERSION = 3;
 
 const FINANCIALS_TTL_MS     = 60 * 60 * 1000;
 const NEWS_TTL_MS           = 30 * 60 * 1000;
