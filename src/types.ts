@@ -456,7 +456,8 @@ export const ImpliedMarginSchema = z.object({
   growthSource:     z.enum(['analyst consensus', 'latest quarter YoY', 'trailing 12 months']).describe('Where the revenue growth came from, in order of preference'),
   discountRate:     z.number().describe('WACC used (decimal) — the cash flow is unlevered, as in the forward DCF'),
   currentFcfMargin: z.number().nullable().describe('Trailing FCF / TTM revenue (decimal), for comparison with what the market requires'),
-  interpretation:   z.string().describe('Plain-English verdict on how demanding the implied margin is'),
+  currentNopatMargin: z.number().nullable().describe('Today\'s after-tax operating margin: normalised EBIT × (1 − tax) / TTM revenue (decimal) — the same operating profit the DCF\'s terminal value starts from, and so the yardstick the implied margin is judged against. Null without EBIT or revenue'),
+  interpretation:   z.string().describe('Plain-English verdict on how the implied margin compares with today\'s after-tax operating margin; no verdict for firms without operating profit'),
 });
 export type ImpliedMargin = z.infer<typeof ImpliedMarginSchema>;
 

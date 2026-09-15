@@ -710,6 +710,13 @@ function deriveRevenueGrowth(
  *
  * The margin applies from year one, so for a company still ramping up it is a
  * floor under the mature margin the price requires, not an estimate of it.
+ *
+ * It is judged against the firm's own after-tax operating margin rather than
+ * fixed bands. What counts as a demanding margin depends on the business — 30%
+ * is a stretch for a retailer and a step back for a payments network — and the
+ * terminal value, where most of the value sits, reads the margin as exactly that
+ * operating profit. A ratio rather than a spread, because going from 5% to 10%
+ * doubles profitability while 40% to 45% barely moves it.
  */
 function calculateImpliedMargin(
   f: StockFinancials,
@@ -741,12 +748,21 @@ function calculateImpliedMargin(
     ? f.freeCashFlow / f.revenue
     : null;
 
+  // The same normalised operating profit the forward DCF's terminal value uses.
+  const ebit = normalizedFlow(f.ebit ?? null, f.fundamentalsHistory.operatingIncome ?? []);
+  const currentNopatMargin = ebit !== null && f.revenue !== null && f.revenue > 0
+    ? (ebit * (1 - (f.taxRate ?? 0.21))) / f.revenue
+    : null;
+
+  const ratio = currentNopatMargin !== null && currentNopatMargin > 0 ? fcfMargin / currentNopatMargin : null;
+  const times = ratio !== null ? `${ratio.toFixed(1)}× today's after-tax operating margin` : '';
   const interpretation =
     fcfMargin <= 0   ? 'Enterprise value at or below zero — the market assigns no value to the operating business.' :
-    fcfMargin < 0.10 ? 'Modest — attainable for most scaled businesses.' :
-    fcfMargin < 0.20 ? 'Healthy — typical of good-quality mature companies.' :
-    fcfMargin < 0.35 ? 'Best-in-class — requires software-like economics.' :
-                       'Extreme — above what almost any company sustains.';
+    ratio === null   ? 'No operating profit today, so there is no margin to hold it against — the price assumes the business gets there.' :
+    ratio <= 1       ? `${times} — the price holds even if margins slip.` :
+    ratio <= 1.25    ? `${times} — the price needs the business to keep what it earns.` :
+    ratio <= 1.75    ? `${times} — the price needs clear margin expansion.` :
+                       `${times} — the price needs a step change in profitability.`;
 
   return {
     fcfMargin,
@@ -755,6 +771,7 @@ function calculateImpliedMargin(
     growthSource: growth.source,
     discountRate: r,
     currentFcfMargin,
+    currentNopatMargin,
     interpretation,
   };
 }

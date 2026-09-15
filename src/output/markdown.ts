@@ -143,7 +143,7 @@ export function formatMarkdown(r: AnalysisResult): string {
     ...(rdcf.impliedMargin ? [
       `  Implied Margin (Reverse SVR): ${chalk.bold(fmtPct(rdcf.impliedMargin.fcfMargin))} — ${rdcf.impliedMargin.interpretation}`,
       chalk.gray('  free cash flow through the forecast; in steady state the same margin also funds the reinvestment growth needs'),
-      chalk.gray(`  on ${B(rdcf.impliedMargin.revenueBase)} run-rate revenue · g=${fmtPct(rdcf.impliedMargin.revenueGrowth)} (${rdcf.impliedMargin.growthSource}) fading to terminal · WACC ${fmtPct(rdcf.impliedMargin.discountRate)} · current FCF margin ${fmtPct(rdcf.impliedMargin.currentFcfMargin)}`),
+      chalk.gray(`  on ${B(rdcf.impliedMargin.revenueBase)} run-rate revenue · g=${fmtPct(rdcf.impliedMargin.revenueGrowth)} (${rdcf.impliedMargin.growthSource}) fading to terminal · WACC ${fmtPct(rdcf.impliedMargin.discountRate)} · today: after-tax operating margin ${fmtPct(rdcf.impliedMargin.currentNopatMargin)}, FCF margin ${fmtPct(rdcf.impliedMargin.currentFcfMargin)}`),
     ] : []),
     '',
 

@@ -168,7 +168,8 @@ export default function ValuationDetail({ metrics, price }: Props) {
                 </span>
               </div>
               <p className="mt-1.5 text-[11px] text-ink-400">
-                {impliedMargin.interpretation} Current FCF margin: {fmtPct(impliedMargin.currentFcfMargin)}.
+                {impliedMargin.interpretation} Today: after-tax operating margin{' '}
+                {fmtPct(impliedMargin.currentNopatMargin)}, FCF margin {fmtPct(impliedMargin.currentFcfMargin)}.
               </p>
               <p className="mt-1 text-[10px] text-ink-500">
                 On {fmtBig(impliedMargin.revenueBase)} run-rate revenue growing {fmtPct(impliedMargin.revenueGrowth)}/yr

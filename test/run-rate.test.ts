@@ -124,6 +124,31 @@ describe('reverse SVR', () => {
     assert.equal(reverse.impliedMargin?.growthSource, 'latest quarter YoY');
     close(reverse.impliedMargin?.fcfMargin, margin);
     close(reverse.impliedMargin?.currentFcfMargin, -20 / 90);
+    assert.equal(reverse.impliedMargin?.currentNopatMargin, null);
+    assert.match(reverse.impliedMargin!.interpretation, /No operating profit today/);
+  });
+
+  it('judges the implied margin against the firm\'s own after-tax operating margin', () => {
+    const margin = 0.2;
+    const base = financials();
+    const ev = calculateEVMultiples(base);
+    const runRateRevenue = base.marketCap / ev.seasonallyAdjustedValuationRatio!;
+    const dcf = calculateDCF({ ...base, freeCashFlow: margin * runRateRevenue }, rates, { growthRate: ev.latestQuarterYoYGrowth! });
+
+    /** Priced at a 20% margin, with EBIT set so today's after-tax operating margin is `nopatMargin`. */
+    const at = (nopatMargin: number) => calculateReverseDCF(financials({
+      price: dcf.fairValue!,
+      marketCap: dcf.fairValue! * 10_000_000,
+      ebit: (nopatMargin * 90_000_000) / (1 - 0.21),
+    }), rates).impliedMargin!;
+
+    const comfortable = at(0.25);
+    const stretched = at(0.08);
+
+    close(comfortable.fcfMargin, margin);
+    close(comfortable.currentNopatMargin, 0.25);
+    assert.match(comfortable.interpretation, /^0\.8× .* holds even if margins slip/);
+    assert.match(stretched.interpretation, /^2\.5× .* step change/);
   });
 
   it('prefers consensus revenue growth, capped like the DCF', () => {
