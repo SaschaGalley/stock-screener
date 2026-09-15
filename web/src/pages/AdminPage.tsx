@@ -355,6 +355,24 @@ export default function AdminPage() {
                 <option value="sonar-pro">sonar-pro</option>
               </select>
             </div>
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-ink-400">Perplexity-Cache</label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={config.perplexity.maxAgeDays}
+                onChange={(e) => patch((d) => {
+                  d.perplexity.maxAgeDays = Math.max(1, Math.min(365, Number(e.target.value) || 1));
+                })}
+                className={`${inputCls} w-16 text-right font-mono`}
+              />
+              <span className="text-[11px] text-ink-500">Tage</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-ink-500">
+              Gilt für jede Analyse, auch für manuelle Re-runs — jeder Aufruf kostet.
+              ↻ Refresh unter Research &amp; News fragt sofort neu.
+            </p>
           </Card>
         </div>
 

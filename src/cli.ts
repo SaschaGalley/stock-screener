@@ -21,7 +21,6 @@ import {
   readAnalysis,      writeAnalysis,
   readNews,          writeNews,
   readMarketSignals, writeMarketSignals,
-  readPerplexity,    writePerplexity,
   readDistill,       writeDistill,
   recordRunData,
   AnalysisFlagsKey,  analysisHash,
@@ -32,7 +31,7 @@ import { deriveTechnicalSignals } from './analysis/signals.js';
 import { fetchEdgarFilings } from './data/edgar.js';
 import { getMarketRates } from './data/fred.js';
 import { getMacroBundle } from './data/macro.js';
-import { fetchPerplexity } from './data/perplexity.js';
+import { getPerplexityCached } from './perplexity-service.js';
 import { DistillBundle } from './data/distill.js';
 import { distillHintsFor } from './distill-service.js';
 import { buildDistillBundle } from './distill-content.js';
@@ -98,7 +97,7 @@ program
     '  submissions   Download SEC/EDGAR filings\n' +
     '  (omit value to fetch both)',
   )
-  .option('--pplx', 'Enrich with Perplexity sonar (fast, cheap — requires PPLX_API_KEY, cached 12h)')
+  .option('--pplx', 'Enrich with Perplexity sonar (fast, cheap — requires PPLX_API_KEY, cached 14 days unless changed in the admin settings)')
   .option('--pplx-pro', 'Enrich with Perplexity sonar-pro (better coverage, default when using Perplexity)')
   .option('-v, --verbose', 'Debug logging')
   .addHelpText('after', `
@@ -116,7 +115,7 @@ Examples:
   $ npx tsx src/cli.ts AAPL --fetch                  # refresh financials + download filings
   $ npx tsx src/cli.ts AAPL --fetch financials        # refresh market data only
   $ npx tsx src/cli.ts AAPL --fetch submissions       # download SEC 10-K/10-Q/8-K
-  $ npx tsx src/cli.ts AAPL --pplx                   # add Perplexity AI synthesis (12h cache)
+  $ npx tsx src/cli.ts AAPL --pplx                   # add Perplexity AI synthesis (14-day cache)
 
 Required API keys (set in .env):
   ANTHROPIC_API_KEY     for --model claude / opus / claude-*
@@ -338,10 +337,9 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     + '…' });
 
   let news: NewsItem[] = (await readNews(symbol)) ?? [];
-  let perplexity = usePplx ? await readPerplexity(symbol) : null;
   let distill: DistillBundle | null = useDistill ? await readDistill(symbol) : null;
 
-  const [freshNews, marketRates, sectorMedians, freshPerplexity, freshDistill] = await Promise.all([
+  const [freshNews, marketRates, sectorMedians, perplexity, freshDistill] = await Promise.all([
     news.length === 0 && cfg.finnhubApiKey
       ? getNews(symbol, cfg.finnhubApiKey).catch((e) => {
           logger.warn(`News unavailable: ${(e as Error).message}`);
@@ -352,8 +350,11 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     cfg.finnhubApiKey
       ? getSectorMediansCached(symbol, cfg.finnhubApiKey)
       : Promise.resolve(null),
-    usePplx && !perplexity
-      ? fetchPerplexity(symbol, financials.companyName, requireApiKey('perplexity'), pplxModel)
+    // Deliberately not bypassed by `force`: a re-run asks for a new verdict,
+    // not new research, and the cache window exists so re-runs stop paying
+    // for the same synthesis again.
+    usePplx
+      ? getPerplexityCached(symbol, financials.companyName, pplxModel, requireApiKey('perplexity'), input.runId)
           .catch((e) => {
             logger.warn(`Perplexity unavailable: ${(e as Error).message}`);
             return null;
@@ -375,10 +376,6 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   if (freshNews && freshNews.length > 0) {
     news = freshNews;
     await writeNews(symbol, news, input.runId);
-  }
-  if (freshPerplexity) {
-    perplexity = freshPerplexity;
-    await writePerplexity(symbol, perplexity, input.runId);
   }
   if (freshDistill) {
     distill = freshDistill;

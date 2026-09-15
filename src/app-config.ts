@@ -70,6 +70,19 @@ export const AppConfigSchema = z.object({
   }).prefault({}),
 
   /**
+   * Perplexity research. Not under `steps`, because it governs every analysis
+   * — a click in the web UI or a re-run as much as the nightly pass.
+   */
+  perplexity: z.object({
+    /**
+     * Serve the stored synthesis until it is this old. Each call is billed,
+     * and at the former 12 hours nearly every analysis paid for a new one.
+     * The refresh in Research & News is the way past it.
+     */
+    maxAgeDays: z.number().int().min(1).max(365).default(14),
+  }).prefault({}),
+
+  /**
    * Per-symbol opt-out. Absent means "included" — a newly analysed stock joins
    * the nightly run without anyone having to remember to enable it.
    */
@@ -113,8 +126,9 @@ function repair(raw: unknown): AppConfig {
   };
   return {
     schedule:  section('schedule'),
-    steps:     section('steps'),
-    watchlist: section('watchlist'),
+    steps:      section('steps'),
+    perplexity: section('perplexity'),
+    watchlist:  section('watchlist'),
   };
 }
 

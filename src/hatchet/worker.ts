@@ -47,15 +47,15 @@ async function main(): Promise<void> {
 
   const { ping } = await import('./tasks/ping.js');
   const { pipeline, dataTask, distillTask, analysisTask } = await import('./tasks/pipeline.js');
-  const { refreshData, distillRefresh, analyze } = await import('./tasks/single.js');
+  const { refreshData, distillRefresh, perplexityRefresh, analyze } = await import('./tasks/single.js');
   const { ensureRateLimits } = await import('./limits.js');
 
   // Grouped by what they contend for, not by what they do. Each interactive
   // task sits with the pipeline stage it duplicates, so a click and the nightly
   // run draw on one ceiling rather than each getting their own.
   const byRole = {
-    all:      [ping, pipeline, dataTask, distillTask, analysisTask, refreshData, distillRefresh, analyze],
-    general:  [ping, pipeline, dataTask, refreshData],
+    all:      [ping, pipeline, dataTask, distillTask, analysisTask, refreshData, distillRefresh, perplexityRefresh, analyze],
+    general:  [ping, pipeline, dataTask, refreshData, perplexityRefresh],
     distill:  [distillTask, distillRefresh],
     analysis: [analysisTask, analyze],
   } satisfies Record<WorkerRole, unknown[]>;

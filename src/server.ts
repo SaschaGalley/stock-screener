@@ -35,6 +35,7 @@ import { getSectorMediansCached } from './sector-medians.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { deriveTechnicalSignals } from './analysis/signals.js';
 import { refreshStockData } from './refresh.js';
+import { refreshPerplexity } from './perplexity-service.js';
 import { searchByQuery } from './data/yfinance.js';
 import { AppConfigSchema, readAppConfig, writeAppConfig, isWatched } from './app-config.js';
 import {
@@ -297,6 +298,32 @@ export function createApp(): express.Express {
         },
       );
       res.json({ ok: true, ...out.data });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── POST /api/stocks/:symbol/perplexity-refresh ────────────────────────────
+  // Asks Perplexity again, past the cache window. Every analysis serves the
+  // stored synthesis until the window runs out, so this is the one deliberate
+  // way to pay for a new one sooner. Body: `{ model?: 'sonar' | 'sonar-pro' }`.
+  app.post('/api/stocks/:symbol/perplexity-refresh', async (req, res, next) => {
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      if (!cfg.pplxApiKey) {
+        res.status(400).json({ error: 'Perplexity not configured — set PPLX_API_KEY in .env.' });
+        return;
+      }
+      const requested = (req.body as { model?: unknown } | undefined)?.model;
+      const model = requested === 'sonar' ? 'sonar' : 'sonar-pro';
+
+      const { perplexityRefresh } = await import('./hatchet/tasks/single.js');
+      const { perplexity } = await viaHatchet(
+        () => perplexityRefresh.run({ symbol, model }, interactive({ symbol })),
+        async () => ({ perplexity: await refreshPerplexity(symbol, model, cfg.pplxApiKey!) as never }),
+      );
+
+      res.json({ ok: true, symbol, perplexity });
     } catch (e) {
       next(e);
     }

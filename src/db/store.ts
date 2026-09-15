@@ -52,7 +52,6 @@ const FINANCIALS_TTL_MS     = 60 * 60 * 1000;
 const NEWS_TTL_MS           = 30 * 60 * 1000;
 const MARKET_SIGNALS_TTL_MS = 30 * 60 * 1000;
 const SECTOR_MEDIANS_TTL_MS = 24 * 60 * 60 * 1000;
-const PERPLEXITY_TTL_MS     = 12 * 60 * 60 * 1000;
 const DISTILL_TTL_MS        = 30 * 60 * 1000;
 
 export type SnapshotKind =
@@ -447,10 +446,11 @@ export async function listDocuments<D = unknown>(
 
 // ── Typed document wrappers ──────────────────────────────────────────────────
 
-export async function readPerplexity(symbol: string): Promise<PerplexityContext | null> {
+/** `maxAgeMs` is a setting, not a constant — see `perplexity-service.ts`. */
+export async function readPerplexity(symbol: string, maxAgeMs: number): Promise<PerplexityContext | null> {
   const doc = await latestDocument<PerplexityContext>(symbol, 'perplexity');
   if (!doc) return null;
-  if (Date.now() - new Date(doc.lastSeenAt).getTime() > PERPLEXITY_TTL_MS) return null;
+  if (Date.now() - new Date(doc.lastSeenAt).getTime() > maxAgeMs) return null;
   return doc.data;
 }
 

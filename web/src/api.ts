@@ -9,6 +9,8 @@ import type {
   StockBundle,
   ProgressEvent,
   DistillRefreshResponse,
+  PerplexityRefreshResponse,
+  PplxChoice,
   OverviewRow,
   MetricCatalogEntry,
   MetricSeries,
@@ -106,6 +108,20 @@ export const api = {
         method: 'POST',
         // No explicit AbortSignal — the browser default (no timeout for fetch)
         // is what we want here. Fetch only aborts via explicit signal.
+      },
+    ),
+
+  /**
+   * Ask Perplexity again, ignoring the cache window every analysis honours.
+   * Billed — one call. Without a model the server uses sonar-pro.
+   */
+  refreshPerplexity: (symbol: string, model?: PplxChoice) =>
+    jsonFetch<PerplexityRefreshResponse>(
+      `${BASE}/stocks/${encodeURIComponent(symbol)}/perplexity-refresh`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(model ? { model } : {}),
       },
     ),
 

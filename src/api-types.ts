@@ -193,6 +193,13 @@ export interface DistillRefreshResponse {
   bundle: DistillBundle;
 }
 
+/** `POST /api/stocks/:symbol/perplexity-refresh` — one billed call, past the cache window. */
+export interface PerplexityRefreshResponse {
+  ok:         boolean;
+  symbol:     string;
+  perplexity: PerplexityContext;
+}
+
 /** Candidate carried by a 409 `distill_entity_unresolved`. */
 export type DistillEntityCandidate = Pick<
   DistillEntityHit,

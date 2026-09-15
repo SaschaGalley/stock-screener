@@ -7,17 +7,21 @@ import type {
   DistillBriefing,
   DistillDossierBlock,
   DistillInsight,
+  PerplexityContext,
+  PplxChoice,
 } from '../../types';
 
 interface Props {
   symbol: string;
   news: any[];
-  perplexity: any;
+  perplexity: PerplexityContext | null;
+  /** The sidebar's Perplexity choice — the model a refresh asks for. */
+  pplx: PplxChoice;
   distill: DistillBundle | null;
   searches: SearchTrace | null;
-  /** Called after a successful Distill refresh so the parent can re-fetch
-   *  the freshly read dossiers and insights. */
-  onDistillRefreshed: () => void;
+  /** Called after a successful Distill or Perplexity refresh so the parent can
+   *  re-fetch the bundle that now carries it. */
+  onRefreshed: () => void;
 }
 
 /** Friendly label + accent shade per provider. Kept simple — these are debug
@@ -29,47 +33,18 @@ const PROVIDER_META: Record<SearchProviderTrace['provider'], { label: string; ti
   'openai-web-search':   { label: 'OpenAI web_search', tint: 'border-l-emerald-500' },
 };
 
-export default function NewsAndResearch({ symbol, news, perplexity, distill, searches, onDistillRefreshed }: Props) {
+export default function NewsAndResearch({ symbol, news, perplexity, pplx, distill, searches, onRefreshed }: Props) {
   return (
     <div className="space-y-6">
       {/* Distill — top of the section because it's the most-weighted qualitative
           signal in the LLM prompt. Always rendered (even with zero briefings)
           so the user can trigger a first generation via the Refresh button. */}
-      <DistillSection symbol={symbol} distill={distill} onRefreshed={onDistillRefreshed} />
+      <DistillSection symbol={symbol} distill={distill} onRefreshed={onRefreshed} />
 
-
-      {perplexity && (
-        <details className="rounded border border-ink-800 bg-ink-950" open>
-          <summary className="cursor-pointer px-3 py-2 text-xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-              Perplexity Research
-            </span>
-            <span className="ml-2 text-[10px] text-ink-600">
-              {perplexity.model} · {new Date(perplexity.fetchedAt).toLocaleString()}
-            </span>
-          </summary>
-          <div className="border-t border-ink-800 px-3 py-2">
-            <div className="prose-stock max-h-96 overflow-y-auto text-xs">
-              {perplexity.synthesis.split('\n').map((line: string, i: number) => (
-                <p key={i} className={line.startsWith('**') ? 'mt-3 font-semibold text-ink-100' : 'mt-1'}>
-                  {line.replace(/\*\*/g, '')}
-                </p>
-              ))}
-            </div>
-            {perplexity.citations?.length > 0 && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-[10px] text-ink-500">
-                  {perplexity.citations.length} sources
-                </summary>
-                <ul className="mt-1 space-y-0.5 pl-4 text-[10px] text-ink-500">
-                  {perplexity.citations.map((u: string, i: number) => (
-                    <li key={i}><a href={u} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">{u}</a></li>
-                  ))}
-                </ul>
-              </details>
-            )}
-          </div>
-        </details>
+      {/* Also shown with nothing stored yet when Perplexity is selected, so a
+          first synthesis can be fetched without running an analysis. */}
+      {(perplexity || pplx) && (
+        <PerplexitySection symbol={symbol} perplexity={perplexity} pplx={pplx} onRefreshed={onRefreshed} />
       )}
 
       {/* Search Traces — one collapsible block per provider that ran. Persisted
@@ -240,14 +215,123 @@ function DistillSection({
   );
 }
 
-function RefreshButton({ busy, disabled, onClick }: { busy: boolean; disabled: boolean; onClick: () => void }) {
+/**
+ * The stored Perplexity synthesis, with a refresh that goes past the cache.
+ *
+ * Every analysis — re-runs included — serves the stored synthesis until the
+ * cache window in the admin settings runs out (14 days by default), because
+ * each call is billed. This button is the one way to buy a new one sooner.
+ */
+function PerplexitySection({
+  symbol,
+  perplexity,
+  pplx,
+  onRefreshed,
+}: {
+  symbol: string;
+  perplexity: PerplexityContext | null;
+  pplx: PplxChoice;
+  onRefreshed: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // The sidebar's choice wins; without one, keep the model the stored
+  // synthesis came from.
+  const model = pplx ?? perplexity?.model ?? null;
+
+  useEffect(() => { setError(null); }, [symbol]);
+
+  async function handleRefresh() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.refreshPerplexity(symbol, model);
+      onRefreshed();
+    } catch (e) {
+      setError((e as Error).message ?? 'Refresh failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          Perplexity Research
+        </h3>
+        <div className="flex items-center gap-2">
+          {perplexity && (
+            <span className="text-[10px] text-ink-600">
+              {perplexity.model} · {new Date(perplexity.fetchedAt).toLocaleString()}
+            </span>
+          )}
+          <RefreshButton
+            busy={busy}
+            disabled={false}
+            onClick={handleRefresh}
+            title={`Perplexity neu abfragen (${model ?? 'sonar-pro'}) — ohne Cache, kostet einen Aufruf.`}
+          />
+        </div>
+      </div>
+
+      {busy && (
+        <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-[11px] text-ink-300">
+          ⟳ Frage Perplexity ab… dauert meist 10–30 Sekunden.
+        </div>
+      )}
+      {error && (
+        <div className="mb-2 rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-[11px] text-amber-300">
+          ⚠ {error}
+        </div>
+      )}
+
+      {perplexity ? (
+        <div className="rounded border border-ink-800 bg-ink-950 px-3 py-2">
+          <div className="prose-stock max-h-96 overflow-y-auto text-xs">
+            {perplexity.synthesis.split('\n').map((line, i) => (
+              <p key={i} className={line.startsWith('**') ? 'mt-3 font-semibold text-ink-100' : 'mt-1'}>
+                {line.replace(/\*\*/g, '')}
+              </p>
+            ))}
+          </div>
+          {perplexity.citations?.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[10px] text-ink-500">
+                {perplexity.citations.length} sources
+              </summary>
+              <ul className="mt-1 space-y-0.5 pl-4 text-[10px] text-ink-500">
+                {perplexity.citations.map((u, i) => (
+                  <li key={i}><a href={u} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">{u}</a></li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      ) : (
+        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
+          Noch keine Perplexity-Recherche für {symbol}. Die nächste Analyse holt eine,
+          oder ↻ Refresh sofort.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RefreshButton({ busy, disabled, onClick, title }: {
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
   return (
     <button
       onClick={onClick}
       disabled={busy || disabled}
       title={disabled
         ? 'Refresh unavailable — see the hint below for the fix.'
-        : 'Trigger a Distill refresh — drains pending insights and (re)generates the briefing.'}
+        : title ?? 'Trigger a Distill refresh — drains pending insights and (re)generates the briefing.'}
       className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-[10px] font-medium text-ink-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {busy ? '⟳' : '↻'} Refresh

@@ -348,9 +348,10 @@ export default function AnalysisView({
                 symbol={symbol}
                 news={bundle.news}
                 perplexity={bundle.perplexity}
+                pplx={flags.pplx}
                 distill={bundle.distill}
                 searches={analysis?.searches ?? null}
-                onDistillRefreshed={() => setLocalRefresh((x) => x + 1)}
+                onRefreshed={() => setLocalRefresh((x) => x + 1)}
               />
             </Section>
 

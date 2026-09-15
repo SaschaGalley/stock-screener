@@ -27,6 +27,7 @@ import { getConfig } from '../../config.js';
 import { readFinancialsLax } from '../../db/store.js';
 import { distillHintsFor } from '../../distill-service.js';
 import { syncDistillDossiers } from '../../distill-content.js';
+import { PerplexityModel, refreshPerplexity } from '../../perplexity-service.js';
 import { refreshStockData } from '../../refresh.js';
 import { runAnalysis } from '../../cli.js';
 import { looksLikeSymbol } from '../../symbols.js';
@@ -115,6 +116,26 @@ export const distillRefresh = hatchet.task<DistillRefreshInput, DistillRefreshOu
       );
       return { result: result as unknown as JsonPayload };
     });
+  },
+});
+
+// ── Perplexity refresh ───────────────────────────────────────────────────────
+
+export type PerplexityRefreshInput = { symbol: string; model: PerplexityModel };
+
+export type PerplexityRefreshOutput = { perplexity: JsonPayload };
+
+export const perplexityRefresh = hatchet.task<PerplexityRefreshInput, PerplexityRefreshOutput>({
+  name:    'perplexity-refresh',
+  // None: the click is a decision to pay for one call, and a retry after a
+  // timeout could pay for the same answer twice.
+  retries: 0,
+  executionTimeout: REFRESH_TIMEOUT,
+  fn: async (input): Promise<PerplexityRefreshOutput> => {
+    const apiKey = getConfig().pplxApiKey;
+    if (!apiKey) throw new Error('Perplexity not configured — set PPLX_API_KEY.');
+    const perplexity = await refreshPerplexity(input.symbol, input.model, apiKey);
+    return { perplexity: perplexity as unknown as JsonPayload };
   },
 });
 

@@ -34,6 +34,7 @@ export type {
   DistillRefreshResponse,
   DistillEntityCandidate,
   DistillEntityUnresolvedResponse,
+  PerplexityRefreshResponse,
 } from '../../src/api-types';
 
 // ── Domain types, from the modules that model them ───────────────────────────
@@ -72,6 +73,8 @@ export type {
 } from '../../src/data/distill';
 
 export type { DistillEntityRef, DistillMatchTier } from '../../src/data/distill-entities';
+
+export type { PerplexityContext } from '../../src/data/perplexity';
 
 export type { AppConfig } from '../../src/app-config';
 
