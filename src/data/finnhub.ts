@@ -1,5 +1,7 @@
 import { NewsItem, SectorMedians } from '../types.js';
+import { runRateToTrailing } from '../analysis/run-rate.js';
 import { logger } from '../utils/logger.js';
+import { toFiniteNumber } from '../utils/num.js';
 
 const BASE = 'https://finnhub.io/api/v1';
 
@@ -95,6 +97,7 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
     const buckets: Record<string, number[]> = {
       pe: [], evToEbitda: [], evToRevenue: [], priceToFCF: [], priceToSales: [], pb: [],
       operatingMargin: [], netMargin: [], roe: [], roic: [], revenueGrowthYoY: [],
+      runRatePriceToSales: [],
     };
 
     const caps: Record<string, number> = {
@@ -125,6 +128,17 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
         if (v > caps[key] || v < -caps[key]) continue;
         buckets[key].push(v);
       }
+
+      // Run-rate P/S per peer, before the median: we never fetch a peer's
+      // quarters, but its P/S TTM and latest-quarter growth pin the figure down.
+      // Growth beyond the cap is clamped, not dropped — a peer that sits in the
+      // P/S TTM median but not in this one makes the two compare different
+      // firms, and on eight peers one missing name moves the median a lot.
+      const ps = toFiniteNumber(m.psTTM);
+      const yoyPct = toFiniteNumber(m.revenueGrowthQuarterlyYoy) ?? toFiniteNumber(m.revenueGrowthTTMYoy);
+      if (ps === null || ps <= 0 || ps > caps.priceToSales || yoyPct === null) return;
+      const factor = runRateToTrailing(Math.min(yoyPct / 100, caps.revenueGrowthYoY));
+      if (factor !== null) buckets.runRatePriceToSales.push(ps / factor);
     });
 
     const median = (arr: number[]): number | null => {
@@ -149,7 +163,8 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
       priceToFCF:          median(buckets.priceToFCF),
       priceToSales:        psMedian,
       forwardPriceToSales: forwardPSMedian,
-      pb:                  median(buckets.pb),
+      runRatePriceToSales: median(buckets.runRatePriceToSales),
+      pb:                 median(buckets.pb),
       operatingMargin:     median(buckets.operatingMargin),
       netMargin:           median(buckets.netMargin),
       roe:                 median(buckets.roe),

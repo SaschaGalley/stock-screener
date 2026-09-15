@@ -42,7 +42,8 @@ export const FINANCIALS_VERSION     = 18;
 export const ANALYSIS_VERSION       = 5;
 export const NEWS_VERSION           = 1;
 export const MARKET_SIGNALS_VERSION = 2;
-export const SECTOR_MEDIANS_VERSION = 1;
+// Sector medians 2: adds runRatePriceToSales, the benchmark SVR is compared to.
+export const SECTOR_MEDIANS_VERSION = 2;
 
 const FINANCIALS_TTL_MS     = 60 * 60 * 1000;
 const NEWS_TTL_MS           = 30 * 60 * 1000;

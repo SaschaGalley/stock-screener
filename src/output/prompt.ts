@@ -22,6 +22,7 @@ import {
   fmtPct,
   fmtBig,
 } from '../analysis/metrics.js';
+import { SEASONAL_GAP_THRESHOLD } from '../analysis/run-rate.js';
 import { currencyPrefix, fmtPrice } from '../format.js';
 import { MarketSignals, SectorMedians, StockFinancials } from '../types.js';
 import { PerplexityContext } from '../data/perplexity.js';
@@ -447,6 +448,12 @@ export function buildAnalysisPrompt(
   const sym = currencyPrefix(cur);
   const P = (n: number | null | undefined) => fmtPrice(n, cur);
 
+  const ev = d.evMultiples;
+  const im = d.reverseDCF.impliedMargin;
+  const seasonalNote = ev.seasonalGap !== null && Math.abs(ev.seasonalGap) > SEASONAL_GAP_THRESHOLD
+    ? `\n  ⚠ SVR sits ${signedPct(ev.seasonalGap)} from its seasonally adjusted value — the latest quarter is a seasonal ${ev.seasonalGap < 0 ? 'high' : 'low'} or carries a one-off (e.g. an acquisition); read the adjusted figure.`
+    : '';
+
   // Empty string for a clean payload, so the section disappears entirely.
   const dataQuality = dataQualitySection(f);
 
@@ -470,9 +477,10 @@ ${dataQuality ? `\n${dataQuality}` : ''}
 
 ### Traditional Valuation
 - P/E: ${fmt(d.ratios.pe, 'x')} | Forward P/E: ${fmt(d.ratios.forwardPE, 'x')} | Avg P/E 5Y: ${fmt(f.avgPE5Y, 'x')} | PEG: ${fmt(d.ratios.peg)}
-- P/B: ${fmt(d.ratios.pb, 'x')} | P/S: ${fmt(d.evMultiples.priceToSales, 'x')} | P/FCF: ${fmt(d.evMultiples.priceToFCF, 'x')}
-- EV/EBITDA: ${fmt(d.evMultiples.evToEbitda, 'x')} | EV/Revenue: ${fmt(d.evMultiples.evToRevenue, 'x')}${d.sectorMedians ? `
-- Peer medians (${d.sectorMedians.peerCount} cos): P/E ${fmt(d.sectorMedians.pe, 'x', 1)} | EV/EBITDA ${fmt(d.sectorMedians.evToEbitda, 'x', 1)} | EV/Revenue ${fmt(d.sectorMedians.evToRevenue, 'x', 1)} | P/FCF ${fmt(d.sectorMedians.priceToFCF, 'x', 1)} | P/B ${fmt(d.sectorMedians.pb, 'x', 1)}` : ''}
+- P/B: ${fmt(d.ratios.pb, 'x')} | P/FCF: ${fmt(d.evMultiples.priceToFCF, 'x')}
+- EV/EBITDA: ${fmt(d.evMultiples.evToEbitda, 'x')} | EV/Revenue: ${fmt(d.evMultiples.evToRevenue, 'x')}
+- Revenue multiples: P/S TTM ${fmt(ev.priceToSales, 'x')} | SVR (market cap ÷ latest quarter revenue × 4) ${fmt(ev.simpleValuationRatio, 'x')} | SVR seasonally adjusted ${fmt(ev.seasonallyAdjustedValuationRatio, 'x')} | Forward P/S ${fmt(ev.forwardPriceToSales, 'x')} | Latest-quarter revenue YoY ${signedPct(ev.latestQuarterYoYGrowth)}${seasonalNote}${d.sectorMedians ? `
+- Peer medians (${d.sectorMedians.peerCount} cos): P/E ${fmt(d.sectorMedians.pe, 'x', 1)} | EV/EBITDA ${fmt(d.sectorMedians.evToEbitda, 'x', 1)} | EV/Revenue ${fmt(d.sectorMedians.evToRevenue, 'x', 1)} | P/S TTM ${fmt(d.sectorMedians.priceToSales, 'x', 1)} | Run-rate P/S (compare to SVR) ${fmt(d.sectorMedians.runRatePriceToSales, 'x', 1)} | Forward P/S ${fmt(d.sectorMedians.forwardPriceToSales, 'x', 1)} | P/FCF ${fmt(d.sectorMedians.priceToFCF, 'x', 1)} | P/B ${fmt(d.sectorMedians.pb, 'x', 1)}` : ''}
 
 ### Profitability & Growth
 - ROE: ${fmtPct(d.ratios.roe)} | ROA: ${fmtPct(d.ratios.roa)} | ROIC: ${fmtPct(f.roic)}
@@ -505,6 +513,9 @@ ${analystConsensusSection(f)}
     ` · r=${(d.dcf.discountRate * 100).toFixed(1)}% (CAPM, β=${fmt(d.dcf.beta)}) · g_stage1=${(d.dcf.stage1Growth * 100).toFixed(1)}% fading to ${(d.dcf.terminalGrowthRate * 100).toFixed(1)}%`
   : `N/A — ${d.dcf.assumptions}`}
 - Reverse DCF: ${d.reverseDCF.isPossible && d.reverseDCF.impliedGrowthRate !== null ? `${(d.reverseDCF.impliedGrowthRate * 100).toFixed(1)}%/yr stage-1 FCF growth implied at r=${(d.reverseDCF.discountRate * 100).toFixed(1)}%` : 'N/A'}
+- Reverse SVR (implied FCF margin): ${im
+  ? `the current EV requires a steady ${fmtPct(im.fcfMargin)} FCF margin on ${fmtBig(im.revenueBase, cur)} run-rate revenue growing ${fmtPct(im.revenueGrowth)}/yr (${im.growthSource}) and fading to terminal, at WACC ${fmtPct(im.discountRate)} — ${im.interpretation} Current FCF margin: ${fmtPct(im.currentFcfMargin)}. The margin applies from year one, so a firm still ramping up needs a higher mature margin than this.`
+  : 'N/A — requires revenue and a revenue growth rate'}
 - Graham Number: ${d.grahamNumber.grahamNumber ? `${P(d.grahamNumber.grahamNumber)} (${fmtPct(d.grahamNumber.marginOfSafety)} MoS)` : 'N/A'}
 - Graham Revised (V*): ${d.grahamRevised.fairValue ? `${P(d.grahamRevised.fairValue)} (${fmtPct(d.grahamRevised.marginOfSafety)} MoS, AAA yield ${(d.grahamRevised.bondYield * 100).toFixed(2)}%)` : 'N/A'}
 - Peter Lynch Fair Value: ${d.peterLynch.fairValue ? `${P(d.peterLynch.fairValue)}` : 'N/A'}

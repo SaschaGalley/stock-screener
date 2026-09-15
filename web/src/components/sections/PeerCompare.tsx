@@ -31,9 +31,16 @@ export default function PeerCompare({ ratios, evMultiples: ev, financials: f, se
     {
       label: 'P/S Run-Rate',
       value: ev.simpleValuationRatio,
-      median: sm.priceToSales,  // peers don't expose run-rate; compare to sector P/S TTM
+      median: sm.runRatePriceToSales ?? null,  // absent from analyses cached before the field existed
       lowerIsBetter: true,
-      hint: 'Own value: market cap ÷ (latest quarter revenue × 4). Compared against sector P/S TTM (peers don\'t expose run-rate). For accelerating revenue this row goes greener earlier than P/S TTM; for decelerating revenue it goes redder earlier.',
+      hint: 'Own value: market cap ÷ (latest quarter revenue × 4). Peer median: each peer\'s P/S TTM converted to run-rate with its latest-quarter revenue growth, so a fast grower is not flattered by comparing its run-rate against trailing peer multiples.',
+    },
+    {
+      label: 'P/S Run-Rate (seas. adj.)',
+      value: ev.seasonallyAdjustedValuationRatio ?? null,
+      median: sm.runRatePriceToSales ?? null,
+      lowerIsBetter: true,
+      hint: 'Run-rate P/S with the seasonal pattern divided out — the last four quarters grown at the latest quarter\'s YoY rate. Same peer benchmark as the row above.',
     },
     { label: 'Forward P/S',    value: ev.forwardPriceToSales,       median: sm.forwardPriceToSales, lowerIsBetter: true  },
     { label: 'P/FCF',          value: ev.priceToFCF,                median: sm.priceToFCF,          lowerIsBetter: true  },

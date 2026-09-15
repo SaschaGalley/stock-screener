@@ -1,5 +1,5 @@
 import type { ComputedMetrics, PeerMultiplesEntry } from '../../types';
-import { fmtSignedPct, mosColor, fmt } from '../../format';
+import { fmtSignedPct, mosColor, fmt, fmtPct } from '../../format';
 import { useMoney } from '../../currency';
 
 interface Props {
@@ -13,8 +13,9 @@ const METRIC_LABEL: Record<string, string> = {
 };
 
 export default function ValuationDetail({ metrics, price }: Props) {
-  const { fmtPrice } = useMoney();
+  const { fmtPrice, fmtBig } = useMoney();
   const { dcf, grahamNumber, grahamRevised, peterLynch, epv, ddm, rim, ncav, peerMultiples, reverseDCF } = metrics;
+  const impliedMargin = reverseDCF.impliedMargin;
 
   // Build inline notes defensively — every property might be null/undefined
   // depending on whether a stock has the input data the model needs.
@@ -151,6 +152,32 @@ export default function ValuationDetail({ metrics, price }: Props) {
             </div>
           ) : (
             <p className="text-xs text-ink-500">{reverseDCF.interpretation}</p>
+          )}
+        </div>
+
+        <div>
+          <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+            Reverse SVR
+          </h3>
+          {impliedMargin ? (
+            <div className="rounded border border-ink-800 bg-ink-950 p-3">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-ink-400">Market implies a steady FCF margin of</span>
+                <span className="font-mono text-lg font-semibold text-ink-50 tabular">
+                  {fmtPct(impliedMargin.fcfMargin)}
+                </span>
+              </div>
+              <p className="mt-1.5 text-[11px] text-ink-400">
+                {impliedMargin.interpretation} Current FCF margin: {fmtPct(impliedMargin.currentFcfMargin)}.
+              </p>
+              <p className="mt-1 text-[10px] text-ink-500">
+                On {fmtBig(impliedMargin.revenueBase)} run-rate revenue growing {fmtPct(impliedMargin.revenueGrowth)}/yr
+                ({impliedMargin.growthSource}), fading to terminal, at WACC {fmtPct(impliedMargin.discountRate)}.
+                The margin applies from year one — a firm still ramping up needs more than this at maturity.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-ink-500">Not calculable — requires revenue and a revenue growth rate.</p>
           )}
         </div>
       </div>

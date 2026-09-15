@@ -181,7 +181,7 @@ Pass `--search` without a value to auto-select the native search for the active 
 | # | Model | Method |
 |---|-------|--------|
 | 1 | **2-Stage DCF (FCFF)** | Stage-1 growth (analyst-forward, capped) → linear fade → terminal. CAPM discount rate from live β + risk-free. Equity bridge (− debt + cash). |
-| 2 | **Reverse DCF** | Binary search for FCF growth implied by the current price, same 2-stage geometry. |
+| 2 | **Reverse DCF + Reverse SVR** | Binary search for FCF growth implied by the current price, same 2-stage geometry. Reverse SVR inverts the same path on revenue instead: the steady FCF margin at which today's EV is fair, on run-rate revenue growing at consensus (else latest-quarter YoY, else TTM) growth. Works for pre-profit firms, where the FCF solve has no answer. |
 | 3 | **Graham Number** | `√(22.5 × EPS × Book Value)` |
 | 4 | **Graham Revised (V\*)** | `EPS × (8.5 + 2g) × 4.4 / AAA_yield` — live FRED rate |
 | 5 | **Peter Lynch** | `EPS × growth_rate_pct`, prefers analyst-forward growth |
@@ -192,7 +192,7 @@ Pass `--search` without a value to auto-select the native search for the active 
 | 10 | **Peer Multiples** | P/E, EV/EBITDA, EV/Revenue, P/FCF, P/B, P/S vs Finnhub sector medians — implied fair price per multiple + median fair price |
 | 11 | **Composite Fair Value** | Median + IQR over all *applicable* models, split into Primary (market-aligned) and Conservative (value-investor) tiers. Sanity-bounded 0.02× – 30× of price. |
 | 12 | **EV Multiples** | EV/EBITDA, EV/Revenue, EV/FCF, P/FCF, P/S TTM, forward P/S |
-| 13 | **Simple Valuation Ratio (P/S Run-Rate)** | `marketCap / (latest_quarter_revenue × 4)` — reacts to growth inflections faster than TTM P/S |
+| 13 | **Simple Valuation Ratio (P/S Run-Rate)** | `marketCap / (latest_quarter_revenue × 4)` — reacts to growth inflections faster than TTM P/S. A seasonally adjusted twin (last four quarters grown at the latest quarter's YoY rate) flags quarters that are seasonal highs or lows. Benchmarked against a peer run-rate P/S: each peer's P/S TTM converted with its latest-quarter growth |
 | 14 | **Rule of 40** | Revenue growth % + operating margin % |
 | 15 | **Piotroski F-Score** | 9-signal fundamental quality screen (F1–F9) |
 | 16 | **Altman Z-Score** | Original (manufacturing) or Modified Z′ (services/tech) |
@@ -268,6 +268,7 @@ src/
 ├── analysis/
 │   ├── metrics.ts         19 valuation models
 │   ├── computeMetrics.ts  Orchestrates the bundle of models for the web GET
+│   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
 │   └── technical.ts       SMA/EMA/RSI/MACD/Bollinger/Stoch/CCI via `trading-signals`
 ├── output/

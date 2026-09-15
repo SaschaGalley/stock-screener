@@ -140,6 +140,10 @@ export function formatMarkdown(r: AnalysisResult): string {
           `  ${rdcf.interpretation}`,
         ].join('\n')
       : `  ${rdcf.interpretation}`,
+    ...(rdcf.impliedMargin ? [
+      `  Implied FCF Margin (Reverse SVR): ${chalk.bold(fmtPct(rdcf.impliedMargin.fcfMargin))} — ${rdcf.impliedMargin.interpretation}`,
+      chalk.gray(`  on ${B(rdcf.impliedMargin.revenueBase)} run-rate revenue · g=${fmtPct(rdcf.impliedMargin.revenueGrowth)} (${rdcf.impliedMargin.growthSource}) fading to terminal · WACC ${fmtPct(rdcf.impliedMargin.discountRate)} · current FCF margin ${fmtPct(rdcf.impliedMargin.currentFcfMargin)}`),
+    ] : []),
     '',
 
     chalk.bold('## ⚡ Rule of 40' + (f.sector?.match(/Tech|Software|Commun/) ? ' (SaaS metric)' : '')),
@@ -267,6 +271,7 @@ function formatPeerBlock(
       `| PEG            | ${fmt(ratios.peg).padEnd(8)} |  | P/FCF          | ${fmt(ev.priceToFCF, 'x').padEnd(8)} |`,
       `| P/B            | ${fmt(ratios.pb, 'x').padEnd(8)} |  | P/S (TTM)      | ${fmt(ev.priceToSales, 'x').padEnd(8)} |`,
       `| Div. Yield     | ${fmtPct(f.dividendYield).padEnd(8)} |  | Forward P/S    | ${fmt(ev.forwardPriceToSales, 'x').padEnd(8)} |`,
+      `| SVR (run-rate) | ${fmt(ev.simpleValuationRatio, 'x').padEnd(8)} |  | SVR seas. adj. | ${fmt(ev.seasonallyAdjustedValuationRatio, 'x').padEnd(8)} |`,
     ];
   }
 
@@ -309,6 +314,8 @@ function formatPeerBlock(
     row('EV/EBITDA',        fmt(ev.evToEbitda,      'x', 1), vsCol(ev.evToEbitda,      sm.evToEbitda,       true)),
     row('EV/Revenue',       fmt(ev.evToRevenue,     'x', 1), vsCol(ev.evToRevenue,     sm.evToRevenue,      true)),
     row('P/S (TTM)',        fmt(ev.priceToSales,    'x', 1), vsCol(ev.priceToSales,    sm.priceToSales,     true)),
+    row('SVR (run-rate)',   fmt(ev.simpleValuationRatio, 'x', 1), vsCol(ev.simpleValuationRatio, sm.runRatePriceToSales, true)),
+    row('SVR seas. adj.',   fmt(ev.seasonallyAdjustedValuationRatio, 'x', 1), vsCol(ev.seasonallyAdjustedValuationRatio, sm.runRatePriceToSales, true)),
     row('Forward P/S',      fmt(ev.forwardPriceToSales, 'x', 1), vsCol(ev.forwardPriceToSales, sm.forwardPriceToSales, true)),
     row('P/FCF',            fmt(ev.priceToFCF,      'x', 1), vsCol(ev.priceToFCF,      sm.priceToFCF,       true)),
     row('P/B',              fmt(ratios.pb,          'x', 1), vsCol(ratios.pb,          sm.pb,               true)),

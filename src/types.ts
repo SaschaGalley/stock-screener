@@ -441,6 +441,17 @@ export const RatioResultSchema = z.object({
 });
 export type RatioResult = z.infer<typeof RatioResultSchema>;
 
+export const ImpliedMarginSchema = z.object({
+  fcfMargin:        z.number().describe('Reverse SVR: the steady free-cash-flow margin (decimal) at which today\'s enterprise value is fair. Revenue follows the DCF\'s stage-1 + fade path and the margin applies from year one, so a firm still ramping up needs a higher mature margin than this'),
+  revenueBase:      z.number().describe('Annual revenue the path starts from: seasonally adjusted run-rate, else latest quarter × 4, else TTM'),
+  revenueGrowth:    z.number().describe('Stage-1 revenue growth used (decimal), fading to terminal growth exactly like the DCF'),
+  growthSource:     z.enum(['analyst consensus', 'latest quarter YoY', 'trailing 12 months']).describe('Where the revenue growth came from, in order of preference'),
+  discountRate:     z.number().describe('WACC used (decimal) — the cash flow is unlevered, as in the forward DCF'),
+  currentFcfMargin: z.number().nullable().describe('Trailing FCF / TTM revenue (decimal), for comparison with what the market requires'),
+  interpretation:   z.string().describe('Plain-English verdict on how demanding the implied margin is'),
+});
+export type ImpliedMargin = z.infer<typeof ImpliedMarginSchema>;
+
 export const ReverseDCFResultSchema = z.object({
   impliedGrowthRate: z.number().nullable().describe('Stage-1 FCF growth rate (decimal) implied by the current market price, solved by inverting the 2-stage DCF model'),
   discountRate:      z.number().describe('CAPM-based cost of equity used (decimal)'),
@@ -449,6 +460,7 @@ export const ReverseDCFResultSchema = z.object({
   fadeYears:         z.number().describe('Fade horizon in years (default 5)'),
   interpretation:    z.string().describe('Plain-English verdict on whether the implied growth rate is realistic'),
   isPossible:        z.boolean().describe('False when the reverse solve has no valid solution (e.g. negative FCF)'),
+  impliedMargin:     ImpliedMarginSchema.nullable().describe('The same inversion on revenue instead of FCF — solvable for pre-profit firms, where the FCF solve is not. Null without revenue or a growth rate'),
 });
 export type ReverseDCFResult = z.infer<typeof ReverseDCFResultSchema>;
 
@@ -470,8 +482,11 @@ export const EVMultiplesResultSchema = z.object({
   priceToSales:        z.number().nullable().describe('Trailing Market cap / Revenue (Price-to-Sales TTM)'),
   forwardPriceToSales: z.number().nullable().describe('Forward P/S: Market cap / consensus forward revenue (FY+1 if available, else FY+0); reveals NTM multiple compression for growth firms'),
   simpleValuationRatio: z.number().nullable().describe('Run-rate P/S = Market cap / (latest quarter revenue × 4). Drops the older 3 quarters from the TTM denominator so it reacts immediately to acceleration or deceleration; useful for sector peer comparison among fast-moving names. Caveat: noisy for highly seasonal businesses.'),
+  seasonallyAdjustedValuationRatio: z.number().nullable().describe('SVR with the seasonal pattern divided out: Market cap / Σ(last 4 quarters, each grown by its age to the latest quarter\'s date at that quarter\'s YoY growth). Equals SVR when revenue grows steadily; null without 5 consecutive quarters'),
+  seasonalGap:          z.number().nullable().describe('SVR / seasonally adjusted SVR − 1 (decimal). Negative: the latest quarter is a seasonal high or carries a one-off; positive: a seasonal low'),
   latestQuarterRevenue: z.number().nullable().describe('Most recent fiscal quarter revenue used as the SVR denominator (annualized × 4)'),
   latestQuarterEndDate: z.string().nullable().describe('End date of the quarter used for SVR (YYYY-MM-DD)'),
+  latestQuarterYoYGrowth: z.number().nullable().describe('Latest quarter revenue against the same quarter a year earlier (decimal)'),
 });
 export type EVMultiplesResult = z.infer<typeof EVMultiplesResultSchema>;
 
@@ -673,6 +688,7 @@ export const SectorMediansSchema = z.object({
   priceToFCF:   z.number().nullable().describe('Median Price/FCF of the peer group'),
   priceToSales: z.number().nullable().describe('Median Price/Sales (P/S) TTM of the peer group — equity-side analogue of EV/Revenue'),
   forwardPriceToSales: z.number().nullable().describe('Median forward P/S of the peer group — approximated as median(P/S TTM) / (1 + median revenue growth)'),
+  runRatePriceToSales: z.number().nullable().describe('Median run-rate P/S of the peer group — each peer\'s P/S TTM divided by the run-rate factor at its latest-quarter YoY revenue growth (TTM YoY where Finnhub has no quarterly figure). The like-for-like benchmark for SVR'),
   pb:           z.number().nullable().describe('Median Price/Book of the peer group'),
   // Profitability
   operatingMargin:  z.number().nullable().describe('Median operating margin of the peer group (decimal)'),

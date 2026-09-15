@@ -1,5 +1,6 @@
-import { fmt, fmtPct } from '../../format';
+import { fmt, fmtPct, fmtSignedPct } from '../../format';
 import { useMoney } from '../../currency';
+import { SEASONAL_GAP_THRESHOLD } from '../../../../src/analysis/run-rate';
 
 interface Props {
   financials: any;
@@ -9,6 +10,10 @@ interface Props {
 
 export default function FundamentalsGrid({ financials: f, ratios, evMultiples: ev }: Props) {
   const { fmtBig } = useMoney();
+  const seasonalGap: number | null = ev.seasonalGap ?? null;
+  const seasonalWarning = seasonalGap !== null && Math.abs(seasonalGap) > SEASONAL_GAP_THRESHOLD
+    ? ` Run-rate P/S sits ${fmtSignedPct(seasonalGap)} from this — the latest quarter is a seasonal ${seasonalGap < 0 ? 'high' : 'low'} or carries a one-off, so trust this row over the one above.`
+    : '';
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <Block title="Profitability">
@@ -59,6 +64,12 @@ export default function FundamentalsGrid({ financials: f, ratios, evMultiples: e
               : 'Market cap ÷ (latest quarter revenue × 4). Run-rate P/S — reacts to the latest quarter, not the trailing 12-month average.'
           }
         />
+        <Row
+          label="P/S Run-Rate (seas. adj.)"
+          value={fmt(ev.seasonallyAdjustedValuationRatio, 'x')}
+          warn={seasonalWarning !== ''}
+          hint={`Market cap ÷ (last four quarters grown at the latest quarter's YoY rate, ${fmtSignedPct(ev.latestQuarterYoYGrowth)}). Same as run-rate P/S when revenue grows steadily; unlike it, blind to seasonality.${seasonalWarning}`}
+        />
         <Row label="EV/EBITDA"     value={fmt(ev.evToEbitda, 'x')} />
         <Row label="EV/Revenue"    value={fmt(ev.evToRevenue, 'x')} />
         <Row label="EV/FCF"        value={fmt(ev.evToFCF, 'x')} />
@@ -85,13 +96,16 @@ function Row({
   value,
   accentByPct,
   hint,
+  warn,
 }: {
   label: string;
   value: string;
   accentByPct?: number | null;
   hint?: string;
+  /** Amber value — the figure is fine, but read the hint before trusting its neighbour. */
+  warn?: boolean;
 }) {
-  let valueColor = 'text-ink-100';
+  let valueColor = warn ? 'text-amber-400' : 'text-ink-100';
   if (accentByPct !== undefined && accentByPct !== null && Number.isFinite(accentByPct)) {
     valueColor = accentByPct > 0 ? 'text-emerald-400' : accentByPct < 0 ? 'text-red-400' : 'text-ink-100';
   }

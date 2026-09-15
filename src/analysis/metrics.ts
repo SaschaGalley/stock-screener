@@ -11,6 +11,7 @@ import {
   EVMultiplesResult,
   GrahamResult,
   GrahamRevisedResult,
+  ImpliedMargin,
   InterestCoverageResult,
   NCAVResult,
   PeerMultiplesEntry,
@@ -27,6 +28,7 @@ import {
   StockFinancials,
 } from '../types.js';
 import { FALLBACK_RATES, MarketRates } from '../data/fred.js';
+import { seasonallyAdjustedRunRate } from './run-rate.js';
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -191,6 +193,60 @@ function forwardEpsGrowth(f: StockFinancials): number | null {
 
 function getShares(f: StockFinancials): number {
   return f.sharesOutstanding ?? (f.marketCap / f.price);
+}
+
+/** What the quarterly revenue series says about the current revenue level. */
+interface RevenueRunRate {
+  latestQuarterRevenue: number | null;
+  latestQuarterEndDate: string | null;
+  /** Latest quarter against the same quarter a year earlier (decimal). */
+  latestQuarterYoYGrowth: number | null;
+  /**
+   * The last four quarters grown to where the latest one stands. Equals the
+   * latest quarter × 4 when revenue grows steadily; for a seasonal business it
+   * is that figure with the pattern divided out, because a quarter compared to
+   * the same quarter a year earlier carries no seasonality.
+   */
+  seasonallyAdjustedRunRate: number | null;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function daysBetween(from: string, to: string): number | null {
+  const d = (Date.parse(to) - Date.parse(from)) / DAY_MS;
+  return Number.isFinite(d) ? d : null;
+}
+
+function revenueRunRate(f: StockFinancials): RevenueRunRate {
+  // Defensive: stale caches from before FINANCIALS_VERSION 14 won't have this
+  // field at all, and the StaleBanner pipeline still serves them.
+  const quarters = Array.isArray(f.quarterlyRevenues) ? f.quarterlyRevenues : [];
+  const latest = quarters.length > 0 ? quarters[quarters.length - 1] : null;
+  const level: RevenueRunRate = {
+    latestQuarterRevenue: latest?.revenue ?? null,
+    latestQuarterEndDate: latest?.endDate ?? null,
+    latestQuarterYoYGrowth: null,
+    seasonallyAdjustedRunRate: null,
+  };
+  if (!latest || quarters.length < 5) return level;
+
+  // Both comparisons assume consecutive quarters. Yahoo drops one now and
+  // then, and a gap silently turns "a year ago" into five quarters ago. The
+  // windows allow for 52/53-week fiscal calendars.
+  const yearAgo = quarters[quarters.length - 5];
+  const lastFour = quarters.slice(-4);
+  const yearSpan = daysBetween(yearAgo.endDate, latest.endDate);
+  const windowSpan = daysBetween(lastFour[0].endDate, latest.endDate);
+  if (yearSpan === null || yearSpan < 350 || yearSpan > 380) return level;
+  if (windowSpan === null || windowSpan < 260 || windowSpan > 290) return level;
+  if (yearAgo.revenue <= 0 || lastFour.some((q) => q.revenue <= 0)) return level;
+
+  const yoy = latest.revenue / yearAgo.revenue - 1;
+  return {
+    ...level,
+    latestQuarterYoYGrowth: yoy,
+    seasonallyAdjustedRunRate: seasonallyAdjustedRunRate(lastFour.map((q) => q.revenue), yoy),
+  };
 }
 
 /**
@@ -430,12 +486,14 @@ export function calculateReverseDCF(
   const cash   = financials.totalCash ?? 0;
   const debt   = financials.totalDebt ?? 0;
   const netDebt = debt - cash;
+  const impliedMargin = calculateImpliedMargin(financials, rates, stage1Years, fadeYears);
 
   if (!fcf || fcf <= 0 || !shares || shares <= 0 || r <= terminalG) {
     return {
       impliedGrowthRate: null, discountRate: r, terminalGrowthRate: terminalG,
       stage1Years, fadeYears, isPossible: false,
       interpretation: 'Not calculable — requires positive free cash flow and r > terminal g.',
+      impliedMargin,
     };
   }
 
@@ -453,6 +511,7 @@ export function calculateReverseDCF(
       impliedGrowthRate: lo0, discountRate: r, terminalGrowthRate: terminalG,
       stage1Years, fadeYears, isPossible: true,
       interpretation: `Market implies FCF decline beyond ${(lo0 * 100).toFixed(0)}%/yr — extreme distress pricing.`,
+      impliedMargin,
     };
   }
   if (evAt(hi0) < targetEV) {
@@ -460,6 +519,7 @@ export function calculateReverseDCF(
       impliedGrowthRate: hi0, discountRate: r, terminalGrowthRate: terminalG,
       stage1Years, fadeYears, isPossible: true,
       interpretation: `Market implies >${(hi0 * 100).toFixed(0)}%/yr stage-1 FCF growth — extreme growth pricing.`,
+      impliedMargin,
     };
   }
 
@@ -484,6 +544,93 @@ export function calculateReverseDCF(
     terminalGrowthRate: terminalG,
     stage1Years, fadeYears,
     isPossible: true,
+    interpretation,
+    impliedMargin,
+  };
+}
+
+/**
+ * Stage-1 revenue growth for the implied-margin solve — the DCF's preference
+ * for the forward view and its caps, applied to revenue:
+ *   1. Next-FY consensus revenue growth, capped at 60%. Revenue has no loss
+ *      base, so this needs none of the sign guards EPS growth does.
+ *   2. Latest quarter YoY — the rate SVR itself reacts to; capped at 30%.
+ *   3. Trailing revenue growth, capped at 30%.
+ */
+function deriveRevenueGrowth(
+  f: StockFinancials,
+  runRate: RevenueRunRate,
+): { growth: number; source: ImpliedMargin['growthSource'] } | null {
+  const clamp = (g: number, cap: number) => Math.max(0, Math.min(g, cap));
+  const consensus = (f.earningsEstimates ?? []).find((e) => e.period === '+1y')?.revenueGrowth;
+  if (consensus != null && Number.isFinite(consensus)) {
+    return { growth: clamp(consensus, 0.60), source: 'analyst consensus' };
+  }
+  if (runRate.latestQuarterYoYGrowth !== null) {
+    return { growth: clamp(runRate.latestQuarterYoYGrowth, 0.30), source: 'latest quarter YoY' };
+  }
+  if (f.revenueGrowth !== null && Number.isFinite(f.revenueGrowth)) {
+    return { growth: clamp(f.revenueGrowth, 0.30), source: 'trailing 12 months' };
+  }
+  return null;
+}
+
+/**
+ * Reverse SVR: the steady FCF margin at which today's enterprise value is fair.
+ *
+ * SVR says what the market pays per unit of revenue, but a revenue multiple is
+ * margin and growth folded into one number. Holding growth at the DCF's own
+ * path unfolds it: FCF at margin m is m × revenue, and enterprise value is
+ * linear in the cash flows, so m is today's EV over the EV of the revenue
+ * stream itself. No FCF enters the calculation — which is the point, because
+ * the FCF-based reverse DCF has no answer exactly for the pre-profit firms
+ * where a revenue multiple is all there is to go on.
+ *
+ * The margin applies from year one, so for a company still ramping up it is a
+ * floor under the mature margin the price requires, not an estimate of it.
+ */
+function calculateImpliedMargin(
+  f: StockFinancials,
+  rates: MarketRates,
+  stage1Years: number,
+  fadeYears: number,
+): ImpliedMargin | null {
+  const runRate = revenueRunRate(f);
+  const revenueBase = runRate.seasonallyAdjustedRunRate
+    ?? (runRate.latestQuarterRevenue !== null && runRate.latestQuarterRevenue > 0 ? runRate.latestQuarterRevenue * 4 : null)
+    ?? (f.revenue !== null && f.revenue > 0 ? f.revenue : null);
+  const growth = deriveRevenueGrowth(f, runRate);
+  const shares = getShares(f);
+  if (revenueBase === null || growth === null) return null;
+  if (!Number.isFinite(shares) || shares <= 0 || !(f.price > 0)) return null;
+
+  const terminalG = terminalGrowth(rates);
+  const r = wacc(f, rates);
+  if (r <= terminalG) return null;
+
+  const revenuePath = projectFCFs(revenueBase, growth.growth, terminalG, stage1Years, fadeYears);
+  const revenueEV = discountToEV(revenuePath, terminalG, r).enterpriseValue;
+  const netDebt = (f.totalDebt ?? 0) - (f.totalCash ?? 0);
+  const fcfMargin = (f.price * shares + netDebt) / revenueEV;
+
+  const currentFcfMargin = f.freeCashFlow !== null && f.revenue !== null && f.revenue > 0
+    ? f.freeCashFlow / f.revenue
+    : null;
+
+  const interpretation =
+    fcfMargin <= 0   ? 'Enterprise value at or below zero — the market assigns no value to the operating business.' :
+    fcfMargin < 0.10 ? 'Modest — attainable for most scaled businesses.' :
+    fcfMargin < 0.20 ? 'Healthy — typical of good-quality mature companies.' :
+    fcfMargin < 0.35 ? 'Best-in-class — requires software-like economics.' :
+                       'Extreme — above what almost any company sustains.';
+
+  return {
+    fcfMargin,
+    revenueBase,
+    revenueGrowth: growth.growth,
+    growthSource: growth.source,
+    discountRate: r,
+    currentFcfMargin,
     interpretation,
   };
 }
@@ -546,16 +693,16 @@ export function calculateEVMultiples(financials: StockFinancials): EVMultiplesRe
 
   // Simple Valuation Ratio (run-rate P/S): drops the older 3 quarters from the
   // TTM denominator and annualizes the latest one. Reacts immediately to growth
-  // inflections — TTM lags by 6+ months for fast movers. Caveat: distorted for
-  // highly seasonal businesses (retail Q4, etc.).
-  // Defensive: stale caches from before FINANCIALS_VERSION 14 won't have this
-  // field at all, and the StaleBanner pipeline still serves them.
-  const qRevs = Array.isArray(financials.quarterlyRevenues) ? financials.quarterlyRevenues : [];
-  const latestQ = qRevs.length > 0 ? qRevs[qRevs.length - 1] : null;
-  const latestQuarterRevenue = latestQ?.revenue ?? null;
-  const latestQuarterEndDate = latestQ?.endDate ?? null;
+  // inflections — TTM lags by 6+ months for fast movers. Distorted for highly
+  // seasonal businesses (retail Q4, etc.), which is what the adjusted variant
+  // next to it corrects: the two agree unless the latest quarter is unusual.
+  const runRate = revenueRunRate(financials);
+  const { latestQuarterRevenue, latestQuarterEndDate, latestQuarterYoYGrowth } = runRate;
   const simpleValuationRatio = mc && latestQuarterRevenue && latestQuarterRevenue > 0
     ? mc / (latestQuarterRevenue * 4)
+    : null;
+  const seasonallyAdjustedValuationRatio = mc && runRate.seasonallyAdjustedRunRate
+    ? mc / runRate.seasonallyAdjustedRunRate
     : null;
 
   return {
@@ -567,8 +714,13 @@ export function calculateEVMultiples(financials: StockFinancials): EVMultiplesRe
     priceToSales: mc && rev && rev > 0      ? mc / rev   : null,
     forwardPriceToSales: mc && fwdRev      ? mc / fwdRev : null,
     simpleValuationRatio,
+    seasonallyAdjustedValuationRatio,
+    seasonalGap: simpleValuationRatio !== null && seasonallyAdjustedValuationRatio !== null
+      ? simpleValuationRatio / seasonallyAdjustedValuationRatio - 1
+      : null,
     latestQuarterRevenue,
     latestQuarterEndDate,
+    latestQuarterYoYGrowth,
   };
 }
 
