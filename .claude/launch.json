@@ -3,8 +3,10 @@
   "configurations": [
     {
       "name": "stock-cli",
-      "runtimeExecutable": "pnpm",
+      "runtimeExecutable": "env",
       "runtimeArgs": [
+        "PORT=4317",
+        "pnpm",
         "dev"
       ],
       "port": 4316
