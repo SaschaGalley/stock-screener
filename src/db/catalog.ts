@@ -22,6 +22,8 @@ import {
   StockFinancialsSchema,
   TechnicalSignalsSchema,
 } from '../types.js';
+import { LOCAL_TEN_YEAR, RATE_CURRENCIES } from '../data/fred.js';
+import { RATING_BUCKETS } from '../data/ratings.js';
 import { logger } from '../utils/logger.js';
 import { query } from './client.js';
 import { KeyedArray, LeafDef, fieldsOf, leavesOf } from './walk.js';
@@ -47,12 +49,21 @@ const SymbolSignalsSchema = MarketSignalsSchema.omit({ macro: true });
  * The rates the models discount with, declared here because `data/fred.ts`
  * models them as a plain interface. The catalogue is where a value becomes a
  * series, so this is the right place for the one schema the domain layer never
- * needed.
+ * needed. Spread and yield keys come from the tables that fetch them, so a new
+ * rating bucket or currency is historised without a second list to extend.
  */
 const MarketRatesSchema = z.object({
   riskFreeRate:      z.number().describe('10-year Treasury yield (FRED DGS10) as a decimal'),
   aaaBondYield:      z.number().describe("Moody's Aaa corporate bond yield (FRED DAAA) as a decimal"),
-  equityRiskPremium: z.number().describe("Damodaran's implied equity risk premium for the latest month, as a decimal"),
+  equityRiskPremium: z.number().describe("Damodaran's implied equity risk premium for the latest month (decimal)"),
+  creditSpreads: z.object(Object.fromEntries(RATING_BUCKETS.map((b) => [
+    b.rating,
+    z.number().describe(`ICE BofA ${b.rating} option-adjusted spread over Treasuries (decimal), FRED ${b.fredSeries}`),
+  ]))),
+  localRiskFreeRates: z.object(Object.fromEntries(RATE_CURRENCIES.map((c) => [
+    c,
+    z.number().describe(`${c} ten-year government bond yield (decimal), FRED ${LOCAL_TEN_YEAR[c]}, monthly`),
+  ]))),
 });
 
 /**

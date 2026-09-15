@@ -609,7 +609,7 @@ export function createApp(): express.Express {
         seriesForAll(KEY_VERDICT_SCORE),
         latestValueForAll(KEY_COMPOSITE),
       ]);
-      const marketRates = cfg.fredApiKey ? await getMarketRates(cfg.fredApiKey).catch(() => null) : null;
+      const marketRates = await getMarketRates(cfg.fredApiKey).catch(() => null);
 
       const rows: OverviewRow[] = [];
       for (const [symbol, snap] of financials) {
@@ -781,7 +781,7 @@ export function createApp(): express.Express {
       // Try to fetch fresh rates + sector medians for richer metrics, but don't
       // block on failure — fall back to defaults so the response always succeeds.
       const [marketRates, sectorMedians] = await Promise.all([
-        cfg.fredApiKey ? getMarketRates(cfg.fredApiKey).catch(() => null) : Promise.resolve(null),
+        getMarketRates(cfg.fredApiKey).catch(() => null),
         getSectorMediansCached(symbol, cfg.finnhubApiKey),
       ]);
 

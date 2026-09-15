@@ -98,8 +98,9 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
 
   // Macro context (SPY, sector ETF, yield curve, FX) + options + technicals.
   // Rates are also what the valuation models discount with, so the same fetch
-  // that re-validates the FRED feed feeds the models recorded below.
-  const marketRates = await (cfg.fredApiKey ? getMarketRates(cfg.fredApiKey).catch(() => null) : Promise.resolve(null));
+  // that re-validates the feeds feeds the models recorded below. No FRED key
+  // still yields a premium: Damodaran's series needs none.
+  const marketRates = await getMarketRates(cfg.fredApiKey).catch(() => null);
   const [macro, optionsRaw] = await Promise.all([
     getMacroBundle(bundle.financials.sector, cfg.fredApiKey ?? null),
     getOptionsSignals({

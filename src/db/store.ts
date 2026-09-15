@@ -20,7 +20,7 @@ import {
   LLMAnalysis, MarketSignals, NewsItem, SearchTrace, SectorMedians,
   StockFinancials, TechnicalSignals,
 } from '../types.js';
-import type { MarketRates } from '../data/fred.js';
+import type { FetchedRates } from '../data/fred.js';
 import type { PerplexityContext } from '../data/perplexity.js';
 import type { DistillBundle } from '../data/distill.js';
 import { logger } from '../utils/logger.js';
@@ -1017,8 +1017,8 @@ export interface RecordRunInput {
   metrics?:          unknown;
   /** LLMAnalysis, when this run produced a verdict. */
   verdict?:          LLMAnalysis | null;
-  /** Market rates; merged into the global macro series, not stored per symbol. */
-  marketRates?:      MarketRates | null;
+  /** Market rates; what this reading observed joins the global macro series. */
+  marketRates?:      FetchedRates | null;
 }
 
 export async function recordRunData(input: RecordRunInput): Promise<void> {
@@ -1050,10 +1050,12 @@ export async function recordRunData(input: RecordRunInput): Promise<void> {
     await recordFundamentals(input.symbol, input.financials, at);
   }
 
-  // The macro block and the FRED rates describe the market, not this stock, so
-  // they land in the global series once regardless of how many symbols a run
+  // The macro block and the market rates describe the market, not this stock,
+  // so they land in the global series once regardless of how many symbols a run
   // touches. `recordMacro` upserts on (metric, observed_at), so the second
-  // symbol of a nightly pass overwrites rather than duplicating.
-  const global = { ...(input.marketSignals?.macro ?? {}), ...(input.marketRates ?? {}) };
+  // symbol of a nightly pass overwrites rather than duplicating. Only what the
+  // reading actually read is recorded: a fallback may price a model for a few
+  // minutes, but it is not the market's number for the day.
+  const global = { ...(input.marketSignals?.macro ?? {}), ...(input.marketRates?.observed ?? {}) };
   if (Object.keys(global).length > 0) await recordMacro(global, at, input.runId);
 }

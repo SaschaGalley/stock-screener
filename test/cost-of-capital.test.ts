@@ -16,7 +16,7 @@ import { FALLBACK_RATES, MarketRates } from '../src/data/fred.js';
 import type { StockFinancials } from '../src/types.js';
 
 const rates = (riskFreeRate: number, equityRiskPremium = 0.041): MarketRates =>
-  ({ riskFreeRate, aaaBondYield: 0.05, equityRiskPremium });
+  ({ ...FALLBACK_RATES, riskFreeRate, equityRiskPremium });
 
 /** A debt-free, β=1 firm — so cost of equity, WACC and CAPM all coincide. */
 function financials(over: Partial<StockFinancials> = {}): StockFinancials {

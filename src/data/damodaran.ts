@@ -182,9 +182,13 @@ export function parseImpliedERP(xlsx: Buffer): ImpliedERP | null {
  * Process-level memo, mirroring `getMarketRates`. This series moves once a
  * month, so refetching 47KB on the hour would be pure waste; in-flight sharing
  * keeps concurrent openers to a single download.
+ *
+ * Only a success is kept. A failure is almost always a timeout, and keeping one
+ * pinned the 5.5% constant for twelve hours; how soon to try again is
+ * `getMarketRates`'s call, and it re-asks an incomplete reading within minutes.
  */
 const ERP_TTL_MS = 12 * 60 * 60 * 1000;
-let erpCache: { at: number; erp: ImpliedERP | null } | null = null;
+let erpCache: { at: number; erp: ImpliedERP } | null = null;
 let erpInFlight: Promise<ImpliedERP | null> | null = null;
 
 /** Latest implied ERP, or null when it can't be fetched or parsed (caller falls back). */
@@ -216,9 +220,7 @@ export async function getImpliedERP(): Promise<ImpliedERP | null> {
       logger.warn(`Damodaran ERP: ${(e as Error).message}`);
       erp = null;
     }
-    // Negative results are cached too: when the file moves or the layout
-    // changes, every valuation would otherwise re-download it and re-fail.
-    erpCache = { at: Date.now(), erp };
+    if (erp) erpCache = { at: Date.now(), erp };
     return erp;
   })();
 

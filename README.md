@@ -31,11 +31,11 @@ there is no second step and one lockfile describes the whole tree.
 | `DISTILL_API_KEY` + `DISTILL_API_URL` | Distill — rolling dossiers per company and sector, plus raw insights | optional | mint in Distill Admin → Project → Access keys, scope `dossiers:write` (no `briefings:write` needed) |
 | `BRAVE_API_KEY` | Brave web search | optional | [brave.com/search/api](https://brave.com/search/api/) — $5 free credits/mo |
 | `TAVILY_API_KEY` | Tavily web search | optional | [tavily.com](https://tavily.com) |
-| `FRED_API_KEY` | Live macro rates (10Y, AAA, VIX, DXY, yield curve) | optional | [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
+| `FRED_API_KEY` | Live rates and macro (10Y, AAA, credit spreads, local 10Y yields, VIX, DXY, yield curve) | optional | [fred.stlouisfed.org](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
 
 Minimum to get started: `ANTHROPIC_API_KEY` + `FINNHUB_API_KEY`.
 
-With `FRED_API_KEY`, Graham Revised, DDM, EPV, the 2-Stage DCF, RIM and Sortino models pull live rates instead of hardcoded fallbacks. Also unlocks the macro context block (VIX regime, yield curve, HY spreads, DXY).
+With `FRED_API_KEY`, Graham Revised, DDM, EPV, the 2-Stage DCF, RIM and Sortino models pull live rates instead of hardcoded fallbacks: the 10-year Treasury, the Aaa yield, ICE BofA credit spreads per rating bucket (the cost of debt), and ten-year government yields for listings that trade outside the dollar (`LOCAL_TEN_YEAR` in `src/data/fred.ts`). The equity risk premium needs no key — it is Damodaran's monthly implied ERP. A rate that fails to load falls back to the last reading, then to a constant, and is retried within minutes; only rates actually read are recorded. The key also unlocks the macro context block (VIX regime, yield curve, HY spreads, DXY).
 
 `DATABASE_URL` is required — everything the app records lives in Postgres.
 `pnpm dev` starts one matching the URL in `.env.example` and migrates it.

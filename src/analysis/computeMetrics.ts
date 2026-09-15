@@ -1,5 +1,5 @@
 import { StockFinancials, SectorMedians } from '../types.js';
-import { MarketRates } from '../data/fred.js';
+import { FALLBACK_RATES, MarketRates, ratesForCurrency } from '../data/fred.js';
 import {
   calculateDCF, calculateGraham, calculateRatios, calculateReverseDCF,
   calculatePeterLynch, calculateEVMultiples, calculateRuleOf40,
@@ -37,7 +37,9 @@ export function computeAllMetrics(
   marketRates:   MarketRates | null,
   sectorMedians: SectorMedians | null,
 ): ComputedMetrics {
-  const rates = marketRates ?? undefined;
+  // Discount in the currency the cash flows are in. Statements arrive converted
+  // into the trading currency, so that is the currency whose yield applies.
+  const rates = ratesForCurrency(marketRates ?? FALLBACK_RATES, financials.tradingCurrency);
 
   const dcf              = calculateDCF(financials, rates);
   const grahamNumber     = calculateGraham(financials);
@@ -46,7 +48,7 @@ export function computeAllMetrics(
   const peterLynch       = calculatePeterLynch(financials);
   const evMultiples      = calculateEVMultiples(financials);
   const ruleOf40         = calculateRuleOf40(financials);
-  const grahamRevised    = calculateGrahamRevised(financials, marketRates?.aaaBondYield);
+  const grahamRevised    = calculateGrahamRevised(financials, rates.aaaBondYield);
   const piotroski        = calculatePiotroski(financials);
   const altmanZ          = calculateAltmanZ(financials);
   const ddm              = calculateDDM(financials, rates);
@@ -55,7 +57,7 @@ export function computeAllMetrics(
   const ncav             = calculateNCAV(financials);
   const peerMultiples    = calculatePeerMultiples(financials, sectorMedians);
   const interestCoverage = calculateInterestCoverage(financials);
-  const sortino          = calculateSortino(financials, marketRates?.riskFreeRate);
+  const sortino          = calculateSortino(financials, rates.riskFreeRate);
   const beneish          = calculateBeneish(financials);
   const composite        = calculateCompositeFairValue(financials, {
     dcf, graham: grahamNumber, grahamRevised, peterLynch, ddm, epv, rim,

@@ -348,9 +348,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
           return [] as NewsItem[];
         })
       : Promise.resolve(null),
-    cfg.fredApiKey
-      ? getMarketRates(cfg.fredApiKey)
-      : Promise.resolve(null),
+    getMarketRates(cfg.fredApiKey),
     cfg.finnhubApiKey
       ? getSectorMediansCached(symbol, cfg.finnhubApiKey)
       : Promise.resolve(null),

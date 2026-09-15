@@ -13,10 +13,10 @@ import { describe, it } from 'node:test';
 
 import { calculateDCF, calculateEVMultiples, calculateReverseDCF } from '../src/analysis/metrics.js';
 import { runRateToTrailing, seasonallyAdjustedRunRate, SEASONAL_GAP_THRESHOLD } from '../src/analysis/run-rate.js';
-import type { MarketRates } from '../src/data/fred.js';
+import { FALLBACK_RATES, type MarketRates } from '../src/data/fred.js';
 import type { StockFinancials } from '../src/types.js';
 
-const rates: MarketRates = { riskFreeRate: 0.04, aaaBondYield: 0.05, equityRiskPremium: 0.045 };
+const rates: MarketRates = { ...FALLBACK_RATES, riskFreeRate: 0.04, aaaBondYield: 0.05, equityRiskPremium: 0.045 };
 
 const QUARTER_ENDS = [
   '2024-06-30', '2024-09-30', '2024-12-31', '2025-03-31',
