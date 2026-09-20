@@ -4,7 +4,7 @@ import { api } from './api';
 import StockRail from './components/StockRail';
 import StockTable from './components/StockTable';
 import AnalyzeForm from './components/AnalyzeForm';
-import SettingsSidebar from './components/SettingsSidebar';
+import AnalysisModal, { flagsLabel } from './components/AnalysisModal';
 import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
 import AdminPage from './pages/AdminPage';
@@ -108,10 +108,11 @@ export default function App() {
   // Whether the user has manually edited settings for the current symbol — if
   // so, the cached-analysis auto-switch must not overwrite their choice.
   const userTouchedSettingsRef = useRef(false);
-  // Below `lg` (1024px) one of the two side panels can slide in as a drawer.
-  // Above `lg` both panels are always visible in the flex flow and this state
-  // is irrelevant.
-  const [mobileMenu, setMobileMenu] = useState<'stocks' | 'settings' | null>(null);
+  // Below `lg` (1024px) the stock list slides in as a drawer; above it the
+  // rail is always in the flex flow and this state is irrelevant.
+  const [stocksDrawer, setStocksDrawer] = useState(false);
+  /** Stored analyses and the settings for a new run, as a dialog over the page. */
+  const [analysisOpen, setAnalysisOpen] = useState(false);
   /** Symbols the queue is working on, keyed by symbol → the stages in flight. */
   const [activity, setActivity] = useState<Record<string, string[]>>({});
 
@@ -136,13 +137,13 @@ export default function App() {
   /** Close whatever is open and spread the list back out to full width. */
   const closeOverlay = useCallback(() => {
     withViewTransition(() => {
-      setMobileMenu(null);
+      setStocksDrawer(false);
       navigate('overview');
     });
   }, [navigate]);
 
   const openAdmin = useCallback(() => {
-    setMobileMenu(null);
+    setStocksDrawer(false);
     navigate('admin');
   }, [navigate]);
 
@@ -346,7 +347,7 @@ export default function App() {
   // Auto-close the stock drawer after picking a symbol on mobile.
   const handleSelectAndClose = useCallback((s: string) => {
     handleSelectSymbol(s);
-    setMobileMenu(null);
+    setStocksDrawer(false);
   }, [handleSelectSymbol]);
 
   /**
@@ -367,21 +368,24 @@ export default function App() {
     if (isTable) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // The dialog owns Esc while it is open, and closing it must not also
+      // close the analysis underneath.
+      if (analysisOpen) return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       closeOverlay();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isTable, closeOverlay]);
+  }, [isTable, closeOverlay, analysisOpen]);
 
   return (
     <div className="flex h-full flex-col bg-ink-950 text-ink-100">
-      {/* Backdrop while a mobile drawer is open. Clicking it closes the drawer. */}
-      {mobileMenu && (
+      {/* Backdrop while the mobile drawer is open. Clicking it closes it. */}
+      {stocksDrawer && (
         <div
           className="fixed inset-0 z-30 bg-black/60 lg:hidden"
-          onClick={() => setMobileMenu(null)}
+          onClick={() => setStocksDrawer(false)}
           aria-hidden
         />
       )}
@@ -424,7 +428,7 @@ export default function App() {
         {/* Slide-in drawer on mobile, regular column on lg+ */}
         <div
           className={`fixed inset-y-0 left-0 z-40 transition-transform duration-200 ease-out
-            ${mobileMenu === 'stocks' ? 'translate-x-0' : '-translate-x-full'}
+            ${stocksDrawer ? 'translate-x-0' : '-translate-x-full'}
             lg:relative lg:inset-auto lg:translate-x-0 lg:transition-none`}
         >
           <StockRail
@@ -452,8 +456,6 @@ export default function App() {
               fallbackName={selectedName}
               flags={flags}
               refreshKey={refreshTick}
-              // StaleBanner's Re-run = force fresh LLM call (cache is stale by data).
-              onRunAnalysis={() => startAnalyze(selected, true)}
               // `loading` only covers a run this page is streaming; the queue
               // knows about the ones it is not — after a reload, or in another
               // tab. Either is reason enough to call the buttons busy.
@@ -463,30 +465,27 @@ export default function App() {
               onActivityChanged={() => { void pollActivity(); }}
               onClose={closeOverlay}
               onOpenAdmin={openAdmin}
-              onToggleStocks={() => setMobileMenu(mobileMenu === 'stocks' ? null : 'stocks')}
-              onToggleSettings={() => setMobileMenu(mobileMenu === 'settings' ? null : 'settings')}
+              onToggleStocks={() => setStocksDrawer((v) => !v)}
+              onOpenAnalysis={() => setAnalysisOpen(true)}
+              flagsLabel={flagsLabel(settings)}
             />
           )}
         </main>
 
-        {/* Settings sidebar — slide-in drawer on mobile, regular column on lg+ */}
-        <div
-          className={`fixed inset-y-0 right-0 z-40 transition-transform duration-200 ease-out
-            ${mobileMenu === 'settings' ? 'translate-x-0' : 'translate-x-full'}
-            lg:relative lg:inset-auto lg:translate-x-0 lg:transition-none`}
-        >
-          <SettingsSidebar
-            symbol={selected}
-            settings={settings}
-            onChange={handleSettingsChange}
-            // First-time Run: cache hit serves instantly, miss runs the LLM.
-            onLoad={() => selected && startAnalyze(selected, false)}
-            // "Re-run (without cache)": force a fresh LLM call, overwriting cache.
-            onReload={() => selected && startAnalyze(selected, true)}
-            loading={loading}
-          />
-        </div>
       </div>
+
+      {/* Which analysis is on show, and what to spend on another one. A
+          dialog rather than a column: both are moments, not states. */}
+      {analysisOpen && selected && (
+        <AnalysisModal
+          symbol={selected}
+          settings={settings}
+          onChange={handleSettingsChange}
+          onRun={(force) => startAnalyze(selected, force)}
+          loading={loading}
+          onClose={() => setAnalysisOpen(false)}
+        />
+      )}
 
       {/* One add field for the whole window, below whichever density is up —
           the table used to have no way to add a stock at all. */}
@@ -495,7 +494,7 @@ export default function App() {
           onAdd={addStock}
           analyzing={loading}
           hint={isAnalysis
-            ? 'holt nur die Daten — Analyse startest du rechts'
+            ? 'holt nur die Daten — Analyse startest du auf der Verdict-Karte'
             : 'holt nur die Daten — Analyse startest du nach dem Klick auf die Aktie'}
         />
       )}

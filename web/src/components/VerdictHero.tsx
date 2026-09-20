@@ -19,6 +19,10 @@ interface Props {
   llmGeneratedAt?: string | null;
   /** Model that produced it — the verdict is only interpretable with both. */
   llmModel?: string | null;
+  /** The flag combination on show, as the modal spells it. */
+  flagsLabel: string;
+  /** Open the picker: switch to another stored analysis, or compute one. */
+  onOpenAnalysis: () => void;
   analyst: {
     targetMeanPrice: number | null;
     analystTargetLow: number | null;
@@ -33,7 +37,9 @@ interface Props {
   };
 }
 
-export default function VerdictHero({ price, composite, llm, llmGeneratedAt, llmModel, analyst }: Props) {
+export default function VerdictHero({
+  price, composite, llm, llmGeneratedAt, llmModel, flagsLabel, onOpenAnalysis, analyst,
+}: Props) {
   const { fmtPrice } = useMoney();
 
   const compositeMoS = composite.primary.median !== null
@@ -55,14 +61,29 @@ export default function VerdictHero({ price, composite, llm, llmGeneratedAt, llm
         // The prose is a point-in-time opinion: without its date it reads as
         // current even when it predates the last earnings report. The score
         // itself is recomputed on every refresh, so only the text ages.
-        meta={llm && llmGeneratedAt ? (
-          <time
-            dateTime={llmGeneratedAt}
-            title={`Generiert am ${new Date(llmGeneratedAt).toLocaleString()}${llmModel ? ` · ${llmModel}` : ''}`}
-          >
-            {relativeTime(llmGeneratedAt)}
-          </time>
-        ) : null}
+        // The combination is the meta now, not just the date: it is the one
+        // question this card cannot answer on its own — which of the stored
+        // analyses am I reading — and it doubles as the way to change it.
+        meta={
+          <span className="flex items-center gap-2">
+            {llm && llmGeneratedAt && (
+              <time
+                dateTime={llmGeneratedAt}
+                title={`Generiert am ${new Date(llmGeneratedAt).toLocaleString()}${llmModel ? ` · ${llmModel}` : ''}`}
+              >
+                {relativeTime(llmGeneratedAt)}
+              </time>
+            )}
+            <button
+              onClick={onOpenAnalysis}
+              title="Gespeicherte Analysen · neu rechnen"
+              className="flex max-w-[16rem] items-center gap-1 truncate rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 font-mono text-[10px] text-ink-300 transition hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100"
+            >
+              <span className="truncate">{flagsLabel}</span>
+              <span aria-hidden className="shrink-0 text-ink-500">▾</span>
+            </button>
+          </span>
+        }
       >
         {llm ? (
           <div className="flex h-full flex-col">
@@ -86,8 +107,14 @@ export default function VerdictHero({ price, composite, llm, llmGeneratedAt, llm
             )}
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-ink-500">
-            Für diese Einstellungen liegt noch keine Analyse vor — rechts in der Seitenleiste starten.
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+            <p className="text-sm text-ink-500">Für diese Kombination liegt noch keine Analyse vor.</p>
+            <button
+              onClick={onOpenAnalysis}
+              className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-dark"
+            >
+              Analyse starten…
+            </button>
           </div>
         )}
       </Card>

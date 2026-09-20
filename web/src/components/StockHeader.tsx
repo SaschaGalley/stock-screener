@@ -4,7 +4,7 @@ import { fmt, relativeTime } from "../format";
 import { useMoney } from "../currency";
 import { api } from "../api"; // refresh endpoint (PDF/MD endpoints unused since report generation is skipped)
 import StockLogo, { initialsFromName } from "./StockLogo";
-import { CloseIcon, GearIcon, SlidersIcon } from "./icons";
+import { CloseIcon, GearIcon } from "./icons";
 
 interface Props {
   summary: StockSummary;
@@ -17,9 +17,8 @@ interface Props {
   /** Close the analysis and spread the list back out to the full table. */
   onClose: () => void;
   onOpenAdmin: () => void;
-  /** Below `lg` the two side panels are drawers; these open them. */
+  /** Below `lg` the stock list is a drawer; this opens it. */
   onToggleStocks: () => void;
-  onToggleSettings: () => void;
 }
 
 export default function StockHeader({
@@ -31,7 +30,6 @@ export default function StockHeader({
   onClose,
   onOpenAdmin,
   onToggleStocks,
-  onToggleSettings,
 }: Props) {
   const { fmtPrice, fmtBig } = useMoney();
   const [refreshing, setRefreshing] = useState(false);
@@ -131,15 +129,6 @@ export default function StockHeader({
           >
             {busy ? '⟳' : '↻'}
             <span className="ml-1 hidden sm:inline">{busy ? 'Refreshing…' : 'Refresh'}</span>
-          </button>
-
-          <button
-            onClick={onToggleSettings}
-            className="rounded p-1.5 text-ink-300 transition hover:bg-ink-800 hover:text-ink-100 lg:hidden"
-            aria-label="Analyse-Einstellungen ein-/ausblenden"
-            title="Modell, Websuche, Perplexity"
-          >
-            <SlidersIcon />
           </button>
 
           {/* Hidden on a phone, where four controls squeeze the company name

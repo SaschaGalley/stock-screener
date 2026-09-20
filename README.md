@@ -88,10 +88,12 @@ Measured across the list, the stock you clicked lands on the pixel it was on, go
 
 - **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and the watchlist filter belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
 - **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull/bear/risks, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
-- **Right sidebar**: model + search-provider + Perplexity toggles. Each flag combo is its own cached entry. Clicking an outdated combo still loads it (older entries get a ⚠ marker) — a warning banner sits on top with a one-click re-run.
-- **Refresh data** (header `↻`) re-fetches the data layer (Yahoo + Finnhub + FRED + technicals) without a single LLM call. **Re-run** in the right sidebar or in the stale banner forces a fresh LLM call, overwriting the cached verdict.
+- **Analyse dialog** (the combination named on the verdict card, or „↻ Neu rechnen…" in the stale banner): every flag combo is its own cached entry, so the dialog lists what is stored — one click shows that one, and costs nothing — and underneath it holds the model, web-search and Perplexity pickers with the button that spends money. Outdated entries stay selectable and carry a ⚠.
 
-Adding a stock (`+ Hinzufügen` at the bottom of the window, under either density) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit `Run Analysis` in the right sidebar, so looking a company up never costs an API bill.
+  It used to be a permanent third column, which gave a panel you touch a few times a day the same standing as the analysis itself and a fifth of the window to say it. Both of its jobs are moments rather than states, and a run that costs an API call is better confirmed in a dialog than fired by a stray click on a sidebar button.
+- **Refresh data** (header `↻`) re-fetches the data layer (Yahoo + Finnhub + FRED + technicals) without a single LLM call. The dialog's run button forces a fresh LLM call when something is already cached, overwriting it.
+
+Adding a stock (`+ Hinzufügen` at the bottom of the window, under either density) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit run from the Analyse dialog, so looking a company up never costs an API bill.
 
 **⚙ Administration** — schedule, pipeline steps, watchlist and run log; closed by the same ✕, in the same corner. See [Nightly pipeline](#nightly-pipeline) below.
 
@@ -505,7 +507,7 @@ web/
 │       ├── StockTable.tsx         The list at full width (Übersicht)
 │       ├── StockRail.tsx          The same list at rail width, beside an analysis
 │       ├── StockListControls.tsx  Search · sort · watchlist, shared by both
-│       ├── SettingsSidebar.tsx    Right pane: model/search/pplx + cached combos
+│       ├── AnalysisModal.tsx      Stored analyses + model/search/pplx, as a dialog
 │       ├── AnalysisView.tsx       Centre detail; renders all sections
 │       ├── VerdictHero.tsx        Verdict + composite + analyst hero cards
 │       ├── ScoreSplit.tsx         The two halves behind one headline, per list row

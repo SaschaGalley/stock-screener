@@ -47,24 +47,3 @@ export function CloseIcon({ size = 22, strokeWidth = 2.2 }: IconProps) {
     </svg>
   );
 }
-
-/** Sliders — the analysis settings panel, which on mobile is a drawer. */
-export function SlidersIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h9M17 17h3" />
-      <circle cx="16" cy="7" r="2" />
-      <circle cx="10" cy="12" r="2" />
-      <circle cx="15" cy="17" r="2" />
-    </svg>
-  );
-}

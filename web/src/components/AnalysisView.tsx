@@ -33,8 +33,6 @@ interface Props {
   fallbackName?: string;
   flags: AnalysisFlagsKey;
   refreshKey: number;
-  /** Trigger the analyze flow for the current symbol & flag combo. */
-  onRunAnalysis: () => void;
   /** True while an analyze run is in flight (parent owns the SSE stream). */
   analyzing: boolean;
   /** Stages the queue has in flight for this symbol, from GET /api/activity. */
@@ -45,7 +43,10 @@ interface Props {
   onClose: () => void;
   onOpenAdmin: () => void;
   onToggleStocks: () => void;
-  onToggleSettings: () => void;
+  /** Open the picker: stored analyses, and the settings for a new run. */
+  onOpenAnalysis: () => void;
+  /** The flag combination on show, for the verdict card to wear. */
+  flagsLabel: string;
 }
 
 export default function AnalysisView({
@@ -53,14 +54,14 @@ export default function AnalysisView({
   fallbackName,
   flags,
   refreshKey,
-  onRunAnalysis,
   analyzing,
   activity = [],
   onActivityChanged,
   onClose,
   onOpenAdmin,
   onToggleStocks,
-  onToggleSettings,
+  onOpenAnalysis,
+  flagsLabel,
 }: Props) {
   const [bundle, setBundle] = useState<StockBundle | null>(null);
   const [analysis, setAnalysis] = useState<CachedAnalysisEntry | null>(null);
@@ -190,7 +191,6 @@ export default function AnalysisView({
           onClose={onClose}
           onOpenAdmin={onOpenAdmin}
           onToggleStocks={onToggleStocks}
-          onToggleSettings={onToggleSettings}
         />
 
         {(dataStale || analysisStale) && (
@@ -199,7 +199,7 @@ export default function AnalysisView({
             dataStale={!!dataStale}
             analysisOlderThanData={!!analysisOlderThanData}
             onRefreshed={() => setLocalRefresh((x) => x + 1)}
-            onRunAnalysis={onRunAnalysis}
+            onOpenAnalysis={onOpenAnalysis}
             analyzing={analyzing}
           />
         )}
@@ -228,6 +228,8 @@ export default function AnalysisView({
               }}
               llmGeneratedAt={analysis?.generatedAt ?? null}
               llmModel={analysis?.flags.model ?? null}
+              flagsLabel={flagsLabel}
+              onOpenAnalysis={onOpenAnalysis}
               analyst={{
                 targetMeanPrice: f.targetMeanPrice,
                 analystTargetLow: f.analystTargetLow,
@@ -449,14 +451,14 @@ function StaleBanner({
   dataStale,
   analysisOlderThanData,
   onRefreshed,
-  onRunAnalysis,
+  onOpenAnalysis,
   analyzing,
 }: {
   symbol: string;
   dataStale: boolean;
   analysisOlderThanData: boolean;
   onRefreshed: () => void;
-  onRunAnalysis: () => void;
+  onOpenAnalysis: () => void;
   analyzing: boolean;
 }) {
   const [busy, setBusy] = useState(false);
@@ -512,12 +514,12 @@ function StaleBanner({
             the primary recovery path. */}
         {analysisStale && (
           <button
-            onClick={onRunAnalysis}
+            onClick={onOpenAnalysis}
             disabled={busy || analyzing}
             className="rounded border border-amber-500 bg-amber-500 px-2.5 py-1 text-[11px] font-semibold text-amber-950 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
             title="Re-run the LLM analysis with the current settings. Uses fresh data if you just clicked Refresh."
           >
-            {analyzing ? "⟳ Re-running…" : "↻ Re-run analysis"}
+            {analyzing ? "⟳ Läuft…" : "↻ Neu rechnen…"}
           </button>
         )}
       </div>
