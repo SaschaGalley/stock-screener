@@ -44,8 +44,8 @@ export function mosBgColor(mos: number | null | undefined): string {
 
 // The label reading itself lives in src/verdict.ts, shared with the server's
 // consensus band — this module owns only what a tone should *look* like.
-export { recommendationTone } from '../../src/verdict';
-export type { RecommendationTone } from '../../src/verdict';
+export { recommendationTone, verdictForScore } from '../../src/verdict';
+export type { RecommendationTone, Recommendation } from '../../src/verdict';
 
 /**
  * Color for a recommendation badge.

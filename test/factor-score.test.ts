@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { analystConsensus, blendScores, computeFactorScore, PILLAR_WEIGHTS } from '../src/analysis/score.js';
+import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
 import type {
@@ -261,6 +262,36 @@ describe('uncertainty', () => {
       dataQualityWarnings: [ERROR_WARNING],
     });
     assert.ok(['SELL', 'HOLD', 'STRONG SELL'].includes(bad.verdict));
+  });
+});
+
+describe('score bands', () => {
+  it('puts each boundary in the band that starts there', () => {
+    const cases: [number, string][] = [
+      [10, 'STRONG BUY'], [8.0, 'STRONG BUY'], [7.99, 'BUY'],
+      [6.5, 'BUY'], [6.49, 'HOLD'],
+      [4.5, 'HOLD'], [4.49, 'SELL'],
+      [3.0, 'SELL'], [2.99, 'STRONG SELL'], [0, 'STRONG SELL'],
+    ];
+    for (const [score, verdict] of cases) {
+      assert.equal(verdictForScore(score), verdict, `${score} should be ${verdict}`);
+    }
+  });
+
+  it('is the only definition, so a colour cannot disagree with its badge', () => {
+    // The list used to colour from 7 and 5 while the chip beside it came from
+    // these bands: 4.6 was a red number on an amber HOLD, 6.6 an amber number
+    // on a green BUY. Both now derive from `recommendationTone(verdictFor…)`,
+    // which is what this asserts — the two zones that used to disagree.
+    assert.equal(recommendationTone(verdictForScore(4.6)), 'neutral');
+    assert.equal(recommendationTone(verdictForScore(6.6)), 'positive');
+    assert.equal(recommendationTone(verdictForScore(4.4)), 'negative');
+    assert.equal(recommendationTone(verdictForScore(6.4)), 'neutral');
+  });
+
+  it('agrees with the score the scorer produces', () => {
+    const s = score();
+    assert.equal(s.uncappedVerdict, verdictForScore(s.score));
   });
 });
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RECOMMENDATIONS } from './verdict.js';
 import { PROVIDERS } from './models.js';
 import { RATINGS, type Rating } from './data/ratings.js';
 
@@ -755,14 +756,13 @@ export type SearchTrace = z.infer<typeof SearchTraceSchema>;
 // ─── Deterministic factor score ──────────────────────────────────────────────
 
 /**
- * The recommendation vocabulary, declared once.
- *
- * It was spelled out as a zod enum in the LLM schema, again as a TypeScript
- * union in the provider parser, and again in the prompt. Three copies of a
- * closed set is three chances to add a sixth label in two of them.
+ * The recommendation vocabulary and the bands that produce it live in
+ * `src/verdict.ts`, which is dependency-free so the web app can import them as
+ * values. Re-exported here because this is where the rest of the codebase looks
+ * for a domain type.
  */
-export const RECOMMENDATIONS = ['STRONG BUY', 'BUY', 'HOLD', 'SELL', 'STRONG SELL'] as const;
-export type Recommendation = (typeof RECOMMENDATIONS)[number];
+export { RECOMMENDATIONS } from './verdict.js';
+export type { Recommendation } from './verdict.js';
 
 /**
  * The pillars the deterministic score is built from. Order is display order.

@@ -1,4 +1,5 @@
 import type { ScoreCard, ScoreFinding, ScorePillar } from '../../types';
+import { scoreBarColor, scoreColor } from '../stockList';
 
 /**
  * Why the number is the number.
@@ -79,13 +80,6 @@ function Heading({ children }: { children: React.ReactNode }) {
   );
 }
 
-function scoreColour(score: number | null): string {
-  if (score === null) return 'text-ink-500';
-  if (score >= 7) return 'text-emerald-400';
-  if (score >= 5) return 'text-amber-400';
-  return 'text-red-400';
-}
-
 function BlendBar({ card }: { card: ScoreCard }) {
   const { factor, final, narrative } = card;
   const fPct = Math.round(final.factorWeight * 100);
@@ -94,7 +88,7 @@ function BlendBar({ card }: { card: ScoreCard }) {
   return (
     <div className="rounded border border-ink-800 bg-ink-950 p-3">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className={`font-mono text-2xl font-bold tabular ${scoreColour(final.score)}`}>
+        <span className={`font-mono text-2xl font-bold tabular ${scoreColor(final.score)}`}>
           {final.score.toFixed(1)}
         </span>
         <span className="text-sm font-semibold text-ink-200">{final.verdict}</span>
@@ -160,7 +154,7 @@ function PillarRow({ p }: { p: ScorePillar }) {
       <div className="flex items-baseline justify-between gap-2 font-mono text-[11px]">
         <span className="text-ink-300">{p.label}</span>
         <span className="text-ink-500">
-          <span className={scoreColour(p.score)}>
+          <span className={scoreColor(p.score)}>
             {p.score === null ? '—' : p.score.toFixed(1)}
           </span>
           {' · '}{Math.round(p.effectiveWeight * 100)} %
@@ -169,7 +163,7 @@ function PillarRow({ p }: { p: ScorePillar }) {
       </div>
       <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-ink-800">
         <div
-          className={p.score === null ? 'bg-ink-700' : p.score >= 7 ? 'bg-emerald-500' : p.score >= 5 ? 'bg-amber-500' : 'bg-red-500'}
+          className={scoreBarColor(p.score)}
           style={{ width: `${width}%`, height: '100%' }}
         />
       </div>

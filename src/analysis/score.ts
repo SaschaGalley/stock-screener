@@ -45,6 +45,7 @@ import { ComputedMetrics } from './computeMetrics.js';
 import { worstSeverity } from './data-quality.js';
 import { fmt, fmtBig, fmtPct, fmtPrice, fmtSignedPct } from '../format.js';
 import { toFiniteNumber } from '../utils/num.js';
+import { verdictForScore } from '../verdict.js';
 
 // ── Configuration ────────────────────────────────────────────────────────────
 //
@@ -80,18 +81,6 @@ export const PILLAR_LABELS: Record<PillarKey, string> = {
   momentum:  'Markt & Momentum',
   revisions: 'Erwartungen',
 };
-
-/**
- * Score → label. The bands are set where the LLM's own labels sat, so a stored
- * history and a fresh factor score remain comparable on the same axis.
- */
-const BANDS: { min: number; verdict: Recommendation }[] = [
-  { min: 8.0, verdict: 'STRONG BUY' },
-  { min: 6.5, verdict: 'BUY' },
-  { min: 4.5, verdict: 'HOLD' },
-  { min: 3.0, verdict: 'SELL' },
-  { min: -Infinity, verdict: 'STRONG SELL' },
-];
 
 /** Below this confidence no STRONG label is available, whatever the score. */
 const STRONG_MIN_CONFIDENCE = 0.45;
@@ -531,10 +520,6 @@ function reducePillar(
   };
 }
 
-function bandFor(score: number): Recommendation {
-  return BANDS.find((b) => score >= b.min)!.verdict;
-}
-
 /** Apply the ceilings in order of severity; `hold-ceiling` subsumes `no-strong`. */
 function capVerdict(verdict: Recommendation, caps: ScoreCap[]): Recommendation {
   let out: Recommendation = verdict;
@@ -639,7 +624,7 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
     caps.push({ limit: 'hold-ceiling', reason: 'Altman Z im Distress-Bereich' });
   }
 
-  const uncappedVerdict = bandFor(score);
+  const uncappedVerdict = verdictForScore(score);
 
   return {
     score:      Math.round(score * 100) / 100,
@@ -810,7 +795,7 @@ export function blendScores(input: BlendInput): FinalScore {
   // The caps were earned by the payload, not by the score, so they survive the
   // blend: a model cannot talk its way past a flagged balance sheet by writing
   // an enthusiastic paragraph.
-  const verdict = capVerdict(bandFor(score), factor.caps);
+  const verdict = capVerdict(verdictForScore(score), factor.caps);
 
   return {
     score:            Math.round(score * 100) / 100,

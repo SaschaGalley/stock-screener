@@ -1,4 +1,5 @@
 import type { OverviewRow } from '../types';
+import { recommendationTone, verdictForScore } from '../format';
 
 /**
  * The one list of stocks, as a model.
@@ -38,11 +39,42 @@ function byNumberDesc(a: number | null, b: number | null): number {
   return b - a;
 }
 
+/**
+ * The colour of a score, taken from the verdict it produces.
+ *
+ * Not its own thresholds. Those were green from 7 and amber from 5, against
+ * bands that call 6.5 a BUY and 4.5 a HOLD — so a 4.6 printed a red number
+ * beside an amber HOLD chip, and a 6.6 an amber number beside a green BUY one.
+ * Two answers to one question, and the reader had to guess which was the real
+ * boundary.
+ *
+ * STRONG gets no colour of its own here, the same rule the badge follows: the
+ * word is already in the label, and strength is emphasis rather than a fourth
+ * hue.
+ */
 export function scoreColor(score: number | null): string {
   if (score === null) return 'text-ink-500';
-  if (score >= 7) return 'text-emerald-400';
-  if (score >= 5) return 'text-amber-400';
-  return 'text-red-400';
+  switch (recommendationTone(verdictForScore(score))) {
+    case 'positive': return 'text-emerald-400';
+    case 'negative': return 'text-red-400';
+    default:         return 'text-amber-400';
+  }
+}
+
+/**
+ * The same reading as a fill, for bars and meters.
+ *
+ * Paired with `scoreColor` the way `recommendationBarColor` is paired with
+ * `recommendationColor`: a filled bar needs a stronger shade than text, and the
+ * one thing that must not differ between them is where the colour changes.
+ */
+export function scoreBarColor(score: number | null): string {
+  if (score === null) return 'bg-ink-700';
+  switch (recommendationTone(verdictForScore(score))) {
+    case 'positive': return 'bg-emerald-500';
+    case 'negative': return 'bg-red-500';
+    default:         return 'bg-amber-500';
+  }
 }
 
 /**

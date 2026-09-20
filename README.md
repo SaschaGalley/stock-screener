@@ -252,6 +252,31 @@ Three properties the code is built to keep:
   + 0.6 × confidence)`, where confidence combines coverage, the composite's own
   confidence, the data-quality audit and whether the fundamentals are stale.
 
+### The bands
+
+`SCORE_BANDS` in `src/verdict.ts` is the only place a score becomes a label, and
+the only place the boundaries exist:
+
+| Score | Verdict | Colour |
+|-------|---------|--------|
+| ≥ 8.0 | STRONG BUY | green |
+| ≥ 6.5 | BUY | green |
+| ≥ 4.5 | HOLD | amber |
+| ≥ 3.0 | SELL | red |
+| < 3.0 | STRONG SELL | red |
+
+The colour is *derived* from the band rather than set alongside it. It used to
+have its own thresholds — green from 7, amber from 5 — which disagreed with the
+bands in two of the four zones: a 4.6 printed a red number beside an amber HOLD
+chip, a 6.6 an amber number beside a green BUY one. Ten of thirty-seven rows in
+a real watchlist were coloured against their own label. `scoreColor` now asks
+`recommendationTone(verdictForScore(score))`, so the digit and the chip cannot
+drift apart again.
+
+STRONG gets no colour of its own, the rule the badge already followed: the word
+is in the label, so strength is emphasis (filled vs. outlined chip) rather than
+a fourth hue.
+
 Separately, **caps** limit the label without touching the number: a data-quality
 error, no analyst coverage, or confidence below 45 % forbids the STRONG variants;
 Beneish "likely manipulator" or an Altman distress zone also forbids BUY. A cap
