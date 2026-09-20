@@ -331,6 +331,14 @@ stand-in would import exactly the noise this replaced. `verdict.*` is left
 untouched — it is what the old pipeline actually concluded on those days, and it
 is the only baseline the new score can be compared against.
 
+Re-running it is safe, and safe in the strong sense: observations upsert on
+(symbol, metric, instant), and each symbol's `score.*` rows at the instants
+being rewritten are cleared first. Without that step a re-score under changed
+rules could only add and overwrite, never remove — a criterion that now abstains
+would leave its last value behind at the very timestamp being rewritten, which
+is how a pillar once reported 10/10 next to a coverage of 0 %. Rows written by
+the live refresh sit at instants of their own and are never touched.
+
 ## Technical signals gauge
 
 Indicators come from [`trading-signals`](https://github.com/bennycode/trading-signals);

@@ -37,20 +37,38 @@ import { FALLBACK_RATES } from '../data/fred.js';
 import { closePool, waitForDatabase } from './client.js';
 import { migrate } from './migrate.js';
 import { syncCatalog } from './catalog.js';
-import { listSymbols, recordObservations, snapshotHistory } from './store.js';
+import { deleteObservations, listSymbols, recordObservations, snapshotHistory } from './store.js';
 
 export interface RescoreStats {
   symbols:      number;
   days:         number;
   observations: number;
+  /** Orphaned rows from an earlier re-score under different scoring rules. */
+  cleared:      number;
   skipped:      number;
 }
 
-/** The newest entry at or before `at`, or null when the series starts later. */
+/**
+ * How far past a financials timestamp a sibling snapshot still counts as part
+ * of the same observation.
+ *
+ * One refresh writes the financials first and the market signals a few hundred
+ * milliseconds later, so a strict at-or-before rule excluded every signals
+ * payload written by the very run whose price it belongs to — three symbols
+ * came out of the first re-score at 90 % coverage with no momentum pillar, for
+ * no better reason than the order of two writes. Minutes are enough to pair a
+ * run with itself and far too short to reach the next day's data.
+ */
+const SAME_RUN_MS = 15 * 60_000;
+
+/**
+ * The entry that belongs to `at` — the newest one at or before it, or one
+ * written just after by the same run.
+ */
 function asOf<T>(history: { data: T; capturedAt: Date }[], at: number): T | null {
   let found: T | null = null;
   for (const row of history) {
-    if (row.capturedAt.getTime() > at) break;
+    if (row.capturedAt.getTime() > at + SAME_RUN_MS) break;
     found = row.data;
   }
   return found;
@@ -61,7 +79,7 @@ export async function rescoreHistory(opts: {
   since?:   Date;
   dryRun?:  boolean;
 } = {}): Promise<RescoreStats> {
-  const stats: RescoreStats = { symbols: 0, days: 0, observations: 0, skipped: 0 };
+  const stats: RescoreStats = { symbols: 0, days: 0, observations: 0, cleared: 0, skipped: 0 };
   const symbols = opts.symbols?.length ? opts.symbols : await listSymbols();
   const scoring = DEFAULT_APP_CONFIG.scoring;
 
@@ -79,6 +97,17 @@ export async function rescoreHistory(opts: {
     const signals = await snapshotHistory<MarketSignals>(symbol, 'market_signals', opts.since);
     const peers   = await snapshotHistory<SectorMedians>(symbol, 'sector_medians', opts.since);
     const techSig = await snapshotHistory<TechnicalSignals>(symbol, 'technical_signals', opts.since);
+
+    // Clear this symbol's `score.*` rows at the instants about to be rewritten.
+    // Without it a re-score under changed rules cannot remove what it no longer
+    // produces: a criterion that now abstains leaves its last value behind at
+    // the very timestamp being rewritten, and the series quietly disagrees with
+    // itself. Only these instants, so the live refresh's own cards survive.
+    if (!opts.dryRun) {
+      stats.cleared += await deleteObservations(
+        symbol, 'score.', financials.map((r) => r.capturedAt),
+      );
+    }
 
     let wrote = 0;
     for (const row of financials) {
@@ -161,6 +190,7 @@ if (isMain) {
     logger.success(
       `${args.includes('--dry-run') ? 'Dry run' : 'Re-score'} complete — `
       + `${stats.symbols} symbols, ${stats.days} days, ${stats.observations} observations`
+      + (stats.cleared > 0 ? `, ${stats.cleared} stale rows cleared` : '')
       + (stats.skipped > 0 ? `, ${stats.skipped} snapshots skipped (no usable price)` : ''),
     );
     await closePool();

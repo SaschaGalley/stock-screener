@@ -240,9 +240,21 @@ function valuationPillar(
   const c = f.tradingCurrency;
   const comp: CompositeFairValueResult = m.composite;
 
-  const mos = comp.primary.marginOfSafety;
   const consMos = comp.conservative.marginOfSafety;
-  const pct = comp.pctPrimaryUndervalued;
+
+  // The composite zeroes its own confidence when fewer than two primary models
+  // survived, and a median over one model is not a median. Left scored, that
+  // single survivor is usually the analyst target — which on a pre-profit name
+  // sits far above the price and read as a perfect 10/10 valuation on exactly
+  // the stocks we know least about. Same rule as Piotroski's signal floor and
+  // Beneish's variable floor: below the minimum the criterion abstains, the
+  // pillar renormalises onto the lenses that do have data, and what is lost is
+  // charged to coverage.
+  const compositeUsable = comp.confidence > 0;
+  const mos = compositeUsable ? comp.primary.marginOfSafety : null;
+  const pct = compositeUsable ? comp.pctPrimaryUndervalued : null;
+  const thinNote = `Composite aus ${comp.primary.models.length} Modell${comp.primary.models.length === 1 ? '' : 'en'} `
+    + '— zu wenige für einen belastbaren Median, daher nicht bewertet';
 
   // Relative cheapness is a second lens, not a second helping of the first:
   // the composite asks "what is it worth", this asks "what do comparable firms
@@ -259,15 +271,17 @@ function valuationPillar(
   return [
     criterion('composite-mos', 'Composite Margin of Safety', 0.45,
       ramp(mos, -0.30, 0.60),
-      comp.primary.median !== null
-        ? `Composite Fair Value ${fmtPrice(comp.primary.median, c)} vs. Kurs ${fmtPrice(f.price, c)} — MoS ${fmtSignedPct(mos)} über ${comp.primary.models.length} Modelle`
-        : 'Kein Composite Fair Value — zu wenige anwendbare Modelle'),
+      !compositeUsable ? thinNote
+        : comp.primary.median !== null
+          ? `Composite Fair Value ${fmtPrice(comp.primary.median, c)} vs. Kurs ${fmtPrice(f.price, c)} — MoS ${fmtSignedPct(mos)} über ${comp.primary.models.length} Modelle`
+          : 'Kein Composite Fair Value — zu wenige anwendbare Modelle'),
 
     criterion('models-undervalued', 'Anteil unterbewertender Modelle', 0.20,
       pct,
-      pct !== null
-        ? `${(pct * 100).toFixed(0)} % der Primärmodelle sehen die Aktie unter Fair Value`
-        : 'Kein Primärmodell lieferte einen Fair Value'),
+      !compositeUsable ? thinNote
+        : pct !== null
+          ? `${(pct * 100).toFixed(0)} % der Primärmodelle sehen die Aktie unter Fair Value`
+          : 'Kein Primärmodell lieferte einen Fair Value'),
 
     criterion('conservative-mos', 'Value-Lens (konservative Modelle)', 0.15,
       ramp(consMos, -0.50, 0.30),

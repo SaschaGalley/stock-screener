@@ -717,7 +717,20 @@ export function createApp(): express.Express {
         // symbol analysed before the score card existed.
         const card = cards.get(symbol);
         const stored = newest?.scoreCard ?? null;
-        const num = (key: string) => card?.get(key)?.value ?? null;
+
+        // A null leaf is not written as a row — `projectRows` skips it — so the
+        // newest point of a metric that has since stopped having a value is the
+        // last time it *had* one. For `score.narrative.score`, which is null
+        // whenever the summariser abstained or no prose existed, that would
+        // leave a stale number sitting in the list. Every leaf of one card is
+        // written in the same call at the same instant, so a point that does not
+        // carry the card's own timestamp belongs to an older card and is absent
+        // from this one. `score.factor.score` is the anchor: it is never null.
+        const stamp = card?.get('score.factor.score')?.at;
+        const num = (key: string) => {
+          const point = card?.get(key);
+          return point && point.at === stamp ? point.value ?? null : null;
+        };
         const score = scoreHistory.length > 0
           ? scoreHistory[scoreHistory.length - 1].score
           : stored?.final.score ?? newest?.llmAnalysis.score ?? null;
@@ -735,7 +748,9 @@ export function createApp(): express.Express {
           narrativeScore:  num('score.narrative.score')   ?? stored?.narrative?.score  ?? null,
           scoreConfidence: num('score.factor.confidence') ?? stored?.factor.confidence ?? null,
           verdictCapped:   stored ? stored.factor.caps.length > 0 : false,
-          recommendation:  card?.get('score.final.verdict')?.text
+          recommendation:  (card?.get('score.final.verdict')?.at === stamp
+            ? card?.get('score.final.verdict')?.text
+            : null)
             ?? stored?.final.verdict
             ?? newest?.llmAnalysis.recommendation
             ?? null,

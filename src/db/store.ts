@@ -1160,3 +1160,33 @@ export async function snapshotHistory<T>(
   );
   return res.rows.map((r) => ({ data: r.content, capturedAt: r.captured_at }));
 }
+
+/**
+ * Drop one domain's observations at specific instants.
+ *
+ * `recordObservations` upserts and never deletes, and a null leaf is not
+ * written at all — so a metric that *stops* having a value keeps whatever row
+ * it last had. Rewriting the same instant therefore leaves the orphan in place,
+ * which is how a re-score after a scoring change left a pillar reporting 10/10
+ * beside a coverage of 0 %.
+ *
+ * Scoped to exact timestamps rather than a range on purpose: the live refresh
+ * writes its own richer cards at instants of its own, and a range delete would
+ * take those with it.
+ */
+export async function deleteObservations(
+  symbol: string, keyPrefix: string, at: Date[],
+): Promise<number> {
+  const id = await symbolId(symbol);
+  if (id === null || at.length === 0) return 0;
+  const res = await query(
+    `DELETE FROM observations o
+      USING metrics m
+      WHERE o.metric_id = m.id
+        AND o.symbol_id = $1
+        AND o.observed_at = ANY($2::timestamptz[])
+        AND m.key LIKE $3`,
+    [id, at, `${keyPrefix}%`],
+  );
+  return res.rowCount ?? 0;
+}

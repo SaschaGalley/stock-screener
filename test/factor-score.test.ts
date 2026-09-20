@@ -193,6 +193,28 @@ describe('missing data', () => {
     assert.ok(divergences.length <= 3, `got ${divergences.length} divergence lines`);
   });
 
+  it('abstains on a composite that survived with one model, not a perfect 10', () => {
+    // No FCF, no EPS, no book value and no peers: everything drops out of the
+    // primary tier except the analyst target, which on a speculative name sits
+    // far above the price. That is one model, and one model is not a median.
+    const thin = financials({
+      freeCashFlow: null, ebit: null, ebitda: null, eps: null, bookValue: null,
+      earningsGrowth: null, revenueGrowth: null, targetMeanPrice: 260,
+    });
+    const s = computeFactorScore({
+      financials: thin,
+      metrics: computeAllMetrics(thin, FALLBACK_RATES, null),
+      sectorMedians: null, marketSignals: signals, technicalSignals: technicals,
+    });
+
+    const valuation = s.pillars.find((p) => p.key === 'valuation');
+    const composite = valuation?.criteria.find((c) => c.key === 'composite-mos');
+
+    assert.equal(composite?.points, null, 'a one-model composite must not score');
+    assert.match(composite?.note ?? '', /zu wenige/);
+    assert.ok((valuation?.coverage ?? 1) < 1);
+  });
+
   it('reports an unscorable pillar as a gap rather than staying silent', () => {
     const blind = score({}, { signals: null, technicals: null });
     const gaps = blind.findings.filter((x) => x.kind === 'gap');
