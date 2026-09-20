@@ -205,6 +205,16 @@ body {
     background: var(--color-border-strong);
 }
 
+/* View transitions — the cross-fade when the table folds into the rail.
+   Short on purpose: long enough to read as one list changing shape, short
+   enough that it never sits between you and the stock you clicked. The rows
+   themselves are the same markup at the same height in both densities (see
+   StockRowCells.tsx), so this only has to carry the columns in and out. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 160ms;
+}
+
 /* Focus ring (matches accent) */
 *:focus-visible {
     outline: 2px solid var(--color-accent);

@@ -78,11 +78,13 @@ pnpm run serve           # API only — serve dist/ behind your own reverse prox
 
 There is one list of stocks, shown at two densities. There are no tabs and no toolbar above it: the list *is* the app, and whether a stock or the administration is open on top of it is a fact about state rather than a place you navigate to.
 
-**Übersicht** — the list at full width, and the resting state: AI score (with the change since the first recorded verdict), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
+**Übersicht** — the list at full width, and the resting state: AI score (with the change since the first recorded verdict), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. One line per stock, because the rail has room for one line and the two have to match. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
 
-**Analyse** — the same list collapsed to a rail, with one stock open beside it. A row click opens it; the **✕** at the top right of the analysis, or `Esc`, spreads the table back out, at the same order and filter, with the stock you were reading scrolled back into view.
+**Analyse** — the same list collapsed to a rail, with one stock open beside it. A row click opens it; the **✕** at the top right of the analysis, or `Esc`, spreads the table back out.
 
-- **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else: sorting and the watchlist filter belong to the table, and every row of header here is a stock the rail cannot show. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
+The list does not move when that happens. The two densities share the row markup for every column both of them show (`StockRowCells.tsx`), so the rows are the same height on either side of the click, and the headers above them are the same height too; the scroll position travels as *which stock was at the top*, which is the one thing a table and a rail can both honour. The stock you clicked stays on the pixel it was on, and where the browser supports view transitions the columns fade rather than vanish between frames.
+
+- **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and the watchlist filter belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
 - **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull/bear/risks, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
 - **Right sidebar**: model + search-provider + Perplexity toggles. Each flag combo is its own cached entry. Clicking an outdated combo still loads it (older entries get a ⚠ marker) — a warning banner sits on top with a one-click re-run.
 - **Refresh data** (header `↻`) re-fetches the data layer (Yahoo + Finnhub + FRED + technicals) without a single LLM call. **Re-run** in the right sidebar or in the stale banner forces a fresh LLM call, overwriting the cached verdict.
@@ -291,6 +293,8 @@ web/
 │   ├── styles.css         ALL theme tokens as :root HEX vars
 │   └── components/
 │       ├── stockList.ts           The list as a model: filter, sort, score colours
+│       ├── StockRowCells.tsx      The row markup both densities share
+│       ├── useListScroll.ts       Carries the scroll position between them
 │       ├── StockTable.tsx         The list at full width (Übersicht)
 │       ├── StockRail.tsx          The same list at rail width, beside an analysis
 │       ├── StockListControls.tsx  Search · sort · watchlist, shared by both

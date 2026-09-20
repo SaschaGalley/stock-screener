@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import { api } from './api';
 import StockRail from './components/StockRail';
 import StockTable from './components/StockTable';
@@ -8,6 +9,7 @@ import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
 import AdminPage from './pages/AdminPage';
 import { applyListView, DEFAULT_LIST_VIEW, type ListView } from './components/stockList';
+import { EMPTY_ANCHOR, type ListScrollAnchor } from './components/useListScroll';
 import type { Settings, OverviewRow, ProgressEvent, SearchChoice } from './types';
 import { DEFAULT_MODEL_ID, resolveModelId } from '../../src/models';
 
@@ -62,6 +64,25 @@ function writeRoute(route: RouteState): void {
   }
 }
 
+/**
+ * Apply a state change as a view transition, where the browser has one.
+ *
+ * Folding the table into the rail swaps one element for another, so there is
+ * nothing for CSS to animate between: without this the columns vanish between
+ * two frames. `flushSync` is what makes the callback's DOM change land inside
+ * the transition rather than after it. Browsers without the API — and anyone
+ * who has asked for less motion — get the plain swap.
+ */
+function withViewTransition(apply: () => void): void {
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (typeof doc.startViewTransition !== 'function' || reduced) {
+    apply();
+    return;
+  }
+  doc.startViewTransition(() => { flushSync(apply); });
+}
+
 export default function App() {
   const [rows, setRows] = useState<OverviewRow[]>([]);
   const [rowsLoading, setRowsLoading] = useState(true);
@@ -76,6 +97,9 @@ export default function App() {
   // so collapsing the table into the rail — or opening it back up — keeps the
   // list you had built.
   const [listView, setListView] = useState<ListView>(DEFAULT_LIST_VIEW);
+  // Where the list is scrolled. Shared by both densities so folding the columns
+  // away leaves the stocks where they were on screen.
+  const listScrollRef = useRef<ListScrollAnchor>(EMPTY_ANCHOR);
   const closeStreamRef = useRef<(() => void) | null>(null);
   // Monotonic id of the active analyze run. Switching symbols (or starting a
   // new run) bumps it; stale SSE callbacks check it and no-op so a finished
@@ -165,9 +189,11 @@ export default function App() {
     runIdRef.current++;
     closeStreamRef.current?.();
     closeStreamRef.current = null;
-    setLoading(false);
-    setSelected(s);
-    setProgress([]);
+    withViewTransition(() => {
+      setLoading(false);
+      setSelected(s);
+      setProgress([]);
+    });
   }, [setSelected]);
 
   // User-initiated settings change — flag it so the auto-switch effect yields.
@@ -314,8 +340,10 @@ export default function App() {
 
   /** Close whatever is open and spread the list back out to full width. */
   const closeOverlay = useCallback(() => {
-    setMobileMenu(null);
-    navigate('overview');
+    withViewTransition(() => {
+      setMobileMenu(null);
+      navigate('overview');
+    });
   }, [navigate]);
 
   const openAdmin = useCallback(() => {
@@ -374,6 +402,8 @@ export default function App() {
           selectedSymbol={selected}
           onSelect={handleSelectSymbol}
           onOpenAdmin={openAdmin}
+          activity={activity}
+          scrollAnchor={listScrollRef}
         />
       )}
 
@@ -396,6 +426,8 @@ export default function App() {
             onViewChange={setListView}
             selectedSymbol={selected}
             onSelect={handleSelectAndClose}
+            scrollAnchor={listScrollRef}
+            visible={isAnalysis}
             onDeleted={(s) => {
               if (selected === s) setSelected(null);
               void reloadRows();

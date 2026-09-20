@@ -10,6 +10,14 @@ interface Props {
    * to show as many stocks as it can in the order the table was already put in.
    */
   layout:   'bar' | 'rail';
+  /**
+   * Rail only: how many stocks are showing, drawn inside the field. It rides
+   * along in there so the rail's header is exactly one control tall — the same
+   * as the table's — and the two lists therefore start at the same height on
+   * screen. A second line here would offset every row by its own height on the
+   * way in and out.
+   */
+  badge?:   string;
 }
 
 /**
@@ -20,20 +28,31 @@ interface Props {
  * chosen in the table is the order the rail shows. Defining them twice is how
  * the two views would start disagreeing about what "sorted" means.
  */
-export default function StockListControls({ view, onChange, layout }: Props) {
+export default function StockListControls({ view, onChange, layout, badge }: Props) {
   const search = (
     <input
       type="search"
       value={view.query}
       onChange={(e) => onChange({ ...view, query: e.target.value })}
       placeholder={layout === 'rail' ? 'Symbol, Name, Sektor…' : 'Filtern nach Symbol, Name, Sektor…'}
-      className={`rounded border border-ink-700 bg-ink-950 px-2.5 py-1.5 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent focus:outline-none ${
-        layout === 'rail' ? 'w-full' : 'w-56'
+      className={`rounded border border-ink-700 bg-ink-950 py-1.5 pl-2.5 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent focus:outline-none ${
+        layout === 'rail' ? 'w-full pr-14' : 'w-56 pr-2.5'
       }`}
     />
   );
 
-  if (layout === 'rail') return search;
+  if (layout === 'rail') {
+    return (
+      <div className="relative">
+        {search}
+        {badge && (
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] text-ink-600">
+            {badge}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-3">
