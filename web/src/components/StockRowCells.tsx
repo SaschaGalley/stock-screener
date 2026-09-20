@@ -26,6 +26,15 @@ import ScoreSplit from './ScoreSplit';
  */
 export const ROW_HEIGHT = 'h-14';
 
+/**
+ * And the column-label row above them, for the same reason plus one more: left
+ * to its content it lands on 30.78px, because a 10px uppercase line is 13.78px
+ * tall. Every row then sits on a fractional offset, the two lists disagree
+ * about that fraction, and the scroll correction can only land on whole
+ * pixels — which is exactly the one-pixel jump you see on the way in and out.
+ */
+export const HEADER_HEIGHT = 'h-8';
+
 interface IdentityProps {
   row:    OverviewRow;
   active: boolean;

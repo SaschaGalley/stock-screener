@@ -3,7 +3,7 @@ import type { OverviewRow } from '../types';
 import { api } from '../api';
 import { fmtBig } from '../format';
 import StockListControls from './StockListControls';
-import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT } from './StockRowCells';
+import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT, HEADER_HEIGHT } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { type ListView } from './stockList';
 
@@ -77,7 +77,7 @@ export default function StockRail({
           </div>
         ) : (
           <ul>
-            <li className="sticky top-0 z-10 flex items-center justify-between border-b border-ink-700 bg-ink-900 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+            <li className={`${HEADER_HEIGHT} sticky top-0 z-10 flex items-center justify-between border-b border-ink-700 bg-ink-900 px-3 text-[10px] font-semibold uppercase tracking-wider text-ink-500`}>
               <span>Aktie</span>
               <span>Score</span>
             </li>

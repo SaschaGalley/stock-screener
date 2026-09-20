@@ -3,7 +3,7 @@ import type { OverviewRow } from '../types';
 import ScoreSparkline from './charts/ScoreSparkline';
 import RecommendationBadge from './RecommendationBadge';
 import StockListControls from './StockListControls';
-import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT } from './StockRowCells';
+import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT, HEADER_HEIGHT } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { GearIcon } from './icons';
 import { averageScore, scoreColor, type ListView } from './stockList';
@@ -87,7 +87,7 @@ export default function StockTable({
         ) : (
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-ink-900 text-[10px] uppercase tracking-wider text-ink-500">
-              <tr className="border-b border-ink-700">
+              <tr className={`${HEADER_HEIGHT} border-b border-ink-700`}>
                 <th className="px-3 py-2 text-left font-semibold">Aktie</th>
                 <th className="px-2 py-2 text-right font-semibold">Score</th>
                 <th className="px-2 py-2 text-left font-semibold">Verlauf</th>
