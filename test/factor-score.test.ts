@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { analystConsensus, blendScores, computeFactorScore, convictionFor, PILLAR_WEIGHTS } from '../src/analysis/score.js';
+import { analystConsensus, blendScores, computeFactorScore, convictionFor, intrinsicValue, PILLAR_WEIGHTS, readBeneish } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -195,26 +195,41 @@ describe('missing data', () => {
     assert.ok(divergences.length <= 3, `got ${divergences.length} divergence lines`);
   });
 
-  it('abstains on a composite that survived with one model, not a perfect 10', () => {
+  it('does not read a lone analyst target as a perfect valuation', () => {
     // No FCF, no EPS, no book value and no peers: everything drops out of the
     // primary tier except the analyst target, which on a speculative name sits
-    // far above the price. That is one model, and one model is not a median.
+    // far above the price. That is a price forecast, not a valuation of this
+    // company's own figures, and it is already the consensus pillar's job.
     const thin = financials({
       freeCashFlow: null, ebit: null, ebitda: null, eps: null, bookValue: null,
       earningsGrowth: null, revenueGrowth: null, targetMeanPrice: 260,
     });
+    const metrics = computeAllMetrics(thin, FALLBACK_RATES, null);
     const s = computeFactorScore({
-      financials: thin,
-      metrics: computeAllMetrics(thin, FALLBACK_RATES, null),
-      sectorMedians: null, marketSignals: signals, technicalSignals: technicals,
+      financials: thin, metrics, sectorMedians: null,
+      marketSignals: signals, technicalSignals: technicals,
     });
+
+    assert.equal(intrinsicValue(thin, metrics.composite).models.length, 0,
+      'the target must not count as one of our models');
 
     const valuation = s.pillars.find((p) => p.key === 'valuation');
     const composite = valuation?.criteria.find((c) => c.key === 'composite-mos');
 
-    assert.equal(composite?.points, null, 'a one-model composite must not score');
-    assert.match(composite?.note ?? '', /zu wenige/);
-    assert.ok((valuation?.coverage ?? 1) < 1);
+    assert.equal(composite?.points, null, 'nothing of our own survived, so it abstains');
+    assert.match(composite?.note ?? '', /Analystenziel/);
+    assert.ok((valuation?.coverage ?? 1) < 1, 'the loss is charged to coverage');
+  });
+
+  it('reads a single model of our own, which a single forecast is not', () => {
+    // One real method applied to this company's figures is thin evidence but it
+    // is evidence; blinding the pillar on it would cost 16 of 37 stocks.
+    const f = financials({ targetMeanPrice: 130 });
+    const { models, mos } = intrinsicValue(f, computeAllMetrics(f, FALLBACK_RATES, null).composite);
+
+    assert.ok(models.length >= 1);
+    assert.ok(!models.some((m) => m.name === 'Analyst Consensus'));
+    assert.ok(mos !== null);
   });
 
   it('reports an unscorable pillar as a gap rather than staying silent', () => {
@@ -263,6 +278,57 @@ describe('uncertainty', () => {
       dataQualityWarnings: [ERROR_WARNING],
     });
     assert.ok(['SELL', 'HOLD', 'STRONG SELL'].includes(bad.verdict));
+  });
+});
+
+describe('reading the M-Score', () => {
+  const b = (over: Record<string, unknown>) => readBeneish({
+    score: -1.0, probability: 'likely manipulator', variablesComputed: 8,
+    dsri: 0.9, gmi: 1.0, aqi: 1.1, sgi: 1.5, depi: 1.0, sgai: 1.0, tata: 0.05, lvgi: 1.0,
+    ...over,
+  } as never);
+
+  it('refuses a linear model evaluated far outside its estimation range', () => {
+    // Ondas: revenue up more than twelvefold, M-Score 16.97 against a −1.78
+    // threshold. The SGI coefficient alone accounts for most of that.
+    const r = b({ score: 16.97, sgi: 24.2, tata: -0.08 });
+    assert.equal(r.reading, 'extrapolated');
+    assert.match(r.note, /außerhalb/);
+  });
+
+  it('reads growth plus cash-backed earnings as growth, not manipulation', () => {
+    // CoreWeave's shape: sales index 3.96, accruals negative — operating cash
+    // flow exceeds net income, the opposite of the pattern being hunted.
+    assert.equal(b({ sgi: 1.9, tata: -0.09 }).reading, 'growth-explained');
+  });
+
+  it('keeps the flag when the accruals support it, however fast sales grew', () => {
+    // Nvidia's shape: fast growth, but net income above operating cash flow.
+    const r = b({ sgi: 1.94, tata: 0.08 });
+    assert.equal(r.reading, 'flagged');
+    assert.match(r.note, /TATA 0\.08/);
+  });
+
+  it('needs growth as well as cash — a slow grower keeps its flag', () => {
+    assert.equal(b({ sgi: 1.05, tata: -0.05 }).reading, 'flagged');
+  });
+
+  it('gives the criterion and the cap one reading, never two', () => {
+    const grown = financials({ revenueGrowth: 2.0 });
+    const s = computeFactorScore({
+      financials: grown,
+      metrics: computeAllMetrics(grown, FALLBACK_RATES, peers),
+      sectorMedians: peers, marketSignals: signals, technicalSignals: technicals,
+    });
+    const health = s.pillars.find((p) => p.key === 'health');
+    const note = health?.criteria.find((c) => c.key === 'beneish')?.note;
+
+    assert.equal(note, readBeneish(computeAllMetrics(grown, FALLBACK_RATES, peers).beneish).note);
+  });
+
+  it('abstains rather than scoring zero when the model could not be computed', () => {
+    assert.equal(b({ variablesComputed: 3 }).reading, 'unavailable');
+    assert.equal(b({ probability: 'unknown', variablesComputed: 2 }).reading, 'unavailable');
   });
 });
 

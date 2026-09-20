@@ -1512,6 +1512,18 @@ export interface CompositeInputs {
 }
 
 /**
+ * The composite contributor that is not one of our models.
+ *
+ * The sell-side target rides in the primary tier as one more triangulation
+ * point, which is right for a fair value but wrong for a scorer that also reads
+ * the consensus as a pillar of its own: measured on a real watchlist it sat in
+ * the tier for every single stock and made up 46 % of it, so a consensus
+ * weighted at 15 % actually carried 21 %. Named here so the scorer can take it
+ * back out without matching on a string literal that could be renamed.
+ */
+export const ANALYST_CONSENSUS_MODEL = 'Analyst Consensus';
+
+/**
  * Tiered composite fair value:
  *
  *   PRIMARY (headline):
@@ -1584,9 +1596,9 @@ export function calculateCompositeFairValue(financials: StockFinancials, inputs:
   // Analyst target = market consensus, treated as one more "model" for triangulation.
   primaryModels++;
   if (financials.targetMeanPrice !== null && Number.isFinite(financials.targetMeanPrice) && financials.targetMeanPrice > 0) {
-    primary.push({ name: 'Analyst Consensus', fairValue: financials.targetMeanPrice });
+    primary.push({ name: ANALYST_CONSENSUS_MODEL, fairValue: financials.targetMeanPrice });
   } else {
-    excluded.push({ name: 'Analyst Consensus', reason: 'No analyst coverage' });
+    excluded.push({ name: ANALYST_CONSENSUS_MODEL, reason: 'No analyst coverage' });
   }
 
   // ── CONSERVATIVE tier ──

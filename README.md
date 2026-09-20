@@ -235,7 +235,7 @@ between BUY and HOLD on a rounding error.
 
 | Pillar | Weight | Reads |
 |--------|--------|-------|
-| **Bewertung** | 30 % | Composite margin of safety, share of primary models showing undervaluation, the conservative tier as a value lens, own multiples against the peer medians |
+| **Bewertung** | 30 % | Margin of safety against our own models only (see below), share of them showing undervaluation, the conservative tier as a value lens, own multiples against the peer medians |
 | **Qualität** | 20 % | Piotroski (abstains below 5 computable signals), ROIC minus the DCF's own WACC, operating margin vs peers, revenue growth vs peers, Rule of 40 |
 | **Bilanz & Risiko** | 15 % | Altman Z against its own model's thresholds, interest coverage, net debt / EBITDA, current ratio, Beneish |
 | **Analystenkonsens** | 15 % | Weighted rating (Strong Buy +2 … Strong Sell −2), mean-target upside |
@@ -320,9 +320,47 @@ a fourth hue.
 
 Separately, **caps** limit the label without touching the number: a data-quality
 error, no analyst coverage, or confidence below 45 % forbids the STRONG variants;
-Beneish "likely manipulator" or an Altman distress zone also forbids BUY. A cap
-never upgrades a bearish verdict — a distressed balance sheet is no reason to
-lift a SELL.
+a supported Beneish flag or an Altman distress zone also forbids BUY. A cap never
+upgrades a bearish verdict — a distressed balance sheet is no reason to lift a
+SELL.
+
+### Two things the pillars deliberately do not read
+
+**The analyst target is not a valuation model here.** It rides in the composite's
+primary tier, which is right for a published fair value — it is a real third
+opinion. It is wrong for a pillar sitting next to a consensus pillar reading the
+same source: measured, the target was in the tier for 37 of 37 stocks and made up
+46 % of it, so a consensus configured at 15 % actually carried 21 %. The
+valuation pillar takes it back out; the published composite is untouched.
+
+One model of our own is enough for that pillar, where one was not enough with the
+target included — the distinction is what the lone survivor would be. A single
+DCF or peer-multiple is a method applied to this company's figures; the target is
+a price forecast, and on a pre-profit name it sat far above the price and scored
+a perfect ten on exactly the stocks we know least about. The separation also
+unhid a real divergence: our models run a median 14 % *below* price where the
+sell-side runs 23 % *above* it, and the two pillars' correlation went from +0.01
+(they shared an input) to −0.37 (they genuinely disagree).
+
+**A Beneish flag is read, not obeyed.** The M-Score's SGI coefficient is +0.892
+and the function is linear, so revenue growth pushes the score up on its own:
+Ondas grew revenue more than twelvefold and printed 16.97 against a −1.78
+threshold. The variable that separates growth from manipulation is TATA, total
+accruals over assets — the one term about earnings being cash-backed. So
+`readBeneish` returns one of `flagged`, `growth-explained`, `extrapolated`,
+`grey`, `clean` or `unavailable`, and both the balance-sheet criterion and the
+cap read that single verdict:
+
+| Reading | Condition | Criterion | Cap |
+|---|---|---|---|
+| `extrapolated` | SGI > 3 — outside the model's estimation range | abstains | no-strong |
+| `growth-explained` | SGI > 1.3 and TATA ≤ 0 — cash covers earnings | abstains | no-strong |
+| `flagged` | anything else the M-Score calls a manipulator | 0/10 | hold-ceiling |
+
+An explained flag is explained, not dismissed, which is why it still blocks a
+STRONG. On the watchlist this relaxes Ondas (SGI 24.2, TATA −0.08) and CoreWeave
+(3.96, −0.09) and keeps Nvidia (1.94, **+0.08** — net income above operating cash
+flow is exactly what the score is for).
 
 ### The three model calls
 

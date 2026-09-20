@@ -42,6 +42,7 @@ import {
   ScoreFinding, ScorePillar, SectorMedians, StockFinancials, TechnicalSignals,
 } from '../types.js';
 import { ComputedMetrics } from './computeMetrics.js';
+import { ANALYST_CONSENSUS_MODEL } from './metrics.js';
 import { worstSeverity } from './data-quality.js';
 import { fmt, fmtBig, fmtPct, fmtPrice, fmtSignedPct } from '../format.js';
 import { toFiniteNumber } from '../utils/num.js';
@@ -163,6 +164,14 @@ function fromLabel<T extends string>(
   return p === undefined ? null : p;
 }
 
+/** Median of a non-empty list; null for an empty one. */
+function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const n = s.length;
+  return n % 2 === 0 ? (s[n / 2 - 1] + s[n / 2]) / 2 : s[Math.floor(n / 2)];
+}
+
 /** Mean of the values that exist, or null when none do. */
 function meanOf(values: (number | null)[]): number | null {
   const present = values.filter((v): v is number => v !== null);
@@ -183,6 +192,129 @@ function relativeMultiple(own: number | null | undefined, median: number | null 
   const m = toFiniteNumber(median);
   if (o === null || m === null || o <= 0 || m <= 0) return null;
   return ramp(o / m, 1.6, 0.6);
+}
+
+// ── Intrinsic value, without the borrowed opinion ────────────────────────────
+
+/**
+ * The composite's primary tier with the sell-side target taken back out.
+ *
+ * The target belongs in a published fair value — it is a real third opinion and
+ * the composite is right to triangulate against it. It does not belong in a
+ * *pillar* that sits next to a consensus pillar reading the same source:
+ * measured on a real watchlist it was in the tier for 37 of 37 stocks and made
+ * up 46 % of it, so a consensus configured at 15 % actually carried 21 %.
+ *
+ * One model is enough here, where one was not enough with the target included.
+ * The distinction is what the lone survivor would be. A single DCF or a single
+ * peer-multiple is a method applied to this company's own figures; the analyst
+ * target is a price forecast, and on a pre-profit name it sits far above the
+ * price and scored a perfect ten on exactly the stocks we know least about.
+ * Requiring two without it would blind the pillar on 16 of 37 stocks, which is
+ * a worse error than reading one model and saying so.
+ */
+export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResult): {
+  models: CompositeFairValueResult['primary']['models'];
+  fair:   number | null;
+  mos:    number | null;
+  pct:    number | null;
+} {
+  const models = comp.primary.models.filter((m) => m.name !== ANALYST_CONSENSUS_MODEL);
+  if (models.length === 0 || !(f.price > 0)) {
+    return { models, fair: null, mos: null, pct: null };
+  }
+  const fair = median(models.map((m) => m.fairValue));
+  return {
+    models,
+    fair,
+    mos: fair === null ? null : (fair - f.price) / f.price,
+    pct: models.filter((m) => m.fairValue > f.price).length / models.length,
+  };
+}
+
+// ── Reading the M-Score ──────────────────────────────────────────────────────
+
+/**
+ * Sales growth beyond what the M-Score was fitted on.
+ *
+ * Beneish estimated the model on Compustat filers whose manipulator sample
+ * averaged an SGI near 1.6; the coefficient on SGI is +0.892 and the function is
+ * linear, so a company growing revenue thirteenfold contributes +21 to its own
+ * score on the growth term alone. Ondas prints 16.97 against a threshold of
+ * −1.78. That is not a measurement, it is a linear model evaluated two orders of
+ * magnitude outside its estimation range, and it should not be allowed to cap a
+ * verdict.
+ */
+const BENEISH_SGI_OUT_OF_SAMPLE = 3.0;
+
+/** Growth at which the SGI term starts to dominate the score. */
+const BENEISH_SGI_GROWTH = 1.3;
+
+export type BeneishReading =
+  | 'unavailable'       // too few variables to compute
+  | 'clean'
+  | 'grey'
+  | 'flagged'           // elevated, and the accruals back it up
+  | 'growth-explained'  // elevated, but earnings are cash-backed and sales grew
+  | 'extrapolated';     // elevated, but the model was evaluated out of sample
+
+/**
+ * What the M-Score is actually saying about this company.
+ *
+ * One reading, consumed by both the balance-sheet criterion and the conviction
+ * cap, because the two must not disagree about whether the same number is
+ * evidence. Before this, a hypergrowth company scored 0/10 on accounting
+ * quality *and* had its verdict held at HOLD, twice for the same reason, and
+ * that reason was mostly its revenue growth.
+ *
+ * The variable that separates the two cases is TATA — total accruals over total
+ * assets, `(net income − operating cash flow) / assets`. It is the one term in
+ * the model that is about earnings being cash-backed rather than about growth.
+ * Ondas and CoreWeave print −0.08 and −0.09: cash *exceeds* earnings, which is
+ * the opposite of the pattern the score exists to find. Nvidia prints +0.08,
+ * and that is a real observation about earnings quality, so its cap stays.
+ */
+export function readBeneish(b: ComputedMetrics['beneish']): { reading: BeneishReading; note: string } {
+  if (b.variablesComputed < 4) {
+    return {
+      reading: 'unavailable',
+      note: `Beneish nur aus ${b.variablesComputed}/8 Variablen — nicht belastbar`,
+    };
+  }
+  if (b.probability === 'unlikely manipulator') {
+    return { reading: 'clean', note: `Beneish M ${fmt(b.score)} — ${b.probability}` };
+  }
+  if (b.probability !== 'likely manipulator') {
+    return { reading: 'grey', note: `Beneish M ${fmt(b.score)} — ${b.probability}` };
+  }
+
+  const sgi  = toFiniteNumber(b.sgi);
+  const tata = toFiniteNumber(b.tata);
+
+  if (sgi !== null && sgi > BENEISH_SGI_OUT_OF_SAMPLE) {
+    return {
+      reading: 'extrapolated',
+      note: `Beneish M ${fmt(b.score)}, aber der Umsatzindex SGI steht bei ${sgi.toFixed(1)} — `
+        + 'weit außerhalb des Bereichs, auf dem das Modell geschätzt wurde. Das Ergebnis ist '
+        + 'Extrapolation eines linearen Modells, kein Befund.',
+    };
+  }
+
+  // Cash at or above earnings is the opposite of the accrual pattern the score
+  // is looking for; with sales growing fast, what is left is the growth term.
+  if (sgi !== null && sgi > BENEISH_SGI_GROWTH && tata !== null && tata <= 0) {
+    return {
+      reading: 'growth-explained',
+      note: `Beneish M ${fmt(b.score)}, getragen vom Umsatzwachstum (SGI ${sgi.toFixed(2)}). `
+        + `Die Accruals widersprechen: TATA ${tata.toFixed(2)} — der operative Cashflow deckt den Gewinn.`,
+    };
+  }
+
+  return {
+    reading: 'flagged',
+    note: `Beneish M ${fmt(b.score)} — ${b.probability}`
+      + (tata !== null ? `, Accruals TATA ${tata.toFixed(2)} stützen das` : ''),
+  };
 }
 
 // ── Analyst consensus, as a number ───────────────────────────────────────────
@@ -263,20 +395,19 @@ function valuationPillar(
   const comp: CompositeFairValueResult = m.composite;
 
   const consMos = comp.conservative.marginOfSafety;
+  const iv = intrinsicValue(f, comp);
 
-  // The composite zeroes its own confidence when fewer than two primary models
-  // survived, and a median over one model is not a median. Left scored, that
-  // single survivor is usually the analyst target — which on a pre-profit name
-  // sits far above the price and read as a perfect 10/10 valuation on exactly
-  // the stocks we know least about. Same rule as Piotroski's signal floor and
-  // Beneish's variable floor: below the minimum the criterion abstains, the
-  // pillar renormalises onto the lenses that do have data, and what is lost is
-  // charged to coverage.
-  const compositeUsable = comp.confidence > 0;
-  const mos = compositeUsable ? comp.primary.marginOfSafety : null;
-  const pct = compositeUsable ? comp.pctPrimaryUndervalued : null;
-  const thinNote = `Composite aus ${comp.primary.models.length} Modell${comp.primary.models.length === 1 ? '' : 'en'} `
-    + '— zu wenige für einen belastbaren Median, daher nicht bewertet';
+  // Intrinsic value only. The sell-side target belongs in the primary tier of a
+  // *fair value* — it is a genuine third opinion — but this scorer also reads
+  // the consensus as a pillar in its own right, and leaving the target in both
+  // places counts it twice. Measured: the target sat in the tier for 37 of 37
+  // stocks and made up 46 % of it, so a consensus configured at 15 % was
+  // actually carrying 21 %. The published composite is untouched; the pillar
+  // simply takes the one contributor that is not our arithmetic back out.
+  const { models: intrinsic, fair, mos, pct } = iv;
+  const compositeUsable = fair !== null;
+  const thinNote = 'Kein eigenes Bewertungsmodell anwendbar (ohne das Analystenziel, '
+    + 'das als eigene Säule zählt) — die Bewertung ist hier nicht prüfbar';
 
   // Relative cheapness is a second lens, not a second helping of the first:
   // the composite asks "what is it worth", this asks "what do comparable firms
@@ -294,16 +425,13 @@ function valuationPillar(
     criterion('composite-mos', 'Composite Margin of Safety', 0.45,
       ramp(mos, -0.30, 0.60),
       !compositeUsable ? thinNote
-        : comp.primary.median !== null
-          ? `Composite Fair Value ${fmtPrice(comp.primary.median, c)} vs. Kurs ${fmtPrice(f.price, c)} — MoS ${fmtSignedPct(mos)} über ${comp.primary.models.length} Modelle`
-          : 'Kein Composite Fair Value — zu wenige anwendbare Modelle'),
+        : `Eigener Fair Value ${fmtPrice(fair, c)} vs. Kurs ${fmtPrice(f.price, c)} — MoS ${fmtSignedPct(mos)} `
+          + `über ${intrinsic.length} Modelle (${intrinsic.map((x) => x.name).join(', ')})`),
 
     criterion('models-undervalued', 'Anteil unterbewertender Modelle', 0.20,
       pct,
       !compositeUsable ? thinNote
-        : pct !== null
-          ? `${(pct * 100).toFixed(0)} % der Primärmodelle sehen die Aktie unter Fair Value`
-          : 'Kein Primärmodell lieferte einen Fair Value'),
+        : `${((pct ?? 0) * 100).toFixed(0)} % der eigenen Modelle sehen die Aktie unter Fair Value`),
 
     criterion('conservative-mos', 'Value-Lens (konservative Modelle)', 0.15,
       ramp(consMos, -0.50, 0.30),
@@ -384,6 +512,7 @@ function qualityPillar(
 
 function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] {
   const z = m.altmanZ;
+  const beneish = readBeneish(m.beneish);
   // Zone boundaries differ by model, so the ramp is built from the thresholds
   // the calculation itself used rather than from constants repeated here.
   const zPoints = z.score !== null
@@ -429,14 +558,10 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
       f.currentRatio !== null ? `Current Ratio ${fmt(f.currentRatio, 'x')}` : 'Keine Liquiditätskennzahl'),
 
     criterion('beneish', 'Bilanzqualität (Beneish)', 0.10,
-      m.beneish.variablesComputed >= 4
-        ? fromLabel(m.beneish.probability, {
-            'unlikely manipulator': 1, 'grey zone': 0.5, 'likely manipulator': 0,
-          })
-        : null,
-      m.beneish.variablesComputed >= 4
-        ? `Beneish M ${fmt(m.beneish.score)} — ${m.beneish.probability}`
-        : `Beneish nur aus ${m.beneish.variablesComputed}/8 Variablen — nicht belastbar`),
+      // A reading the model cannot support scores nothing rather than zero —
+      // the same rule the F-Score and the composite already follow.
+      fromLabel(beneish.reading, { clean: 1, grey: 0.5, flagged: 0 }),
+      beneish.note),
   ];
 }
 
@@ -693,8 +818,13 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
   if (confidence < STRONG_MIN_CONFIDENCE) {
     caps.push({ limit: 'no-strong', reason: `Konfidenz ${(confidence * 100).toFixed(0)} % unter ${(STRONG_MIN_CONFIDENCE * 100).toFixed(0)} %` });
   }
-  if (m.beneish.probability === 'likely manipulator' && m.beneish.variablesComputed >= 4) {
-    caps.push({ limit: 'hold-ceiling', reason: 'Beneish M-Score stuft die Bilanz als "likely manipulator" ein' });
+  const beneish = readBeneish(m.beneish);
+  if (beneish.reading === 'flagged') {
+    caps.push({ limit: 'hold-ceiling', reason: beneish.note });
+  } else if (beneish.reading === 'growth-explained' || beneish.reading === 'extrapolated') {
+    // Still a ceiling, just a lower one: the flag is explained, not dismissed,
+    // and an explained flag is no basis for a STRONG rating either.
+    caps.push({ limit: 'no-strong', reason: beneish.note });
   }
   if (m.altmanZ.zone === 'distress') {
     caps.push({ limit: 'hold-ceiling', reason: 'Altman Z im Distress-Bereich' });
@@ -769,13 +899,16 @@ function collectFindings(
     });
   }
 
-  // Our own fair value against the market's. Both are in the composite, so
-  // neither is "the" answer; the gap between them is the finding.
-  const compMos = m.composite.primary.marginOfSafety;
+  // Our own fair value against the market's — and now genuinely two answers.
+  // This used to compare a tier that still contained the analyst target against
+  // that same target, which quietly halved every divergence it reported. Across
+  // the watchlist the honest gap is wide: our models run a median 14 % below
+  // price where the sell-side runs 23 % above it.
+  const compMos = intrinsicValue(f, m.composite).mos;
   if (compMos !== null && cons.upside !== null && Math.abs(compMos - cons.upside) > 0.25) {
     findings.push({
       kind: 'divergence', pillar: null, impact: 0,
-      note: `Composite sieht ${fmtSignedPct(compMos)} Potenzial, die Sell-Side ${fmtSignedPct(cons.upside)} — Differenz ${fmtSignedPct(compMos - cons.upside)}`,
+      note: `Die eigenen Modelle sehen ${fmtSignedPct(compMos)} Potenzial, die Sell-Side ${fmtSignedPct(cons.upside)} — Differenz ${fmtSignedPct(compMos - cons.upside)}`,
     });
   }
 
