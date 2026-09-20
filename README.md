@@ -130,6 +130,12 @@ npx tsx src/cli.ts AAPL --model opus        # claude-opus-5
 npx tsx src/cli.ts MSFT --model terra       # gpt-5.6-terra
 npx tsx src/cli.ts MSFT --model luna        # gpt-5.6-luna
 npx tsx src/cli.ts MSFT --model mini        # gpt-5.4-mini
+npx tsx src/cli.ts MSFT --model haiku       # claude-haiku-4-5-20251001
+
+# --model picks the SYNTHESIS model — the one that writes the thesis. The two
+# summariser stages run on the cheap model from `scoring.summaryModel`
+# (default gpt-5.4-mini), and neither of them sets the score. See "Score and
+# verdict" below.
 
 # Save output
 npx tsx src/cli.ts NOW --output report.md
@@ -203,6 +209,128 @@ Pass `--search` without a value to auto-select the native search for the active 
 | 18 | **Sortino Ratio** | Risk-adjusted return using downside deviation, live risk-free rate |
 | 19 | **Beneish M-Score** | 8-variable earnings-manipulation detector, gated on min variable coverage |
 
+## Score and verdict
+
+Score and recommendation used to come out of one LLM call: the models, the
+technicals, the revisions and two dossiers went in as ~8k tokens of prompt, and
+the weighting was a paragraph of prose asking for "descending order of
+authority". Two runs over the same payload landed several tenths apart, the
+recorded score series charted as much model noise as company, and the guard
+against bad data — "a flagged payload does not support a STRONG BUY" — was a
+sentence the model was free to skim.
+
+It is arithmetic now, and the model writes the words around it.
+
+### The factor score (`src/analysis/score.ts`)
+
+Six pillars, each a weighted mean of named criteria, each criterion a number
+this repo already computed mapped onto 0–1 by an explicit linear ramp. Ramps
+rather than thresholds: a cliff at "P/E below 15" puts a step in the middle of
+the range most companies sit in, and a stock oscillating around it would flap
+between BUY and HOLD on a rounding error.
+
+| Pillar | Weight | Reads |
+|--------|--------|-------|
+| **Bewertung** | 30 % | Composite margin of safety, share of primary models showing undervaluation, the conservative tier as a value lens, own multiples against the peer medians |
+| **Qualität** | 20 % | Piotroski (abstains below 5 computable signals), ROIC minus the DCF's own WACC, operating margin vs peers, revenue growth vs peers, Rule of 40 |
+| **Bilanz & Risiko** | 15 % | Altman Z against its own model's thresholds, interest coverage, net debt / EBITDA, current ratio, Beneish |
+| **Analystenkonsens** | 15 % | Weighted rating (Strong Buy +2 … Strong Sell −2), mean-target upside |
+| **Markt & Momentum** | 10 % | The TradingView-style signals verdict, relative strength vs SPY and sector, 52-week position |
+| **Erwartungen** | 10 % | 30-day EPS estimate drift, net revisions, surprise history, month-over-month rating change |
+
+Three properties the code is built to keep:
+
+- **It decomposes exactly.** Every criterion carries its signed `impact` in score
+  points, and they sum to `raw − 5`. "Why 7.2" is answered by listing rows.
+- **Missing inputs cost coverage, not points.** A criterion with no data is
+  dropped and its pillar renormalises; a pillar with nothing at all is dropped
+  and the remaining weights renormalise. Nothing scores 5/10 for being unknown,
+  because that quietly votes "average".
+- **Uncertainty shrinks the score toward neutral.** `score = 5 + (raw − 5) × (0.4
+  + 0.6 × confidence)`, where confidence combines coverage, the composite's own
+  confidence, the data-quality audit and whether the fundamentals are stale.
+
+Separately, **caps** limit the label without touching the number: a data-quality
+error, no analyst coverage, or confidence below 45 % forbids the STRONG variants;
+Beneish "likely manipulator" or an Altman distress zone also forbids BUY. A cap
+never upgrades a bearish verdict — a distressed balance sheet is no reason to
+lift a SELL.
+
+### The three model calls
+
+The score card's **findings** — drivers and drags ranked by impact, plus the
+divergences, caps and data-quality gaps — are the filter. What a summary is
+allowed to talk about is decided by the same arithmetic that decided the score.
+
+1. **Daten-Zusammenfassung** (cheap model, `scoring.summaryModel`) turns the
+   scored card into prose. It arrives after the judgement; the task says
+   *erkläre*, never *bewerte*.
+2. **Narrativ** (cheap model, in parallel) reads Distill, Perplexity and search
+   results and nothing else. It is shown **no price, no multiple and no fair
+   value**: a summariser that knows the stock looks cheap finds the news
+   encouraging, which is exactly the contamination the single call suffered from.
+   It returns a 0–10 read of the business trajectory, or `null` as an honest
+   abstention.
+3. **Synthese** (the configured analysis model) gets the two short summaries and
+   the pillar table, and writes thesis, bull, bear and risks. It does not set the
+   score. It may move the blended one by up to ±1 point, with a reason on the
+   record, and only for something the pillars provably cannot see — an announced
+   takeover, a regulatory decision, a recall.
+
+Each stage degrades on its own: a failed data summary means the synthesis reads
+the pillar table directly, a failed narrative means the headline is the factor
+score alone, and a failed synthesis produces a verdict assembled from the
+findings and marked as written without a model.
+
+### The blend
+
+```
+factorWeight    = factor confidence
+narrativeWeight = narrative confidence × 0.45
+blend           = weighted mean of the two scores
+score           = clamp(blend + adjustment)
+```
+
+Both weights are confidences, so neither side argues its own case: a flagged
+payload hands weight to the prose automatically, a thin or stale dossier hands it
+back. Narrative confidence is computed from the material — which sources arrived
+and how old the newest is — never self-reported by the model. At equal confidence
+the split lands near 69/31 in favour of the arithmetic.
+
+The pillar weights themselves are deliberately **not** configurable from the
+settings page. They are the scoring model, and a model that can be retuned at
+runtime produces a history that cannot be compared with itself. What is
+configurable is `scoring.summaryModel`, `scoring.narrativeMaxWeight` and
+`scoring.adjustmentLimit`.
+
+### As a series
+
+`ScoreCardSchema` is a catalogue domain, so every leaf is historised without a
+second list to maintain — `score.final.score`, `score.factor.confidence`,
+`score.factor.pillars.valuation.score` and the rest are all chartable. The
+overview's sparkline and ranking read `score.final.score`.
+
+The deterministic half is recomputed on **every data refresh**, not only when the
+analysis step runs, with the last stored narrative carried forward and decayed by
+its own age (so does the synthesis model's correction — it was an exception
+argued from an event, not a standing adjustment). That is what makes the series
+daily: it moves with the price instead of stepping whenever the five-day analysis
+cadence comes round.
+
+History from before the change can be recomputed, because the factor score is a
+pure function of snapshots the database already keeps:
+
+```bash
+pnpm run rescore                              # every symbol, all stored history
+pnpm run rescore -- --symbol AIR.PA --dry-run # one symbol, no writes
+```
+
+For those dates `final.score` equals `factor.score`: nobody stored what a dossier
+said on a Tuesday in June, and folding the old single-call LLM scores in as a
+stand-in would import exactly the noise this replaced. `verdict.*` is left
+untouched — it is what the old pipeline actually concluded on those days, and it
+is the only baseline the new score can be compared against.
+
 ## Technical signals gauge
 
 Indicators come from [`trading-signals`](https://github.com/bennycode/trading-signals);
@@ -225,8 +353,8 @@ TradingView-style aggregation on top of that in `src/analysis/signals.ts`:
 | FRED | 10Y Treasury, Moody's AAA, VIX, DXY, yield curve, HY spreads, sector ETF prices |
 | SEC EDGAR | Latest 10-K / 10-Q filings (US tickers only) |
 | Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
-| Perplexity Sonar | Optional web-sourced context paragraph included verbatim in the LLM prompt |
-| Distill | Optional curated multi-source briefings per ticker (RSS, YouTube, web). Weighted **above** Perplexity / raw search in the LLM prompt because the editorial filter happens upstream |
+| Perplexity Sonar | Optional web-sourced context paragraph; goes to the narrative stage, which never sees the valuation |
+| Distill | Optional curated multi-source briefings per ticker (RSS, YouTube, web). Weighted **above** Perplexity / raw search because the editorial filter happens upstream |
 | Brave / Tavily / Claude / OpenAI | Optional web search for current events |
 
 ## Project structure
@@ -245,7 +373,8 @@ src/
 │   ├── catalog.ts         Metric catalogue derived from the schemas (418 series)
 │   ├── store.ts           Symbols, snapshots, observations, documents
 │   ├── admin.ts           Runs, settings, entity mappings, filing index
-│   └── backfill.ts        One-shot import of the old file cache
+│   ├── backfill.ts        One-shot import of the old file cache
+│   └── rescore.ts         Re-scores stored history with today's scoring model
 ├── files.ts               The two things that stay files (filings, reports)
 ├── sector-medians.ts      Peer-group medians (the app's most expensive read)
 ├── app-config.ts          Operational settings edited from the admin page
@@ -254,6 +383,7 @@ src/
 ├── distill-dossiers.ts    Mirrors the watchlist onto Distill's dossier switches
 ├── distill-sectors.ts     Yahoo sector/industry → Distill sector handles (1:n)
 ├── distill-content.ts     Assembles the company + sector dossier prose for a stock
+├── score-service.ts       The three model calls and the blend that makes the headline
 ├── models.ts              Model registry — single source for CLI, server and web UI
 ├── providers/             LLM abstraction layer (anthropic, openai, factory)
 ├── search/                Brave + Tavily clients (LLM-native search is in providers/)
@@ -271,11 +401,14 @@ src/
 ├── analysis/
 │   ├── metrics.ts         19 valuation models
 │   ├── computeMetrics.ts  Orchestrates the bundle of models for the web GET
+│   ├── score.ts           The deterministic score: six pillars, caps, the blend
+│   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
 │   └── technical.ts       SMA/EMA/RSI/MACD/Bollinger/Stoch/CCI via `trading-signals`
 ├── output/
-│   ├── prompt.ts          LLM prompt builder
+│   ├── prompt.ts          The three stage prompts: data, narrative, synthesis
+│   ├── score-card.ts      Renders a factor score for a prompt or the UI
 │   ├── markdown.ts        Terminal + report markdown
 │   └── report.ts          PDF/HTML report (Puppeteer)
 └── utils/logger.ts        Chalk-based structured logging
@@ -300,7 +433,8 @@ web/
 │       ├── StockListControls.tsx  Search · sort · watchlist, shared by both
 │       ├── SettingsSidebar.tsx    Right pane: model/search/pplx + cached combos
 │       ├── AnalysisView.tsx       Centre detail; renders all sections
-│       ├── VerdictHero.tsx        AI verdict + composite + analyst hero cards
+│       ├── VerdictHero.tsx        Verdict + composite + analyst hero cards
+│       ├── ScoreSplit.tsx         The two halves behind one headline, per list row
 │       ├── BullBearRisks.tsx      3-column bull/bear/risks block
 │       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per rail item
 │       ├── StockHeader.tsx        Logo, price, refresh — and the ✕ / ⚙ chrome
@@ -313,7 +447,7 @@ web/
 │       └── sections/              ValuationDetail, QualityScores, FundamentalsGrid,
 │                                  PeerCompare, TechnicalSignalsPanel, PriceAction,
 │                                  MarketContext, OwnershipFlow, EarningsBlock,
-│                                  NewsAndResearch, CompanyInfo
+│                                  NewsAndResearch, CompanyInfo, ScoreBreakdown
 ```
 
 ## Storage

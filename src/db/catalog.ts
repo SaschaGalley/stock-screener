@@ -17,7 +17,9 @@ import {
   EarningsSurpriseSchema,
   LLMAnalysisSchema,
   MacroContextSchema,
+  PILLAR_KEYS,
   MarketSignalsSchema,
+  ScoreCardSchema,
   SectorMediansSchema,
   StockFinancialsSchema,
   TechnicalSignalsSchema,
@@ -89,6 +91,12 @@ const KEYED_ARRAYS: Record<string, readonly KeyedArray[]> = {
       keys: ['pe', 'evEbitda', 'evRevenue', 'priceFCF', 'priceSales', 'pb'],
     },
   ],
+  // The six pillars are a closed set, so each one's score, weight and coverage
+  // is a real series — `score.factor.pillars.valuation.score` charts how the
+  // valuation case for a stock moved, separately from the headline.
+  score: [
+    { path: 'factor.pillars', keyField: 'key', keys: PILLAR_KEYS },
+  ],
 };
 
 interface DomainSpec {
@@ -105,6 +113,7 @@ const DOMAINS: readonly DomainSpec[] = [
   { domain: 'signals_agg',schema: TechnicalSignalsSchema, cadence: 'daily' },
   { domain: 'peers',      schema: SectorMediansSchema,    cadence: 'daily' },
   { domain: 'verdict',    schema: LLMAnalysisSchema,      cadence: 'daily' },
+  { domain: 'score',      schema: ScoreCardSchema,        cadence: 'daily' },
   { domain: 'macro',      schema: GlobalSchema,           cadence: 'daily' },
 ];
 

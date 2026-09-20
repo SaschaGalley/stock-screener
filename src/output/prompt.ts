@@ -246,51 +246,16 @@ export function demoteHeadings(md: string, by: number): string {
     .join('\n');
 }
 
-function technicalsSection(s: MarketSignals): string {
-  const t = s.technicals;
-  const macdSign = t.macdHistogram === null ? 'N/A' : t.macdHistogram > 0 ? `bullish (+${t.macdHistogram.toFixed(2)})` : `bearish (${t.macdHistogram.toFixed(2)})`;
-  const cross = t.goldenCross === null ? 'N/A' : t.goldenCross ? 'golden (SMA50 > SMA200)' : 'death (SMA50 < SMA200)';
-  return `### Price Action & Technicals
-- Returns: 1M ${signedPct(t.returns.m1)} | 3M ${signedPct(t.returns.m3)} | 6M ${signedPct(t.returns.m6)} | YTD ${signedPct(t.returns.ytd)} | 1Y ${signedPct(t.returns.y1)}
-- Trend: SMA50 ${fmt(t.sma50)} (${signedPct(t.distFromSMA50Pct)} vs price) | SMA200 ${fmt(t.sma200)} (${signedPct(t.distFromSMA200Pct)}) | ${cross}
-- Momentum: RSI14 ${fmt(t.rsi14, '', 1)} | MACD-Hist ${macdSign} | %B ${fmt(t.bollingerPercentB, '', 2)}
-- Volatility: ATR14 ${fmtPct(t.atr14Pct)} of price | HV30 ${fmtPct(t.hv30)} | HV90 ${fmtPct(t.hv90)}
-- Drawdown from 1Y high: ${fmtPct(t.drawdownFromHighPct)} | 52W position: ${fmtPct(t.position52WPct)}
-- Volume: latest / 30d-avg = ${fmt(t.currentVolRatio, 'x', 2)}
-- Relative Strength 3M: vs SPY ${signedPct(t.rsVsSPY3M)} | vs Sector ETF ${signedPct(t.rsVsSector3M)}`;
-}
-
-function revisionsSection(s: MarketSignals): string {
-  const r = s.revisions;
-  const PERIOD_LABEL: Record<string, string> = { '0q': 'Cur Qtr', '+1q': 'Nxt Qtr', '0y': 'Cur Year', '+1y': 'Nxt Year' };
-  const lines = r.perPeriod.length > 0
-    ? r.perPeriod.map((p) => {
-        const label = PERIOD_LABEL[p.period] ?? p.period;
-        const drift = p.epsChange30dPct !== null ? `${signedPct(p.epsChange30dPct)} drift 30d` : 'no drift';
-        const net = p.netRevision30d !== null ? `net ${p.netRevision30d >= 0 ? '+' : ''}${p.netRevision30d} (30d up ${p.revisions.up30d ?? 0} / down ${p.revisions.down30d ?? 0})` : 'no revisions';
-        return `- ${label}: estimate ${fmt(p.epsTrend.current)} (was ${fmt(p.epsTrend.ago30d)} 30d ago, ${fmt(p.epsTrend.ago90d)} 90d ago) — ${drift}; ${net}`;
-      })
-    : ['- No revision data available'];
-  const moM = r.analystRatingMoMDelta
-    ? `- Analyst rating MoM Δ: StrongBuy ${signSign(r.analystRatingMoMDelta.strongBuy)} | Buy ${signSign(r.analystRatingMoMDelta.buy)} | Hold ${signSign(r.analystRatingMoMDelta.hold)} | Sell ${signSign(r.analystRatingMoMDelta.sell)} | StrongSell ${signSign(r.analystRatingMoMDelta.strongSell)}`
-    : '- Analyst rating MoM Δ: N/A';
-  return `### Earnings Revisions Momentum
-${lines.join('\n')}
-${moM}`;
-}
-
-function signSign(n: number): string { return n > 0 ? `+${n}` : `${n}`; }
-
 function optionsSection(s: MarketSignals): string {
   const o = s.options;
-  if (!o) return `### Options Market Signals\n- No liquid options chain available`;
+  if (!o) return `**Optionsmarkt**\n- Keine liquide Optionskette verfügbar`;
   const move = o.nextEarningsImpliedMove
     ? `${signedPct(o.nextEarningsImpliedMove.pct)} (expiry ${o.nextEarningsImpliedMove.expirationDate})`
     : 'N/A';
-  return `### Options Market Signals
+  return `**Optionsmarkt**
 - ATM IV (~30d): ${fmtPct(o.ivAtm30d)}  |  IV / HV90: ${fmt(o.ivVsHv90Ratio, 'x', 2)}
-- Put/Call Volume Ratio: ${fmt(o.putCallVolumeRatio, '', 2)}  |  P/C OI Ratio: ${fmt(o.putCallOIRatio, '', 2)}
-- Implied Move at next earnings: ${move}`;
+- Put/Call Volumen: ${fmt(o.putCallVolumeRatio, '', 2)}  |  P/C Open Interest: ${fmt(o.putCallOIRatio, '', 2)}
+- Implizite Bewegung zu den nächsten Zahlen: ${move}`;
 }
 
 /**
@@ -330,296 +295,291 @@ How to handle this:
 `;
 }
 
-/**
- * Wall Street consensus distilled to a single directional verdict + score.
- * Designed to be hard for the LLM to ignore: a one-line verdict label, the
- * weighted score (Strong Buy = +2 down to Strong Sell = −2, normalized to
- * [−1, +1]), and the upside vs the mean target. Sits as its own section
- * rather than buried in Market Overview, so the model treats it as a
- * first-class signal alongside DCF/Composite — not an afterthought.
- */
-function analystConsensusSection(f: StockFinancials): string {
-  const P = (n: number | null | undefined) => fmtPrice(n, f.tradingCurrency);
-  const sb = f.analystStrongBuy  ?? 0;
-  const b  = f.analystBuy        ?? 0;
-  const h  = f.analystHold       ?? 0;
-  const s  = f.analystSell       ?? 0;
-  const ss = f.analystStrongSell ?? 0;
-  const total = sb + b + h + s + ss;
-
-  // No coverage is not a neutral absence — it removes the only input that is
-  // independent of our own arithmetic. Left as a bare "N/A" the weighting
-  // guidance below silently hands the models 100% of the vote, which is how a
-  // stale-data SELL got written with no counterweight. Spell out the cap.
-  if (total === 0 && f.targetMeanPrice === null) {
-    return `### Analyst Consensus (Wall Street view — independent signal)
-- **No analyst coverage on this listing** — no ratings, no price target, no forward estimates.
-
-This removes the independent cross-check on the calculated models, so the models below are
-**unvalidated, not confirmed**. They agree with each other because they share inputs, not
-because two independent methods converged.
-
-Required handling:
-- Treat the computed fair values as one hypothesis, not as consensus. Agreement among models
-  that share an EPS or FCF input is not corroboration.
-- Cap conviction at BUY / HOLD / SELL. A **STRONG** rating requires either sell-side
-  confirmation or a Distill/Perplexity briefing that independently supports it.
-- Widen \`fairValueEstimate\` relative to a covered name to reflect the missing validation.
-- Weight management guidance, order book, segment disclosure and the annual statement series
-  higher than usual — with no consensus, the company's own reported trajectory is the best
-  independent evidence available.
-- If the absence looks like a listing artefact (a thin secondary line of a covered company),
-  name that in the bear case as an information gap rather than treating the company as uncovered.`;
-  }
-
-  // Weighted score: Strong Buy = +2, Buy = +1, Hold = 0, Sell = −1, Strong Sell = −2.
-  // Normalize by (total × 2) so range is [−1, +1].
-  const score = total > 0
-    ? (sb * 2 + b * 1 + h * 0 + s * -1 + ss * -2) / (total * 2)
-    : null;
-
-  const verdict = score === null ? 'N/A'
-    : score >=  0.6 ? 'STRONG BULLISH'
-    : score >=  0.2 ? 'BULLISH'
-    : score >= -0.2 ? 'NEUTRAL'
-    : score >= -0.6 ? 'BEARISH'
-    :                 'STRONG BEARISH';
-
-  // Buy-side share = (StrongBuy + Buy) / total.
-  const buySharePct = total > 0 ? ((sb + b) / total) * 100 : null;
-  const sellSharePct = total > 0 ? ((s + ss) / total) * 100 : null;
-
-  // Upside vs current price.
-  const upside = f.targetMeanPrice !== null && f.price > 0
-    ? (f.targetMeanPrice - f.price) / f.price
-    : null;
-
-  const breakdown = [
-    sb ? `${sb} Strong Buy`   : '',
-    b  ? `${b} Buy`            : '',
-    h  ? `${h} Hold`           : '',
-    s  ? `${s} Sell`           : '',
-    ss ? `${ss} Strong Sell`   : '',
-  ].filter(Boolean).join(' + ');
-
-  const targetLine = f.targetMeanPrice !== null
-    ? `${P(f.targetMeanPrice)} mean${upside !== null ? ` (${signedPct(upside)} vs current ${P(f.price)})` : ''}${
-        f.analystTargetLow !== null && f.analystTargetHigh !== null
-          ? ` · range ${P(f.analystTargetLow)}–${P(f.analystTargetHigh)}`
-          : ''
-      }`
-    : 'no consensus target';
-
-  const scoreLine = score !== null
-    ? `${score >= 0 ? '+' : ''}${score.toFixed(2)} (range −1 to +1)`
-    : 'N/A';
-
-  const shareLine = buySharePct !== null && sellSharePct !== null
-    ? `${buySharePct.toFixed(0)}% buy-rated · ${sellSharePct.toFixed(0)}% sell-rated`
-    : 'no breakdown';
-
-  return `### Analyst Consensus (Wall Street view — independent signal)
-- Verdict: **${verdict}** — weighted score ${scoreLine}
-- Coverage: ${total} analysts → ${breakdown || 'no rating breakdown'}
-- ${shareLine}
-- Mean price target: ${targetLine}
-- Note: this is the aggregated view of sell-side equity research — independent from our DCF/Composite/multiples. Triangulate against them; don't ignore a strong directional consensus just because intrinsic models disagree.`;
-}
-
 function macroSection(s: MarketSignals): string {
   const m = s.macro;
-  return `### Macro Context
-- VIX: ${fmt(m.vix, '', 1)} (${m.vixRegime})  |  SPY 3M: ${signedPct(m.spy3MReturn)}
-- Yield curve 10Y-2Y: ${bps(m.yieldCurve2Y10Y)}  |  HY spread: ${bps(m.hySpreadBps)}
-- DXY: ${fmt(m.dxyLevel, '', 1)} (3M ${signedPct(m.dxyChange3MPct)})
-- Sector ETF: ${m.sectorEtfSymbol ?? 'unmapped'} 3M ${signedPct(m.sectorEtfReturn3M)}`;
+  return `**Makro**
+- VIX ${fmt(m.vix, '', 1)} (${m.vixRegime})  |  SPY 3M ${signedPct(m.spy3MReturn)}
+- Zinskurve 10J−2J ${bps(m.yieldCurve2Y10Y)}  |  HY-Spread ${bps(m.hySpreadBps)}
+- DXY ${fmt(m.dxyLevel, '', 1)} (3M ${signedPct(m.dxyChange3MPct)})
+- Sektor-ETF ${m.sectorEtfSymbol ?? 'nicht zugeordnet'} 3M ${signedPct(m.sectorEtfReturn3M)}`;
 }
 
-export function buildAnalysisPrompt(
-  f: StockFinancials,
-  d: PromptData,
-  perplexity?: PerplexityContext,
-  distill?: DistillBundle,
-): string {
-  // Every price and currency amount in this prompt is denominated in the stock's
-  // trading currency. It used to be printed with a hardcoded `$`, so a German
-  // research note about an Austrian company quoted dollar figures throughout.
-  const cur = f.tradingCurrency;
-  const sym = currencyPrefix(cur);
-  const P = (n: number | null | undefined) => fmtPrice(n, cur);
+// ─── The three prompts ───────────────────────────────────────────────────────
+//
+// The analysis used to be one call: eight thousand tokens of models, ratios,
+// technicals, dossiers and search results, and a request at the bottom for a
+// score. Which evidence carried the day was then a property of that particular
+// model on that particular evening.
+//
+// It is three calls now, and the split is the point:
+//
+//   1. **Data summary** — a cheap model turns the *already scored* factor card
+//      into prose. It cannot weigh anything, because the weighing happened in
+//      `analysis/score.ts` before the call was made. What it may talk about is
+//      what the score card's findings list contains, which is decided by impact.
+//   2. **Narrative** — a cheap model reads the qualitative sources and nothing
+//      else. No price, no multiples, no fair value: a summariser that can see
+//      the valuation will read the news as confirming it, which is precisely
+//      the contamination the single call suffered from.
+//   3. **Synthesis** — the expensive model gets the two short summaries and the
+//      pillar table, and writes the thesis. It does not set the score; it may
+//      move the blended one by up to a point, with a reason on the record.
 
-  const ev = d.evMultiples;
+/**
+ * What the score does not look at.
+ *
+ * The six pillars cover valuation, quality, balance sheet, consensus, momentum
+ * and revisions. This block carries the rest — the market's own expectations,
+ * the positioning, the macro regime and the calendar. It is context for the
+ * prose, not an input to the number, and it says so.
+ */
+function contextSection(f: StockFinancials, d: PromptData): string {
+  const cur = f.tradingCurrency;
+  const P = (n: number | null | undefined) => fmtPrice(n, cur);
   const im = d.reverseDCF.impliedMargin;
-  const seasonalNote = ev.seasonalGap !== null && Math.abs(ev.seasonalGap) > SEASONAL_GAP_THRESHOLD
-    ? `\n  ⚠ SVR sits ${signedPct(ev.seasonalGap)} from its seasonally adjusted value — the latest quarter is a seasonal ${ev.seasonalGap < 0 ? 'high' : 'low'} or carries a one-off (e.g. an acquisition); read the adjusted figure.`
+  const ev = d.evMultiples;
+
+  const seasonal = ev.seasonalGap !== null && Math.abs(ev.seasonalGap) > SEASONAL_GAP_THRESHOLD
+    ? `\n- ⚠ SVR liegt ${signedPct(ev.seasonalGap)} neben dem saisonbereinigten Wert — das jüngste Quartal ist ein saisonales ${ev.seasonalGap < 0 ? 'Hoch' : 'Tief'} oder enthält einen Sondereffekt.`
     : '';
 
-  // Empty string for a clean payload, so the section disappears entirely.
-  const dataQuality = dataQualitySection(f);
+  const estimates = f.earningsEstimates.length > 0
+    ? f.earningsEstimates.map((e) => {
+        const label: Record<string, string> = { '0q': 'Lfd. Quartal', '+1q': 'Nächstes Quartal', '0y': 'Lfd. Jahr', '+1y': 'Nächstes Jahr' };
+        const eps = e.epsEstimate !== null ? `EPS ${P(e.epsEstimate)}` : 'EPS N/A';
+        const growth = e.epsGrowth !== null ? ` (${signedPct(e.epsGrowth)} YoY)` : '';
+        const rev = e.revenueEstimate !== null ? `, Umsatz ${fmtBig(e.revenueEstimate, cur)}${e.revenueGrowth !== null ? ` (${signedPct(e.revenueGrowth)} YoY)` : ''}` : '';
+        return `  - ${label[e.period] ?? e.period}: ${eps}${growth}${rev}`;
+      }).join('\n')
+    : '  - Keine Konsensschätzungen verfügbar';
 
-  const piotroskiLine = `${d.piotroski.score}/${d.piotroski.maxScore} (${d.piotroski.interpretation})`;
-  const altmanLine = d.altmanZ.score !== null
-    ? `${d.altmanZ.score.toFixed(2)} — ${d.altmanZ.zone} zone (${d.altmanZ.model} model)`
-    : 'N/A';
+  return `### Weiterer Kontext (fließt NICHT in den Score ein — Material für die Prosa)
 
-  // Distill: the rolling dossier prose for the company and for each sector it
-  // sits in, with the briefing kept as the fallback for what has no dossier yet.
-  const distillSection = distillDossierSection(f.symbol, distill);
+**Was der Kurs bereits unterstellt**
+- Reverse DCF: ${d.reverseDCF.isPossible && d.reverseDCF.impliedGrowthRate !== null
+    ? `${fmtPct(d.reverseDCF.impliedGrowthRate)} FCF-Wachstum p.a. in Stufe 1 bei r=${fmtPct(d.reverseDCF.discountRate)}`
+    : 'nicht berechenbar'}
+- Reverse SVR: ${im
+    ? `Der heutige EV verlangt dauerhaft ${fmtPct(im.fcfMargin)} FCF-Marge auf ${fmtBig(im.revenueBase, cur)} Run-Rate-Umsatz bei ${fmtPct(im.revenueGrowth)} Wachstum (${im.growthSource}). Heute: NOPAT-Marge ${fmtPct(im.currentNopatMargin)}, FCF-Marge ${fmtPct(im.currentFcfMargin)}. ${im.interpretation}`
+    : 'nicht berechenbar'}${seasonal}
 
-  return `## Stock Analysis: ${f.symbol} — ${f.companyName}
-${dataQuality ? `\n${dataQuality}` : ''}
-### Market Overview
-- Price: ${P(f.price)} | Market Cap: ${fmtBig(f.marketCap, cur)}
-- Sector: ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}
-- 52W Range: ${P(f.fiftyTwoWeekLow)} – ${P(f.fiftyTwoWeekHigh)}
-- Beta: ${fmt(f.beta)}
-  (Wall Street consensus — see dedicated section below.)
-
-### Traditional Valuation
-- P/E: ${fmt(d.ratios.pe, 'x')} | Forward P/E: ${fmt(d.ratios.forwardPE, 'x')} | Avg P/E 5Y: ${fmt(f.avgPE5Y, 'x')} | PEG: ${fmt(d.ratios.peg)}
-- P/B: ${fmt(d.ratios.pb, 'x')} | P/FCF: ${fmt(d.evMultiples.priceToFCF, 'x')}
-- EV/EBITDA: ${fmt(d.evMultiples.evToEbitda, 'x')} | EV/Revenue: ${fmt(d.evMultiples.evToRevenue, 'x')}
-- Revenue multiples: P/S TTM ${fmt(ev.priceToSales, 'x')} | SVR (market cap ÷ latest quarter revenue × 4) ${fmt(ev.simpleValuationRatio, 'x')} | SVR seasonally adjusted ${fmt(ev.seasonallyAdjustedValuationRatio, 'x')} | Forward P/S ${fmt(ev.forwardPriceToSales, 'x')} | Latest-quarter revenue YoY ${signedPct(ev.latestQuarterYoYGrowth)}${seasonalNote}${d.sectorMedians ? `
-- Peer medians (${d.sectorMedians.peerCount} cos): P/E ${fmt(d.sectorMedians.pe, 'x', 1)} | EV/EBITDA ${fmt(d.sectorMedians.evToEbitda, 'x', 1)} | EV/Revenue ${fmt(d.sectorMedians.evToRevenue, 'x', 1)} | P/S TTM ${fmt(d.sectorMedians.priceToSales, 'x', 1)} | Run-rate P/S (compare to SVR) ${fmt(d.sectorMedians.runRatePriceToSales, 'x', 1)} | Forward P/S ${fmt(d.sectorMedians.forwardPriceToSales, 'x', 1)} | P/FCF ${fmt(d.sectorMedians.priceToFCF, 'x', 1)} | P/B ${fmt(d.sectorMedians.pb, 'x', 1)}` : ''}
-
-### Profitability & Growth
-- ROE: ${fmtPct(d.ratios.roe)} | ROA: ${fmtPct(d.ratios.roa)} | ROIC: ${fmtPct(f.roic)}
-- Operating Margin: ${fmtPct(f.operatingMargin)} | Net Margin: ${fmtPct(f.netMargin)}
-- Revenue: ${fmtBig(f.revenue, cur)} (${fmtPct(f.revenueGrowth)} growth)
-- Earnings Growth TTM: ${fmtPct(f.earningsGrowth)} | EPS Growth 3Y: ${fmtPct(f.epsGrowth3Y)}
-- FCF: ${fmtBig(f.freeCashFlow, cur)} | EBITDA: ${fmtBig(f.ebitda, cur)}
-
-### Balance Sheet & Liquidity
-- Cash: ${fmtBig(f.totalCash, cur)} | Total Debt: ${fmtBig(f.totalDebt, cur)}
-- Current Ratio: ${fmt(f.currentRatio, 'x')} | Quick Ratio: ${fmt(f.quickRatio, 'x')}
-- Debt/Equity: ${fmt(f.debtToEquity, 'x')} | Interest Coverage: ${d.interestCoverage.ratio !== null ? `${d.interestCoverage.ratio.toFixed(1)}x (${d.interestCoverage.interpretation})` : d.interestCoverage.interpretation}
-
-### Composite Intrinsic Value (headline anchor)
-- Median fair value across ${d.composite.contributingModels.length} applicable models: ${d.composite.median !== null ? `${P(d.composite.median)} (${fmtPct(d.composite.marginOfSafety)} MoS)` : 'N/A'}
-- IQR (25–75%): ${d.composite.p25 !== null && d.composite.p75 !== null ? `${P(d.composite.p25)} – ${P(d.composite.p75)}` : 'N/A'}  |  Min/Max: ${d.composite.min !== null && d.composite.max !== null ? `${P(d.composite.min)} / ${P(d.composite.max)}` : 'N/A'}
-- Confidence: ${d.composite.confidence}/10 (based on coverage, IQR tightness, and Beneish status)
-- ${d.composite.pctModelsUndervalued !== null ? `${(d.composite.pctModelsUndervalued * 100).toFixed(0)}% of models indicate undervaluation` : ''}
-- Contributing: ${d.composite.contributingModels.map((c) => `${c.name} ${P(c.fairValue)}`).join(' | ') || 'none'}
-- Excluded: ${d.composite.excludedModels.map((e) => `${e.name} (${e.reason})`).join(' | ') || 'none'}
-
-${analystConsensusSection(f)}
-
-### Single-Equation Intrinsic Value Models
-- DCF (2-Stage FCFF): ${d.dcf.fairValue !== null
-  ? `${P(d.dcf.fairValue)}` +
-    (d.dcf.fairValueBear !== null && d.dcf.fairValueBull !== null
-      ? ` [bear ${P(d.dcf.fairValueBear)} – bull ${P(d.dcf.fairValueBull)}]`
-      : '') +
-    ` · r=${(d.dcf.discountRate * 100).toFixed(1)}% (WACC, β=${fmt(d.dcf.beta)}) · g_stage1=${(d.dcf.stage1Growth * 100).toFixed(1)}% fading to ${(d.dcf.terminalGrowthRate * 100).toFixed(1)}%, reinvesting ${fmtPct(d.dcf.terminalReinvestmentRate)} at ROIC ${fmtPct(d.dcf.terminalRoic)}`
-  : `N/A — ${d.dcf.assumptions}`}
-- Reverse DCF: ${d.reverseDCF.isPossible && d.reverseDCF.impliedGrowthRate !== null ? `${(d.reverseDCF.impliedGrowthRate * 100).toFixed(1)}%/yr stage-1 FCF growth implied at r=${(d.reverseDCF.discountRate * 100).toFixed(1)}%` : 'N/A'}
-- Reverse SVR (implied margin): ${im
-  ? `the current EV requires a steady ${fmtPct(im.fcfMargin)} margin (free cash flow through the forecast; in steady state it also funds the reinvestment growth needs) on ${fmtBig(im.revenueBase, cur)} run-rate revenue growing ${fmtPct(im.revenueGrowth)}/yr (${im.growthSource}) and fading to terminal, at WACC ${fmtPct(im.discountRate)} — ${im.interpretation} Today: after-tax operating margin ${fmtPct(im.currentNopatMargin)}, FCF margin ${fmtPct(im.currentFcfMargin)}. The margin applies from year one, so a firm still ramping up needs a higher mature margin than this.`
-  : 'N/A — requires revenue and a revenue growth rate'}
-- Graham Number: ${d.grahamNumber.grahamNumber ? `${P(d.grahamNumber.grahamNumber)} (${fmtPct(d.grahamNumber.marginOfSafety)} MoS)` : 'N/A'}
-- Graham Revised (V*): ${d.grahamRevised.fairValue ? `${P(d.grahamRevised.fairValue)} (${fmtPct(d.grahamRevised.marginOfSafety)} MoS, AAA yield ${(d.grahamRevised.bondYield * 100).toFixed(2)}%)` : 'N/A'}
-- Peter Lynch Fair Value: ${d.peterLynch.fairValue ? `${P(d.peterLynch.fairValue)}` : 'N/A'}
-- EPV (Greenwald): ${d.epv.fairValue ? `${P(d.epv.fairValue)} (${fmtPct(d.epv.marginOfSafety)} MoS, r=${(d.epv.wacc * 100).toFixed(1)}%)` : 'N/A'}
-- Residual Income (RIM): ${d.rim.isApplicable && d.rim.fairValue ? `${P(d.rim.fairValue)} (${fmtPct(d.rim.marginOfSafety)} MoS, ROE−r excess ${fmtPct(d.rim.excessReturn)})` : 'N/A — requires positive book value and ROE'}
-- DDM: ${d.ddm.isApplicable && d.ddm.fairValue ? `${P(d.ddm.fairValue)}` : d.ddm.isApplicable ? 'Model constraint (g≥r)' : 'No dividend'}
-- Peer Multiples (median fair price across ${d.peerMultiples.count} multiples): ${d.peerMultiples.medianFairPrice ? `${P(d.peerMultiples.medianFairPrice)} (${fmtPct(d.peerMultiples.marginOfSafety)} MoS)` : 'N/A — no peer-group data'}
-- NCAV (Graham floor): ${d.ncav.isApplicable && d.ncav.ncavPerShare !== null && d.ncav.buyThreshold !== null ? `${P(d.ncav.ncavPerShare)}/sh, buy below ${P(d.ncav.buyThreshold)}` : 'N/A — current assets ≤ total liabilities (typical for healthy firms)'}
-
-### Quality Scores
-- Piotroski F-Score: ${piotroskiLine}
-- Altman Z-Score: ${altmanLine}
-- Rule of 40: ${d.ruleOf40.score !== null ? `${d.ruleOf40.score.toFixed(1)} (${d.ruleOf40.passes ? 'PASSES ✓' : 'FAILS ✗'})` : 'N/A'}
-- Sortino Ratio: ${d.sortino.ratio !== null ? `${d.sortino.ratio.toFixed(2)} (${d.sortino.interpretation}), annual return ${fmtPct(d.sortino.annualReturn)}, downside dev ${fmtPct(d.sortino.downsideDeviation)}` : 'N/A — insufficient price history'}
-- Beneish M-Score: ${d.beneish.score !== null ? `${d.beneish.score.toFixed(2)} — ${d.beneish.probability} (${d.beneish.variablesComputed}/8 variables)` : 'N/A'}
-
-${technicalsSection(d.marketSignals)}
-
-${revisionsSection(d.marketSignals)}
+**Kursbild**
+- Renditen: 1M ${signedPct(d.marketSignals.technicals.returns.m1)} | 3M ${signedPct(d.marketSignals.technicals.returns.m3)} | YTD ${signedPct(d.marketSignals.technicals.returns.ytd)} | 1J ${signedPct(d.marketSignals.technicals.returns.y1)}
+- RSI14 ${fmt(d.marketSignals.technicals.rsi14, '', 1)} | ATR14 ${fmtPct(d.marketSignals.technicals.atr14Pct)} des Kurses | HV30 ${fmtPct(d.marketSignals.technicals.hv30)}
+- 52W-Spanne ${P(f.fiftyTwoWeekLow)}–${P(f.fiftyTwoWeekHigh)}, Beta ${fmt(f.beta)}
 
 ${optionsSection(d.marketSignals)}
 
 ${macroSection(d.marketSignals)}
 
-### Earnings Surprises (last ≤4 quarters)
-${f.earningsSurprises.length > 0
-  ? f.earningsSurprises.map((q) =>
-      `- ${q.quarter}: estimate ${P(q.epsEstimate)} → actual ${P(q.epsActual)} (${q.surprisePct !== null ? (q.surprisePct >= 0 ? '+' : '') + (q.surprisePct * 100).toFixed(1) + '% surprise' : 'N/A'})`
-    ).join('\n')
-  : '- No earnings history available'}
+**Positionierung**
+- Short-Quote ${f.shortPercentOfFloat !== null ? fmtPct(f.shortPercentOfFloat) : 'N/A'} des Free Float, Days to Cover ${fmt(f.shortRatio, ' Tage', 1)}
+- Institutionell ${f.institutionsPercentHeld !== null ? fmtPct(f.institutionsPercentHeld) : 'N/A'} | Insider ${f.insidersPercentHeld !== null ? fmtPct(f.insidersPercentHeld) : 'N/A'}
+- Insider-Transaktionen (6M): ${(f.insiderBuyCount ?? 0) > 0 || (f.insiderSellCount ?? 0) > 0
+    ? `${f.insiderBuyCount ?? 0} Käufe, ${f.insiderSellCount ?? 0} Verkäufe`
+    : 'keine'}
 
-### Forward Earnings Estimates (analyst consensus)
-${f.earningsEstimates.length > 0
-  ? f.earningsEstimates.map((e) => {
-      const label: Record<string, string> = { '0q': 'Current Qtr', '+1q': 'Next Qtr', '0y': 'Current Year', '+1y': 'Next Year' };
-      const period = (label[e.period] ?? e.period) + (e.endDate ? ` (ends ${e.endDate})` : '');
-      const eps = e.epsEstimate !== null ? `EPS ${P(e.epsEstimate)}` : 'EPS N/A';
-      const range = e.epsLow !== null && e.epsHigh !== null ? ` [${P(e.epsLow)}–${P(e.epsHigh)}]` : '';
-      const epsGrowth = e.epsGrowth !== null ? ` (${e.epsGrowth >= 0 ? '+' : ''}${(e.epsGrowth * 100).toFixed(1)}% YoY)` : '';
-      const rev = e.revenueEstimate !== null ? `  Rev ${fmtBig(e.revenueEstimate, cur)}` : '';
-      const revGrowth = e.revenueGrowth !== null ? ` (${e.revenueGrowth >= 0 ? '+' : ''}${(e.revenueGrowth * 100).toFixed(1)}% YoY)` : '';
-      const analysts = e.numberOfAnalysts !== null ? `  ${e.numberOfAnalysts} analysts` : '';
-      return `- ${period}: ${eps}${range}${epsGrowth}${rev}${revGrowth}${analysts}`;
-    }).join('\n')
-  : '- No forward estimates available'}
+**Konsensschätzungen**
+${estimates}
+- Nächste Zahlen: ${f.nextEarningsDate ?? 'unbekannt'}`;
+}
 
-### Short Interest & Ownership
-- Short % of Float: ${f.shortPercentOfFloat !== null ? (f.shortPercentOfFloat * 100).toFixed(1) + '%' : 'N/A'}  |  Days to Cover: ${f.shortRatio !== null ? f.shortRatio.toFixed(1) + ' days' : 'N/A'}
-- Institutional Ownership: ${f.institutionsPercentHeld !== null ? (f.institutionsPercentHeld * 100).toFixed(1) + '%' : 'N/A'}  |  Insider Ownership: ${f.insidersPercentHeld !== null ? (f.insidersPercentHeld * 100).toFixed(1) + '%' : 'N/A'}
-- Insider Activity (6M): ${(f.insiderBuyCount ?? 0) > 0 || (f.insiderSellCount ?? 0) > 0
-  ? `${f.insiderBuyCount ?? 0} buys (+${f.insiderBuyShares?.toLocaleString() ?? 0} shares), ${f.insiderSellCount ?? 0} sells (-${f.insiderSellShares?.toLocaleString() ?? 0} shares)`
-  : 'no recent transactions'}
+/** Shared tail for the two prose stages, so the register cannot drift apart. */
+const GERMAN_STYLE = `**Sprache: Deutsch.** Register einer Sell-Side-Research-Notiz:
+direkt, zahlengestützt, ohne Floskeln. Keine Hedging-Verben ("könnte",
+"möglicherweise"), keine Erzählkonnektoren ("erstens … schließlich"). Etablierte
+Fachbegriffe bleiben englisch (*Free Cash Flow*, *EBITDA*, *DCF*, *Margin of
+Safety*, *Piotroski*), Zahlen behalten die englische Schreibweise ("$1.2B",
+"23.4%", "1.8x").`;
 
-### Key Dates
-- Next Earnings: ${f.nextEarningsDate ?? 'unknown'}
-- Ex-Dividend: ${f.exDividendDate ?? 'N/A'}  |  Pay Date: ${f.dividendPayDate ?? 'N/A'}
-${distillSection}${perplexity ? `
-### Additional Context from Perplexity Sonar (web-sourced — use where relevant, not authoritative)
+/**
+ * Stage 1 — turn the scored card into readable prose.
+ *
+ * The instruction that matters is the negative one: this model does not judge.
+ * It arrived after the judgement and its job is to make the judgement legible,
+ * which is why the task says "erkläre" and never "bewerte".
+ */
+export function buildDataSummaryPrompt(f: StockFinancials, card: string, d: PromptData): string {
+  const cur = f.tradingCurrency;
+  const dataQuality = dataQualitySection(f);
 
-${perplexity.synthesis}
-` : ''}
----
-Provide a comprehensive investment analysis as valid JSON matching this schema:
-- "bullCase":  array of EXACTLY 3 short bullet points (each ~15–25 words). Each bullet must cite a specific concrete data point from the analysis above (e.g. "FCF growth 34% YoY accelerating, 5x peer median").
-- "bearCase":  array of EXACTLY 3 short bullet points, same format.
-- "keyRisks":  array of EXACTLY 3 risks, same format.
-- "thesis":    one sentence summarising the overall view.
-- "score":     0–10.
-- "recommendation": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL".
-- "fairValueEstimate": price range as string, in the trading currency used above — ${cur ?? 'USD'} (e.g. "${sym}120–${sym}145").
+  return `## ${f.symbol} — ${f.companyName}
 
-Bullet writing rules — Alphaspread-style:
-- Lead with the strongest single fact, not setup or hedging.
-- Cite a number (margin, growth, ratio, target) in every bullet.
-- No filler verbs like "appears", "may", "could potentially". Be direct.
-- Each bullet is independent — no "first … second … finally" connectors.
+Kurs ${fmtPrice(f.price, cur)} · Marktkapitalisierung ${fmtBig(f.marketCap, cur)} · ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}
+${dataQuality ? `\n${dataQuality}` : ''}
+${card}
 
-Focus on: competitive moat, valuation vs. intrinsic value (Composite + single-equation models), **Wall Street analyst consensus and price target as an independent triangulation signal — do not let it be drowned out by the calculated models**, growth quality, financial health, technical posture (trend, RSI/MACD, relative strength), earnings-revision momentum, and macro context (VIX regime, yield curve, HY spreads) when material.
-
-Weighting guidance for the recommendation (in descending order of authority):
-0. **Data Quality findings** (when the section is present) — these outrank everything below, because they say which of the inputs below are not evidence. A model built on a flagged field does not get a vote no matter where it sits in this list.
-1. **Composite + single-equation valuation models** — your quantitative anchor (intrinsic-value lens).
-2. **Analyst Consensus** — market-aligned sell-side lens; independent of the calculated models.
-3. **Distill company dossier / briefing** (when present) — curated multi-source qualitative narrative about *this company*, already past an editorial filter. Strongest qualitative input.
-3b. **Distill sector dossiers** (when present) — the industry backdrop. Context for reading the company, never evidence about it: a sector-wide headwind is a reason to check whether this company shares it, not a finding that it does. Where the company's own numbers diverge from its sector's narrative, say so — that divergence is worth more than either block alone.
-4. **Perplexity Sonar** (when present) — substantive web-sourced synthesis. Weight below Distill (Distill has tighter source curation) but above raw search results.
-5. **Web Search Results** (when present) — raw snippets, useful for fact-checking and recency only. The user opted into these explicitly; treat as colour, not as decision input.
-
-A strong divergence between any two of these classes is itself a signal — flag it in the bull or bear case.
-
-Don't override a STRONG BULLISH or STRONG BEARISH analyst consensus on the basis of intrinsic-value disagreement alone unless you have a concrete reason (e.g. Beneish "likely manipulator", interest-coverage failure, terminal growth assumption broken). A Distill **company** dossier flagging the same concern qualifies as a concrete reason; a sector dossier does not, on its own.
-
-When there is **no** analyst consensus, that guard does not become permission to lean harder on the models — it means the models lost their only independent check. Follow the caps stated in the Analyst Consensus section: no STRONG rating, a wider fair-value range, and the company's own reported trajectory weighted above the computed fair values.
-
-Composite confidence is a first-class input, not a footnote: below 4/10 the composite median is an average of models that disagree, and quoting it as a single fair value overstates what is known. Say the models diverge and give a range instead.
+${contextSection(f, d)}
 
 ---
 
-**Output language — German.** All free-text fields (\`bullCase\`, \`bearCase\`, \`keyRisks\`, \`thesis\`) must be written in **natural, professional German** — the register of a sell-side equity research note. Apply the Alphaspread-style bullet writing rules above to the German text: lead with the strongest single fact, cite a number in every bullet, no hedging verbs ("könnte", "möglicherweise"), no narrative connectors ("erstens … schließlich").
+**Deine Aufgabe: den quantitativen Befund lesbar machen — nicht ihn bewerten.**
 
-Keep these unchanged regardless of language:
-- The \`recommendation\` enum: \`"STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL"\` (used as UI tokens — not translated).
-- The \`fairValueEstimate\` format: \`"${sym}120–${sym}145"\` style (price range in the stock's trading currency ${cur ?? 'USD'}, with an en-dash). Never convert it to another currency.
-- Established finance terminology in the body text: *Free Cash Flow*, *EBITDA*, *DCF*, *ROE*, *Margin of Safety*, *Forward P/E*, *Piotroski*, *Altman Z*, *Beneish*, ticker symbols, company names. Don't germanise these.
+Der Score oben steht fest. Er wurde im Code berechnet, bevor dieser Aufruf
+begann, und du kannst ihn weder ändern noch anfechten. Was du beiträgst, ist die
+Erklärung: warum diese Zahl, in Sätzen, die jemand ohne die Tabelle versteht.
 
-Numbers, ratios, and currency amounts keep their English-style formatting ("${sym}1.2B", "23.4%", "1.8x"). Use German for the surrounding prose only ("Bewertung mit 23% Abschlag zum Composite Fair Value" — not "Valuation with 23% discount …").`;
+Regeln:
+- Halte dich an die **Befunde**. Sie sind nach Einfluss sortiert; was dort nicht
+  steht, hat den Score nicht bewegt und gehört nicht in die Zusammenfassung.
+- Nenne in jedem Satz eine konkrete Zahl aus der Karte oder dem Kontextblock.
+- Divergenzen sind die interessanteste Zeile, die du hast — wenn zwei Säulen sich
+  widersprechen, sag das ausdrücklich, statt es zu glätten.
+${dataQuality ? `- Die Datenqualitätsbefunde oben sind Aussagen **über die Daten**, nie über das
+  Unternehmen. "Der ausgewiesene FCF ist negativ" ist erlaubt; "das Unternehmen
+  verbrennt Geld" ist es nicht.\n` : ''}- Keine Kauf-/Verkaufsempfehlung, keine Kursziele, keine Prognose.
+
+${GERMAN_STYLE}
+
+Antworte als JSON:
+{
+  "summary": "4–6 Sätze, die den Score erklären: was ihn trägt, was ihn drückt, was unsicher bleibt."
+}`;
+}
+
+/**
+ * Stage 2 — the qualitative read, deliberately blind to the valuation.
+ *
+ * No price, no multiple, no fair value appears in this prompt. A summariser that
+ * knows the stock looks cheap will find the news encouraging; one that knows it
+ * looks expensive will find the same news worrying. Withholding the number is
+ * the only way the score it returns is worth blending with the other one.
+ */
+export function buildNarrativePrompt(
+  f: StockFinancials,
+  distill?: DistillBundle,
+  perplexity?: PerplexityContext,
+): string {
+  const distillSection = distillDossierSection(f.symbol, distill);
+  const pplx = perplexity
+    ? `\n### Perplexity Sonar (web-recherchiert — unter Distill zu gewichten)\n\n${perplexity.synthesis}\n`
+    : '';
+
+  return `## Qualitative Lage: ${f.symbol} — ${f.companyName}
+Sektor ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}
+${distillSection}${pplx}
+---
+
+**Deine Aufgabe: lies diese Quellen und sonst nichts.**
+
+Du bekommst bewusst keinen Kurs, kein Multiple und keinen Fair Value. Deine
+Bewertung soll beantworten, wie sich das Geschäft laut diesen Quellen entwickelt
+— nicht, ob die Aktie günstig ist. Die Bewertungsfrage wird an anderer Stelle
+deterministisch beantwortet und danach mit deiner zusammengeführt.
+
+Der \`score\` bezieht sich auf die **Geschäftsentwicklung, wie die Quellen sie
+beschreiben**:
+- **10** — Auftragslage, Wettbewerbsposition, Management-Ausführung, Regulierung
+  und Produktzyklus zeigen übereinstimmend nach oben, belegt durch datierte
+  Ereignisse.
+- **5** — gemischt, oder die Quellen tragen zu wenig, um eine Richtung zu stützen.
+- **0** — mehrere unabhängige Quellen beschreiben eine Verschlechterung.
+
+Regeln:
+- **Sektor-Dossiers sind Hintergrund, keine Aussage über dieses Unternehmen.**
+  Ein Branchengegenwind ist ein Grund nachzusehen, ob die Firma ihn teilt — kein
+  Befund, dass sie ihn teilt. Wo die Firma von ihrer Branche abweicht, ist genau
+  das das Signal.
+- Rohe Einzelmeldungen wiegen als eine Quelle, nicht als ein Trend.
+- \`events\` sind konkrete, datierte Vorgänge (Auftrag, Zulassung, Rückruf,
+  Personalwechsel, Kapitalmaßnahme) — keine Einschätzungen.
+- Tragen die Quellen nichts Belastbares, setze \`score\` auf \`null\`. Eine
+  ehrliche Enthaltung ist brauchbar; eine erfundene 5 ist es nicht.
+
+${GERMAN_STYLE}
+
+Antworte als JSON:
+{
+  "summary": "4–6 Sätze zur qualitativen Lage.",
+  "events":  ["bis zu 5 datierte, konkrete Vorgänge"],
+  "score":   0-10 oder null
+}`;
+}
+
+export interface SynthesisInputs {
+  /** Brief factor card: pillars, caps and findings, without the criteria detail. */
+  card:      string;
+  dataNote:  string | null;
+  narrative: { summary: string; events: string[]; score: number | null; sources: string[] } | null;
+  /** How the code will combine the two, stated before the model answers. */
+  blendNote: string;
+}
+
+/**
+ * Stage 3 — the thesis, and a bounded correction.
+ *
+ * The model is told the arithmetic that will produce the headline *before* it
+ * answers, which is what keeps `adjustment` an argued exception rather than an
+ * opinion competing with the score. The bound is small on purpose: a point is
+ * one band, and anything a model can justify beyond that belongs in a pillar.
+ */
+export function buildSynthesisPrompt(f: StockFinancials, s: SynthesisInputs): string {
+  const cur = f.tradingCurrency;
+  const sym = currencyPrefix(cur);
+
+  const narrative = s.narrative
+    ? `### Qualitative Zusammenfassung (aus Distill/Perplexity, ohne Kenntnis der Bewertung)
+
+Quellen: ${s.narrative.sources.join(', ') || 'keine'}
+Narrativ-Score: ${s.narrative.score === null ? 'Enthaltung — die Quellen trugen zu wenig' : `${s.narrative.score.toFixed(1)}/10`}
+
+${s.narrative.summary}
+${s.narrative.events.length > 0 ? `\nKonkrete Vorgänge:\n${s.narrative.events.map((e) => `- ${e}`).join('\n')}` : ''}`
+    : `### Qualitative Zusammenfassung
+
+Keine — für dieses Unternehmen lagen weder Distill-Dossier noch Perplexity-Recherche vor.
+Der Score ruht damit allein auf der Arithmetik; sag das in \`keyRisks\`.`;
+
+  return `## ${f.symbol} — ${f.companyName}
+
+Kurs ${fmtPrice(f.price, cur)} · Marktkapitalisierung ${fmtBig(f.marketCap, cur)} · ${f.sector ?? 'N/A'}
+
+${s.card}
+
+${s.dataNote ? `### Quantitative Zusammenfassung\n\n${s.dataNote}` : ''}
+
+${narrative}
+
+### So entsteht der Headline-Score
+
+${s.blendNote}
+
+---
+
+**Deine Aufgabe: die These schreiben. Den Score schreibst du nicht.**
+
+Score und Empfehlung ergeben sich aus der Rechnung oben. Dein Beitrag ist der
+Text — und, falls nötig, eine begründete Korrektur von höchstens ±1 Punkt.
+
+Für \`adjustment\` gilt eine hohe Hürde. Zulässig ist sie nur, wenn die
+qualitativen Quellen etwas enthalten, das **keine Säule sehen kann** und das den
+Fall material verändert: eine angekündigte Übernahme, ein Regulierungsentscheid,
+ein Produktrückruf, ein Wechsel im Management, eine Kapitalmaßnahme. Nicht
+zulässig ist sie, wenn du die vorliegenden Zahlen bloß anders gewichten würdest —
+diese Gewichtung ist bereits getroffen. Ohne solchen Anlass: \`adjustment: 0\` und
+\`adjustmentReason: null\`.
+
+Für die Texte:
+- \`bullCase\`, \`bearCase\`, \`keyRisks\`: je genau 3 Punkte à 15–25 Wörter, jeder mit
+  einer konkreten Zahl aus den Zusammenfassungen oben.
+- Führe mit der stärksten Einzeltatsache, nicht mit Kontext.
+- Jeder Punkt steht für sich — keine Konnektoren.
+- Widersprechen sich die quantitative und die qualitative Zusammenfassung, gehört
+  dieser Widerspruch in \`thesis\` oder \`keyRisks\`. Er ist die wertvollste
+  Information auf dieser Seite, nicht ein Problem, das zu glätten wäre.
+- \`fairValueEstimate\` ist eine Spanne in ${cur ?? 'USD'} im Format "${sym}120–${sym}145".
+  Rechne nie in eine andere Währung um.
+
+${GERMAN_STYLE}
+
+Antworte als JSON:
+{
+  "bullCase":         ["3 Punkte"],
+  "bearCase":         ["3 Punkte"],
+  "keyRisks":         ["3 Punkte"],
+  "thesis":           "ein Satz",
+  "fairValueEstimate": "${sym}120–${sym}145",
+  "adjustment":       -1 bis +1,
+  "adjustmentReason": "warum — oder null bei 0"
+}`;
 }

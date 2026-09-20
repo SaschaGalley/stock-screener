@@ -2,6 +2,7 @@ import type { OverviewRow } from '../types';
 import StockLogo, { initialsFromName } from './StockLogo';
 import ConsensusBar from './ConsensusBar';
 import { scoreColor } from './stockList';
+import ScoreSplit from './ScoreSplit';
 
 /**
  * The part of a row that both densities show.
@@ -69,27 +70,36 @@ export function StockIdentity({ row, active, stages = [], showSector = false }: 
 }
 
 /**
- * Score and its change since the first recorded verdict.
+ * Score and its change since the first recorded point.
  *
  * Both sit in fixed-width slots so the numbers line up down the list — a
  * ranking whose ranking column wanders is hard to read — and so the block is
  * exactly as wide in the rail as in the table.
+ *
+ * The split underneath it is the provenance: the headline is a blend of a
+ * deterministic score and a prose-only one, and a single digit hides which of
+ * them is carrying it. It renders only where there is room — the rail has
+ * none, and the two densities are allowed to differ exactly where a column
+ * folds away.
  */
-export function StockScore({ row }: { row: OverviewRow }) {
+export function StockScore({ row, split = false }: { row: OverviewRow; split?: boolean }) {
   const delta = row.scoreDelta;
   return (
-    <span className="flex shrink-0 items-center justify-end gap-0.5">
-      <span
-        className={`w-7 text-right text-[9px] tabular ${
-          (delta ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'
-        }`}
-        title={delta ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} seit dem ersten Verdict` : undefined}
-      >
-        {delta ? `${delta > 0 ? '▲' : '▼'}${Math.abs(delta).toFixed(1)}` : ''}
+    <span className="flex shrink-0 flex-col items-end">
+      <span className="flex items-center justify-end gap-0.5">
+        <span
+          className={`w-7 text-right text-[9px] tabular ${
+            (delta ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'
+          }`}
+          title={delta ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} seit dem ersten Verdict` : undefined}
+        >
+          {delta ? `${delta > 0 ? '▲' : '▼'}${Math.abs(delta).toFixed(1)}` : ''}
+        </span>
+        <span className={`w-6 text-right font-mono text-sm font-semibold tabular ${scoreColor(row.score)}`}>
+          {row.score === null ? '—' : row.score.toFixed(1)}
+        </span>
       </span>
-      <span className={`w-6 text-right font-mono text-sm font-semibold tabular ${scoreColor(row.aiScore)}`}>
-        {row.aiScore === null ? '—' : row.aiScore.toFixed(1)}
-      </span>
+      {split && <ScoreSplit row={row} />}
     </span>
   );
 }
@@ -100,7 +110,7 @@ export function rowTitle(row: OverviewRow, fmtBig: (n: number | null, c: string 
     row.companyName,
     row.sector ?? '—',
     fmtBig(row.marketCap, row.currency),
-    row.aiScore === null ? 'nicht bewertet' : `Score ${row.aiScore.toFixed(1)}`,
+    row.score === null ? 'nicht bewertet' : `Score ${row.score.toFixed(1)}`,
     row.watched ? null : 'nicht in der Watchlist — wird vom nächtlichen Lauf übersprungen',
   ].filter(Boolean).join(' · ');
 }

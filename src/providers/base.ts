@@ -1,76 +1,92 @@
-import { LLMAnalysis, SearchResult } from '../types.js';
+/**
+ * One shape for every model call: a prompt in, a validated object out.
+ *
+ * The providers used to expose a single `analyze()` that knew what an
+ * `LLMAnalysis` was, parsed one out of the response by hand, and quietly
+ * substituted a HOLD at score 5 when parsing failed. That made a second kind of
+ * call — a cheap model summarising something — impossible to add without
+ * copying the whole method, and it made a malformed response indistinguishable
+ * from a genuine neutral verdict.
+ *
+ * `complete()` takes the schema instead. The caller says what it wants back,
+ * gets it validated, and gets an exception when the model did not deliver —
+ * which the multi-stage pipeline can then degrade around deliberately (a failed
+ * narrative summary is a missing half, not a neutral one).
+ */
 
-export const SYSTEM_PROMPT = `You are an expert financial analyst. Analyze stocks with rigorous fundamental analysis.
-Always respond with valid JSON matching this exact structure:
-{
-  "bullCase": "string",
-  "bearCase": "string",
-  "keyRisks": ["string", "string", "string"],
-  "thesis": "string (1-2 sentences)",
-  "score": number (0-10),
-  "recommendation": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL",
-  "fairValueEstimate": "string — price range in the stock's trading currency, as stated in the analysis (e.g. '$120 - $145' for a USD listing, '€95 - €110' for a EUR one)"
-}`;
+import { z } from 'zod';
+import { SearchResult } from '../types.js';
 
-export function buildFullPrompt(prompt: string, searchResults?: SearchResult[]): string {
+export interface CompletionRequest<T> {
+  /** Role and output contract. Must mention JSON — OpenAI's JSON mode requires it. */
+  system:     string;
+  user:       string;
+  schema:     z.ZodType<T>;
+  /** Short name for logs, e.g. `narrative` or `synthesis`. */
+  label:      string;
+  maxTokens?: number;
+}
+
+/** Search snippets appended as prose. Only the narrative stage passes these. */
+export function appendSearchResults(prompt: string, searchResults?: SearchResult[]): string {
   if (!searchResults || searchResults.length === 0) return prompt;
-  let full = prompt + '\n\n## Recent Web Search Results\n';
+  let full = `${prompt}\n\n### Rohe Web-Suchtreffer (unkuratiert — nur für Aktualität und Faktencheck)\n`;
   searchResults.slice(0, 5).forEach((r, i) => {
-    full += `\n### [${i + 1}] ${r.title}\n${r.content.substring(0, 500)}\n`;
+    full += `\n**[${i + 1}] ${r.title}**\n${r.content.substring(0, 500)}\n`;
   });
   return full;
+}
+
+export class LLMResponseError extends Error {
+  constructor(label: string, detail: string, readonly raw: string) {
+    super(`${label}: ${detail}`);
+    this.name = 'LLMResponseError';
+  }
+}
+
+/**
+ * Pull the JSON object out of a response and validate it.
+ *
+ * Models fence their JSON, prefix it with a sentence, or both. The extraction
+ * is deliberately forgiving and the validation deliberately is not: a response
+ * that parses but does not match the schema is a failure the caller has to see.
+ */
+export function parseStructured<T>(text: string, schema: z.ZodType<T>, label: string): T {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const braced = text.match(/\{[\s\S]*\}/);
+  const raw = (fenced?.[1] ?? braced?.[0] ?? text).trim();
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (e) {
+    throw new LLMResponseError(label, `response was not JSON (${(e as Error).message})`, text);
+  }
+
+  const parsed = schema.safeParse(json);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+      .slice(0, 5)
+      .join('; ');
+    throw new LLMResponseError(label, `response did not match the schema — ${issues}`, text);
+  }
+  return parsed.data;
 }
 
 export abstract class LLMProvider {
   abstract readonly name: string;
   abstract supportsNativeSearch(): boolean;
-  abstract analyze(prompt: string, searchResults?: SearchResult[]): Promise<LLMAnalysis>;
+
+  /** One call, one validated object. Throws `LLMResponseError` on a bad response. */
+  abstract complete<T>(req: CompletionRequest<T>): Promise<T>;
 
   /**
    * Queries the provider issued during native web search (Claude
-   * `web_search_20250305`, OpenAI `web_search_preview`). Read AFTER `analyze()`
+   * `web_search_20250305`, OpenAI `web_search_preview`). Read AFTER the call
    * completes. Default: empty array (provider didn't use native search). Stored
    * by the caller into the analysis cache for debug/inspection in the UI.
    */
   protected _nativeSearchQueries: string[] = [];
   getNativeSearchQueries(): string[] { return [...this._nativeSearchQueries]; }
-}
-
-export function parseJsonFromResponse(text: string): LLMAnalysis {
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) ?? text.match(/\{[\s\S]*\}/);
-  const raw = jsonMatch ? (jsonMatch[1] ?? jsonMatch[0]) : text;
-
-  // Coerce a Bull/Bear case to a string array. Tolerates legacy string output
-  // by splitting on bullet markers or sentence boundaries.
-  function toBullets(v: unknown): string[] {
-    if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
-    if (typeof v === 'string') {
-      const lines = v.split(/\n[•\-*]\s|^\s*[•\-*]\s/m).map((s) => s.trim()).filter((s) => s.length > 5);
-      return lines.length >= 2 ? lines : [v.trim()];
-    }
-    return ['Not provided'];
-  }
-
-  try {
-    const parsed = JSON.parse(raw.trim()) as Partial<LLMAnalysis> & Record<string, unknown>;
-    return {
-      bullCase:          toBullets(parsed.bullCase),
-      bearCase:          toBullets(parsed.bearCase),
-      keyRisks:          Array.isArray(parsed.keyRisks) ? parsed.keyRisks : ['Not provided'],
-      thesis:            (parsed.thesis as string)            ?? 'Not provided',
-      score:             typeof parsed.score === 'number' ? Math.min(10, Math.max(0, parsed.score)) : 5,
-      recommendation:    (parsed.recommendation as LLMAnalysis['recommendation']) ?? 'HOLD',
-      fairValueEstimate: (parsed.fairValueEstimate as string) ?? 'Not provided',
-    };
-  } catch {
-    return {
-      bullCase:          [text.substring(0, 300)],
-      bearCase:          ['Could not parse structured response.'],
-      keyRisks:          ['Unable to parse LLM response'],
-      thesis:            'Parse error — check verbose output.',
-      score:             5,
-      recommendation:    'HOLD',
-      fairValueEstimate: 'N/A',
-    };
-  }
 }

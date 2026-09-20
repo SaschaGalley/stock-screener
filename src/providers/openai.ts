@@ -1,6 +1,5 @@
 import OpenAI from 'openai';
-import { LLMAnalysis, SearchResult } from '../types.js';
-import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
+import { CompletionRequest, LLMProvider, parseStructured } from './base.js';
 import { logger } from '../utils/logger.js';
 import { defaultModelFor } from '../models.js';
 
@@ -22,29 +21,27 @@ export class OpenAIProvider extends LLMProvider {
 
   supportsNativeSearch(): boolean { return true; }
 
-  async analyze(prompt: string, searchResults?: SearchResult[]): Promise<LLMAnalysis> {
-    logger.step('Calling OpenAI for analysis...');
+  async complete<T>(req: CompletionRequest<T>): Promise<T> {
+    logger.step(`Calling ${this.model} (${req.label})...`);
 
-    if (this.useNativeSearch) {
-      return this.analyzeWithNativeSearch(prompt);
-    }
+    if (this.useNativeSearch) return this.completeWithNativeSearch(req);
 
     const completion = await this.client.chat.completions.create({
       model: this.model,
-      max_completion_tokens: 2048,
+      max_completion_tokens: req.maxTokens ?? 2048,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user',   content: buildFullPrompt(prompt, searchResults) },
+        { role: 'system', content: req.system },
+        { role: 'user',   content: req.user },
       ],
     });
 
     const text = completion.choices[0]?.message?.content ?? '';
-    logger.debug('OpenAI raw response:', text.substring(0, 200));
-    return parseJsonFromResponse(text);
+    logger.debug(`OpenAI raw response (${req.label}):`, text.substring(0, 200));
+    return parseStructured(text, req.schema, req.label);
   }
 
-  private async analyzeWithNativeSearch(prompt: string): Promise<LLMAnalysis> {
+  private async completeWithNativeSearch<T>(req: CompletionRequest<T>): Promise<T> {
     logger.step('OpenAI native web search enabled...');
 
     // Reset per-call so a reused provider doesn't accumulate across runs.
@@ -53,8 +50,8 @@ export class OpenAIProvider extends LLMProvider {
     const response = await this.client.responses.create({
       model: SEARCH_MODEL,
       tools: [{ type: 'web_search_preview' }],
-      instructions: SYSTEM_PROMPT,
-      input: prompt,
+      instructions: req.system,
+      input: req.user,
     });
 
     // Capture the queries OpenAI issued. The Responses API surfaces each
@@ -70,7 +67,7 @@ export class OpenAIProvider extends LLMProvider {
     }
 
     const text: string = response.output_text ?? '';
-    logger.debug('OpenAI native search response:', text.substring(0, 200));
-    return parseJsonFromResponse(text);
+    logger.debug(`OpenAI native search response (${req.label}):`, text.substring(0, 200));
+    return parseStructured(text, req.schema, req.label);
   }
 }

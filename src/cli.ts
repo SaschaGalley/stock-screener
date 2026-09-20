@@ -13,12 +13,12 @@ import { fmtBig } from './analysis/metrics.js';
 import { fmtPrice } from './format.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { computeTechnicals, DailyBar } from './analysis/technical.js';
-import { createProvider } from './providers/factory.js';
 import { TavilySearch } from './search/tavily.js';
 import { BraveSearch } from './search/brave.js';
 import {
   readFinancials,    writeFinancials,
   readAnalysis,      writeAnalysis,
+  latestScoreCard,
   readNews,          writeNews,
   readMarketSignals, writeMarketSignals,
   readDistill,       writeDistill,
@@ -35,12 +35,14 @@ import { getPerplexityCached } from './perplexity-service.js';
 import { DistillBundle } from './data/distill.js';
 import { distillHintsFor } from './distill-service.js';
 import { buildDistillBundle } from './distill-content.js';
-import { buildAnalysisPrompt } from './output/prompt.js';
+import { PromptData } from './output/prompt.js';
+import { rescore, runVerdictPipeline } from './score-service.js';
+import { readAppConfig } from './app-config.js';
 import { formatMarkdown } from './output/markdown.js';
 // import { saveReports } from './output/report.js';  // disabled — see comment in run()
 import {
   AnalysisOptions, AnalysisResult, EarningsRevisions, LLMAnalysis,
-  MarketSignals, NewsItem, OptionsSignals, SearchResult, StockFinancials,
+  MarketSignals, NewsItem, OptionsSignals, ScoreCard, SearchResult, StockFinancials,
   SearchTrace, SearchProviderTrace,
 } from './types.js';
 import {
@@ -491,27 +493,53 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     search: searchKey(requested),
     pplx:   usePplx ? pplxModel : null,
   };
-  // Honour `force` — caller explicitly asked for a fresh LLM call. We still
-  // call readAnalysis for symmetry/debug but discard the result.
+  // Honour `force` — the caller explicitly asked for fresh model calls, so the
+  // stored entry is not even read. Everything else reuses the stored prose and
+  // recomputes the arithmetic half below.
   const cachedAnalysis = input.force ? null : await readAnalysis(symbol, flags);
-  let llmAnalysis: LLMAnalysis | null = cachedAnalysis?.llmAnalysis ?? null;
-  const llmFromCache = llmAnalysis !== null;
+  const llmFromCache = cachedAnalysis !== null;
+
+  const scoring = (await readAppConfig()).scoring;
+  const promptData: PromptData = {
+    dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
+    ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,
+    sortino, beneish, rim, ncav, peerMultiples, composite,
+    sectorMedians, marketSignals,
+  };
+  const technicalSignals = marketSignals?.technicals
+    ? deriveTechnicalSignals(marketSignals.technicals, financials.price)
+    : null;
+  const factorInput = {
+    financials, metrics, sectorMedians, marketSignals, technicalSignals,
+  };
 
   const edgarNeeded = !(await readSubmissions(symbol));
 
-  if (!llmAnalysis) {
-    emit({ stage: 'llm', message: `Calling ${modelId}…`, cached: false });
-    const llm    = createProvider(options);
-    const prompt = buildAnalysisPrompt(financials, {
-      dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
-      ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,
-      sortino, beneish, rim, ncav, peerMultiples, composite,
-      sectorMedians, marketSignals,
-    }, perplexity ?? undefined, distill ?? undefined);
-    const [analysis] = await Promise.all([
-      llm.analyze(prompt, searchResults),
+  let llmAnalysis: LLMAnalysis;
+  let scoreCard: ScoreCard;
+
+  if (!llmFromCache) {
+    emit({ stage: 'llm', message: `Scoring ${symbol}…`, cached: false });
+
+    const [pipeline] = await Promise.all([
+      runVerdictPipeline({
+        ...factorInput,
+        promptData,
+        distill,
+        perplexity,
+        searchResults,
+        synthesisModel:      modelId,
+        summaryModel:        scoring.summaryModel,
+        // Native search belongs to the stage that reads prose. The two
+        // summarisers are otherwise identical, so only the narrative one is
+        // ever handed a search tool.
+        nativeSearch:        optionsSearch === 'claude' || optionsSearch === 'openai' || optionsSearch === 'openai-tavily',
+        narrativeMaxWeight:  scoring.narrativeMaxWeight,
+        adjustmentLimit:     scoring.adjustmentLimit,
+        onStage:             (message) => emit({ stage: 'llm', message }),
+      }),
       // EDGAR is a non-essential sidecar — never let its failure reject the
-      // Promise.all and throw away the (paid-for) LLM result.
+      // Promise.all and throw away the (paid-for) model calls.
       edgarNeeded
         ? fetchEdgarFilings(symbol, cfg.dataDir).catch((e) => {
             logger.warn(`EDGAR filings unavailable: ${(e as Error).message}`);
@@ -519,19 +547,16 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
           })
         : Promise.resolve(null),
     ]);
-    llmAnalysis = analysis;
 
-    // After analyze() returns, query the provider for any native-search
-    // queries it issued (Claude / OpenAI built-in web search). The actual
-    // URLs the LLM fetched are processed server-side by the vendor and not
-    // observable here — the queries are the best breadcrumb we have.
-    const nativeQueries = llm.getNativeSearchQueries();
-    if (nativeQueries.length > 0) {
-      const nativeProvider: 'claude-web-search' | 'openai-web-search' =
-        llm.name === 'openai' ? 'openai-web-search' : 'claude-web-search';
+    llmAnalysis = pipeline.llmAnalysis;
+    scoreCard   = pipeline.scoreCard;
+
+    // The narrative stage is the one that may have used a native search tool;
+    // the queries it issued are the only breadcrumb the vendor exposes.
+    if (pipeline.nativeSearchQueries.length > 0) {
       searchTrace.push({
-        provider:  nativeProvider,
-        queries:   nativeQueries,
+        provider:  provider === 'openai' ? 'openai-web-search' : 'claude-web-search',
+        queries:   pipeline.nativeSearchQueries,
         results:   [],  // not exposed by the LLM SDK
         fetchedAt: new Date().toISOString(),
       });
@@ -540,20 +565,40 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     const trace: SearchTrace | undefined = searchTrace.length > 0
       ? { providers: searchTrace }
       : undefined;
-    await writeAnalysis(symbol, flags, llmAnalysis, trace, input.runId);
-    logger.success('LLM analysis complete');
+    await writeAnalysis(symbol, flags, llmAnalysis, trace, input.runId, scoreCard);
+    logger.success('Analysis complete');
     emit({
       stage:   'llm',
-      message: `${analysis.recommendation} · score ${analysis.score}/10 · fair value ${analysis.fairValueEstimate}`,
-      data:    { recommendation: analysis.recommendation, score: analysis.score },
+      message: `${llmAnalysis.recommendation} · Score ${llmAnalysis.score}/10 · Fair Value ${llmAnalysis.fairValueEstimate}`,
+      data:    { recommendation: llmAnalysis.recommendation, score: llmAnalysis.score },
     });
   } else {
     if (edgarNeeded) {
       await fetchEdgarFilings(symbol, cfg.dataDir).catch((e) =>
         logger.warn(`EDGAR filings unavailable: ${(e as Error).message}`));
     }
-    logger.success('LLM analysis loaded from cache');
-    emit({ stage: 'llm', message: 'LLM analysis loaded from cache', cached: true });
+
+    // A cache hit reuses the prose, never the number. The factor half is
+    // arithmetic over data that has just been refreshed, so recomputing it is
+    // both free and the only way the headline reflects today's price rather
+    // than the price on the evening the model happened to run.
+    scoreCard = rescore({
+      ...factorInput,
+      previous:           cachedAnalysis.scoreCard ?? null,
+      narrativeMaxWeight: scoring.narrativeMaxWeight,
+      adjustmentLimit:    scoring.adjustmentLimit,
+    });
+    llmAnalysis = {
+      ...cachedAnalysis.llmAnalysis,
+      score:          scoreCard.final.score,
+      recommendation: scoreCard.final.verdict,
+    };
+    logger.success('Prose loaded from cache; factor score recomputed');
+    emit({
+      stage:   'llm',
+      message: `Prosa aus dem Cache, Faktor-Score neu berechnet: ${scoreCard.final.score.toFixed(1)}/10 → ${scoreCard.final.verdict}`,
+      cached:  true,
+    });
   }
 
   // ── 5. Assemble Result ────────────────────────────────────────────────────
@@ -566,7 +611,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     interestCoverage,
     sortino, beneish, sectorMedians,
     marketSignals,
-    llmAnalysis: llmAnalysis!, news,
+    llmAnalysis, scoreCard, news,
     perplexity: perplexity ?? null,
   };
 
@@ -582,10 +627,9 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     sectorMedians,
     marketRates,
     metrics,
-    verdict:          llmAnalysis!,
-    technicalSignals: marketSignals?.technicals
-      ? deriveTechnicalSignals(marketSignals.technicals, financials.price)
-      : null,
+    verdict:          llmAnalysis,
+    scoreCard,
+    technicalSignals,
   });
 
   const meta: AnalysisRunMeta = {

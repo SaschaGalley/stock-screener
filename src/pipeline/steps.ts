@@ -216,7 +216,12 @@ export async function runAnalysisStep(
         // we consider stale. Force means force.
         force:  true,
       });
-      return `${r.llmAnalysis.recommendation} · score ${r.llmAnalysis.score}/10 · ${r.provider}`;
+      const c = r.scoreCard;
+      return `${r.llmAnalysis.recommendation} · ${r.llmAnalysis.score}/10 `
+        + `(Zahlen ${c.factor.score.toFixed(1)} @ ${(c.final.factorWeight * 100).toFixed(0)}%`
+        + `${c.narrative?.score != null ? `, Text ${c.narrative.score.toFixed(1)} @ ${(c.final.narrativeWeight * 100).toFixed(0)}%` : ', ohne Prosa'}`
+        + `${c.final.adjustment !== 0 ? `, Korrektur ${c.final.adjustment > 0 ? '+' : ''}${c.final.adjustment}` : ''})`
+        + ` · ${r.provider}`;
     });
     return result('analysis', 'ok',
       `${age === null ? 'never analysed' : `${age.toFixed(1)}d old`} → ${detail}`, ms);

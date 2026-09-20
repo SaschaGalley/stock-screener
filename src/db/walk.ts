@@ -124,7 +124,8 @@ const CURRENCY_CONTEXTS = ['composite', 'fairvalue', 'fairprice', 'target', 'pri
 function inferUnit(path: string, kind: LeafKind, description: string | null): string | null {
   if (kind !== 'number') return null;
   const full = path.toLowerCase();
-  const leaf = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+  const leafRaw = path.slice(path.lastIndexOf('.') + 1);
+  const leaf = leafRaw.toLowerCase();
   const desc = (description ?? '').toLowerCase();
 
   // `composite.primary.median` is a price; `median` on its own says nothing.
@@ -138,7 +139,12 @@ function inferUnit(path: string, kind: LeafKind, description: string | null): st
   // `percent` anywhere, so `bollingerPercentB` doesn't read as a price.
   if (leaf.startsWith('pct') || leaf.endsWith('pct') || leaf.includes('percent')) return 'pct';
   // Any `xToY` name is a quotient — debtToEquity, evToEbitda, priceToSales.
-  if (/^[a-z0-9]+to[a-z0-9]+$/.test(leaf)) return 'ratio';
+  // Matched against the original casing. Lowercased, the rule fired on any name
+  // that merely *contained* the letters t-o: `factorWeight` read as
+  // "fac|to|rweight", `macdHistogram` as "macdhis|to|gram" and `costOfDebt` as
+  // "cos|to|fDebt", so three things that are not quotients rendered as one.
+  // The capital T is what makes it the camelCase word it was always meant to be.
+  if (/^[a-zA-Z0-9]+To[A-Za-z0-9]+$/.test(leafRaw)) return 'ratio';
   if (desc.includes('(decimal') || desc.includes('decimal,')) return 'pct';
   if (leaf.includes('rate') || leaf.includes('yield') || leaf.includes('margin')
     || leaf.includes('growth') || leaf.includes('return')) return 'pct';

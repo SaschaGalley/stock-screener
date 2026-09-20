@@ -68,7 +68,7 @@ export function applyListView(rows: OverviewRow[], view: ListView): OverviewRow[
 
   const sorted = [...list];
   switch (view.sort) {
-    case 'score':     sorted.sort(byNumber((r) => r.aiScore)); break;
+    case 'score':     sorted.sort(byNumber((r) => r.score)); break;
     case 'target':    sorted.sort(byNumber((r) => r.targetUpsidePct)); break;
     case 'composite': sorted.sort(byNumber((r) => r.compositeUpsidePct)); break;
     case 'marketCap': sorted.sort(byNumber((r) => r.marketCap)); break;
@@ -80,10 +80,10 @@ export function applyListView(rows: OverviewRow[], view: ListView): OverviewRow[
 
 /** Mean AI score over the rows that have one — the table header's one statistic. */
 export function averageScore(rows: OverviewRow[]): { avg: number; count: number } | null {
-  const scored = rows.filter((r) => r.aiScore !== null);
+  const scored = rows.filter((r) => r.score !== null);
   if (scored.length === 0) return null;
   return {
-    avg:   scored.reduce((sum, r) => sum + (r.aiScore ?? 0), 0) / scored.length,
+    avg:   scored.reduce((sum, r) => sum + (r.score ?? 0), 0) / scored.length,
     count: scored.length,
   };
 }

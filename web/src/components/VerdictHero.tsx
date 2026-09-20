@@ -11,6 +11,9 @@ interface Props {
     score: number;
     recommendation: string;
     thesis: string;
+    /** The two halves behind `score`, when a score card was stored with it. */
+    factorScore?: number | null;
+    narrativeScore?: number | null;
   } | null;
   /** When the shown verdict was generated (ISO), or null when none is cached. */
   llmGeneratedAt?: string | null;
@@ -43,11 +46,15 @@ export default function VerdictHero({ price, composite, llm, llmGeneratedAt, llm
 
   return (
     <section className="grid gap-3 lg:grid-cols-3">
-      {/* AI Verdict */}
+      {/* Verdict */}
       <Card
-        title="AI Verdict"
-        // An LLM verdict is a point-in-time opinion: without its date it reads
-        // as current even when it predates the last earnings report.
+        // Not "AI Verdict" any more, and the rename is the honest part: the
+        // score is arithmetic blended with a prose read, and only the sentence
+        // underneath it was written by a model.
+        title="Verdict"
+        // The prose is a point-in-time opinion: without its date it reads as
+        // current even when it predates the last earnings report. The score
+        // itself is recomputed on every refresh, so only the text ages.
         meta={llm && llmGeneratedAt ? (
           <time
             dateTime={llmGeneratedAt}
@@ -69,10 +76,18 @@ export default function VerdictHero({ price, composite, llm, llmGeneratedAt, llm
             <p className="mt-3 text-sm leading-relaxed text-ink-300">
               {llm.thesis}
             </p>
+            {llm.factorScore !== undefined && llm.factorScore !== null && (
+              <p className="mt-2 font-mono text-[10px] text-ink-500">
+                Zahlen {llm.factorScore.toFixed(1)}
+                {llm.narrativeScore !== null && llm.narrativeScore !== undefined
+                  && ` · Text ${llm.narrativeScore.toFixed(1)}`}
+                {' — Aufschlüsselung unter "Wie der Score entsteht"'}
+              </p>
+            )}
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-ink-500">
-            No LLM analysis cached for these settings — use the right sidebar.
+            Für diese Einstellungen liegt noch keine Analyse vor — rechts in der Seitenleiste starten.
           </div>
         )}
       </Card>

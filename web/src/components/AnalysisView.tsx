@@ -9,6 +9,7 @@ import VerdictHero from "./VerdictHero";
 import BullBearRisks from "./BullBearRisks";
 import StockHeader from "./StockHeader";
 import Section from "./Section";
+import ScoreBreakdown from "./sections/ScoreBreakdown";
 import CompositeChart from "./charts/CompositeChart";
 import ValuationDetail from "./sections/ValuationDetail";
 import QualityScores from "./sections/QualityScores";
@@ -220,7 +221,11 @@ export default function AnalysisView({
             <VerdictHero
               price={f.price}
               composite={m.composite}
-              llm={llm}
+              llm={llm && {
+                ...llm,
+                factorScore:    analysis?.scoreCard?.factor.score ?? null,
+                narrativeScore: analysis?.scoreCard?.narrative?.score ?? null,
+              }}
               llmGeneratedAt={analysis?.generatedAt ?? null}
               llmModel={analysis?.flags.model ?? null}
               analyst={{
@@ -236,6 +241,17 @@ export default function AnalysisView({
                 analystStrongSell: f.analystStrongSell,
               }}
             />
+
+            {/* How that verdict was arrived at — the calculation, not a retelling. */}
+            {analysis?.scoreCard && (
+              <Section
+                title="Wie der Score entsteht"
+                subtitle="Sechs berechnete Säulen, eine Prosa-Lesart, und das Mischungsverhältnis dazwischen"
+                storageKey="score-breakdown"
+              >
+                <ScoreBreakdown card={analysis.scoreCard} />
+              </Section>
+            )}
 
             {/* TIER 2: BULL/BEAR/RISKS */}
             {llm && <BullBearRisks llm={llm} />}

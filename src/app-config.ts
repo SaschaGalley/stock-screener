@@ -22,7 +22,8 @@ import { z } from 'zod';
 import { logger } from './utils/logger.js';
 import { readSettingsJson, writeSettingsJson } from './db/admin.js';
 import { listSymbols } from './db/store.js';
-import { DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, resolveModelId } from './models.js';
+import { DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, DEFAULT_SUMMARY_MODEL_ID, resolveModelId } from './models.js';
+import { ADJUSTMENT_LIMIT, NARRATIVE_MAX_WEIGHT } from './analysis/score.js';
 
 /** Cron field count we accept: standard 5-field (minute hour dom month dow). */
 const CRON_RE = /^(\S+\s+){4}\S+$/;
@@ -83,6 +84,24 @@ export const AppConfigSchema = z.object({
   }).prefault({}),
 
   /**
+   * How the headline score is put together.
+   *
+   * Not under `steps`, for the same reason Perplexity is not: it governs every
+   * analysis, whether it came from the nightly pass, a click in the web UI or
+   * the CLI. The pillar weights themselves are deliberately *not* here — they
+   * are the scoring model, and a model that can be retuned from a settings page
+   * produces a history that cannot be compared with itself.
+   */
+  scoring: z.object({
+    /** Cheap model for the two summariser stages. */
+    summaryModel: z.string().min(1).default(DEFAULT_SUMMARY_MODEL_ID),
+    /** Ceiling on the weight the prose-only score may carry in the blend. */
+    narrativeMaxWeight: z.number().min(0).max(1).default(NARRATIVE_MAX_WEIGHT),
+    /** How far the synthesis model may move the blended score, in points. */
+    adjustmentLimit: z.number().min(0).max(3).default(ADJUSTMENT_LIMIT),
+  }).prefault({}),
+
+  /**
    * Per-symbol opt-out. Absent means "included" — a newly analysed stock joins
    * the nightly run without anyone having to remember to enable it.
    */
@@ -128,6 +147,7 @@ function repair(raw: unknown): AppConfig {
     schedule:  section('schedule'),
     steps:      section('steps'),
     perplexity: section('perplexity'),
+    scoring:    section('scoring'),
     watchlist:  section('watchlist'),
   };
 }

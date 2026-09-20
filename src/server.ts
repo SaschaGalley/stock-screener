@@ -11,7 +11,7 @@ import { isHatchetConfigured } from './hatchet/client.js';
 import { runAnalysis } from './cli.js';
 import {
   AnalysisFlagsKey, analysisHash,
-  deleteAnalysis, deleteSymbol, latestSnapshotForAll, latestValueForAll,
+  deleteAnalysis, deleteSymbol, latestSnapshotForAll, latestPointsForAll, latestValueForAll,
   latestDocument, listAnalyses, listDocuments, listMetrics, listSymbols,
   readAnalysis, readDistillLax, readFinancialsMeta, readFinancialsLax,
   readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax,
@@ -20,7 +20,7 @@ import {
 import { migrate } from './db/migrate.js';
 import { syncCatalog } from './db/catalog.js';
 import { closePool, waitForDatabase } from './db/client.js';
-import { StockFinancials } from './types.js';
+import { LLMAnalysis, ScoreCard, StockFinancials } from './types.js';
 import type { AnalysisListEntry, ConsensusBand, OverviewRow, StockSummary } from './api-types.js';
 import { MODELS } from './models.js';
 import {
@@ -34,6 +34,7 @@ import { getMarketRates } from './data/fred.js';
 import { getSectorMediansCached } from './sector-medians.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { deriveTechnicalSignals } from './analysis/signals.js';
+import { rescore } from './score-service.js';
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
 import { searchByQuery } from './data/yfinance.js';
@@ -59,7 +60,17 @@ const __dirname  = dirname(__filename);
 const PORT = Number(process.env.PORT ?? 4317);
 
 /** Metric keys the overview reads directly. Named once so the two uses agree. */
-const KEY_VERDICT_SCORE = 'verdict.score';
+// The headline series is the blended score, which the daily refresh writes for
+// every symbol whether or not the analysis step ran. `verdict.score` still
+// exists and still charts — it is simply no longer the headline.
+const KEY_SCORE         = 'score.final.score';
+/** The rest of the card the overview shows, read from the same daily series. */
+const KEY_CARD = [
+  'score.final.verdict',
+  'score.factor.score',
+  'score.factor.confidence',
+  'score.narrative.score',
+] as const;
 const KEY_COMPOSITE     = 'metrics.composite.primary.median';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -71,6 +82,64 @@ function logoDomainFromWebsite(url: string | null): string | null {
     return u.hostname.replace(/^www\./, '');
   } catch {
     return null;
+  }
+}
+
+/**
+ * A stored verdict, with its arithmetic brought up to date.
+ *
+ * The prose in a stored entry is what a model wrote on the evening it ran, and
+ * that is what it should stay. The factor half is not: it is a pure function of
+ * data the refresh has since rewritten, and the overview already ranks by the
+ * recomputed value. Serving the stored card here would show a detail page whose
+ * score disagrees with the row the reader clicked to get to it.
+ *
+ * Returns the fields to overlay, or nothing when the inputs are unavailable —
+ * a detail page is not worth failing over a missing peer-medians call.
+ */
+async function refreshedCard(
+  symbol: string, stored: CachedAnalysisEntry,
+): Promise<{ scoreCard?: ScoreCard; llmAnalysis?: LLMAnalysis }> {
+  try {
+    const financials = await readFinancialsLax(symbol);
+    if (!financials) return {};
+
+    const env = getConfig();
+    const [marketRates, sectorMedians, signalsSnap, config] = await Promise.all([
+      getMarketRates(env.fredApiKey).catch(() => null),
+      getSectorMediansCached(symbol, env.finnhubApiKey).catch(() => null),
+      // The meta reader rather than the TTL one: an older signals payload is
+      // still the best technical picture on file, and the same route family
+      // already serves the bundle from it.
+      readMarketSignalsMeta(symbol),
+      readAppConfig(),
+    ]);
+    const marketSignals = signalsSnap?.data ?? null;
+
+    const scoreCard = rescore({
+      financials,
+      metrics:          computeAllMetrics(financials, marketRates, sectorMedians),
+      sectorMedians,
+      marketSignals,
+      technicalSignals: marketSignals?.technicals
+        ? deriveTechnicalSignals(marketSignals.technicals, financials.price)
+        : null,
+      previous:           stored.scoreCard ?? null,
+      narrativeMaxWeight: config.scoring.narrativeMaxWeight,
+      adjustmentLimit:    config.scoring.adjustmentLimit,
+    });
+
+    return {
+      scoreCard,
+      llmAnalysis: {
+        ...stored.llmAnalysis,
+        score:          scoreCard.final.score,
+        recommendation: scoreCard.final.verdict,
+      },
+    };
+  } catch (e) {
+    logger.warn(`${symbol}: could not refresh the score card — serving the stored one (${(e as Error).message})`);
+    return {};
   }
 }
 
@@ -613,11 +682,12 @@ export function createApp(): express.Express {
   // had a composite recorded.
   app.get('/api/overview', async (_req, res, next) => {
     try {
-      const [config, financials, verdicts, scoreSeries, composites] = await Promise.all([
+      const [config, financials, verdicts, scoreSeries, cards, composites] = await Promise.all([
         readAppConfig(),
         latestSnapshotForAll<StockFinancials>('financials'),
         latestVerdictsForAll(),
-        seriesForAll(KEY_VERDICT_SCORE),
+        seriesForAll(KEY_SCORE),
+        latestPointsForAll([...KEY_CARD]),
         latestValueForAll(KEY_COMPOSITE),
       ]);
       const marketRates = await getMarketRates(cfg.fredApiKey).catch(() => null);
@@ -641,8 +711,16 @@ export function createApp(): express.Express {
         // from last night is never paired with last night's price.
         const compositeFairValue = composites.get(symbol) ?? safeComposite(f, marketRates, symbol);
 
-        const aiScore = newest?.llmAnalysis.score
-          ?? (scoreHistory.length > 0 ? scoreHistory[scoreHistory.length - 1].score : null);
+        // The stored card belongs to the newest *analysis*; the series is
+        // rewritten on every refresh. Read from the series, because that is
+        // what has seen today's price — the document is the fallback for a
+        // symbol analysed before the score card existed.
+        const card = cards.get(symbol);
+        const stored = newest?.scoreCard ?? null;
+        const num = (key: string) => card?.get(key)?.value ?? null;
+        const score = scoreHistory.length > 0
+          ? scoreHistory[scoreHistory.length - 1].score
+          : stored?.final.score ?? newest?.llmAnalysis.score ?? null;
 
         rows.push({
           symbol,
@@ -652,8 +730,15 @@ export function createApp(): express.Express {
           price,
           marketCap:   typeof f.marketCap === 'number' ? f.marketCap : null,
           currency:    f.tradingCurrency ?? null,
-          aiScore:        aiScore ?? null,
-          recommendation: newest?.llmAnalysis.recommendation ?? null,
+          score:           score ?? null,
+          factorScore:     num('score.factor.score')      ?? stored?.factor.score      ?? null,
+          narrativeScore:  num('score.narrative.score')   ?? stored?.narrative?.score  ?? null,
+          scoreConfidence: num('score.factor.confidence') ?? stored?.factor.confidence ?? null,
+          verdictCapped:   stored ? stored.factor.caps.length > 0 : false,
+          recommendation:  card?.get('score.final.verdict')?.text
+            ?? stored?.final.verdict
+            ?? newest?.llmAnalysis.recommendation
+            ?? null,
           verdictAt:      newest?.generatedAt ?? null,
           verdictModel:   newest?.flags.model ?? null,
           fairValueEstimate: newest?.llmAnalysis.fairValueEstimate ?? null,
@@ -674,10 +759,10 @@ export function createApp(): express.Express {
 
       // Score descending; stocks without a verdict sort to the bottom, then A→Z.
       rows.sort((a, b) => {
-        if (a.aiScore === null && b.aiScore === null) return a.symbol.localeCompare(b.symbol);
-        if (a.aiScore === null) return 1;
-        if (b.aiScore === null) return -1;
-        if (b.aiScore !== a.aiScore) return b.aiScore - a.aiScore;
+        if (a.score === null && b.score === null) return a.symbol.localeCompare(b.symbol);
+        if (a.score === null) return 1;
+        if (b.score === null) return -1;
+        if (b.score !== a.score) return b.score - a.score;
         return a.symbol.localeCompare(b.symbol);
       });
       res.json({ rows });
@@ -873,7 +958,8 @@ export function createApp(): express.Express {
         res.status(404).json({ error: `No stored analysis ${req.params.hash} for ${symbol}` });
         return;
       }
-      res.json(doc.data);
+      // Same overlay as the by-flags route: stored prose, arithmetic as of now.
+      res.json({ ...doc.data, ...(await refreshedCard(symbol, doc.data)) });
     } catch (e) {
       next(e);
     }
@@ -916,7 +1002,7 @@ export function createApp(): express.Express {
         res.status(404).json({ error: 'Not stored', flags, hash: analysisHash(flags) });
         return;
       }
-      res.json(stored);
+      res.json({ ...stored, ...(await refreshedCard(symbol, stored)) });
     } catch (e) {
       next(e);
     }

@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { LLMAnalysis, SearchResult } from '../types.js';
-import { LLMProvider, SYSTEM_PROMPT, buildFullPrompt, parseJsonFromResponse } from './base.js';
+import { CompletionRequest, LLMProvider, parseStructured } from './base.js';
 import { logger } from '../utils/logger.js';
 import { defaultModelFor } from '../models.js';
 
@@ -21,18 +20,16 @@ export class AnthropicProvider extends LLMProvider {
 
   supportsNativeSearch(): boolean { return true; }
 
-  async analyze(prompt: string, searchResults?: SearchResult[]): Promise<LLMAnalysis> {
-    logger.step('Calling Claude for analysis...');
+  async complete<T>(req: CompletionRequest<T>): Promise<T> {
+    logger.step(`Calling ${this.model} (${req.label})...`);
 
-    if (this.useNativeSearch) {
-      return this.analyzeWithNativeSearch(prompt);
-    }
+    if (this.useNativeSearch) return this.completeWithNativeSearch(req);
 
     const message = await this.client.messages.create({
       model: this.model,
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: buildFullPrompt(prompt, searchResults) }],
+      max_tokens: req.maxTokens ?? 2048,
+      system: req.system,
+      messages: [{ role: 'user', content: req.user }],
     });
 
     const text = message.content
@@ -40,17 +37,17 @@ export class AnthropicProvider extends LLMProvider {
       .map((b) => b.text)
       .join('\n');
 
-    logger.debug('Claude raw response:', text.substring(0, 200));
-    return parseJsonFromResponse(text);
+    logger.debug(`Claude raw response (${req.label}):`, text.substring(0, 200));
+    return parseStructured(text, req.schema, req.label);
   }
 
-  private async analyzeWithNativeSearch(prompt: string): Promise<LLMAnalysis> {
+  private async completeWithNativeSearch<T>(req: CompletionRequest<T>): Promise<T> {
     logger.step('Claude native web search enabled...');
 
     // Reset per-call so a reused provider doesn't accumulate across runs.
     this._nativeSearchQueries = [];
 
-    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
+    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: req.user }];
     let text = '';
 
     // web_search is a *server* tool: Anthropic runs the fetch itself and feeds
@@ -60,8 +57,8 @@ export class AnthropicProvider extends LLMProvider {
     for (let round = 0; round < 5; round++) {
       const response = await this.client.messages.create({
         model: this.model,
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
+        max_tokens: req.maxTokens ?? 4096,
+        system: req.system,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages,
       });
@@ -88,6 +85,6 @@ export class AnthropicProvider extends LLMProvider {
       messages.push({ role: 'assistant', content: response.content });
     }
 
-    return parseJsonFromResponse(text);
+    return parseStructured(text, req.schema, req.label);
   }
 }

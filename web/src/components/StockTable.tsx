@@ -126,7 +126,7 @@ export default function StockTable({
                     </td>
 
                     <td className="px-2 py-1 text-right">
-                      <StockScore row={r} />
+                      <StockScore row={r} split />
                     </td>
 
                     <td className="px-2 py-1">

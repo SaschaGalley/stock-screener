@@ -8,11 +8,14 @@ import { getMarketRates } from './data/fred.js';
 import { computeTechnicals } from './analysis/technical.js';
 import { deriveTechnicalSignals } from './analysis/signals.js';
 import {
+  latestScoreCard,
   recordRunData, writeDistill, writeFinancials, writeMarketSignals, writeNews,
 } from './db/store.js';
 import { distillHintsFor } from './distill-service.js';
 import { syncDistillDossiers } from './distill-content.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
+import { rescore } from './score-service.js';
+import { readAppConfig } from './app-config.js';
 import {
   MarketSignals, NewsItem, OptionsSignals, StockFinancials,
 } from './types.js';
@@ -136,6 +139,29 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
     ? await getSectorMediansCached(symbol, cfg.finnhubApiKey)
     : null;
 
+  const technicalSignals = deriveTechnicalSignals(technicals, bundle.financials.price);
+  const metrics = computeAllMetrics(bundle.financials, marketRates, sectorMedians);
+
+  // Re-score on every refresh, not only when the analysis step runs.
+  //
+  // The deterministic half costs nothing and its inputs have just changed — a
+  // new price, a new filing, a fresh peer median. Recomputing it here is what
+  // makes `score.final.score` a genuine daily series rather than a step
+  // function that jumps whenever the (five-day) analysis cadence comes round.
+  // The prose half is carried forward from the last stored card and decays with
+  // its own age, so a stock with no verdict yet simply scores on arithmetic.
+  const scoring = (await readAppConfig()).scoring;
+  const scoreCard = rescore({
+    financials:   bundle.financials,
+    metrics,
+    sectorMedians,
+    marketSignals,
+    technicalSignals,
+    previous:           await latestScoreCard(symbol),
+    narrativeMaxWeight: scoring.narrativeMaxWeight,
+    adjustmentLimit:    scoring.adjustmentLimit,
+  });
+
   await recordRunData({
     symbol,
     runId,
@@ -143,8 +169,9 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
     marketSignals,
     sectorMedians,
     marketRates,
-    technicalSignals: deriveTechnicalSignals(technicals, bundle.financials.price),
-    metrics:          computeAllMetrics(bundle.financials, marketRates, sectorMedians),
+    technicalSignals,
+    metrics,
+    scoreCard,
   });
 
   logger.success(`Data refreshed for ${symbol}`);

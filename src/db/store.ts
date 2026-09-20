@@ -17,7 +17,7 @@
 
 import { createHash } from 'crypto';
 import {
-  LLMAnalysis, MarketSignals, NewsItem, SearchTrace, SectorMedians,
+  LLMAnalysis, MarketSignals, NewsItem, ScoreCard, SearchTrace, SectorMedians,
   StockFinancials, TechnicalSignals,
 } from '../types.js';
 import type { FetchedRates } from '../data/fred.js';
@@ -522,6 +522,17 @@ export interface CachedAnalysisEntry {
   llmAnalysis: LLMAnalysis;
   generatedAt: string;
   searches?:   SearchTrace;
+  /**
+   * How the headline score was arrived at: the deterministic pillars, the
+   * narrative half, and the blend of the two.
+   *
+   * Optional rather than required, and the schema version is deliberately not
+   * bumped for it. Every verdict written before the factor score existed is
+   * still a real verdict at a real date, and the series it contributed to is
+   * the history the new score is meant to be comparable against — hiding those
+   * rows behind a version check would throw away the only baseline there is.
+   */
+  scoreCard?:  ScoreCard;
 }
 
 export interface AnalysisManifestEntry {
@@ -594,12 +605,14 @@ export async function writeAnalysis(
   llmAnalysis: LLMAnalysis,
   searches?: SearchTrace,
   runId?: number | null,
+  scoreCard?: ScoreCard,
 ): Promise<void> {
   const hash = analysisHash(flags);
   const entry: CachedAnalysisEntry = {
     flags, hash, llmAnalysis,
     generatedAt: new Date().toISOString(),
     ...(searches && searches.providers.length > 0 ? { searches } : {}),
+    ...(scoreCard ? { scoreCard } : {}),
   };
   await saveDocument({
     symbol, kind: 'verdict', variant: hash, schemaVer: ANALYSIS_VERSION,
@@ -1020,6 +1033,8 @@ export interface RecordRunInput {
   metrics?:          unknown;
   /** LLMAnalysis, when this run produced a verdict. */
   verdict?:          LLMAnalysis | null;
+  /** The score card behind that verdict — its own domain, its own series. */
+  scoreCard?:        ScoreCard | null;
   /** Market rates; what this reading observed joins the global macro series. */
   marketRates?:      FetchedRates | null;
 }
@@ -1046,6 +1061,7 @@ export async function recordRunData(input: RecordRunInput): Promise<void> {
   if (input.sectorMedians)    sources.push({ domain: 'peers',       payload: input.sectorMedians });
   if (input.technicalSignals) sources.push({ domain: 'signals_agg', payload: input.technicalSignals });
   if (input.verdict)          sources.push({ domain: 'verdict',     payload: input.verdict });
+  if (input.scoreCard)        sources.push({ domain: 'score',       payload: input.scoreCard });
 
   await recordObservations(input.symbol, sources, at, input.runId);
 
@@ -1061,4 +1077,86 @@ export async function recordRunData(input: RecordRunInput): Promise<void> {
   // minutes, but it is not the market's number for the day.
   const global = { ...(input.marketSignals?.macro ?? {}), ...(input.marketRates?.observed ?? {}) };
   if (Object.keys(global).length > 0) await recordMacro(global, at, input.runId);
+}
+
+/**
+ * The newest score card for a symbol, whatever flag combination produced it.
+ *
+ * Deliberately combination-blind, like `newestAnalysisAgeDays`: the question
+ * the daily refresh asks is "what did we last conclude about this stock", not
+ * "what did this exact model conclude". The card is carried forward so the
+ * deterministic half can be recomputed against today's price while the prose
+ * half — which costs money and changes slowly — stays put.
+ */
+export async function latestScoreCard(symbol: string): Promise<ScoreCard | null> {
+  const id = await symbolId(symbol);
+  if (id === null) return null;
+  const row = await queryOne<{ data: CachedAnalysisEntry }>(
+    `SELECT data FROM documents
+      WHERE symbol_id = $1 AND kind = 'verdict' AND schema_ver = $2
+        AND data -> 'scoreCard' IS NOT NULL
+      ORDER BY produced_at DESC LIMIT 1`,
+    [id, ANALYSIS_VERSION],
+  );
+  return row?.data?.scoreCard ?? null;
+}
+
+/**
+ * Newest point of several metrics, for every symbol, in one query.
+ *
+ * The overview needs four numbers out of the score card per row — the headline,
+ * the two halves and the confidence — and they are all already series. Reading
+ * them from the *series* rather than from the stored verdict document matters:
+ * the document is written when the analysis runs, the series when the data
+ * refreshes, and it is the refresh that has seen today's price.
+ *
+ * Enum leaves come back in `text` and numeric ones in `value`, so a caller can
+ * ask for `score.final.verdict` alongside `score.final.score` and get both.
+ */
+export async function latestPointsForAll(
+  keys: string[],
+): Promise<Map<string, Map<string, SeriesPoint>>> {
+  if (keys.length === 0) return new Map();
+  const res = await query<{
+    symbol: string; key: string; observed_at: Date; value: number | null; value_text: string | null;
+  }>(
+    `SELECT DISTINCT ON (o.symbol_id, m.key)
+            s.symbol, m.key, o.observed_at, o.value, o.value_text
+       FROM observations o
+       JOIN metrics m ON m.id = o.metric_id
+       JOIN symbols s ON s.id = o.symbol_id
+      WHERE m.key = ANY($1)
+      ORDER BY o.symbol_id, m.key, o.observed_at DESC`,
+    [keys],
+  );
+  const out = new Map<string, Map<string, SeriesPoint>>();
+  for (const r of res.rows) {
+    const byKey = out.get(r.symbol) ?? new Map<string, SeriesPoint>();
+    byKey.set(r.key, { at: r.observed_at.toISOString(), value: r.value, text: r.value_text });
+    out.set(r.symbol, byKey);
+  }
+  return out;
+}
+
+/**
+ * Every distinct version of a snapshot kind, oldest first.
+ *
+ * `captured_at` is when that exact content *first* appeared, which is the date
+ * it was true — `last_seen_at` only says when we last confirmed it. For
+ * re-scoring history the first appearance is the one that matters: it is the
+ * day the numbers moved.
+ */
+export async function snapshotHistory<T>(
+  symbol: string, kind: SnapshotKind, since?: Date,
+): Promise<{ data: T; capturedAt: Date }[]> {
+  const id = await symbolId(symbol);
+  if (id === null) return [];
+  const res = await query<{ content: T; captured_at: Date }>(
+    `SELECT content, captured_at FROM snapshots
+      WHERE symbol_id = $1 AND kind = $2
+        AND ($3::timestamptz IS NULL OR captured_at >= $3)
+      ORDER BY captured_at`,
+    [id, kind, since ?? null],
+  );
+  return res.rows.map((r) => ({ data: r.content, capturedAt: r.captured_at }));
 }

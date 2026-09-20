@@ -125,8 +125,21 @@ export interface OverviewRow {
   price:        number | null;
   marketCap:    number | null;
   currency:     string | null;
-  /** Newest LLM verdict across all flag combinations. */
-  aiScore:        number | null;
+  /**
+   * Headline score: the deterministic factor score blended with the prose-only
+   * narrative score by their two confidences, plus the synthesis model's
+   * bounded correction. Recomputed on every data refresh, so it moves with the
+   * price rather than with whenever the analysis step last ran.
+   */
+  score:          number | null;
+  /** The deterministic half alone — arithmetic over stored data, no model. */
+  factorScore:    number | null;
+  /** The prose-only half; null when no qualitative source was available. */
+  narrativeScore: number | null;
+  /** 0–1 behind the factor half: what drives both the blend and the caps. */
+  scoreConfidence: number | null;
+  /** True when a cap held the label below what the score alone would say. */
+  verdictCapped:  boolean;
   recommendation: string | null;
   verdictAt:      string | null;
   verdictModel:   string | null;
@@ -137,9 +150,9 @@ export interface OverviewRow {
   /** Composite (primary tier) fair value and its distance from today's price. */
   compositeFairValue: number | null;
   compositeUpsidePct: number | null;
-  /** Verdict-score series for the sparkline, oldest first. */
+  /** Headline-score series for the sparkline, oldest first. */
   scoreHistory:  { at: string; score: number }[];
-  /** Score change from the first recorded verdict to the newest. */
+  /** Score change from the first recorded point to the newest. */
   scoreDelta:    number | null;
   analysisCount: number;
   dataAgeHours:  number | null;

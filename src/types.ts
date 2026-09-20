@@ -752,6 +752,126 @@ export const SearchTraceSchema = z.object({
 });
 export type SearchTrace = z.infer<typeof SearchTraceSchema>;
 
+// ─── Deterministic factor score ──────────────────────────────────────────────
+
+/**
+ * The recommendation vocabulary, declared once.
+ *
+ * It was spelled out as a zod enum in the LLM schema, again as a TypeScript
+ * union in the provider parser, and again in the prompt. Three copies of a
+ * closed set is three chances to add a sixth label in two of them.
+ */
+export const RECOMMENDATIONS = ['STRONG BUY', 'BUY', 'HOLD', 'SELL', 'STRONG SELL'] as const;
+export type Recommendation = (typeof RECOMMENDATIONS)[number];
+
+/**
+ * The pillars the deterministic score is built from. Order is display order.
+ *
+ * Declared here rather than in `analysis/score.ts` because the metric catalogue
+ * needs them to turn `factor.pillars` into one series per pillar, and a schema
+ * importing from the analysis layer would close a cycle. The scorer imports
+ * this; nothing imports the scorer.
+ */
+export const PILLAR_KEYS = [
+  'valuation', 'quality', 'health', 'consensus', 'momentum', 'revisions',
+] as const;
+export type PillarKey = (typeof PILLAR_KEYS)[number];
+
+export const ScoreCriterionSchema = z.object({
+  key:    z.string().describe('Stable identifier of this criterion within its pillar'),
+  label:  z.string().describe('Human label, German — shown in the UI breakdown'),
+  points: z.number().nullable().describe('0–1 after the ramp; null when the underlying input was missing'),
+  weight: z.number().describe('Weight inside its pillar, before renormalising over missing siblings'),
+  note:   z.string().describe('One line naming the actual figures behind the points'),
+  impact: z.number().nullable().describe('Signed contribution to the raw score in points; all impacts sum to raw − 5'),
+});
+export type ScoreCriterion = z.infer<typeof ScoreCriterionSchema>;
+
+export const ScorePillarSchema = z.object({
+  key:      z.enum(PILLAR_KEYS).describe('Pillar identifier'),
+  label:    z.string().describe('Human label, German'),
+  score:    z.number().nullable().describe('0–10 weighted mean of the criteria that scored; null when none did'),
+  weight:   z.number().describe('Configured weight of this pillar before dropping unscored ones'),
+  effectiveWeight: z.number().describe('Weight after renormalising over the pillars that did score'),
+  coverage: z.number().describe('Share of this pillar’s criterion weight that had data (0–1)'),
+  criteria: z.array(ScoreCriterionSchema).describe('Every criterion considered, scored or not'),
+});
+export type ScorePillar = z.infer<typeof ScorePillarSchema>;
+
+export const ScoreCapSchema = z.object({
+  limit:  z.enum(['no-strong', 'hold-ceiling']).describe('no-strong forbids the STRONG labels; hold-ceiling also forbids BUY'),
+  reason: z.string().describe('Why conviction is capped — shown verbatim to the reader'),
+});
+export type ScoreCap = z.infer<typeof ScoreCapSchema>;
+
+export const ScoreFindingSchema = z.object({
+  kind:   z.enum(['driver', 'drag', 'cap', 'divergence', 'gap']).describe('driver/drag move the score; divergence, cap and gap are context the criteria cannot express'),
+  pillar: z.enum(PILLAR_KEYS).nullable().describe('Pillar this came from, null for cross-cutting findings'),
+  note:   z.string().describe('The finding in one line, with its figures'),
+  impact: z.number().describe('Signed score points for drivers and drags; 0 for the other kinds'),
+});
+export type ScoreFinding = z.infer<typeof ScoreFindingSchema>;
+
+export const FactorScoreSchema = z.object({
+  score:      z.number().describe('0–10 after shrinking toward neutral by confidence — the deterministic headline'),
+  raw:        z.number().describe('0–10 before shrinking: what the pillars said on their own'),
+  verdict:    z.enum(RECOMMENDATIONS).describe('Band of `score`, after the conviction caps'),
+  uncappedVerdict: z.enum(RECOMMENDATIONS).describe('Band of `score` before the caps; equal to verdict when none bit'),
+  confidence: z.number().describe('0–1: how much of the intended evidence was present and trustworthy'),
+  coverage:   z.number().describe('0–1: share of configured pillar weight that produced a score'),
+  shrink:     z.number().describe('The factor (raw − 5) was multiplied by: 0.4 + 0.6 × confidence'),
+  pillars:    z.array(ScorePillarSchema).describe('One entry per pillar, always all of them'),
+  caps:       z.array(ScoreCapSchema).describe('Conviction ceilings that applied'),
+  findings:   z.array(ScoreFindingSchema).describe('The material rows — what a summary is allowed to talk about'),
+});
+export type FactorScore = z.infer<typeof FactorScoreSchema>;
+
+/**
+ * The qualitative half, scored from prose alone.
+ *
+ * Produced by a summariser that never sees a valuation model, so this number
+ * cannot be the numbers wearing a different hat. When it disagrees with the
+ * factor score, the disagreement is real information rather than an artefact of
+ * one model weighing two kinds of evidence in one pass.
+ */
+export const NarrativeScoreSchema = z.object({
+  summary:    z.string().describe('Short German synthesis of the qualitative sources'),
+  events:     z.array(z.string()).describe('Concrete, dated developments the prose reports'),
+  score:      z.number().min(0).max(10).nullable().describe('0–10 qualitative read; null when the sources carried nothing to judge'),
+  confidence: z.number().min(0).max(1).describe('How much material there was to judge, and how fresh — drives the blend weight'),
+  sources:    z.array(z.string()).describe('Which prose blocks were available (distill-company, distill-sector, perplexity, search)'),
+  model:      z.string().describe('Model that produced this summary'),
+  at:         z.string().describe('ISO timestamp of the read — a carried-forward narrative decays from here'),
+});
+export type NarrativeScore = z.infer<typeof NarrativeScoreSchema>;
+
+/**
+ * Where the two halves meet — in code, by confidence, not by a model's mood.
+ *
+ * The weights are the two confidences, so a flagged payload automatically hands
+ * weight to the prose and a thin dossier automatically hands it back. The LLM's
+ * own influence on the number is the bounded `adjustment`, which has to carry a
+ * reason and cannot move the verdict by more than one band.
+ */
+export const FinalScoreSchema = z.object({
+  score:            z.number().describe('0–10 headline: the confidence-weighted blend plus the bounded adjustment'),
+  verdict:          z.enum(RECOMMENDATIONS).describe('Band of `score`, after re-applying the factor score’s caps'),
+  blend:            z.number().describe('The blend before the adjustment'),
+  factorWeight:     z.number().describe('Weight the deterministic score carried in the blend (0–1)'),
+  narrativeWeight:  z.number().describe('Weight the narrative score carried in the blend (0–1)'),
+  adjustment:       z.number().describe('Synthesis model’s correction in score points, bounded to ±1'),
+  adjustmentReason: z.string().nullable().describe('Why the correction was applied; null when it was zero'),
+});
+export type FinalScore = z.infer<typeof FinalScoreSchema>;
+
+export const ScoreCardSchema = z.object({
+  factor:    FactorScoreSchema.describe('The deterministic half — pure arithmetic over stored data'),
+  dataNote:  z.string().nullable().describe('Cheap model’s prose rendering of the factor findings; null when the step was skipped'),
+  narrative: NarrativeScoreSchema.nullable().describe('The qualitative half; null when no prose sources were available'),
+  final:     FinalScoreSchema.describe('How the two were combined'),
+});
+export type ScoreCard = z.infer<typeof ScoreCardSchema>;
+
 // ─── LLM Output ───────────────────────────────────────────────────────────────
 
 export const LLMAnalysisSchema = z.object({
@@ -760,10 +880,46 @@ export const LLMAnalysisSchema = z.object({
   keyRisks:          z.array(z.string()).min(2).max(5).describe('Top 3 risks with specific data points'),
   thesis:            z.string().describe('Single 1–2 sentence investment thesis summarising the overall view'),
   score:             z.number().min(0).max(10).describe('Overall investment attractiveness score from 0 (avoid) to 10 (strong conviction buy)'),
-  recommendation:    z.enum(['STRONG BUY', 'BUY', 'HOLD', 'SELL', 'STRONG SELL']).describe('Structured recommendation label'),
+  recommendation:    z.enum(RECOMMENDATIONS).describe('Structured recommendation label'),
   fairValueEstimate: z.string().describe('LLM-synthesised fair value range as a string, in the stock\'s trading currency (e.g. "$120 – $145", "€95 – €110")'),
 });
 export type LLMAnalysis = z.infer<typeof LLMAnalysisSchema>;
+
+/**
+ * What each stage of the verdict pipeline is asked to return.
+ *
+ * Narrower than `LLMAnalysis` on purpose, and in the one field that matters:
+ * none of them contains a score the model chose for the stock as a whole. The
+ * data summariser gets no number at all, the narrative summariser scores only
+ * the prose it was shown, and the synthesis model gets a bounded correction
+ * with a reason attached. `LLMAnalysis` is assembled from these afterwards.
+ *
+ * Defaults are set where an omission is a plausible model slip rather than a
+ * meaningful answer — a missing `events` list is an empty one, a missing
+ * `adjustment` is zero. Everything else has to arrive or the call failed.
+ */
+export const DataSummaryOutputSchema = z.object({
+  summary: z.string().describe('German prose rendering of the factor findings'),
+});
+export type DataSummaryOutput = z.infer<typeof DataSummaryOutputSchema>;
+
+export const NarrativeOutputSchema = z.object({
+  summary: z.string().describe('German synthesis of the qualitative sources'),
+  events:  z.array(z.string()).default([]).describe('Concrete dated developments the sources report'),
+  score:   z.number().min(0).max(10).nullable().describe('0–10 read of the business trajectory; null is an honest abstention'),
+});
+export type NarrativeOutput = z.infer<typeof NarrativeOutputSchema>;
+
+export const SynthesisOutputSchema = z.object({
+  bullCase:          z.array(z.string()).min(2).max(5),
+  bearCase:          z.array(z.string()).min(2).max(5),
+  keyRisks:          z.array(z.string()).min(2).max(5),
+  thesis:            z.string(),
+  fairValueEstimate: z.string(),
+  adjustment:        z.coerce.number().default(0).describe('Correction to the blended score in points; clamped to the configured limit before use'),
+  adjustmentReason:  z.string().nullable().default(null).describe('Required whenever the adjustment is non-zero'),
+});
+export type SynthesisOutput = z.infer<typeof SynthesisOutputSchema>;
 
 // ─── Top-level Result & Options ───────────────────────────────────────────────
 
@@ -795,6 +951,7 @@ export const AnalysisResultSchema = z.object({
   sectorMedians:   SectorMediansSchema.nullable().describe('Peer group median metrics; null when Finnhub peer data is unavailable'),
   marketSignals:   MarketSignalsSchema.describe('Technicals, earnings revisions, options market data, and macro context'),
   llmAnalysis:     LLMAnalysisSchema,
+  scoreCard:       ScoreCardSchema.describe('Deterministic factor score, the narrative score, and the blend that produced the headline'),
   news:            z.array(NewsItemSchema).describe('Up to 10 recent news items from Finnhub'),
   perplexity:      z.object({
     model:     z.enum(['sonar', 'sonar-pro']),
