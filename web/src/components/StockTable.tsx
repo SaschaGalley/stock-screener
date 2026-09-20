@@ -4,6 +4,7 @@ import StockLogo, { initialsFromName } from './StockLogo';
 import ScoreSparkline from './charts/ScoreSparkline';
 import RecommendationBadge from './RecommendationBadge';
 import StockListControls from './StockListControls';
+import { GearIcon } from './icons';
 import { averageScore, scoreColor, type ListView } from './stockList';
 import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
 
@@ -18,6 +19,7 @@ interface Props {
   /** Kept highlighted while the analysis is open, so returning shows your place. */
   selectedSymbol: string | null;
   onSelect: (symbol: string) => void;
+  onOpenAdmin: () => void;
 }
 
 /**
@@ -28,7 +30,7 @@ interface Props {
  * the targets and the sparkline.
  */
 export default function StockTable({
-  rows, total, loading, view, onViewChange, selectedSymbol, onSelect,
+  rows, total, loading, view, onViewChange, selectedSymbol, onSelect, onOpenAdmin,
 }: Props) {
   const selectedRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -58,8 +60,15 @@ export default function StockTable({
             Ø Score <span className={scoreColor(avg.avg)}>{avg.avg.toFixed(1)}</span> über {avg.count} bewertete
           </span>
         )}
-        <div className="ml-auto">
-          <StockListControls view={view} onChange={onViewChange} layout="row" />
+        <div className="ml-auto flex items-center gap-3">
+          <StockListControls view={view} onChange={onViewChange} layout="bar" />
+          <button
+            onClick={onOpenAdmin}
+            title="Administration — Cronjobs, Watchlist, Modelle"
+            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
+          >
+            <GearIcon />
+          </button>
         </div>
       </div>
 

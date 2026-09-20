@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, ConfigResponse, JobRun, SchedulerStatus, SearchChoice } from '../types';
 import { MODELS } from '../../../src/models';
+import { CloseIcon } from '../components/icons';
 
 /** Poll interval while a run is in flight — fast enough to feel live, slow
  *  enough that a two-hour run doesn't hammer the API. */
@@ -83,7 +84,12 @@ const inputCls =
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default function AdminPage() {
+interface Props {
+  /** Close the administration and go back to the list. */
+  onClose: () => void;
+}
+
+export default function AdminPage({ onClose }: Props) {
   const [meta, setMeta] = useState<ConfigResponse | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [jobs, setJobs] = useState<SchedulerStatus | null>(null);
@@ -196,6 +202,15 @@ export default function AdminPage() {
               className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-ink-950 transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-40"
             >
               {saving ? 'Speichere…' : 'Speichern'}
+            </button>
+            {/* Same mark, same corner, same meaning as on an open analysis. */}
+            <button
+              onClick={onClose}
+              className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
+              title="Zurück zur Übersicht (Esc)"
+              aria-label="Administration schließen"
+            >
+              <CloseIcon />
             </button>
           </div>
         </div>

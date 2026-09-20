@@ -19,8 +19,6 @@ interface Props {
   selectedSymbol: string | null;
   onSelect: (symbol: string) => void;
   onDeleted: (symbol: string) => void;
-  /** Collapse the analysis and go back to the full-width table. */
-  onShowAll: () => void;
 }
 
 /**
@@ -35,7 +33,7 @@ interface Props {
  */
 export default function StockRail({
   rows, total, activity = {}, view, onViewChange,
-  selectedSymbol, onSelect, onDeleted, onShowAll,
+  selectedSymbol, onSelect, onDeleted,
 }: Props) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const selectedRef = useRef<HTMLLIElement | null>(null);
@@ -62,24 +60,17 @@ export default function StockRail({
 
   return (
     <aside className="flex h-full w-80 flex-col border-r border-ink-700 bg-ink-900">
+      {/* Two rows, as the old sidebar had: every row of chrome here is a stock
+          the list cannot show. Sorting and the watchlist filter live in the
+          table, and the rail inherits whatever order was chosen there. */}
       <div className="flex flex-col gap-2 border-b border-ink-700 px-3 py-3">
-        <button
-          onClick={onShowAll}
-          title="Zurück zur vollen Tabelle (Esc)"
-          className="flex items-center gap-1.5 self-start text-xs font-semibold uppercase tracking-wider text-ink-500 transition hover:text-ink-200"
-        >
-          <span aria-hidden>←</span>
-          Übersicht
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
+          Übersicht{' '}
           <span className="font-normal normal-case tracking-normal text-ink-600">
             ({rows.length}{rows.length !== total ? ` von ${total}` : ''})
           </span>
-        </button>
-        <StockListControls
-          view={view}
-          onChange={onViewChange}
-          layout="stack"
-          placeholder="Symbol, Name, Sektor…"
-        />
+        </h2>
+        <StockListControls view={view} onChange={onViewChange} layout="rail" />
       </div>
 
       <div className="flex-1 overflow-y-auto">

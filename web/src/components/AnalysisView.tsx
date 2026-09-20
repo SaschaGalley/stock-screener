@@ -22,6 +22,7 @@ import EarningsBlock from "./sections/EarningsBlock";
 import NewsAndResearch from "./sections/NewsAndResearch";
 import CompanyInfo from "./sections/CompanyInfo";
 import FundamentalsHistoryChart from "./charts/FundamentalsHistoryChart";
+import { CloseIcon } from "./icons";
 import { CurrencyProvider } from "../currency";
 import { currencyPrefix } from "../format";
 
@@ -39,6 +40,11 @@ interface Props {
   activity?: string[];
   /** Re-read the queue now, rather than waiting for the next poll. */
   onActivityChanged?: () => void;
+  /** Chrome this pane owns now that there is no toolbar above it. */
+  onClose: () => void;
+  onOpenAdmin: () => void;
+  onToggleStocks: () => void;
+  onToggleSettings: () => void;
 }
 
 export default function AnalysisView({
@@ -50,6 +56,10 @@ export default function AnalysisView({
   analyzing,
   activity = [],
   onActivityChanged,
+  onClose,
+  onOpenAdmin,
+  onToggleStocks,
+  onToggleSettings,
 }: Props) {
   const [bundle, setBundle] = useState<StockBundle | null>(null);
   const [analysis, setAnalysis] = useState<CachedAnalysisEntry | null>(null);
@@ -103,8 +113,13 @@ export default function AnalysisView({
 
   if (bundleLoading && !bundle) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-ink-500">
-        Loading {symbol}…
+      <div className="flex h-full flex-col">
+        <div className="flex shrink-0 justify-end border-b border-ink-800 bg-ink-900 px-4 py-3 sm:px-6">
+          <CloseButton onClose={onClose} />
+        </div>
+        <div className="flex flex-1 items-center justify-center text-sm text-ink-500">
+          Loading {symbol}…
+        </div>
       </div>
     );
   }
@@ -122,10 +137,13 @@ export default function AnalysisView({
             </h1>
             <span className="font-mono text-xs text-ink-400">{symbol}</span>
           </div>
-          <RefreshOnlyButton
-            symbol={symbol}
-            onRefreshed={() => setLocalRefresh((x) => x + 1)}
-          />
+          <div className="flex shrink-0 items-center gap-2">
+            <RefreshOnlyButton
+              symbol={symbol}
+              onRefreshed={() => setLocalRefresh((x) => x + 1)}
+            />
+            <CloseButton onClose={onClose} />
+          </div>
         </header>
         <div className="flex flex-1 items-center justify-center p-8 text-center">
           <div className="max-w-md">
@@ -168,6 +186,10 @@ export default function AnalysisView({
           onRefreshed={() => setLocalRefresh((x) => x + 1)}
           activity={activity}
           onActivityChanged={onActivityChanged}
+          onClose={onClose}
+          onOpenAdmin={onOpenAdmin}
+          onToggleStocks={onToggleStocks}
+          onToggleSettings={onToggleSettings}
         />
 
         {(dataStale || analysisStale) && (
@@ -484,5 +506,23 @@ function StaleBanner({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The way back to the list, for the states that have no `StockHeader` to carry
+ * it — a bundle still loading, or one that failed to load at all. Same mark and
+ * same corner either way, so it is never somewhere new to look for.
+ */
+function CloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      onClick={onClose}
+      className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
+      title="Zurück zur Übersicht (Esc)"
+      aria-label="Analyse schließen"
+    >
+      <CloseIcon />
+    </button>
   );
 }

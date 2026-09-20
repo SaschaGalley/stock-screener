@@ -4,6 +4,7 @@ import { fmt, relativeTime } from "../format";
 import { useMoney } from "../currency";
 import { api } from "../api"; // refresh endpoint (PDF/MD endpoints unused since report generation is skipped)
 import StockLogo, { initialsFromName } from "./StockLogo";
+import { CloseIcon, GearIcon, SlidersIcon } from "./icons";
 
 interface Props {
   summary: StockSummary;
@@ -13,6 +14,12 @@ interface Props {
   activity?: string[];
   /** Re-read the queue now, rather than waiting for the next poll. */
   onActivityChanged?: () => void;
+  /** Close the analysis and spread the list back out to the full table. */
+  onClose: () => void;
+  onOpenAdmin: () => void;
+  /** Below `lg` the two side panels are drawers; these open them. */
+  onToggleStocks: () => void;
+  onToggleSettings: () => void;
 }
 
 export default function StockHeader({
@@ -21,6 +28,10 @@ export default function StockHeader({
   onRefreshed,
   activity = [],
   onActivityChanged,
+  onClose,
+  onOpenAdmin,
+  onToggleStocks,
+  onToggleSettings,
 }: Props) {
   const { fmtPrice, fmtBig } = useMoney();
   const [refreshing, setRefreshing] = useState(false);
@@ -81,6 +92,11 @@ export default function StockHeader({
     <header className="shrink-0 border-b border-ink-800 bg-ink-900 px-4 py-3 sm:px-6 sm:py-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
+          <button
+            onClick={onToggleStocks}
+            className="-ml-1 shrink-0 rounded p-1.5 text-lg leading-none text-ink-300 hover:bg-ink-800 lg:hidden"
+            aria-label="Aktienliste ein-/ausblenden"
+          >☰</button>
           <StockLogo
             domain={summary.logoDomain}
             symbol={summary.symbol}
@@ -115,6 +131,38 @@ export default function StockHeader({
           >
             {busy ? '⟳' : '↻'}
             <span className="ml-1 hidden sm:inline">{busy ? 'Refreshing…' : 'Refresh'}</span>
+          </button>
+
+          <button
+            onClick={onToggleSettings}
+            className="rounded p-1.5 text-ink-300 transition hover:bg-ink-800 hover:text-ink-100 lg:hidden"
+            aria-label="Analyse-Einstellungen ein-/ausblenden"
+            title="Modell, Websuche, Perplexity"
+          >
+            <SlidersIcon />
+          </button>
+
+          {/* Hidden on a phone, where four controls squeeze the company name
+              down to a stub. Administration is a rare destination and the
+              table's own header still has it. */}
+          <button
+            onClick={onOpenAdmin}
+            className="hidden rounded p-1.5 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200 sm:block"
+            title="Administration — Cronjobs, Watchlist, Modelle"
+          >
+            <GearIcon />
+          </button>
+
+          {/* The way back to the table. Bordered and a heavier stroke than the
+              icons beside it: leaving is the one action on this header someone
+              needs to find without looking for it. */}
+          <button
+            onClick={onClose}
+            className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
+            title="Zurück zur Übersicht (Esc)"
+            aria-label="Analyse schließen"
+          >
+            <CloseIcon />
           </button>
         </div>
       </div>

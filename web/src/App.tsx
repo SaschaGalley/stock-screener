@@ -6,7 +6,6 @@ import AnalyzeForm from './components/AnalyzeForm';
 import SettingsSidebar from './components/SettingsSidebar';
 import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
-import Toolbar, { type ViewName } from './components/Toolbar';
 import AdminPage from './pages/AdminPage';
 import { applyListView, DEFAULT_LIST_VIEW, type ListView } from './components/stockList';
 import type { Settings, OverviewRow, ProgressEvent, SearchChoice } from './types';
@@ -19,11 +18,16 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 /**
- * Hash routing. The tabs made the hash carry two things — which view, and which
- * symbol the analysis view is on — so it is now `#/overview`, `#/admin` or
- * `#/stock/AAPL`. Bare `#AAPL` still resolves to the analysis view: those links
- * are in people's bookmarks and history, and honouring them costs one branch.
+ * Hash routing.
+ *
+ * `#/overview` is the list, `#/stock/AAPL` is the list with that stock open
+ * beside it, `#/admin` is the administration. Bare `#AAPL` still resolves to a
+ * stock: those links are in bookmarks and history, and honouring them costs one
+ * branch. No hash is the list — the app's resting state is the whole list, not
+ * an empty detail pane waiting to be told what to show.
  */
+type ViewName = 'overview' | 'analysis' | 'admin';
+
 interface RouteState {
   view:   ViewName;
   symbol: string | null;
@@ -31,7 +35,7 @@ interface RouteState {
 
 function readRoute(): RouteState {
   const raw = window.location.hash.replace(/^#\/?/, '');
-  if (!raw) return { view: 'analysis', symbol: null };
+  if (!raw) return { view: 'overview', symbol: null };
   const [head, tail] = raw.split('/');
   const key = head.toLowerCase();
   if (key === 'overview') return { view: 'overview', symbol: null };
@@ -41,19 +45,18 @@ function readRoute(): RouteState {
 }
 
 function routeToHash(route: RouteState): string {
-  if (route.view === 'overview') return '#/overview';
   if (route.view === 'admin')    return '#/admin';
-  return route.symbol ? `#/stock/${route.symbol}` : '';
+  if (route.view === 'analysis' && route.symbol) return `#/stock/${route.symbol}`;
+  return '#/overview';
 }
 
 function writeRoute(route: RouteState): void {
-  const hash = routeToHash(route);
-  const next = hash || window.location.pathname + window.location.search;
+  const next = routeToHash(route);
   // Compare against the FULL current URL. The old guard compared `next` against
   // the very expression it was derived from in the clear case, so it could
   // never write — a deleted/deselected stock's hash was never removed and
   // reappeared on reload.
-  const current = window.location.pathname + window.location.search + window.location.hash;
+  const current = window.location.hash;
   if (next !== current) {
     window.history.replaceState(null, '', next);
   }
@@ -90,13 +93,12 @@ export default function App() {
 
   // Selecting a symbol always means "show it" — from the table too, where the
   // click collapses the columns into the rail and opens the analysis beside it.
+  // Clearing one means the opposite: back to the list at full width.
   const setSelected = useCallback((s: string | null) => {
     setSelectedRaw(s);
-    setRoute((prev) => {
-      const next: RouteState = { view: s ? 'analysis' : prev.view, symbol: s };
-      writeRoute(next);
-      return next;
-    });
+    const next: RouteState = { view: s ? 'analysis' : 'overview', symbol: s };
+    writeRoute(next);
+    setRoute(next);
   }, []);
 
   const navigate = useCallback((view: ViewName) => {
@@ -299,57 +301,45 @@ export default function App() {
     setMobileMenu(null);
   }, [handleSelectSymbol]);
 
-  const isAnalysis = route.view === 'analysis';
-  const isOverview = route.view === 'overview';
+  /**
+   * What is on screen. There are no tabs any more: the list is the app, and
+   * whether a stock or the administration is open on top of it is a fact about
+   * state rather than a place you navigate to. An `analysis` route with nothing
+   * selected — a deleted symbol, a truncated link — falls back to the list
+   * instead of a detail pane with nothing in it.
+   */
+  const isAdmin    = route.view === 'admin';
+  const isAnalysis = route.view === 'analysis' && selected !== null;
+  const isTable    = !isAdmin && !isAnalysis;
 
-  /** Collapse the analysis and spread the list back out to full width. */
-  const showTable = useCallback(() => {
+  /** Close whatever is open and spread the list back out to full width. */
+  const closeOverlay = useCallback(() => {
     setMobileMenu(null);
     navigate('overview');
   }, [navigate]);
 
-  // Esc backs out of the analysis to the table — the keyboard counterpart of
-  // the rail's „← Übersicht". Skipped while a field has focus, where Esc means
+  const openAdmin = useCallback(() => {
+    setMobileMenu(null);
+    navigate('admin');
+  }, [navigate]);
+
+  // Esc is the keyboard counterpart of the ✕ — for the analysis and the
+  // administration alike. Skipped while a field has focus, where Esc means
   // "clear this input" and a search box already handles it natively.
   useEffect(() => {
-    if (!isAnalysis) return;
+    if (isTable) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
-      showTable();
+      closeOverlay();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isAnalysis, showTable]);
+  }, [isTable, closeOverlay]);
 
   return (
     <div className="flex h-full flex-col bg-ink-950 text-ink-100">
-      {/* Tabs, plus the mobile sidebar toggles that used to be their own bar.
-          The drawer buttons only exist below lg and only for the analysis
-          density — the table has no side panels to open. */}
-      <Toolbar
-        view={route.view}
-        onNavigate={navigate}
-        left={isAnalysis ? (
-          <button
-            onClick={() => setMobileMenu(mobileMenu === 'stocks' ? null : 'stocks')}
-            className="rounded p-1.5 text-lg leading-none text-ink-200 hover:bg-ink-800 lg:hidden"
-            aria-label="Aktienliste ein-/ausblenden"
-          >☰</button>
-        ) : null}
-        right={isAnalysis ? (
-          <button
-            onClick={() => setMobileMenu(mobileMenu === 'settings' ? null : 'settings')}
-            className="rounded p-1.5 text-base leading-none text-ink-200 hover:bg-ink-800 lg:hidden"
-            aria-label="Einstellungen ein-/ausblenden"
-          >⚙</button>
-        ) : null}
-        status={selected && isAnalysis ? (
-          <span className="hidden truncate font-mono text-xs text-ink-500 sm:inline">{selected}</span>
-        ) : null}
-      />
-
       {/* Backdrop while a mobile drawer is open. Clicking it closes the drawer. */}
       {mobileMenu && (
         <div
@@ -371,10 +361,10 @@ export default function App() {
         </div>
       )}
 
-      {route.view === 'admin' && <AdminPage />}
+      {isAdmin && <AdminPage onClose={closeOverlay} />}
 
       {/* The list at full width. Cheap to rebuild, so it mounts and unmounts. */}
-      {isOverview && (
+      {isTable && (
         <StockTable
           rows={visibleRows}
           total={rows.length}
@@ -383,6 +373,7 @@ export default function App() {
           onViewChange={setListView}
           selectedSymbol={selected}
           onSelect={handleSelectSymbol}
+          onOpenAdmin={openAdmin}
         />
       )}
 
@@ -405,7 +396,6 @@ export default function App() {
             onViewChange={setListView}
             selectedSymbol={selected}
             onSelect={handleSelectAndClose}
-            onShowAll={showTable}
             onDeleted={(s) => {
               if (selected === s) setSelected(null);
               void reloadRows();
@@ -415,7 +405,7 @@ export default function App() {
 
         <main className="flex flex-1 flex-col overflow-hidden">
           <ProgressBanner events={progress} active={loading} />
-          {selected ? (
+          {selected && (
             <AnalysisView
               symbol={selected}
               fallbackName={selectedName}
@@ -430,17 +420,11 @@ export default function App() {
                 || (activity[selected] ?? []).some((s) => s === 'analyze' || s === 'symbol-pipeline')}
               activity={activity[selected] ?? []}
               onActivityChanged={() => { void pollActivity(); }}
+              onClose={closeOverlay}
+              onOpenAdmin={openAdmin}
+              onToggleStocks={() => setMobileMenu(mobileMenu === 'stocks' ? null : 'stocks')}
+              onToggleSettings={() => setMobileMenu(mobileMenu === 'settings' ? null : 'settings')}
             />
-          ) : (
-            <div className="flex flex-1 items-center justify-center p-8 text-center text-ink-400">
-              <div>
-                <p className="mb-2 text-lg font-semibold text-ink-200">Aktie aus der Liste wählen</p>
-                <p className="text-sm">
-                  oder unten eine neue hinzufügen — Ticker (NVDA) oder Firmenname (Siemens Energy).
-                  Das holt zunächst nur die Daten; die Analyse startest du danach rechts.
-                </p>
-              </div>
-            </div>
           )}
         </main>
 
@@ -465,7 +449,7 @@ export default function App() {
 
       {/* One add field for the whole window, below whichever density is up —
           the table used to have no way to add a stock at all. */}
-      {route.view !== 'admin' && (
+      {!isAdmin && (
         <AnalyzeForm
           onAdd={addStock}
           analyzing={loading}

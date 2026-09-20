@@ -76,22 +76,22 @@ pnpm run serve           # API only — serve dist/ behind your own reverse prox
 
 ### What the web UI does
 
-There is one list of stocks, shown at two densities, and the toolbar's tabs are the two states it can be in; the cog on the far right opens administration.
+There is one list of stocks, shown at two densities. There are no tabs and no toolbar above it: the list *is* the app, and whether a stock or the administration is open on top of it is a fact about state rather than a place you navigate to.
 
-**Tab „Übersicht"** — the list at full width: AI score (with the change since the first recorded verdict), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter and five other orderings sit in the header.
+**Übersicht** — the list at full width, and the resting state: AI score (with the change since the first recorded verdict), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
 
-**Tab „Analyse"** — the same list collapsed to a rail, with one stock open beside it. A row click in the Übersicht is what opens it; `Esc` or „← Übersicht" spreads the table back out, at the same order and filter, with the stock you were reading scrolled back into view.
+**Analyse** — the same list collapsed to a rail, with one stock open beside it. A row click opens it; the **✕** at the top right of the analysis, or `Esc`, spreads the table back out, at the same order and filter, with the stock you were reading scrolled back into view.
 
-- **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). Search, sort and the watchlist filter are the same controls as in the table and drive the same state, so neither density can disagree with the other about what „sorted" means.
+- **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else: sorting and the watchlist filter belong to the table, and every row of header here is a stock the rail cannot show. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
 - **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull/bear/risks, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
 - **Right sidebar**: model + search-provider + Perplexity toggles. Each flag combo is its own cached entry. Clicking an outdated combo still loads it (older entries get a ⚠ marker) — a warning banner sits on top with a one-click re-run.
 - **Refresh data** (header `↻`) re-fetches the data layer (Yahoo + Finnhub + FRED + technicals) without a single LLM call. **Re-run** in the right sidebar or in the stale banner forces a fresh LLM call, overwriting the cached verdict.
 
 Adding a stock (`+ Hinzufügen` at the bottom of the window, under either density) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit `Run Analysis` in the right sidebar, so looking a company up never costs an API bill.
 
-**⚙ Administration** — schedule, pipeline steps, watchlist and run log. See [Nightly pipeline](#nightly-pipeline) below.
+**⚙ Administration** — schedule, pipeline steps, watchlist and run log; closed by the same ✕, in the same corner. See [Nightly pipeline](#nightly-pipeline) below.
 
-**URLs**: `#/stock/AAPL`, `#/overview`, `#/admin` — reload and browser back/forward work everywhere. Old `#AAPL` links still resolve to the analysis view.
+**URLs**: `#/stock/AAPL`, `#/overview`, `#/admin` — reload and browser back/forward work everywhere. No hash is the list. Old `#AAPL` links still resolve to a stock.
 
 Collapsing back to the table never interrupts a running analysis: the analysis pane stays mounted (hidden) so its progress stream survives the detour.
 
@@ -299,11 +299,11 @@ web/
 │       ├── VerdictHero.tsx        AI verdict + composite + analyst hero cards
 │       ├── BullBearRisks.tsx      3-column bull/bear/risks block
 │       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per rail item
-│       ├── StockHeader.tsx        Logo, price, refresh button
+│       ├── StockHeader.tsx        Logo, price, refresh — and the ✕ / ⚙ chrome
 │       ├── StockLogo.tsx          Multi-source logo cascade (Logo.dev → Brandfetch → …)
 │       ├── ProgressBanner.tsx     SSE progress events while a run is in flight
 │       ├── AnalyzeForm.tsx        Bottom "analyze a new symbol" input
-│       ├── Toolbar.tsx            Tabs (Analyse · Übersicht) + admin cog
+│       ├── icons.tsx              Gear, close and sliders as SVG
 │       ├── Section.tsx            Collapsible section with localStorage state
 │       ├── charts/                ECharts wrappers (Composite, FundamentalsHistory, …)
 │       └── sections/              ValuationDetail, QualityScores, FundamentalsGrid,
