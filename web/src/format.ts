@@ -55,13 +55,20 @@ export type { RecommendationTone } from '../../src/verdict';
  */
 export function recommendationColor(rec: string): string {
   const strong = isStrongRecommendation(rec);
+  // Every variant carries a border, transparent where the fill already does the
+  // work: a chip that is 2px taller than its neighbour makes the row it sits in
+  // 2px taller too, and the list stops being a grid.
   switch (recommendationTone(rec)) {
     case 'positive':
-      return strong ? 'bg-emerald-500 text-white' : 'bg-emerald-900 text-emerald-400 border border-emerald-500';
+      return strong
+        ? 'bg-emerald-500 text-white border border-transparent'
+        : 'bg-emerald-900 text-emerald-400 border border-emerald-500';
     case 'negative':
-      return strong ? 'bg-red-500 text-white' : 'bg-red-900 text-red-400 border border-red-500';
+      return strong
+        ? 'bg-red-500 text-white border border-transparent'
+        : 'bg-red-900 text-red-400 border border-red-500';
     default:
-      return 'bg-amber-500 text-white';
+      return 'bg-amber-500 text-white border border-transparent';
   }
 }
 

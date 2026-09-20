@@ -20,10 +20,17 @@ export const EMPTY_ANCHOR: ListScrollAnchor = { symbol: null, offset: 0 };
  * top of the list, or shove the stock you clicked to the bottom edge.
  *
  * The anchor is a row rather than a number of pixels. Pixels do not survive the
- * trip — the table's scroll box also contains a header row, and the two boxes
- * start at different heights on screen — whereas "GOOGL was 40px below the top"
- * means the same thing in both. Restoring is then one measurement and one
- * correction, with nothing assumed about row heights or headers.
+ * trip — the table's scroll box also contains a header row — whereas "GOOGL was
+ * 40px below the top" means the same thing in both. Restoring is then one
+ * measurement and one correction, with nothing assumed about row heights.
+ *
+ * The offset is measured from the box's own top edge, which both densities put
+ * at the same height on screen — so a row restored to the same offset is a row
+ * on the same pixel. `obstruction` is a separate question: it is what the
+ * table's sticky column labels cover, and it decides only whether the selected
+ * stock counts as *on show*. A row hidden behind those labels is not something
+ * the reader can see, so arriving at the rail it gets scrolled into view
+ * instead of being left where the arithmetic would put it.
  *
  * `visible` matters because the rail is hidden rather than unmounted (an
  * analysis run must survive the detour to the table). A `display: none` box
@@ -36,22 +43,31 @@ export function useListScroll(
   selectedSymbol: string | null,
   /** Rows currently rendered — the restore has to wait until there are some. */
   rowCount: number,
+  /** Pixels of the box's top edge hidden behind something sticky. */
+  obstruction: (el: HTMLElement) => number = () => 0,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const restored = useRef(false);
+  // A ref, so a fresh closure each render doesn't re-arm the effects below.
+  const obstructionRef = useRef(obstruction);
+  obstructionRef.current = obstruction;
+
+  /** The top edge a reader actually sees, not the one the box claims. */
+  const visibleTop = (el: HTMLElement) => el.getBoundingClientRect().top + obstructionRef.current(el);
 
   const onScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el || !visible) return;
-    const box = el.getBoundingClientRect();
+    const top = el.getBoundingClientRect().top;
     for (const row of el.querySelectorAll<HTMLElement>('[data-stock-row]')) {
       const r = row.getBoundingClientRect();
       // The first row still showing any of itself is the one to remember.
-      if (r.bottom > box.top + 1) {
-        anchor.current = { symbol: row.dataset.symbol ?? null, offset: r.top - box.top };
+      if (r.bottom > top + 1) {
+        anchor.current = { symbol: row.dataset.symbol ?? null, offset: r.top - top };
         return;
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchor, visible]);
 
   // Before paint, so the list is never shown at the wrong offset for a frame.
@@ -66,14 +82,13 @@ export function useListScroll(
       ? el.querySelector<HTMLElement>(`[data-stock-row][data-symbol="${cssEscape(anchor.current.symbol)}"]`)
       : null;
     if (ref) {
-      const box = el.getBoundingClientRect();
-      el.scrollTop += (ref.getBoundingClientRect().top - box.top) - anchor.current.offset;
+      el.scrollTop += (ref.getBoundingClientRect().top - el.getBoundingClientRect().top) - anchor.current.offset;
     }
 
     // A remembered row is the common case, but not the only one: a deep link,
     // or a stock picked out of a list that has since been filtered, can leave
     // the selection outside the box. Then the selection wins over the memory.
-    nudgeSelectionIntoView(el, 'center');
+    nudgeSelectionIntoView(el, 'center', visibleTop(el));
     onScroll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, rowCount]);
@@ -83,19 +98,19 @@ export function useListScroll(
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el || !visible || !restored.current) return;
-    if (nudgeSelectionIntoView(el, 'nearest')) onScroll();
+    if (nudgeSelectionIntoView(el, 'nearest', visibleTop(el))) onScroll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSymbol, visible, onScroll]);
 
   return { containerRef, onScroll };
 }
 
-/** Scrolls the selected row in if it is outside the box. Returns whether it moved. */
-function nudgeSelectionIntoView(el: HTMLElement, block: ScrollLogicalPosition): boolean {
+/** Scrolls the selected row in if it is not fully on show. Returns whether it moved. */
+function nudgeSelectionIntoView(el: HTMLElement, block: ScrollLogicalPosition, top: number): boolean {
   const sel = el.querySelector('[data-stock-row][data-selected="true"]');
   if (!sel) return false;
-  const box = el.getBoundingClientRect();
   const row = sel.getBoundingClientRect();
-  if (row.top >= box.top && row.bottom <= box.bottom) return false;
+  if (row.top >= top && row.bottom <= el.getBoundingClientRect().bottom) return false;
   sel.scrollIntoView({ block });
   return true;
 }

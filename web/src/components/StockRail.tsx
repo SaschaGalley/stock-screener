@@ -3,7 +3,7 @@ import type { OverviewRow } from '../types';
 import { api } from '../api';
 import { fmtBig } from '../format';
 import StockListControls from './StockListControls';
-import { StockIdentity, StockScore, rowTitle } from './StockRowCells';
+import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { type ListView } from './stockList';
 
@@ -77,6 +77,10 @@ export default function StockRail({
           </div>
         ) : (
           <ul>
+            <li className="sticky top-0 z-10 flex items-center justify-between border-b border-ink-700 bg-ink-900 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+              <span>Aktie</span>
+              <span>Score</span>
+            </li>
             {rows.map((r) => {
               const active = r.symbol === selectedSymbol;
               const isDeleting = deleting === r.symbol;
@@ -86,13 +90,15 @@ export default function StockRail({
                   data-stock-row
                   data-symbol={r.symbol}
                   data-selected={active}
-                  className="group relative border-b border-ink-800"
+                  className="group relative"
                 >
                   <button
                     onClick={() => onSelect(r.symbol)}
                     disabled={isDeleting}
-                    title={rowTitle(r, fmtBig)}
-                    className={`flex w-full items-center gap-1.5 py-1 pr-7 text-left transition disabled:opacity-50 ${
+                    title={active
+                      ? `${rowTitle(r, fmtBig)} · Klick schließt die Analyse`
+                      : rowTitle(r, fmtBig)}
+                    className={`${ROW_HEIGHT} flex w-full items-center gap-2 border-b border-ink-800 py-2 pr-7 text-left transition disabled:opacity-50 ${
                       active
                         ? 'border-l-2 border-l-accent bg-accent-soft pl-[10px]'
                         : 'pl-3 hover:bg-ink-800'

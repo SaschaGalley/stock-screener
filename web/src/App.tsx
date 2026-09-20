@@ -133,6 +133,19 @@ export default function App() {
     });
   }, []);
 
+  /** Close whatever is open and spread the list back out to full width. */
+  const closeOverlay = useCallback(() => {
+    withViewTransition(() => {
+      setMobileMenu(null);
+      navigate('overview');
+    });
+  }, [navigate]);
+
+  const openAdmin = useCallback(() => {
+    setMobileMenu(null);
+    navigate('admin');
+  }, [navigate]);
+
   // React to back/forward navigation
   useEffect(() => {
     const onHashChange = () => {
@@ -184,6 +197,15 @@ export default function App() {
   };
 
   const handleSelectSymbol = useCallback((s: string) => {
+    // Clicking the stock that is already open closes it again. The row is what
+    // opened the analysis, so it is also what puts it away — and in the table
+    // nothing is open, so a click there always opens. Deliberately before the
+    // run is abandoned: closing does not discard an analysis in flight, it
+    // only stops looking at it.
+    if (route.view === 'analysis' && selected === s) {
+      closeOverlay();
+      return;
+    }
     // Abandon any in-flight analyze run: invalidate its callbacks and abort the
     // SSE so a late onResult can't yank the user back to the old symbol.
     runIdRef.current++;
@@ -194,7 +216,7 @@ export default function App() {
       setSelected(s);
       setProgress([]);
     });
-  }, [setSelected]);
+  }, [route.view, selected, setSelected, closeOverlay]);
 
   // User-initiated settings change — flag it so the auto-switch effect yields.
   const handleSettingsChange = useCallback((s: Settings) => {
@@ -337,19 +359,6 @@ export default function App() {
   const isAdmin    = route.view === 'admin';
   const isAnalysis = route.view === 'analysis' && selected !== null;
   const isTable    = !isAdmin && !isAnalysis;
-
-  /** Close whatever is open and spread the list back out to full width. */
-  const closeOverlay = useCallback(() => {
-    withViewTransition(() => {
-      setMobileMenu(null);
-      navigate('overview');
-    });
-  }, [navigate]);
-
-  const openAdmin = useCallback(() => {
-    setMobileMenu(null);
-    navigate('admin');
-  }, [navigate]);
 
   // Esc is the keyboard counterpart of the ✕ — for the analysis and the
   // administration alike. Skipped while a field has focus, where Esc means

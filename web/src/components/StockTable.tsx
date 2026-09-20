@@ -3,7 +3,7 @@ import type { OverviewRow } from '../types';
 import ScoreSparkline from './charts/ScoreSparkline';
 import RecommendationBadge from './RecommendationBadge';
 import StockListControls from './StockListControls';
-import { StockIdentity, StockScore, rowTitle } from './StockRowCells';
+import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { GearIcon } from './icons';
 import { averageScore, scoreColor, type ListView } from './stockList';
@@ -31,16 +31,20 @@ interface Props {
  * The stock list at full width: every column the overview has room for.
  *
  * Its narrow twin is `StockRail`, and the two columns they share come from
- * `StockRowCells` so they are the same markup at the same height. Everything
- * here is one line tall for that reason — the price and its upside sit beside
- * each other rather than stacked, which is also how you read them across a row.
+ * `StockRowCells` so they are the same markup at the same height. The rest of
+ * the row is free to stack — a fair value over its distance from the price is
+ * one fact, and reads better as one cell than as two columns.
  */
 export default function StockTable({
   rows, total, loading, view, onViewChange, selectedSymbol, onSelect, onOpenAdmin,
   activity = {}, scrollAnchor,
 }: Props) {
-  // The table only exists while it is on screen, so it is always the visible one.
-  const { containerRef, onScroll } = useListScroll(scrollAnchor, true, selectedSymbol, rows.length);
+  // The table only exists while it is on screen, so it is always the visible
+  // one. Its column labels are sticky, so they hide the first row or so.
+  const { containerRef, onScroll } = useListScroll(
+    scrollAnchor, true, selectedSymbol, rows.length,
+    (el) => el.querySelector('thead')?.getBoundingClientRect().height ?? 0,
+  );
 
   const avg = averageScore(rows);
   const filtered = rows.length !== total;
@@ -84,21 +88,19 @@ export default function StockTable({
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-ink-900 text-[10px] uppercase tracking-wider text-ink-500">
               <tr className="border-b border-ink-700">
-                <th className="px-3 py-1.5 text-left font-semibold">Aktie</th>
-                <th className="px-2 py-1.5 text-right font-semibold">Score</th>
-                <th className="px-2 py-1.5 text-left font-semibold">Verlauf</th>
-                <th className="px-2 py-1.5 text-left font-semibold">Verdict</th>
-                <th className="px-2 py-1.5 text-right font-semibold">Kurs</th>
-                <th className="px-2 py-1.5 text-right font-semibold" title="Analysten-Konsensziel und Abstand zum Kurs">
+                <th className="px-3 py-2 text-left font-semibold">Aktie</th>
+                <th className="px-2 py-2 text-right font-semibold">Score</th>
+                <th className="px-2 py-2 text-left font-semibold">Verlauf</th>
+                <th className="px-2 py-2 text-left font-semibold">Verdict</th>
+                <th className="px-2 py-2 text-right font-semibold">Kurs</th>
+                <th className="px-2 py-2 text-right font-semibold" title="Analysten-Konsensziel und Abstand zum Kurs">
                   Ø Ziel
                 </th>
-                <th className="px-2 py-1.5 text-right font-semibold" title="Composite Fair Value der Bewertungsmodelle">
+                <th className="px-2 py-2 text-right font-semibold" title="Composite Fair Value der Bewertungsmodelle">
                   Modell-FV
                 </th>
-                <th className="px-2 py-1.5 text-right font-semibold">MCap</th>
-                <th className="px-3 py-1.5 text-right font-semibold" title="Alter der Marktdaten · letztes AI-Verdict">
-                  Aktualität
-                </th>
+                <th className="px-2 py-2 text-right font-semibold">MCap</th>
+                <th className="px-3 py-2 text-right font-semibold">Aktualität</th>
               </tr>
             </thead>
             <tbody>
@@ -112,67 +114,64 @@ export default function StockTable({
                     data-selected={active}
                     onClick={() => onSelect(r.symbol)}
                     title={rowTitle(r, fmtBig)}
-                    className={`cursor-pointer border-b border-ink-800 transition ${
+                    className={`${ROW_HEIGHT} cursor-pointer border-b border-ink-800 transition ${
                       active ? 'bg-accent-soft' : 'hover:bg-ink-800'
                     }`}
                   >
-                    <td className={`py-1 pr-2 pl-3 ${active ? 'border-l-2 border-l-accent pl-[10px]' : ''}`}>
-                      <StockIdentity
-                        row={r}
-                        active={active}
-                        stages={activity[r.symbol]}
-                        showSector
-                      />
+                    <td className={`py-2 pr-2 pl-3 ${active ? 'border-l-2 border-l-accent pl-[10px]' : ''}`}>
+                      <StockIdentity row={r} active={active} stages={activity[r.symbol]} />
                     </td>
 
-                    <td className="px-2 py-1 text-right">
+                    <td className="px-2 py-2 text-right">
                       <StockScore row={r} split />
                     </td>
 
                     <td className="px-2 py-1">
-                      <ScoreSparkline points={r.scoreHistory} height={22} />
+                      <ScoreSparkline points={r.scoreHistory} />
                     </td>
 
-                    <td className="px-2 py-1">
-                      <div className="flex items-center gap-1.5">
-                        {r.recommendation ? (
-                          <RecommendationBadge rec={r.recommendation} compact />
-                        ) : (
-                          <span className="text-[11px] text-ink-600">nicht analysiert</span>
-                        )}
-                        {r.verdictModel && (
-                          <span className="truncate font-mono text-[9px] text-ink-600">{r.verdictModel}</span>
-                        )}
-                      </div>
+                    <td className="px-2 py-2">
+                      {r.recommendation ? (
+                        <RecommendationBadge rec={r.recommendation} />
+                      ) : (
+                        <span className="text-[11px] text-ink-600">nicht analysiert</span>
+                      )}
+                      {r.verdictModel && (
+                        <div className="font-mono text-[9px] text-ink-600">{r.verdictModel}</div>
+                      )}
                     </td>
 
-                    <td className="px-2 py-1 text-right font-mono text-xs tabular text-ink-200">
+                    <td className="px-2 py-2 text-right font-mono text-xs tabular text-ink-200">
                       {fmtPrice(r.price, r.currency)}
                     </td>
 
-                    <td className="whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular">
-                      <span className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean, r.currency)}</span>
-                      <span className={`ml-1.5 text-[10px] ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</span>
+                    <td className="px-2 py-2 text-right font-mono text-xs tabular">
+                      <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean, r.currency)}</div>
+                      <div className={`text-[10px] ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
                     </td>
 
-                    <td className="whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular">
-                      <span className="text-ink-300">
+                    <td className="px-2 py-2 text-right font-mono text-xs tabular">
+                      <div className="text-ink-300">
                         {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue, r.currency)}
-                      </span>
-                      <span className={`ml-1.5 text-[10px] ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</span>
+                      </div>
+                      <div className={`text-[10px] ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
                     </td>
 
-                    <td className="px-2 py-1 text-right font-mono text-xs tabular text-ink-400">
+                    <td className="px-2 py-2 text-right font-mono text-xs tabular text-ink-400">
                       {fmtBig(r.marketCap, r.currency)}
                     </td>
 
-                    <td className="whitespace-nowrap px-3 py-1 text-right text-[10px] text-ink-500">
-                      {r.dataAgeHours === null
-                        ? '—'
-                        : r.dataAgeHours < 48
-                          ? `${r.dataAgeHours.toFixed(0)}h`
-                          : `${(r.dataAgeHours / 24).toFixed(0)}d`}
-                      <span className="text-ink-600"> · {r.verdictAt ? relativeTime(r.verdictAt) : '—'}</span>
+                    <td className="px-3 py-2 text-right text-[10px] text-ink-500">
+                      <div title="Alter der Marktdaten">
+                        {r.dataAgeHours === null
+                          ? '—'
+                          : r.dataAgeHours < 48
+                            ? `${r.dataAgeHours.toFixed(0)}h`
+                            : `${(r.dataAgeHours / 24).toFixed(0)}d`}
+                      </div>
+                      <div className="text-ink-600" title="Letztes AI-Verdict">
+                        {r.verdictAt ? relativeTime(r.verdictAt) : '—'}
+                      </div>
                     </td>
                   </tr>
                 );
