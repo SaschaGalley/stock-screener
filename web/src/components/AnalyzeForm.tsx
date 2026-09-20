@@ -6,6 +6,12 @@ interface Props {
   onAdd: (input: string) => Promise<void>;
   /** True while an analysis is running elsewhere in the app. */
   analyzing: boolean;
+  /**
+   * Where the user goes next to actually run the analysis. The form sits below
+   * both densities now, and only one of them has a settings panel on the right
+   * to point at.
+   */
+  hint: string;
 }
 
 /**
@@ -16,7 +22,7 @@ interface Props {
  * the settings sidebar. Typing a ticker to see what a company looks like should
  * not silently spend money.
  */
-export default function AnalyzeForm({ onAdd, analyzing }: Props) {
+export default function AnalyzeForm({ onAdd, analyzing, hint }: Props) {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +54,7 @@ export default function AnalyzeForm({ onAdd, analyzing }: Props) {
         <span className="truncate">
           {error
             ? <span className="text-red-400">{error}</span>
-            : 'holt nur die Daten — Analyse startest du rechts'}
+            : hint}
         </span>
       </div>
       <div className="flex gap-2">

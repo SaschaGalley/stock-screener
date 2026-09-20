@@ -144,6 +144,8 @@ export interface OverviewRow {
   analysisCount: number;
   dataAgeHours:  number | null;
   watched:       boolean;
+  /** Combined AI + analyst buy/hold/sell band, for the list's consensus stripe. */
+  consensus:     ConsensusBand | null;
 }
 
 /**

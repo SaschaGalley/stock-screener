@@ -1,5 +1,4 @@
 import type {
-  StockSummary,
   AnalysisListEntry,
   CachedAnalysisEntry,
   AnalysisFlagsKey,
@@ -50,9 +49,6 @@ export interface ModelInfo {
 }
 
 export const api = {
-  listStocks: () =>
-    jsonFetch<{ stocks: StockSummary[] }>(`${BASE}/stocks`),
-
   listModels: () =>
     jsonFetch<ModelInfo>(`${BASE}/models`),
 

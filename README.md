@@ -4,8 +4,9 @@ Fundamental stock analysis from the terminal *and* a local web UI. Fetches live 
 
 ```
 CLI mode  →  one-shot analysis, prints markdown or JSON to stdout
-Web mode  →  persistent local app: sidebar of cached stocks, flag toggling,
-             chart-rich detail view, no LLM call until you explicitly Run
+Web mode  →  persistent local app: one ranked list of cached stocks at two
+             densities, flag toggling, chart-rich detail view, no LLM call
+             until you explicitly Run
 ```
 
 ## Setup
@@ -75,24 +76,24 @@ pnpm run serve           # API only — serve dist/ behind your own reverse prox
 
 ### What the web UI does
 
-A toolbar at the top switches between two working views; the cog on the far right opens administration.
+There is one list of stocks, shown at two densities, and the toolbar's tabs are the two states it can be in; the cog on the far right opens administration.
 
-**Tab „Analyse"** — the single-stock view the app has always opened on:
+**Tab „Übersicht"** — the list at full width: AI score (with the change since the first recorded verdict), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter and five other orderings sit in the header.
 
-- **Left sidebar**: every stock you've ever analysed, with a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6).
+**Tab „Analyse"** — the same list collapsed to a rail, with one stock open beside it. A row click in the Übersicht is what opens it; `Esc` or „← Übersicht" spreads the table back out, at the same order and filter, with the stock you were reading scrolled back into view.
+
+- **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). Search, sort and the watchlist filter are the same controls as in the table and drive the same state, so neither density can disagree with the other about what „sorted" means.
 - **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull/bear/risks, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
 - **Right sidebar**: model + search-provider + Perplexity toggles. Each flag combo is its own cached entry. Clicking an outdated combo still loads it (older entries get a ⚠ marker) — a warning banner sits on top with a one-click re-run.
 - **Refresh data** (header `↻`) re-fetches the data layer (Yahoo + Finnhub + FRED + technicals) without a single LLM call. **Re-run** in the right sidebar or in the stale banner forces a fresh LLM call, overwriting the cached verdict.
 
-Adding a stock (`+ Hinzufügen` at the bottom of the Analyse tab) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit `Run Analysis` in the right sidebar, so looking a company up never costs an API bill.
-
-**Tab „Übersicht"** — every cached stock in one ranked table: AI score (with the change since the first recorded verdict), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. Sorted by score descending by default; other columns and a watchlist-only filter are one click away. A row click opens that stock in the Analyse tab.
+Adding a stock (`+ Hinzufügen` at the bottom of the window, under either density) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit `Run Analysis` in the right sidebar, so looking a company up never costs an API bill.
 
 **⚙ Administration** — schedule, pipeline steps, watchlist and run log. See [Nightly pipeline](#nightly-pipeline) below.
 
 **URLs**: `#/stock/AAPL`, `#/overview`, `#/admin` — reload and browser back/forward work everywhere. Old `#AAPL` links still resolve to the analysis view.
 
-Switching tabs never interrupts a running analysis: the Analyse view stays mounted (hidden) so its progress stream survives a detour to the overview.
+Collapsing back to the table never interrupts a running analysis: the analysis pane stays mounted (hidden) so its progress stream survives the detour.
 
 ### Theming
 
@@ -283,18 +284,21 @@ web/
 ├── tailwind.config.js     Maps Tailwind colour tokens → CSS vars in styles.css
 ├── src/
 │   ├── App.tsx            Routing (hash), state, SSE wiring
-│   ├── pages/             Übersicht (ranked table) + Administration
+│   ├── pages/             Administration
 │   ├── api.ts             Thin fetch wrappers
 │   ├── types.ts           Mirror of server schemas (StockBundle, AnalysisFlagsKey, …)
 │   ├── format.ts          fmt*, mosColor, recommendationColor helpers
 │   ├── styles.css         ALL theme tokens as :root HEX vars
 │   └── components/
-│       ├── StockSidebar.tsx       Left list + ConsensusBar
+│       ├── stockList.ts           The list as a model: filter, sort, score colours
+│       ├── StockTable.tsx         The list at full width (Übersicht)
+│       ├── StockRail.tsx          The same list at rail width, beside an analysis
+│       ├── StockListControls.tsx  Search · sort · watchlist, shared by both
 │       ├── SettingsSidebar.tsx    Right pane: model/search/pplx + cached combos
 │       ├── AnalysisView.tsx       Centre detail; renders all sections
 │       ├── VerdictHero.tsx        AI verdict + composite + analyst hero cards
 │       ├── BullBearRisks.tsx      3-column bull/bear/risks block
-│       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per sidebar item
+│       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per rail item
 │       ├── StockHeader.tsx        Logo, price, refresh button
 │       ├── StockLogo.tsx          Multi-source logo cascade (Logo.dev → Brandfetch → …)
 │       ├── ProgressBanner.tsx     SSE progress events while a run is in flight

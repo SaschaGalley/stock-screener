@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type {
   StockBundle,
-  StockSummary,
   AnalysisFlagsKey,
   CachedAnalysisEntry,
 } from "../types";
@@ -28,7 +27,8 @@ import { currencyPrefix } from "../format";
 
 interface Props {
   symbol: string;
-  summary: StockSummary | undefined;
+  /** Company name from the list, to head the view while the bundle loads. */
+  fallbackName?: string;
   flags: AnalysisFlagsKey;
   refreshKey: number;
   /** Trigger the analyze flow for the current symbol & flag combo. */
@@ -43,7 +43,7 @@ interface Props {
 
 export default function AnalysisView({
   symbol,
-  summary,
+  fallbackName,
   flags,
   refreshKey,
   onRunAnalysis,
@@ -111,13 +111,14 @@ export default function AnalysisView({
 
   // Error state — render a minimal header with a Refresh button so the user
   // can recover (e.g., after a cache schema bump invalidated the data).
-  if (error || !bundle) {
+  const summary = bundle?.summary ?? null;
+  if (error || !bundle || !summary) {
     return (
       <div className="flex h-full flex-col">
         <header className="flex shrink-0 items-center justify-between border-b border-ink-700 bg-ink-900 px-6 py-4">
           <div>
             <h1 className="text-xl font-bold text-ink-50">
-              {summary?.companyName ?? symbol}
+              {fallbackName ?? symbol}
             </h1>
             <span className="font-mono text-xs text-ink-400">{symbol}</span>
           </div>
@@ -153,7 +154,7 @@ export default function AnalysisView({
   // a hash-based identity. The single staleness signal is "older than data":
   // the cached LLM call ran against an earlier financials snapshot.
   const analysisGenAt = analysis?.generatedAt ? new Date(analysis.generatedAt).getTime() : null;
-  const dataCachedAt  = bundle.summary?.cachedAt ? new Date(bundle.summary.cachedAt).getTime() : null;
+  const dataCachedAt  = summary.cachedAt ? new Date(summary.cachedAt).getTime() : null;
   const analysisOlderThanData = analysisGenAt !== null && dataCachedAt !== null
     && analysisGenAt < dataCachedAt - 60_000;
   const analysisStale = analysisOlderThanData;
@@ -162,7 +163,7 @@ export default function AnalysisView({
     <CurrencyProvider code={cur}>
       <div className="flex h-full flex-col overflow-hidden">
         <StockHeader
-          summary={bundle.summary ?? summary!}
+          summary={summary}
           financials={f}
           onRefreshed={() => setLocalRefresh((x) => x + 1)}
           activity={activity}

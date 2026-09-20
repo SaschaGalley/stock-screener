@@ -217,22 +217,6 @@ export function createApp(): express.Express {
   const cfg = getConfig();
   const dataDir = cfg.dataDir;
 
-  // ── GET /api/stocks ────────────────────────────────────────────────────────
-  app.get('/api/stocks', async (_req, res, next) => {
-    try {
-      const [financials, verdicts] = await Promise.all([
-        latestSnapshotForAll<StockFinancials>('financials'),
-        latestVerdictsForAll(),
-      ]);
-      const summaries = [...financials.entries()]
-        .map(([symbol, snap]) => toSummary(symbol, snap.data, snap.lastSeenAt, verdicts.get(symbol) ?? []))
-        .sort((a, b) => a.companyName.localeCompare(b.companyName));
-      res.json({ stocks: summaries });
-    } catch (e) {
-      next(e);
-    }
-  });
-
   // ── POST /api/stocks ───────────────────────────────────────────────────────
   // Add a stock without analysing it: resolve the input to a ticker, fetch the
   // data layer, done. Adding and analysing are separate decisions — the first
@@ -684,6 +668,7 @@ export function createApp(): express.Express {
           analysisCount: entries.length,
           dataAgeHours:  (Date.now() - new Date(snap.lastSeenAt).getTime()) / 3_600_000,
           watched:       isWatched(config, symbol),
+          consensus:     computeConsensus(f, entries),
         });
       }
 
@@ -1204,7 +1189,6 @@ if (isMain) {
         logger.success(`Stock-CLI server listening on http://localhost:${PORT}`);
         logger.info(`Endpoints:`);
         logger.info(`  GET  /api/health                       — liveness probe`);
-        logger.info(`  GET  /api/stocks                       — list stored symbols`);
         logger.info(`  GET  /api/overview                     — ranked overview rows`);
         logger.info(`  GET  /api/stocks/:symbol               — financials + market signals`);
         logger.info(`  GET  /api/metrics                      — metric catalogue (chart picker)`);
