@@ -49,9 +49,9 @@ function findingLine(f: ScoreFinding): string {
 
 /** Headline line, used on its own where a whole card would be too much. */
 export function scoreHeadline(s: FactorScore): string {
-  return `**${s.score.toFixed(1)}/10 → ${s.verdict}** — Rohwert ${s.raw.toFixed(1)} `
-    + `bei ${pct(s.coverage)} Abdeckung und ${pct(s.confidence)} Konfidenz, `
-    + `daher mit ${s.shrink.toFixed(2)} Richtung Neutral gezogen`;
+  return `**${s.score.toFixed(1)}/10 → ${s.verdict}** — Rohwert ${s.raw.toFixed(1)}, `
+    + `Abdeckung ${pct(s.coverage)}, Konfidenz ${pct(s.confidence)} (Vertrauen ×${s.shrink.toFixed(2)}), `
+    + `Einigkeit der Säulen ${pct(s.agreement)} (Überzeugung ×${s.conviction.toFixed(2)})`;
 }
 
 export interface RenderOptions {
@@ -98,6 +98,12 @@ Sechs Säulen, jede ein gewichtetes Mittel benannter Kriterien. Kriterien ohne
 Daten werden fallen gelassen und die übrigen Gewichte neu normiert — nichts wird
 mangels Wissens mit 5/10 bewertet. Die Einzelbeiträge summieren sich exakt auf
 Rohwert − 5.
+
+Der Abstand des Rohwerts zur Mitte wird zweimal multipliziert: mit dem
+**Vertrauen** (wie belastbar die Daten sind) und mit der **Überzeugung** (wie
+einig sich die Säulen sind). Ziehen alle Linsen in dieselbe Richtung, ist das
+selbst ein Befund und der Score darf weit von 5 weg; heben sie sich auf, ist die
+Mitte die ehrliche Antwort und kein blasses Urteil.
 
 ${table}${detail}${caps}${findings}`;
 }

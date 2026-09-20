@@ -138,6 +138,12 @@ export interface OverviewRow {
   narrativeScore: number | null;
   /** 0–1 behind the factor half: what drives both the blend and the caps. */
   scoreConfidence: number | null;
+  /**
+   * 0–1: how much the six pillars point the same way. Unanimity carries the
+   * score away from neutral; a standoff keeps it there, and the difference
+   * between a corroborated 6.2 and a contested one is the whole ranking.
+   */
+  scoreAgreement:  number | null;
   /** True when a cap held the label below what the score alone would say. */
   verdictCapped:  boolean;
   recommendation: string | null;

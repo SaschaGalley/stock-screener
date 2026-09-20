@@ -248,9 +248,48 @@ Three properties the code is built to keep:
   dropped and its pillar renormalises; a pillar with nothing at all is dropped
   and the remaining weights renormalise. Nothing scores 5/10 for being unknown,
   because that quietly votes "average".
-- **Uncertainty shrinks the score toward neutral.** `score = 5 + (raw − 5) × (0.4
-  + 0.6 × confidence)`, where confidence combines coverage, the composite's own
+- **Uncertainty shrinks the score toward neutral, corroboration carries it
+  away.** `score = 5 + (raw − 5) × trust × conviction`. Trust is `0.4 + 0.6 ×
+  confidence`, where confidence combines coverage, the composite's own
   confidence, the data-quality audit and whether the fundamentals are stale.
+  Conviction is agreement — see below.
+
+### Agreement, and why the middle is not always bland
+
+A weighted mean of six differentiated signals is necessarily less differentiated
+than its inputs, and on a real watchlist the effect is severe: the pillars of one
+company routinely span 6.6 points while the scores they produce span barely 4, so
+three quarters of a list lands in one band. Nothing is wrong with the arithmetic
+— the mean of a strong buy case and a strong sell case *is* the middle.
+
+But two very different situations were arriving at the same number. Apple's
+pillars read 0.2 on valuation against 8.2 on quality and 8.6 on the balance
+sheet, averaging to 4.9: a genuine standoff between lenses that disagree
+violently. Nu Holdings scores 7.7 with every lens pointing the same way.
+Corroboration is evidence, the mean throws it away, and the reader could not tell
+the two apart.
+
+So the deviation from neutral is multiplied by how much the pillars agree:
+
+```
+agreement  = |Σ w·dev| / Σ w·|dev|      # 1 = unanimous, 0 = they cancel
+conviction = 1 + 0.6 × agreement        # 1 when fewer than three pillars scored
+```
+
+Direction-blind: six unanimously bearish pillars earn the same conviction as six
+bullish ones. It needs at least three scored pillars, because with one the
+agreement is trivially perfect and there is nothing to corroborate.
+
+This **reorders the list, deliberately**: a corroborated 6.2 is a better case
+than a contested 6.5, and saying so is the point. On a 37-stock watchlist it took
+σ from 0.88 to 1.30 and the range from 3.7–7.5 to 3.3–9.0 — STRONG BUY had never
+once been reachable before. Labels went from `{BUY 6, HOLD 28, SELL 3}` to
+`{STRONG BUY 3, BUY 6, HOLD 24, SELL 4}`.
+
+The score is published to one decimal and **everything bands on that published
+value** — the table, the card and the badge all print `toFixed(1)`, and banding
+on a more precise number behind it put a SELL next to a 4.5 while its neighbour
+at the same 4.5 said HOLD.
 
 ### The bands
 

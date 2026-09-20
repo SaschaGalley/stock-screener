@@ -69,6 +69,7 @@ const KEY_CARD = [
   'score.final.verdict',
   'score.factor.score',
   'score.factor.confidence',
+  'score.factor.agreement',
   'score.narrative.score',
 ] as const;
 const KEY_COMPOSITE     = 'metrics.composite.primary.median';
@@ -747,6 +748,7 @@ export function createApp(): express.Express {
           factorScore:     num('score.factor.score')      ?? stored?.factor.score      ?? null,
           narrativeScore:  num('score.narrative.score')   ?? stored?.narrative?.score  ?? null,
           scoreConfidence: num('score.factor.confidence') ?? stored?.factor.confidence ?? null,
+          scoreAgreement:  num('score.factor.agreement')  ?? stored?.factor.agreement  ?? null,
           verdictCapped:   stored ? stored.factor.caps.length > 0 : false,
           recommendation:  (card?.get('score.final.verdict')?.at === stamp
             ? card?.get('score.final.verdict')?.text

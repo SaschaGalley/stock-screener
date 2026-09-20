@@ -12,12 +12,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { analystConsensus, blendScores, computeFactorScore, PILLAR_WEIGHTS } from '../src/analysis/score.js';
+import { analystConsensus, blendScores, computeFactorScore, convictionFor, PILLAR_WEIGHTS } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
+import { PILLAR_KEYS } from '../src/types.js';
 import type {
-  DataQualityWarning, MarketSignals, SectorMedians, StockFinancials, TechnicalSignals,
+  DataQualityWarning, MarketSignals, SectorMedians, ScorePillar, StockFinancials, TechnicalSignals,
 } from '../src/types.js';
 
 function financials(over: Partial<StockFinancials> = {}): StockFinancials {
@@ -265,6 +266,63 @@ describe('uncertainty', () => {
   });
 });
 
+describe('conviction', () => {
+  const pillar = (key: string, score: number | null, effectiveWeight: number) =>
+    ({ key, label: key, score, weight: effectiveWeight, effectiveWeight, coverage: 1, criteria: [] }) as ScorePillar;
+
+  const even = (scores: (number | null)[]) => {
+    const live = scores.filter((x) => x !== null).length;
+    return scores.map((x, i) => pillar(PILLAR_KEYS[i], x, x === null ? 0 : 1 / live));
+  };
+
+  it('is full when every pillar points the same way, in either direction', () => {
+    const bullish = convictionFor(even([8, 7, 9, 8, 7, 8]));
+    const bearish = convictionFor(even([2, 3, 1, 2, 3, 2]));
+
+    assert.ok(Math.abs(bullish.agreement - 1) < 1e-9);
+    assert.ok(Math.abs(bearish.agreement - 1) < 1e-9);
+    assert.equal(bullish.conviction, bearish.conviction);
+    assert.ok(bullish.conviction > 1.5);
+  });
+
+  it('is none when the pillars cancel — a standoff keeps its compromise', () => {
+    // Apple's shape: violently cheap-vs-quality, averaging to the middle.
+    const { agreement, conviction } = convictionFor(even([0, 10, 0, 10, 0, 10]));
+    assert.ok(Math.abs(agreement) < 1e-9);
+    assert.equal(conviction, 1);
+  });
+
+  it('scales in between rather than switching', () => {
+    const a = convictionFor(even([8, 8, 8, 8, 8, 2])).agreement;
+    const b = convictionFor(even([8, 8, 8, 8, 2, 2])).agreement;
+    assert.ok(a > b && b > 0 && a < 1);
+  });
+
+  it('gives a unanimity of one or two pillars nothing', () => {
+    const lonely = convictionFor(even([9, null, null, null, null, null]));
+    const pair   = convictionFor(even([9, 9, null, null, null, null]));
+    const trio   = convictionFor(even([9, 9, 9, null, null, null]));
+
+    assert.ok(Math.abs(lonely.agreement - 1) < 1e-9, 'one pillar trivially agrees with itself');
+    assert.equal(lonely.conviction, 1, 'but that is not corroboration');
+    assert.equal(pair.conviction, 1);
+    assert.ok(trio.conviction > 1);
+  });
+
+  it('composes with trust rather than replacing it', () => {
+    // The headline is the raw deviation times both multipliers, and the two
+    // answer different questions: how much of this can we trust, and how much
+    // of it do the lenses corroborate.
+    const s = score();
+    const expected = 5 + (s.raw - 5) * s.shrink * s.conviction;
+
+    // Half a tenth: the published score is rounded to the decimal everything
+    // prints and bands on.
+    assert.ok(Math.abs(s.score - expected) <= 0.05, `${s.score} vs ${expected}`);
+    assert.ok(Math.abs(s.conviction - convictionFor(s.pillars).conviction) < 1e-9);
+  });
+});
+
 describe('score bands', () => {
   it('puts each boundary in the band that starts there', () => {
     const cases: [number, string][] = [
@@ -292,6 +350,21 @@ describe('score bands', () => {
   it('agrees with the score the scorer produces', () => {
     const s = score();
     assert.equal(s.uncappedVerdict, verdictForScore(s.score));
+  });
+
+  it('bands the number that is printed, not a more precise one behind it', () => {
+    // A score of 4.4987 stores and prints as 4.5 but used to band as SELL,
+    // so one 4.5 said SELL while the 4.5 beside it said HOLD. The published
+    // value is now the only one anything reads.
+    for (let raw = 0; raw <= 100; raw++) {
+      const s = blendScores({
+        factor: { ...score(), confidence: 1, caps: [] },
+        narrativeScore: raw / 10, narrativeConfidence: 1,
+        adjustment: 0, adjustmentReason: null, narrativeMaxWeight: 1,
+      });
+      assert.equal(s.score, Math.round(s.score * 10) / 10, `${s.score} is not published to one decimal`);
+      assert.equal(s.verdict, verdictForScore(s.score), `${s.score} banded as ${s.verdict}`);
+    }
   });
 });
 

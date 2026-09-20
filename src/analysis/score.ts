@@ -85,6 +85,39 @@ export const PILLAR_LABELS: Record<PillarKey, string> = {
 /** Below this confidence no STRONG label is available, whatever the score. */
 const STRONG_MIN_CONFIDENCE = 0.45;
 
+/**
+ * How far unanimity may carry the score from neutral.
+ *
+ * A weighted mean of six differentiated signals is necessarily less
+ * differentiated than its inputs, and on a real watchlist the effect is severe:
+ * the pillars of one company routinely span 6.6 points while the scores they
+ * produce span barely 4, so three quarters of a list lands in one band. Nothing
+ * is wrong with the arithmetic — the mean of a strong buy case and a strong
+ * sell case *is* the middle.
+ *
+ * But two very different situations were arriving at the same number. Apple's
+ * pillars read 0.2 on valuation against 8.2 on quality and 8.6 on the balance
+ * sheet, and average to 4.9: a genuine standoff between lenses that disagree
+ * violently. Nu Holdings scores 7.5 with every lens pointing the same way.
+ * Corroboration is evidence, the mean throws it away, and the reader could not
+ * tell the two apart.
+ *
+ * So the deviation from neutral is multiplied by how much the pillars agree.
+ * Unanimity earns conviction; a standoff keeps the compromise it deserves. This
+ * reorders the list, and deliberately: a corroborated 6.2 is a better case than
+ * a contested 6.5, and saying so is the whole point.
+ */
+const MAX_CONVICTION = 1.6;
+
+/**
+ * Pillars needed before agreement means anything.
+ *
+ * With one scored pillar agreement is trivially perfect — there is nothing for
+ * it to agree with. Confidence already shrinks a thin payload, but it must not
+ * then be amplified back out by a unanimity of one.
+ */
+const CONVICTION_MIN_PILLARS = 3;
+
 /** How many drivers and how many drags survive into `findings`. */
 const FINDINGS_PER_SIDE = 4;
 
@@ -493,9 +526,48 @@ function consensusPillar(f: StockFinancials, cons: AnalystConsensus): ScoreCrite
   ];
 }
 
+/**
+ * How much the pillars corroborate each other, and what that earns.
+ *
+ * `agreement` is |Σ w·dev| / Σ w·|dev|: the share of the evidence that survived
+ * the averaging instead of being netted off against its opposite. It is
+ * direction-blind — six pillars unanimously bearish agree exactly as much as
+ * six unanimously bullish ones, and both deserve to be believed.
+ *
+ * Exported because it is the part of the score most worth arguing with, and an
+ * argument needs something it can call with numbers it chose.
+ */
+export function convictionFor(pillars: ScorePillar[]): { agreement: number; conviction: number } {
+  const scored = pillars.filter((p) => p.score !== null);
+  const net = scored.reduce((s, p) => s + p.effectiveWeight * ((p.score as number) - 5), 0);
+  const gross = scored.reduce((s, p) => s + p.effectiveWeight * Math.abs((p.score as number) - 5), 0);
+  const agreement = gross === 0 ? 0 : Math.abs(net) / gross;
+
+  return {
+    agreement,
+    conviction: scored.length >= CONVICTION_MIN_PILLARS
+      ? 1 + (MAX_CONVICTION - 1) * agreement
+      : 1,
+  };
+}
+
 // ── Assembly ─────────────────────────────────────────────────────────────────
 
 /** Weighted mean of the criteria that scored, plus the coverage that produced it. */
+/**
+ * The published resolution of a score, and the only value anything bands on.
+ *
+ * One decimal, because that is what every reader sees: the table, the card and
+ * the badge all print `toFixed(1)`. Banding on a more precise number than the
+ * one on screen puts a SELL next to a 4.5 while its neighbour at the same 4.5
+ * says HOLD — the label is right about a digit nobody was shown. Ten points at
+ * a tenth each is ample resolution for a ranking, and rounding here means the
+ * stored value, the printed value and the banded value are one number.
+ */
+function published(score: number): number {
+  return Math.round(Math.max(0, Math.min(10, score)) * 10) / 10;
+}
+
 function reducePillar(
   key: PillarKey, criteria: ScoreCriterion[],
 ): Omit<ScorePillar, 'effectiveWeight'> {
@@ -601,10 +673,14 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
   const confidence = Math.max(0, Math.min(1,
     coverage * compositeFactor * qualityFactor * freshnessFactor));
 
-  // Half-weight at zero confidence rather than a collapse to 5: a blind score
-  // still has to rank, it just must not shout.
+  const { agreement, conviction } = convictionFor(pillars);
+
+  // Two multipliers on the same deviation, answering two different questions:
+  // shrink asks how much of this we can trust, conviction how much of it the
+  // lenses actually corroborate. Half-weight at zero confidence rather than a
+  // collapse to 5: a blind score still has to rank, it just must not shout.
   const shrink = 0.4 + 0.6 * confidence;
-  const score = Math.max(0, Math.min(10, 5 + (raw - 5) * shrink));
+  const score = published(5 + (raw - 5) * shrink * conviction);
 
   // ── Caps ──────────────────────────────────────────────────────────────────
   const caps: ScoreCap[] = [];
@@ -627,7 +703,7 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
   const uncappedVerdict = verdictForScore(score);
 
   return {
-    score:      Math.round(score * 100) / 100,
+    score,
     // The one field deliberately not rounded. Every criterion's impact is
     // measured against `raw`, and rounding it would turn "the impacts sum to
     // raw − 5" from an invariant worth testing into an approximation worth
@@ -639,6 +715,8 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
     confidence: Math.round(confidence * 1000) / 1000,
     coverage:   Math.round(coverage * 1000) / 1000,
     shrink:     Math.round(shrink * 1000) / 1000,
+    agreement:  Math.round(agreement * 1000) / 1000,
+    conviction: Math.round(conviction * 1000) / 1000,
     pillars,
     caps,
     findings:   collectFindings(pillars, caps, f, m, cons),
@@ -790,7 +868,7 @@ export function blendScores(input: BlendInput): FinalScore {
     ? Math.max(-limit, Math.min(limit, input.adjustment))
     : 0;
 
-  const score = Math.max(0, Math.min(10, blend + adjustment));
+  const score = published(blend + adjustment);
 
   // The caps were earned by the payload, not by the score, so they survive the
   // blend: a model cannot talk its way past a flagged balance sheet by writing
@@ -798,7 +876,7 @@ export function blendScores(input: BlendInput): FinalScore {
   const verdict = capVerdict(verdictForScore(score), factor.caps);
 
   return {
-    score:            Math.round(score * 100) / 100,
+    score,
     verdict,
     blend:            Math.round(blend * 100) / 100,
     factorWeight:     Math.round((total > 0 ? factorWeight / total : 1) * 1000) / 1000,

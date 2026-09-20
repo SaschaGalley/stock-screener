@@ -23,6 +23,11 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
       ? 'Text (Distill/Perplexity): keine verwertbare Quelle'
       : `Text (Distill/Perplexity, ohne Kenntnis der Bewertung): ${row.narrativeScore.toFixed(1)}/10`,
     conf === null ? '' : `Konfidenz der Zahlen: ${conf} % — sie bestimmt das Mischungsverhältnis`,
+    row.scoreAgreement === null ? '' :
+      `Einigkeit der Säulen: ${Math.round(row.scoreAgreement * 100)} % — ${
+        row.scoreAgreement >= 0.7 ? 'die Linsen ziehen in dieselbe Richtung, der Score darf weit von 5 weg'
+        : row.scoreAgreement >= 0.3 ? 'teils widersprüchlich'
+        : 'die Linsen heben sich auf; die Mitte ist hier die ehrliche Antwort, kein blasses Urteil'}`,
     row.verdictCapped ? 'Die Überzeugung ist gedeckelt (Datenqualität, fehlende Coverage oder Bilanzrisiko)' : '',
   ].filter(Boolean).join('\n');
 

@@ -126,6 +126,19 @@ function BlendBar({ card }: { card: ScoreCard }) {
         der Prosa Gewicht, dünne Prosa gibt es den Zahlen zurück.
       </p>
 
+      {/* Why this score sits where it does relative to 5 — the part a single
+          digit cannot say, and the reason two stocks at 5.0 are not alike. */}
+      <p className="mt-1.5 text-[10px] leading-relaxed text-ink-500">
+        Rohwert {factor.raw.toFixed(1)} · Vertrauen ×{factor.shrink.toFixed(2)} ·
+        Überzeugung ×{factor.conviction.toFixed(2)} bei{' '}
+        <span className="text-ink-300">{Math.round(factor.agreement * 100)} % Einigkeit</span> der Säulen.{' '}
+        {factor.agreement >= 0.7
+          ? 'Die Linsen ziehen in dieselbe Richtung — Bestätigung ist selbst ein Befund, und der Score darf entsprechend weit von 5 weg.'
+          : factor.agreement >= 0.3
+            ? 'Die Linsen sind sich teilweise uneins, der Score bleibt entsprechend näher an der Mitte.'
+            : 'Die Linsen heben sich fast auf. Die Mitte ist hier ein echter Widerspruch zwischen starken Argumenten, kein blasses Urteil — siehe die Säulen links.'}
+      </p>
+
       {final.adjustmentReason && (
         <p className="mt-1.5 rounded bg-ink-900 px-2 py-1 text-[10px] text-ink-300">
           <span className="text-ink-500">Korrektur:</span> {final.adjustmentReason}
