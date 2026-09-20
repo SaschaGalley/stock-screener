@@ -362,6 +362,32 @@ STRONG. On the watchlist this relaxes Ondas (SGI 24.2, TATA −0.08) and CoreWea
 (3.96, −0.09) and keeps Nvidia (1.94, **+0.08** — net income above operating cash
 flow is exactly what the score is for).
 
+The model also stands down entirely for a lender, where receivables are the
+product rather than a by-product of selling something: DSRI asks whether
+receivables outgrew sales, which at a credit company is the loan book doing its
+job. The industry list that already excuses banks from FCFF could not see this
+one — SoFi and Mastercard are both filed as "Credit Services", and their debt
+over revenue is 0.80 against 0.70. Interest separates them by a factor of
+thirteen (27 % of revenue against 2 %), which is what `borrowsToLend` reads.
+
+### The analyst target is a drawdown in disguise
+
+The gap between price and mean target correlates **−0.66** with the drawdown
+from the one-year high. Analysts cut targets far more slowly than prices fall, so
+"upside" largely records how far a stock has dropped: the five largest upsides on
+the watchlist belonged to stocks 24–75 % off their highs, the five smallest to
+stocks within three percent of theirs.
+
+Inside the pillar that exists to be the one opinion *independent* of our
+arithmetic, that is a momentum term with the wrong sign — and it was carrying
+45 % of it, which is what drove consensus to a −0.43 correlation against the
+momentum pillar. The retained weight is derived rather than picked: r² = 0.44 of
+the criterion's variance is drawdown, so it keeps the 0.56 that is not, and
+0.45 × 0.56 ≈ **0.25**. The analyst *rating* — a judgement rather than a price
+subtraction — takes the rest. Consensus against momentum fell to −0.28, which is
+the genuine view that remains: analysts really are more positive on beaten-down
+names. Where the drawdown is large the criterion now says so in its own note.
+
 ### The three model calls
 
 The score card's **findings** — drivers and drags ranked by impact, plus the
@@ -403,6 +429,14 @@ back. Narrative confidence is computed from the material — which sources arriv
 and how old the newest is — never self-reported by the model. At equal confidence
 the split lands near 69/31 in favour of the arithmetic.
 
+The factor side is weighted by agreement as well as confidence, because those
+come apart. Apple's data is impeccable (confidence 0.86) and its pillars cancel
+(agreement 0.04), so its 4.9 is a standoff rather than a verdict — and weighted
+by confidence alone that non-statement outvoted the prose three to one. A factor
+half whose lenses cancel keeps `FACTOR_WEIGHT_FLOOR` (half) of its weight, and
+the qualitative read gets the room, which is precisely where a qualitative read
+is worth most: the numbers have already declared a draw.
+
 The pillar weights themselves are deliberately **not** configurable from the
 settings page. They are the scoring model, and a model that can be retuned at
 runtime produces a history that cannot be compared with itself. What is
@@ -429,6 +463,15 @@ pure function of snapshots the database already keeps:
 ```bash
 pnpm run rescore                              # every symbol, all stored history
 pnpm run rescore -- --symbol AIR.PA --dry-run # one symbol, no writes
+```
+
+In the deployed container there is no `pnpm` and no `tsx` — the runtime stage
+carries `dist/`, the production `node_modules` and nothing else (see the
+Dockerfile). Run the compiled entry point directly, and note that the `--`
+separator is a pnpm convention with no place here:
+
+```bash
+node dist/db/rescore.js --symbol AIR.PA --dry-run
 ```
 
 For those dates `final.score` equals `factor.score`: nobody stored what a dossier

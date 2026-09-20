@@ -282,7 +282,7 @@ describe('uncertainty', () => {
 });
 
 describe('reading the M-Score', () => {
-  const b = (over: Record<string, unknown>) => readBeneish({
+  const b = (over: Record<string, unknown>) => readBeneish(financials(), {
     score: -1.0, probability: 'likely manipulator', variablesComputed: 8,
     dsri: 0.9, gmi: 1.0, aqi: 1.1, sgi: 1.5, depi: 1.0, sgai: 1.0, tata: 0.05, lvgi: 1.0,
     ...over,
@@ -323,7 +323,23 @@ describe('reading the M-Score', () => {
     const health = s.pillars.find((p) => p.key === 'health');
     const note = health?.criteria.find((c) => c.key === 'beneish')?.note;
 
-    assert.equal(note, readBeneish(computeAllMetrics(grown, FALLBACK_RATES, peers).beneish).note);
+    assert.equal(note, readBeneish(grown, computeAllMetrics(grown, FALLBACK_RATES, peers).beneish).note);
+  });
+
+  it('stands down for a lender, whose receivables are the product', () => {
+    // SoFi and Mastercard share the industry string "Credit Services" and even
+    // their debt-to-revenue is close (0.80 vs 0.70). Interest separates them by
+    // a factor of thirteen: a lender funds its own book.
+    const lender = financials({ sector: 'Financial Services', industry: 'Credit Services',
+      revenue: 1_000_000, interestExpense: 270_000 });
+    const network = financials({ sector: 'Financial Services', industry: 'Credit Services',
+      revenue: 1_000_000, interestExpense: 20_000 });
+
+    assert.equal(b({}).reading, 'flagged', 'the fixture is a flag to begin with');
+    assert.equal(readBeneish(lender, { score: -1.0, probability: 'likely manipulator',
+      variablesComputed: 8, sgi: 1.5, tata: 0.05 } as never).reading, 'not-applicable');
+    assert.equal(readBeneish(network, { score: -1.0, probability: 'likely manipulator',
+      variablesComputed: 8, sgi: 1.5, tata: 0.05 } as never).reading, 'flagged');
   });
 
   it('abstains rather than scoring zero when the model could not be computed', () => {
@@ -471,6 +487,23 @@ describe('blending the two halves', () => {
     const b = blend({ narrativeScore: null, narrativeConfidence: 0 });
     assert.equal(b.blend, factor.score);
     assert.equal(b.narrativeWeight, 0);
+  });
+
+  it('hands weight to the prose when the pillars cancel, not only when data is thin', () => {
+    // Two factor halves, equally trustworthy, equally neutral — one because it
+    // says nothing, the other because its lenses fought to a draw. Only the
+    // second should let the narrative through.
+    const speaks = blendScores({
+      factor: { ...factor, confidence: 0.9, agreement: 0.95, score: 5 },
+      narrativeScore: 8, narrativeConfidence: 1, adjustment: 0, adjustmentReason: null,
+    });
+    const draws = blendScores({
+      factor: { ...factor, confidence: 0.9, agreement: 0.02, score: 5 },
+      narrativeScore: 8, narrativeConfidence: 1, adjustment: 0, adjustmentReason: null,
+    });
+
+    assert.ok(draws.narrativeWeight > speaks.narrativeWeight);
+    assert.ok(draws.score > speaks.score, 'a standoff lets the prose move the headline');
   });
 
   it('hands weight to the prose exactly as the numbers lose confidence', () => {

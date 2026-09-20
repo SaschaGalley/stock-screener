@@ -42,7 +42,7 @@ import {
   ScoreFinding, ScorePillar, SectorMedians, StockFinancials, TechnicalSignals,
 } from '../types.js';
 import { ComputedMetrics } from './computeMetrics.js';
-import { ANALYST_CONSENSUS_MODEL } from './metrics.js';
+import { ANALYST_CONSENSUS_MODEL, borrowsToLend } from './metrics.js';
 import { worstSeverity } from './data-quality.js';
 import { fmt, fmtBig, fmtPct, fmtPrice, fmtSignedPct } from '../format.js';
 import { toFiniteNumber } from '../utils/num.js';
@@ -251,6 +251,7 @@ const BENEISH_SGI_OUT_OF_SAMPLE = 3.0;
 const BENEISH_SGI_GROWTH = 1.3;
 
 export type BeneishReading =
+  | 'not-applicable'    // a lender: receivables are the product, not a by-product
   | 'unavailable'       // too few variables to compute
   | 'clean'
   | 'grey'
@@ -274,7 +275,20 @@ export type BeneishReading =
  * the opposite of the pattern the score exists to find. Nvidia prints +0.08,
  * and that is a real observation about earnings quality, so its cap stays.
  */
-export function readBeneish(b: ComputedMetrics['beneish']): { reading: BeneishReading; note: string } {
+export function readBeneish(
+  f: StockFinancials, b: ComputedMetrics['beneish'],
+): { reading: BeneishReading; note: string } {
+  // For a lender the model's own inputs are the business. DSRI asks whether
+  // receivables grew faster than sales; at a credit company that is the loan
+  // book growing, which is what the company is for. SoFi came out "likely
+  // manipulator" on it and had its verdict capped for running its business.
+  if (borrowsToLend(f)) {
+    return {
+      reading: 'not-applicable',
+      note: 'Beneish ist auf Kreditgeber nicht anwendbar — Forderungen sind hier das Produkt, '
+        + 'nicht ein Nebenprodukt des Verkaufs, und der M-Score misst damit das Geschäftsmodell statt einer Auffälligkeit',
+    };
+  }
   if (b.variablesComputed < 4) {
     return {
       reading: 'unavailable',
@@ -512,7 +526,7 @@ function qualityPillar(
 
 function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] {
   const z = m.altmanZ;
-  const beneish = readBeneish(m.beneish);
+  const beneish = readBeneish(f, m.beneish);
   // Zone boundaries differ by model, so the ramp is built from the thresholds
   // the calculation itself used rather than from constants repeated here.
   const zPoints = z.score !== null
@@ -634,19 +648,51 @@ function revisionsPillar(f: StockFinancials, signals: MarketSignals | null): Sco
   ];
 }
 
-function consensusPillar(f: StockFinancials, cons: AnalystConsensus): ScoreCriterion[] {
+/**
+ * Weight the target keeps after the part of it that is really a drawdown.
+ *
+ * Measured across the watchlist, the gap between price and mean target
+ * correlates −0.66 with the drawdown from the one-year high: analysts cut
+ * targets far more slowly than prices fall, so "upside" is mostly a record of
+ * how far a stock has dropped. The five largest upsides belonged to stocks down
+ * 24 % to 75 % from their highs; the five smallest to stocks sitting within
+ * three percent of theirs.
+ *
+ * That makes it a momentum term with the wrong sign, inside the pillar that is
+ * supposed to be the one opinion independent of our own arithmetic — and it was
+ * carrying 45 % of it, which is what drove the consensus pillar to a −0.43
+ * correlation against momentum.
+ *
+ * The retained share is derived rather than picked: r² = 0.44 of the
+ * criterion's variance is explained by drawdown, so it keeps the 0.56 that is
+ * not. 0.45 × 0.56 ≈ 0.25. The analyst *rating* — a judgement, not a price
+ * subtraction — takes the rest.
+ */
+const TARGET_UPSIDE_WEIGHT = 0.25;
+
+function consensusPillar(
+  f: StockFinancials, cons: AnalystConsensus, signals: MarketSignals | null,
+): ScoreCriterion[] {
   const c = f.tradingCurrency;
+  const drawdown = toFiniteNumber(signals?.technicals?.drawdownFromHighPct);
+  // Said out loud where it is large, because a reader looking at "+80 % to the
+  // mean target" deserves to know the stock is 75 % off its high.
+  const stale = drawdown !== null && drawdown < -0.25 && (cons.upside ?? 0) > 0.25
+    ? ` — Vorsicht: die Aktie steht ${fmtSignedPct(drawdown)} unter ihrem Jahreshoch, ein Teil dieses `
+      + 'Potenzials ist der Kursrückgang und nicht die Einschätzung'
+    : '';
+
   return [
-    criterion('rating', 'Gewichtetes Analystenrating', 0.55,
+    criterion('rating', 'Gewichtetes Analystenrating', 0.75,
       cons.score !== null ? (cons.score + 1) / 2 : null,
       cons.score !== null
         ? `${cons.label} — ${cons.total} Analysten, ${cons.buySharePct?.toFixed(0)} % Kauf, gewichteter Score ${cons.score >= 0 ? '+' : ''}${cons.score.toFixed(2)}`
         : 'Keine Analystenabdeckung für dieses Listing'),
 
-    criterion('target-upside', 'Kursziel-Potenzial', 0.45,
+    criterion('target-upside', 'Kursziel-Potenzial', TARGET_UPSIDE_WEIGHT,
       ramp(cons.upside, -0.10, 0.35),
       cons.upside !== null
-        ? `Mittleres Kursziel ${fmtPrice(f.targetMeanPrice, c)} — ${fmtSignedPct(cons.upside)} zum Kurs ${fmtPrice(f.price, c)}`
+        ? `Mittleres Kursziel ${fmtPrice(f.targetMeanPrice, c)} — ${fmtSignedPct(cons.upside)} zum Kurs ${fmtPrice(f.price, c)}${stale}`
         : 'Kein Konsens-Kursziel'),
   ];
 }
@@ -753,7 +799,7 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
     reducePillar('valuation', valuationPillar(f, m, sectorMedians)),
     reducePillar('quality',   qualityPillar(f, m, sectorMedians)),
     reducePillar('health',    healthPillar(f, m)),
-    reducePillar('consensus', consensusPillar(f, cons)),
+    reducePillar('consensus', consensusPillar(f, cons, marketSignals)),
     reducePillar('momentum',  momentumPillar(marketSignals, technicalSignals)),
     reducePillar('revisions', revisionsPillar(f, marketSignals)),
   ];
@@ -818,7 +864,7 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
   if (confidence < STRONG_MIN_CONFIDENCE) {
     caps.push({ limit: 'no-strong', reason: `Konfidenz ${(confidence * 100).toFixed(0)} % unter ${(STRONG_MIN_CONFIDENCE * 100).toFixed(0)} %` });
   }
-  const beneish = readBeneish(m.beneish);
+  const beneish = readBeneish(f, m.beneish);
   if (beneish.reading === 'flagged') {
     caps.push({ limit: 'hold-ceiling', reason: beneish.note });
   } else if (beneish.reading === 'growth-explained' || beneish.reading === 'extrapolated') {
@@ -953,6 +999,22 @@ function collectFindings(
  */
 export const NARRATIVE_MAX_WEIGHT = 0.45;
 
+/**
+ * The share of its weight the factor half keeps when its pillars cancel.
+ *
+ * Confidence answers "can this payload be trusted". It does not answer "does it
+ * say anything", and those come apart: Apple's data is impeccable — confidence
+ * 0.86 — and its pillars read 0.2 on valuation against 8.2 on quality, netting
+ * to a 4.9 that is a standoff rather than a verdict. Weighted by confidence
+ * alone, that non-statement outvoted the prose three to one.
+ *
+ * So the factor half is weighted by both: trusted *and* saying something. Where
+ * the lenses cancel it keeps half its weight and the qualitative read gets room
+ * — which is exactly where a qualitative read is worth most, because the numbers
+ * have already declared a draw.
+ */
+export const FACTOR_WEIGHT_FLOOR = 0.5;
+
 /** Hard bound on the synthesis model's correction, in score points. */
 export const ADJUSTMENT_LIMIT = 1;
 
@@ -985,7 +1047,12 @@ export function blendScores(input: BlendInput): FinalScore {
   const limit   = input.adjustmentLimit ?? ADJUSTMENT_LIMIT;
 
   const hasNarrative = input.narrativeScore !== null && Number.isFinite(input.narrativeScore);
-  const factorWeight = factor.confidence;
+
+  // Trusted *and* saying something. `agreement` is 0 when the pillars cancel,
+  // and a score that is 5.0 because its evidence nets off is not an opinion the
+  // blend should defend at full strength.
+  const factorWeight = factor.confidence
+    * (FACTOR_WEIGHT_FLOOR + (1 - FACTOR_WEIGHT_FLOOR) * factor.agreement);
   const narrativeWeight = hasNarrative
     ? Math.max(0, Math.min(1, input.narrativeConfidence)) * maxNarr
     : 0;

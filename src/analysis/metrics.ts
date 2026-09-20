@@ -30,6 +30,7 @@ import {
 import { FALLBACK_RATES, MarketRates } from '../data/fred.js';
 import { Rating, ratingForCoverage, UNRATED } from '../data/ratings.js';
 import { seasonallyAdjustedRunRate } from './run-rate.js';
+import { toFiniteNumber } from '../utils/num.js';
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -129,6 +130,35 @@ function isBalanceSheetFinancial(f: StockFinancials): boolean {
 
 const BALANCE_SHEET_FINANCIAL =
   'banks, insurers and brokers borrow as their business, so free cash flow to the firm and WACC do not describe them';
+
+/**
+ * Interest expense at or above this share of revenue is a cost of revenue.
+ *
+ * The industry list above catches banks, insurers and brokers by name, but not
+ * a lender filed under a label it shares with something else entirely: SoFi and
+ * Mastercard are both "Credit Services", and one of them funds a loan book
+ * while the other runs a payment network. Debt does not separate them —
+ * 0.80× revenue against 0.70×. Interest does, by a factor of thirteen: SoFi
+ * pays 27 % of revenue in interest, Mastercard 2 %, Berkshire 1 %, Nu 54 %.
+ */
+const LENDER_INTEREST_SHARE = 0.15;
+
+/**
+ * Does this company borrow in order to lend?
+ *
+ * The question matters wherever a model assumes receivables are a by-product of
+ * selling something. For a lender they *are* the product, so the Beneish
+ * M-Score's receivables and accrual terms describe the business rather than
+ * detect anything about it — the same reason FCFF and WACC do not describe one.
+ */
+export function borrowsToLend(f: StockFinancials): boolean {
+  if (isBalanceSheetFinancial(f)) return true;
+  if (f.sector !== 'Financial Services') return false;
+  const revenue = toFiniteNumber(f.revenue);
+  const interest = toFiniteNumber(f.interestExpense);
+  return revenue !== null && revenue > 0 && interest !== null
+    && interest / revenue >= LENDER_INTEREST_SHARE;
+}
 
 function median(xs: number[]): number | null {
   if (xs.length === 0) return null;
@@ -1627,7 +1657,8 @@ export function calculateCompositeFairValue(financials: StockFinancials, inputs:
     iqrRel < 0.50 ? 3 :
     iqrRel < 0.80 ? 2 : 1;
   let confidence = coverageScore + tightnessBonus;
-  if (inputs.beneish.probability === 'likely manipulator') confidence /= 2;
+  // A lender's M-Score is not a reading about a lender — see `borrowsToLend`.
+  if (inputs.beneish.probability === 'likely manipulator' && !borrowsToLend(financials)) confidence /= 2;
   if (primary.length < 2) confidence = 0;
   confidence = Math.max(0, Math.min(10, Math.round(confidence * 10) / 10));
 

@@ -53,14 +53,27 @@ const MONTH_MS = 2_629_800_000;
  *     TTM revenue 30% under the fiscal year already on file.
  *
  * So the trailing-vs-annual check is deliberately one-sided: below is a finding,
- * above is growth. The margin check instead compares annual against
- * annual, where both sides share a basis, and only fires on factor-level gaps.
+ * above is growth.
+ *
+ * The margin check pairs the same two bases — a trailing margin against an
+ * annual one — and an earlier version of this comment claimed otherwise. It
+ * stays two-sided, because a *stale* margin can sit on either side of the
+ * current year depending on the trajectory it froze in, and it only fires on
+ * factor-level gaps. `marginFloor` is what keeps that honest: a relative gap
+ * measured against a margin of nearly zero is a statement about the
+ * denominator, not about the company.
  */
 const TOL = {
   /** How far *below* the annual statement trailing revenue may sit. */
   revenueBelowAnnual: 0.30,
   /** Annual-basis margin vs. the reported one. Wide: only factor-level gaps. */
   margin: 0.60,
+  /**
+   * Below this, a margin is too close to zero for a *relative* gap to mean
+   * anything — the ratio is then a statement about the denominator, not about
+   * the company.
+   */
+  marginFloor: 0.01,
   /** EV vs. market cap + net debt. Both are point-in-time, so this is tight. */
   enterpriseValue: 0.15,
 } as const;
@@ -188,9 +201,22 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
     });
   }
 
-  // ── 5. Reported margins vs. the same margins on an annual basis ───────────
-  // Annual numerator over annual revenue, so both sides share a period. A
-  // trailing-vs-annual comparison here would just re-measure growth.
+  // ── 5. Reported margin vs. the annual statements ──────────────────────────
+  //
+  // The two sides are *not* the same period, and an earlier comment here
+  // claimed they were: the reported margin is Yahoo's trailing figure, the
+  // derived one is the newest full fiscal year. That is deliberate — a stale
+  // `financialData` block is exactly a trailing figure that stopped moving —
+  // but it means a fast-changing business can differ legitimately, so the
+  // message names both bases and lets the reader weigh trajectory against
+  // staleness.
+  //
+  // What it must not do is measure against approximately zero. `relDiff`
+  // divides by the larger side, so a company whose annual operating margin
+  // rounds to 0.0 % produces a 280× "gap" out of a rounding difference —
+  // Intel did, and the finding said nothing about Intel. A margin inside a
+  // percentage point of zero carries no ratio worth taking, and the check
+  // stands down rather than manufacturing one.
   const annualRevenue = statementRevenue;
   if (annualRevenue !== null && annualRevenue > 0) {
     const checks: { field: 'netMargin' | 'operatingMargin'; reported: number | null; numerator: number | null; label: string }[] = [
@@ -200,6 +226,7 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
     for (const c of checks) {
       if (c.reported === null || c.numerator === null) continue;
       const derived = c.numerator / annualRevenue;
+      if (Math.abs(c.reported) < TOL.marginFloor || Math.abs(derived) < TOL.marginFloor) continue;
       // A sign flip is always a finding; otherwise require a factor-level gap.
       const signFlip = Math.sign(c.reported) !== Math.sign(derived) && c.reported !== 0 && derived !== 0;
       const diff = relDiff(c.reported, derived);
@@ -208,9 +235,12 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
           code: 'margin-mismatch',
           severity: 'warn',
           fields: [c.field],
-          message: `${c.field} of ${(c.reported * 100).toFixed(2)}% disagrees with ${c.label} / revenue on an annual `
-            + `basis (${(derived * 100).toFixed(2)}%)${signFlip ? ' — and the two have opposite signs' : ''}. `
-            + `Treat the margin level as unsettled.`,
+          message: `Trailing ${c.field} of ${(c.reported * 100).toFixed(2)}% disagrees with ${c.label} / revenue `
+            + `on the newest full fiscal year (${(derived * 100).toFixed(2)}%)`
+            + `${signFlip ? ' — and the two have opposite signs' : ''}. `
+            + `The two cover different periods, so a fast-moving business can differ legitimately; `
+            + `a gap this size is either that trajectory or a trailing figure that stopped moving. `
+            + `Treat the margin level as unsettled either way.`,
         });
       }
     }
@@ -269,7 +299,11 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
   // (Air Liquide's Frankfurt line). A revenue forecast does not validate a fair
   // value — only earnings estimates and price targets do — so it does not count
   // as the independent check the models are missing.
-  const epsEstimates = f.earningsEstimates.filter(
+  // Guarded like every other collection here: `readFinancialsLax` deliberately
+  // skips schema validation so old payloads stay readable, and one written
+  // before forward estimates existed would otherwise crash the audit rather
+  // than lose one check.
+  const epsEstimates = (f.earningsEstimates ?? []).filter(
     (e) => e.epsEstimate !== null || (e.numberOfAnalysts ?? 0) > 0,
   ).length;
   if (ratings === 0 && f.targetMeanPrice === null && epsEstimates === 0) {
