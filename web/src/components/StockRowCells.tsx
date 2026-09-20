@@ -35,7 +35,10 @@ interface IdentityProps {
 
 export function StockIdentity({ row, active, stages = [] }: IdentityProps) {
   return (
-    <div className="flex min-w-0 items-center gap-2">
+    // `flex-1` is what pushes the score to the right edge in the rail, where
+    // the two blocks are siblings in one flex row. In the table each sits in
+    // its own cell and the cell does the aligning, so it costs nothing there.
+    <div className="flex min-w-0 flex-1 items-center gap-2">
       <ConsensusBar consensus={row.consensus} height={34} />
       <StockLogo
         domain={row.logoDomain}
