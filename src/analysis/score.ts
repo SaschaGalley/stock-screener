@@ -42,7 +42,7 @@ import {
   ScoreFinding, ScorePillar, SectorMedians, StockFinancials, TechnicalSignals,
 } from '../types.js';
 import { ComputedMetrics } from './computeMetrics.js';
-import { ANALYST_CONSENSUS_MODEL, borrowsToLend } from './metrics.js';
+import { ANALYST_CONSENSUS_MODEL, borrowsToLend, reliableMargin } from './metrics.js';
 import { worstSeverity } from './data-quality.js';
 import { fmt, fmtBig, fmtPct, fmtPrice, fmtSignedPct } from '../format.js';
 import { toFiniteNumber } from '../utils/num.js';
@@ -271,11 +271,20 @@ export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResul
  * $738, and a reader should see that rather than a confident bracket.
  */
 export function fairValueRange(f: StockFinancials, comp: CompositeFairValueResult): string {
-  const values = intrinsicValue(f, comp).models.map((m) => m.fairValue).sort((a, b) => a - b);
+  const iv = intrinsicValue(f, comp);
+  const values = iv.models.map((m) => m.fairValue).sort((a, b) => a - b);
   if (values.length === 0) return 'N/A';
-  const lo = fmtPrice(values[0], f.tradingCurrency);
-  const hi = fmtPrice(values[values.length - 1], f.tradingCurrency);
-  return lo === hi ? lo : `${lo}–${hi}`;
+  const P = (n: number) => fmtPrice(n, f.tradingCurrency);
+  if (values.length === 1) return P(values[0]);
+
+  // The median leads and the span follows. A bare min–max hands both ends to
+  // whichever model strays furthest: ServiceNow's three models printed
+  // "$39.22–$222.76", which says only that they disagree by a factor of 5.7.
+  // The median is the figure the valuation pillar actually scores, and it is
+  // not hostage to the outlier; the span stays beside it because the
+  // disagreement is itself worth knowing.
+  const mid = iv.fair ?? median(values);
+  return `${P(mid as number)} (${values.length} Modelle: ${P(values[0])}–${P(values[values.length - 1])})`;
 }
 
 // ── Reading the Z-Score ──────────────────────────────────────────────────────
@@ -600,7 +609,14 @@ function qualityPillar(
   const wacc = toFiniteNumber(m.dcf.discountRate);
   const excess = roic !== null && wacc !== null ? roic - wacc : null;
 
-  const margin = toFiniteNumber(f.operatingMargin) ?? toFiniteNumber(f.netMargin);
+  // The audited margin, not the flagged one — see `reliableMargin`.
+  const op = reliableMargin(f, 'operatingMargin');
+  const net = reliableMargin(f, 'netMargin');
+  const marginRead = op.value !== null ? op : net;
+  const margin = marginRead.value;
+  const fromStatement = marginRead.source === 'statement'
+    ? ' (Jahresabschluss — die gemeldete Trailing-Marge widerspricht ihm und ist geflaggt)'
+    : '';
   const peerMargin = peers?.operatingMargin ?? peers?.netMargin ?? null;
   // Against peers where we have them, against an absolute band where we don't.
   const marginPoints = peerMargin !== null && margin !== null
@@ -627,8 +643,8 @@ function qualityPillar(
       marginPoints,
       margin === null ? 'Keine Margendaten'
         : peerMargin !== null
-          ? `Operative Marge ${fmtPct(margin)} gegen Sektormedian ${fmtPct(peerMargin)}`
-          : `Operative Marge ${fmtPct(margin)} (kein Peer-Vergleich verfügbar)`),
+          ? `Operative Marge ${fmtPct(margin)}${fromStatement} gegen Sektormedian ${fmtPct(peerMargin)}`
+          : `Operative Marge ${fmtPct(margin)}${fromStatement} (kein Peer-Vergleich verfügbar)`),
 
     criterion('growth', 'Umsatzwachstum', 0.15,
       peerGrowth !== null && growth !== null

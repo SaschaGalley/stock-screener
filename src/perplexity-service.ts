@@ -13,7 +13,7 @@
  */
 
 import { readAppConfig } from './app-config.js';
-import { fetchPerplexity, PerplexityContext } from './data/perplexity.js';
+import { fetchPerplexity, PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
 import { readFinancialsLax, readPerplexity, writePerplexity } from './db/store.js';
 import { logger } from './utils/logger.js';
 
@@ -35,10 +35,14 @@ export async function getPerplexityCached(
 ): Promise<PerplexityContext> {
   const { maxAgeDays } = (await readAppConfig()).perplexity;
   const stored = await readPerplexity(symbol, maxAgeDays * DAY_MS);
-  if (stored) {
+  // An answer to a different question is not a cache hit, however fresh. The
+  // hash existed from the start and was never compared, so rewriting the brief
+  // would have gone on serving answers to the old one for up to two weeks.
+  if (stored && stored.promptHash === PERPLEXITY_PROMPT_HASH) {
     logger.info(`Perplexity from store (${stored.fetchedAt.slice(0, 10)}, window ${maxAgeDays}d)`);
     return stored;
   }
+  if (stored) logger.info('Perplexity in store was written by an earlier prompt — fetching anew');
   return fetchAndStore(symbol, companyName, model, apiKey, runId);
 }
 

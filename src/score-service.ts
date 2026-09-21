@@ -38,7 +38,7 @@ import {
 import { appendSearchResults } from './providers/base.js';
 import { createProviderForModel } from './providers/factory.js';
 import { DistillBundle } from './data/distill.js';
-import { PerplexityContext } from './data/perplexity.js';
+import { PerplexityContext, PerplexityFindings } from './data/perplexity.js';
 import { logger } from './utils/logger.js';
 
 const SYSTEM_SUMMARISER =
@@ -74,6 +74,22 @@ const SOURCE_WEIGHT = {
   sectors:        0.10,
   search:         0.10,
 } as const;
+
+/** Independent items at which a Perplexity brief earns its full weight. */
+const PERPLEXITY_FULL_WEIGHT_ITEMS = 6;
+
+/**
+ * Evidence that does not come from the company's own mouth.
+ *
+ * Bull claims count when they were checked against something — independently
+ * confirmed or contradicted. A claim resting only on management's statements is
+ * exactly the thing the brief exists to discount.
+ */
+function independentItems(f: PerplexityFindings): number {
+  return f.events.filter((e) => e.independent).length
+    + f.bearEvidence.filter((e) => e.independent).length
+    + f.bullClaims.filter((c) => c.evidence !== 'management-only').length;
+}
 
 /** Newest material this old, in days, scales everything down. */
 function recencyFactor(ageDays: number | null): number {
@@ -123,7 +139,15 @@ export function narrativeMaterial(
   }
 
   if (perplexity?.synthesis?.trim()) {
-    weight += SOURCE_WEIGHT.perplexity;
+    // Weighted by what it found, not by having answered. The old free-text
+    // synthesis always counted in full, so a page of press-release paraphrase
+    // bought the same narrative weight as a page of dated contrary evidence.
+    // A structured answer is weighed by its independent items — six or more
+    // earns the full share, none earns nothing. An old unstructured row keeps
+    // the flat weight until the prompt hash retires it.
+    weight += perplexity.findings
+      ? SOURCE_WEIGHT.perplexity * Math.min(1, independentItems(perplexity.findings) / PERPLEXITY_FULL_WEIGHT_ITEMS)
+      : SOURCE_WEIGHT.perplexity;
     sources.push('perplexity');
   }
 

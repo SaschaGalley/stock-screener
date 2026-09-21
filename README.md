@@ -28,7 +28,7 @@ there is no second step and one lockfile describes the whole tree.
 | `ANTHROPIC_API_KEY` | Claude — `--model claude/opus/claude-*` | yes | [console.anthropic.com](https://console.anthropic.com) |
 | `FINNHUB_API_KEY` | News, peer medians, sector ETF mapping | yes | [finnhub.io](https://finnhub.io) — free tier |
 | `OPENAI_API_KEY` | OpenAI — `--model terra/luna/mini/gpt-*/o1-*` | optional | [platform.openai.com](https://platform.openai.com) |
-| `PPLX_API_KEY` | Perplexity Sonar — web-sourced context paragraph | optional | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
+| `PPLX_API_KEY` | Perplexity Sonar — forensic web research for the narrative stage | optional | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
 | `DISTILL_API_KEY` + `DISTILL_API_URL` | Distill — rolling dossiers per company and sector, plus raw insights | optional | mint in Distill Admin → Project → Access keys, scope `dossiers:write` (no `briefings:write` needed) |
 | `BRAVE_API_KEY` | Brave web search | optional | [brave.com/search/api](https://brave.com/search/api/) — $5 free credits/mo |
 | `TAVILY_API_KEY` | Tavily web search | optional | [tavily.com](https://tavily.com) |
@@ -447,13 +447,29 @@ findings and marked as written without a model. That last path is not
 theoretical — it fired on the first live run, and the verdict it produced was
 the right score with honest prose and a label saying no model wrote it.
 
-`fairValueEstimate` is **computed, not asked for**. It was the last number the
-synthesis model still invented, and the first live run showed why: given a card
-carrying both an intrinsic value and a conservative floor, it paired the lowest
-figure with the highest and printed "€74–€173" beside a €208 price and a HOLD.
-It is now the span of the models that produced it, and the width of that span is
-information the invented bracket hid — Microsoft's own models disagree from $349
-to $738.
+`fairValueEstimate` is **computed, not asked for**, and it leads with the median:
+`$123.64 (3 Modelle: $39.22–$222.76)`. A bare min–max hands both ends to
+whichever model strays furthest — ServiceNow's printed "$39.22–$222.76", which
+says only that they disagree by a factor of 5.7. The median is what the
+valuation pillar scores and is not hostage to the outlier; the span stays beside
+it because the disagreement is worth knowing.
+
+It was the last number the model still invented, and the first live run showed
+why: given a card carrying both an intrinsic value and a conservative floor, it
+paired the lowest figure with the highest and printed "€74–€173" beside a €208
+price and a HOLD.
+
+**A margin the audit has contradicted is not read.** The data-quality audit flags
+a trailing margin that disagrees with the fiscal year and says to prefer the
+statements — but every consumer went on reading the flagged figure, and the
+warning only lowered a confidence somewhere downstream. ServiceNow reported a
+trailing operating margin of 4.1 % beside a trailing *net* margin of 11.3 %,
+interest covered 99× and a 35 % free-cash-flow margin; the fiscal year says
+13.7 %. The 4.1 % was the largest single drag on its score and failed Rule of 40
+on it (28.1). `reliableMargin` answers from the newest fiscal year once the audit
+has named the field, and both Rule of 40 (now 37.7) and the quality pillar read
+it. The margin criterion still scores ServiceNow low — against a peer median of
+32.3 % its GAAP margin, carrying heavy stock-based compensation, genuinely is.
 
 **Token budgets cover reasoning.** On the gpt-5 family `max_completion_tokens`
 counts thinking as well as output, so a long prompt can exhaust the budget
@@ -461,6 +477,53 @@ before a single brace is emitted — which surfaces as `JSON.parse` failing with
 "Unexpected end of JSON input" and reads as the model misbehaving. The providers
 now check `finish_reason` / `stop_reason` and raise `LLMTruncatedError`, which
 names the limit and says to raise it.
+
+### What Perplexity is asked for
+
+The narrative stage exists to read what the pillars cannot see, so Perplexity is
+asked for exactly that and nothing else. The previous brief asked for recent
+developments, earnings highlights, the competitive position, analyst targets and
+a bull and bear case — and got them. For ServiceNow that was a third of its
+sources from the company's own newsroom (a partnership, a Brazil office), analyst
+targets already read from Yahoo, and a bull and bear case written a second time
+by a model nobody audits; its bear case read "competitive pressure could
+intensify". The one fact that mattered most in our own data — 71 net estimate
+cuts — went unexplained.
+
+The brief now names what we already hold (price, multiples, statements, ratings,
+targets, revisions, insider transactions) and forbids repeating it, and returns
+structured JSON:
+
+| Part | Asked for |
+|---|---|
+| `events` | dated developments that move the outlook; always the latest earnings call — did guidance go up, down or hold, and what did management avoid? Product launches, partnership releases and routine insider sales excluded |
+| `bear_evidence` | the strongest *specific* evidence against the bull case — short reports, accounting concerns, guidance cuts, churn, share loss, documented structural threats. Evidence only, never "risks could include" |
+| `bull_claims` | what bulls say drives the stock, each graded `independent`, `management-only` or `contradicted` |
+
+Every item carries a date, a source and an independent-or-company label. On the
+same stock it produced: a guide raised by $15M on a 150bp beat, federal revenue
+pulled forward from Q3, a margin beat from deferred marketing spend, AI usage
+acknowledged as a gross-margin headwind — and two popular bull claims marked
+contradicted. Four of five claims in circulation rested on management's word
+alone, which is itself the finding. The narrative score fell to 5.0: once the
+prose was asked for contrary evidence, it stopped propping the price up.
+
+Mechanics that keep it honest:
+
+- **High search context.** At `low` the same brief found four insider filings and
+  nothing else. About five cents a call.
+- **Capped at 6 / 6 / 5 items, two sentences each.** Uncapped, the first live run
+  ran to 14k characters and was cut off at `max_tokens` mid-sentence.
+- **A truncated answer is salvaged**, not discarded: `salvageTruncatedJson` cuts
+  back to the last finished item and closes what is open. Nothing is invented to
+  replace the item that was being written.
+- **Weighted by independent evidence.** Narrative confidence counts independent
+  items — six or more earns Perplexity its full share, none earns nothing. The
+  old synthesis always counted in full, so press-release paraphrase bought the
+  same weight as dated contrary evidence.
+- **The prompt hash is compared.** It existed from the start and was never read,
+  so a rewritten brief would have gone on serving answers to the old one for up
+  to two weeks. A stored answer from another prompt is now a cache miss.
 
 ### The blend
 
@@ -558,7 +621,7 @@ TradingView-style aggregation on top of that in `src/analysis/signals.ts`:
 | FRED | 10Y Treasury, Moody's AAA, VIX, DXY, yield curve, HY spreads, sector ETF prices |
 | SEC EDGAR | Latest 10-K / 10-Q filings (US tickers only) |
 | Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
-| Perplexity Sonar | Optional web-sourced context paragraph; goes to the narrative stage, which never sees the valuation |
+| Perplexity Sonar | Optional forensic brief — dated events, contrary evidence, bull claims graded against the evidence; goes to the narrative stage, which never sees the valuation |
 | Distill | Optional curated multi-source briefings per ticker (RSS, YouTube, web). Weighted **above** Perplexity / raw search because the editorial filter happens upstream |
 | Brave / Tavily / Claude / OpenAI | Optional web search for current events |
 
@@ -597,7 +660,7 @@ src/
 │   ├── finnhub.ts         News, basic metrics, peer-group medians
 │   ├── fred.ts            FRED rates (live 10Y, AAA, …)
 │   ├── macro.ts           SPY + sector-ETF bundles, yield curve, VIX
-│   ├── perplexity.ts      Sonar / Sonar-Pro web-research paragraph
+│   ├── perplexity.ts      Sonar-Pro forensic brief → structured findings
 │   ├── distill.ts         Distill briefing service — briefings for a resolved entity
 │   ├── distill-entities.ts Distill entity registry — identifier → entity UUID
 │   ├── distill-dossier.ts Distill dossier switch — GET/PUT /entities/{id}/dossier

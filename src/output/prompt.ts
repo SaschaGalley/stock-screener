@@ -451,9 +451,26 @@ export function buildNarrativePrompt(
   perplexity?: PerplexityContext,
 ): string {
   const distillSection = distillDossierSection(f.symbol, distill);
-  const pplx = perplexity
-    ? `\n### Perplexity Sonar (web-recherchiert — unter Distill zu gewichten)\n\n${perplexity.synthesis}\n`
-    : '';
+  // The structured brief reads differently from the old free prose, and the
+  // summariser has to know which of its three parts carries weight: a bull claim
+  // marked contradicted is the strongest thing on the page, a company-sourced
+  // event the weakest.
+  const pplx = !perplexity ? ''
+    : perplexity.findings
+      ? `
+### Forensische Web-Recherche (Perplexity — gezielt nach dem gefragt, was die Zahlen nicht zeigen)
+
+Drei Teile, und sie wiegen nicht gleich. **Ereignisse** sind datierte Fakten. Die
+**Belege gegen die Bullen-These** sind das Ergebnis einer ausdrücklichen Suche nach dem,
+was die Optimisten übersehen. Die **geprüften Bullen-Thesen** sagen, welche verbreiteten
+Argumente unabhängig belegt, nur vom Management behauptet oder widerlegt sind — eine
+widerlegte These ist das stärkste Signal auf dieser Seite, eine reine Management-Aussage
+das schwächste. Einträge aus einer Unternehmensquelle wiegen weniger als unabhängige.
+Leere Abschnitte heißen „gesucht und nichts gefunden", nicht „nicht gesucht".
+
+${perplexity.synthesis}
+`
+      : `\n### Perplexity Sonar (web-recherchiert — unter Distill zu gewichten)\n\n${perplexity.synthesis}\n`;
 
   return `## Qualitative Lage: ${f.symbol} — ${f.companyName}
 Sektor ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}

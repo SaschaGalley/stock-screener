@@ -84,3 +84,32 @@ describe('margin cross-check', () => {
     assert.match(w[0].message, /opposite signs/);
   });
 });
+
+describe('reading a flagged margin', () => {
+  it('prefers the fiscal year once the audit has contradicted the trailing figure', async () => {
+    // ServiceNow's shape: trailing operating margin 4.1 % against a trailing net
+    // margin of 11.3 % and a fiscal year of 13.7 %. The audit flagged it; every
+    // consumer used to read the flagged number anyway.
+    const { reliableMargin } = await import('../src/analysis/metrics.js');
+    const f = financials({
+      operatingMargin: 0.041,
+      fundamentalsHistory: {
+        ...financials().fundamentalsHistory,
+        revenue: [{ year: 2025, value: 13_280 }],
+        operatingIncome: [{ year: 2025, value: 1_820 }],
+      },
+    } as Partial<StockFinancials>);
+    f.dataQualityWarnings = auditFinancials(f);
+
+    const read = reliableMargin(f, 'operatingMargin');
+    assert.equal(read.source, 'statement');
+    assert.ok(Math.abs((read.value ?? 0) - 1_820 / 13_280) < 1e-9);
+  });
+
+  it('leaves an unflagged margin exactly as reported', async () => {
+    const { reliableMargin } = await import('../src/analysis/metrics.js');
+    const f = financials();
+    f.dataQualityWarnings = auditFinancials(f);
+    assert.deepEqual(reliableMargin(f, 'operatingMargin'), { value: 0.10, source: 'reported' });
+  });
+});

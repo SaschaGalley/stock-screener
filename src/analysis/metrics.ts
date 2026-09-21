@@ -897,9 +897,43 @@ export function calculateEVMultiples(financials: StockFinancials): EVMultiplesRe
 
 // ─── 7. Rule of 40 ───────────────────────────────────────────────────────────
 
+/**
+ * A margin, taken from the source the data-quality audit trusts.
+ *
+ * The audit flags a trailing margin that contradicts the fiscal year, and its
+ * finding says to prefer the statements — but until now every consumer went on
+ * reading the flagged figure anyway, and the warning only lowered a confidence
+ * somewhere downstream. ServiceNow reported a trailing operating margin of
+ * 4.1 % beside a trailing *net* margin of 11.3 %, interest covered 99 times and
+ * a free-cash-flow margin of 35 %; the fiscal year says 13.7 %. The 4.1 % was
+ * the single largest drag on its score and it failed Rule of 40 on it.
+ *
+ * When the audit named the field, the newest full fiscal year answers instead.
+ * That is a different period, and the source says so — but a figure the audit
+ * has already contradicted is not a better guess for being more recent.
+ */
+export function reliableMargin(
+  f: StockFinancials, field: 'operatingMargin' | 'netMargin',
+): { value: number | null; source: 'reported' | 'statement' } {
+  const reported = toFiniteNumber(f[field]);
+  const flagged = (f.dataQualityWarnings ?? [])
+    .some((w) => w.code === 'margin-mismatch' && w.fields.includes(field));
+  if (!flagged) return { value: reported, source: 'reported' };
+
+  const series = field === 'operatingMargin'
+    ? f.fundamentalsHistory?.operatingIncome
+    : f.fundamentalsHistory?.netIncome;
+  const numerator = toFiniteNumber(series?.[series.length - 1]?.value);
+  const revenue = toFiniteNumber(f.fundamentalsHistory?.revenue?.at(-1)?.value);
+  return numerator !== null && revenue !== null && revenue > 0
+    ? { value: numerator / revenue, source: 'statement' }
+    : { value: reported, source: 'reported' };
+}
+
 export function calculateRuleOf40(financials: StockFinancials): RuleOf40Result {
   const rg = financials.revenueGrowth;
-  const pm = financials.operatingMargin ?? financials.netMargin;
+  const pm = reliableMargin(financials, 'operatingMargin').value
+    ?? reliableMargin(financials, 'netMargin').value;
 
   if (rg === null || pm === null) {
     return { score: null, revenueGrowthPct: null, profitMarginPct: null, passes: null };

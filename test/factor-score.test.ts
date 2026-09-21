@@ -495,8 +495,14 @@ describe('fair value range', () => {
     const own = intrinsicValue(f, comp).models.map((m) => m.fairValue).sort((a, b) => a - b);
 
     assert.ok(own.length >= 1, 'fixture should produce at least one model');
-    assert.ok(range.includes(own[0].toFixed(2)), `${range} should start at ${own[0]}`);
+    assert.ok(range.includes(own[0].toFixed(2)), `${range} should include its low end ${own[0]}`);
     assert.ok(range.includes(own[own.length - 1].toFixed(2)));
+    if (own.length >= 2) {
+      // The median leads, so an outlier cannot define the headline figure.
+      const iv = intrinsicValue(f, comp);
+      assert.ok(range.startsWith(`$${(iv.fair as number).toFixed(2)}`), `${range} should lead with the median`);
+      assert.match(range, new RegExp(`${own.length} Modelle`));
+    }
     if (comp.conservative.median !== null) {
       assert.ok(!range.includes(comp.conservative.median.toFixed(2)),
         'the value-lens floor is not one end of the headline range');
