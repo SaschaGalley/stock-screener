@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { analystConsensus, blendScores, computeFactorScore, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readBeneish } from '../src/analysis/score.js';
+import { analystConsensus, blendScores, computeFactorScore, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -281,6 +281,85 @@ describe('uncertainty', () => {
   });
 });
 
+describe('reading the Z-Score', () => {
+  const z = (over: Partial<StockFinancials>, metricsOver: Record<string, unknown> = {}) => {
+    const f = financials(over);
+    const m = computeAllMetrics(f, FALLBACK_RATES, peers);
+    return readAltman(f, {
+      ...m,
+      altmanZ: { score: -2.5, zone: 'distress', model: 'modified', x2: -1.15,
+        thresholds: { safe: 2.6, distress: 1.11 } } as never,
+      ...metricsOver,
+    } as never);
+  };
+
+  it('does not call a company with net cash distressed', () => {
+    // Rubrik's shape: a decade of venture-funded losses puts retained earnings
+    // at −115 % of assets and Z at −2.52, while it holds $603M in net cash.
+    // There is nothing to default on.
+    const r = z({ totalCash: 700_000_000, totalDebt: 50_000_000 });
+    assert.equal(r.reading, 'deficit-driven');
+    assert.match(r.note, /Nettoliquidität/);
+  });
+
+  it('does not call debt covered sixteen times over distressed', () => {
+    const r = z({ totalCash: 0, totalDebt: 500_000_000 },
+      { interestCoverage: { ratio: 16.6, interpretation: 'excellent' } });
+    assert.equal(r.reading, 'serviced');
+  });
+
+  it('keeps the reading when there is debt it cannot serve', () => {
+    const r = z({ totalCash: 1_000_000, totalDebt: 900_000_000 },
+      { interestCoverage: { ratio: 0.4, interpretation: 'critical' } });
+    assert.equal(r.reading, 'distress');
+  });
+
+  it('caps only on the reading that survived, and the criterion follows it', () => {
+    const cashRich = financials({ totalCash: 700_000_000, totalDebt: 50_000_000 });
+    const s = computeFactorScore({
+      financials: cashRich,
+      metrics: computeAllMetrics(cashRich, FALLBACK_RATES, peers),
+      sectorMedians: peers, marketSignals: signals, technicalSignals: technicals,
+    });
+    const altman = s.pillars.find((p) => p.key === 'health')
+      ?.criteria.find((c) => c.key === 'altman');
+
+    assert.equal(altman?.note, readAltman(cashRich, computeAllMetrics(cashRich, FALLBACK_RATES, peers)).note);
+    assert.ok(!s.caps.some((c) => /Distress/.test(c.reason)));
+  });
+});
+
+describe('an uncorroborated model', () => {
+  it('abstains when it lands far from the price with nothing to check it', () => {
+    // Rubrik's lone DCF said $522.81 against a $102.23 price and took the top
+    // of the ranking; the ramp tops out at +60 % MoS, so five-times-the-price
+    // scored exactly what solidly-cheap does.
+    const f = financials({ price: 100 });
+    const comp = computeAllMetrics(f, FALLBACK_RATES, peers).composite;
+    const lone = (fairValue: number) => intrinsicValue(f, {
+      ...comp, primary: { ...comp.primary, models: [{ name: 'DCF (2-Stage FCFF)', fairValue }] },
+    });
+
+    assert.equal(lone(500).mos, null, '5× the price is extrapolation');
+    assert.equal(lone(20).mos, null, '0.2× the price likewise');
+    assert.ok(lone(180).mos !== null, '1.8× is a claim worth weighing');
+    assert.ok(lone(60).mos !== null);
+  });
+
+  it('lets a corroborated outlier stand, because its neighbours correct it', () => {
+    const f = financials({ price: 100 });
+    const comp = computeAllMetrics(f, FALLBACK_RATES, peers).composite;
+    const pair = intrinsicValue(f, {
+      ...comp,
+      primary: { ...comp.primary, models: [
+        { name: 'DCF (2-Stage FCFF)', fairValue: 500 },
+        { name: 'Peer Multiples', fairValue: 120 },
+      ] },
+    });
+    assert.ok(pair.mos !== null, 'the median of the two is 310, and two models is a reading');
+  });
+});
+
 describe('reading the M-Score', () => {
   const b = (over: Record<string, unknown>) => readBeneish(financials(), {
     score: -1.0, probability: 'likely manipulator', variablesComputed: 8,
@@ -467,6 +546,38 @@ describe('score bands', () => {
   it('agrees with the score the scorer produces', () => {
     const s = score();
     assert.equal(s.uncappedVerdict, verdictForScore(s.score));
+  });
+
+  it('leaves a mid-range verdict alone when the cap cannot reach it', () => {
+    // The marker in the list means "the label was held back", and this is why
+    // it cannot mean "a cap exists": `no-strong` on a stock scoring 6.6 forbids
+    // a label that was never on the table, so BUY stands and nothing was
+    // capped. The list used to print ⛔ beside exactly this row.
+    const base = score();
+    const withCap = blendScores({
+      factor: {
+        ...base, confidence: 1, agreement: 1, score: 6.6,
+        caps: [{ limit: 'no-strong', reason: 'Konfidenz zu niedrig' }],
+      },
+      narrativeScore: 6.6, narrativeConfidence: 1, adjustment: 0, adjustmentReason: null,
+    });
+
+    assert.equal(withCap.verdict, 'BUY');
+    assert.equal(withCap.verdict, verdictForScore(withCap.score), 'nothing was held back');
+  });
+
+  it('holds a high score back when the cap can reach it', () => {
+    const base = score();
+    const held = blendScores({
+      factor: {
+        ...base, confidence: 1, agreement: 1, score: 8.5,
+        caps: [{ limit: 'hold-ceiling', reason: 'Altman Z im Distress-Bereich' }],
+      },
+      narrativeScore: 8.5, narrativeConfidence: 1, adjustment: 0, adjustmentReason: null,
+    });
+
+    assert.equal(verdictForScore(held.score), 'STRONG BUY');
+    assert.equal(held.verdict, 'HOLD', 'hold-ceiling takes STRONG BUY down through BUY');
   });
 
   it('bands the number that is printed, not a more precise one behind it', () => {

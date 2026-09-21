@@ -8,6 +8,7 @@ import type {
 import VerdictHero from "./VerdictHero";
 import BullBearRisks from "./BullBearRisks";
 import StockHeader from "./StockHeader";
+import { verdictForScore } from "../format";
 import Section from "./Section";
 import ScoreBreakdown from "./sections/ScoreBreakdown";
 import CompositeChart from "./charts/CompositeChart";
@@ -225,6 +226,10 @@ export default function AnalysisView({
                 ...llm,
                 factorScore:    analysis?.scoreCard?.factor.score ?? null,
                 narrativeScore: analysis?.scoreCard?.narrative?.score ?? null,
+                capReasons:     analysis?.scoreCard
+                  && verdictForScore(analysis.scoreCard.final.score) !== analysis.scoreCard.final.verdict
+                  ? analysis.scoreCard.factor.caps.map((c) => c.reason)
+                  : [],
               }}
               llmGeneratedAt={analysis?.generatedAt ?? null}
               llmModel={analysis?.flags.model ?? null}

@@ -213,6 +213,22 @@ function relativeMultiple(own: number | null | undefined, median: number | null 
  * Requiring two without it would blind the pillar on 16 of 37 stocks, which is
  * a worse error than reading one model and saying so.
  */
+/**
+ * How far a *lone* model may sit from the price and still be a valuation.
+ *
+ * With two or three models a wild one is medianed down by its neighbours. With
+ * one there is nothing to correct it, and the ramp tops out at +60 % margin of
+ * safety — so a model saying a stock is worth five times its price scores
+ * exactly what a solidly cheap one does. Rubrik's lone DCF put fair value at
+ * $522.81 against a $102.23 price and took the top of the ranking with it;
+ * Fresenius Medical's lone Peter Lynch said $101.04 against $23.84.
+ *
+ * Between 0.4× and 2.5× of the price an uncorroborated model is making a claim
+ * worth weighing. Outside it, it is extrapolating, and the criterion abstains
+ * rather than awarding full marks for an arithmetic accident.
+ */
+const LONE_MODEL_BOUNDS = { low: 0.4, high: 2.5 } as const;
+
 export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResult): {
   models: CompositeFairValueResult['primary']['models'];
   fair:   number | null;
@@ -224,10 +240,18 @@ export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResul
     return { models, fair: null, mos: null, pct: null };
   }
   const fair = median(models.map((m) => m.fairValue));
+  if (fair === null) return { models, fair: null, mos: null, pct: null };
+
+  // Corroboration is what makes an outlier survivable; one model has none.
+  const ratio = fair / f.price;
+  if (models.length === 1 && (ratio < LONE_MODEL_BOUNDS.low || ratio > LONE_MODEL_BOUNDS.high)) {
+    return { models, fair: null, mos: null, pct: null };
+  }
+
   return {
     models,
     fair,
-    mos: fair === null ? null : (fair - f.price) / f.price,
+    mos: (fair - f.price) / f.price,
     pct: models.filter((m) => m.fairValue > f.price).length / models.length,
   };
 }
@@ -252,6 +276,78 @@ export function fairValueRange(f: StockFinancials, comp: CompositeFairValueResul
   const lo = fmtPrice(values[0], f.tradingCurrency);
   const hi = fmtPrice(values[values.length - 1], f.tradingCurrency);
   return lo === hi ? lo : `${lo}–${hi}`;
+}
+
+// ── Reading the Z-Score ──────────────────────────────────────────────────────
+
+export type AltmanReading =
+  | 'safe'
+  | 'grey'
+  | 'distress'        // in the distress zone, with debt it does not comfortably serve
+  | 'deficit-driven'  // in the zone on net cash: an accumulated deficit, not insolvency
+  | 'serviced'        // in the zone, but interest is covered many times over
+  | 'unknown';
+
+/**
+ * What the Z-Score is actually saying about this company.
+ *
+ * Altman fitted the original Z on manufacturers and the modified Z′ on other
+ * public firms. Neither sample contained a cash-rich, debt-free software company
+ * carrying a decade of venture-funded losses, and two of its five terms punish
+ * exactly that shape: X2 is retained earnings over assets and X3 is EBIT over
+ * assets. Rubrik prints X2 = −1.15 — an accumulated deficit larger than its
+ * entire balance sheet — and lands at Z = −2.52 while holding $603M in *net
+ * cash*. Zeta is the same shape. Neither can default on debt it does not have,
+ * and both were being held at HOLD from a BUY band for it.
+ *
+ * Distress means being unable to service debt, so that is what the reading
+ * checks. Net cash says there is nothing to default on; interest covered at the
+ * "excellent" mark says the debt that exists is comfortably served. Neither
+ * makes the company healthy — it is still loss-making, and the pillar's own
+ * interest-coverage and leverage criteria say so directly, on figures rather
+ * than through a model estimated on a different population.
+ *
+ * One reading, consumed by the criterion and the cap, for the same reason
+ * `readBeneish` is: the two must not disagree about whether a number is
+ * evidence.
+ */
+export function readAltman(
+  f: StockFinancials, m: ComputedMetrics,
+): { reading: AltmanReading; note: string } {
+  const z = m.altmanZ;
+  const base = z.score !== null
+    ? `Altman Z ${z.score.toFixed(2)} (${z.model}-Modell, Grenzen ${z.thresholds.distress}/${z.thresholds.safe})`
+    : 'Altman Z nicht berechenbar';
+
+  if (z.zone !== 'distress') {
+    return {
+      reading: z.zone === 'unknown' ? 'unknown' : z.zone,
+      note: z.score !== null ? `${base} — ${z.zone}-Zone` : base,
+    };
+  }
+
+  const cash = toFiniteNumber(f.totalCash) ?? 0;
+  const debt = toFiniteNumber(f.totalDebt);
+  const netDebt = debt === null ? null : debt - cash;
+
+  if (netDebt !== null && netDebt <= 0) {
+    return {
+      reading: 'deficit-driven',
+      note: `${base} — aber mit Nettoliquidität ${fmtBig(-netDebt, f.tradingCurrency)}. `
+        + `Der Wert kommt aus dem kumulierten Verlustvortrag (Gewinnrücklagen/Bilanzsumme ${fmt(z.x2)}) `
+        + 'und nicht aus Zahlungsunfähigkeit — ohne Nettoschulden gibt es nichts auszufallen.',
+    };
+  }
+
+  if (m.interestCoverage.interpretation === 'excellent') {
+    return {
+      reading: 'serviced',
+      note: `${base} — aber das EBIT deckt die Zinsen ${m.interestCoverage.ratio?.toFixed(1)}x. `
+        + 'Die vorhandenen Schulden werden bequem bedient.',
+    };
+  }
+
+  return { reading: 'distress', note: `${base} — Distress-Zone` };
 }
 
 // ── Reading the M-Score ──────────────────────────────────────────────────────
@@ -442,8 +538,13 @@ function valuationPillar(
   // simply takes the one contributor that is not our arithmetic back out.
   const { models: intrinsic, fair, mos, pct } = iv;
   const compositeUsable = fair !== null;
-  const thinNote = 'Kein eigenes Bewertungsmodell anwendbar (ohne das Analystenziel, '
-    + 'das als eigene Säule zählt) — die Bewertung ist hier nicht prüfbar';
+  const thinNote = intrinsic.length === 1
+    ? `Einziges eigenes Modell (${intrinsic[0].name}) setzt den Fair Value auf `
+      + `${fmtPrice(intrinsic[0].fairValue, c)} gegen einen Kurs von ${fmtPrice(f.price, c)} — `
+      + 'das liegt zu weit auseinander, um von einem unbestätigten Modell geglaubt zu werden, '
+      + 'und wird daher nicht bewertet'
+    : 'Kein eigenes Bewertungsmodell anwendbar (ohne das Analystenziel, '
+      + 'das als eigene Säule zählt) — die Bewertung ist hier nicht prüfbar';
 
   // Relative cheapness is a second lens, not a second helping of the first:
   // the composite asks "what is it worth", this asks "what do comparable firms
@@ -551,9 +652,15 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
   const beneish = readBeneish(f, m.beneish);
   // Zone boundaries differ by model, so the ramp is built from the thresholds
   // the calculation itself used rather than from constants repeated here.
-  const zPoints = z.score !== null
-    ? ramp(z.score, z.thresholds.distress, z.thresholds.safe)
-    : fromLabel(z.zone, { safe: 1, grey: 0.5, distress: 0 });
+  const altman = readAltman(f, m);
+  // A reading the model cannot support abstains, and the pillar renormalises
+  // onto interest coverage, leverage and liquidity — which measure solvency
+  // directly rather than through a model fitted on a different population.
+  const zPoints = altman.reading === 'safe' || altman.reading === 'grey' || altman.reading === 'distress'
+    ? (z.score !== null
+        ? ramp(z.score, z.thresholds.distress, z.thresholds.safe)
+        : fromLabel(altman.reading, { safe: 1, grey: 0.5, distress: 0 }))
+    : null;
 
   const cash = toFiniteNumber(f.totalCash) ?? 0;
   const debt = toFiniteNumber(f.totalDebt);
@@ -567,10 +674,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
     : null;
 
   return [
-    criterion('altman', 'Altman Z-Score', 0.30, zPoints,
-      z.score !== null
-        ? `Altman Z ${z.score.toFixed(2)} — ${z.zone}-Zone (${z.model}, Grenzen ${z.thresholds.distress}/${z.thresholds.safe})`
-        : `Altman Z nicht berechenbar (Zone ${z.zone})`),
+    criterion('altman', 'Altman Z-Score', 0.30, zPoints, altman.note),
 
     criterion('interest-cover', 'Zinsdeckung', 0.25,
       m.interestCoverage.ratio !== null
@@ -894,8 +998,9 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
     // and an explained flag is no basis for a STRONG rating either.
     caps.push({ limit: 'no-strong', reason: beneish.note });
   }
-  if (m.altmanZ.zone === 'distress') {
-    caps.push({ limit: 'hold-ceiling', reason: 'Altman Z im Distress-Bereich' });
+  const altman = readAltman(f, m);
+  if (altman.reading === 'distress') {
+    caps.push({ limit: 'hold-ceiling', reason: altman.note });
   }
 
   const uncappedVerdict = verdictForScore(score);

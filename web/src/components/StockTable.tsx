@@ -132,7 +132,11 @@ export default function StockTable({
 
                     <td className="px-2 py-2">
                       {r.recommendation ? (
-                        <RecommendationBadge rec={r.recommendation} />
+                        <RecommendationBadge
+                          rec={r.recommendation}
+                          score={r.score}
+                          heldBack={r.verdictCapped ? r.capReasons : []}
+                        />
                       ) : (
                         <span className="text-[11px] text-ink-600">nicht analysiert</span>
                       )}

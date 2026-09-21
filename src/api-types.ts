@@ -144,8 +144,15 @@ export interface OverviewRow {
    * between a corroborated 6.2 and a contested one is the whole ranking.
    */
   scoreAgreement:  number | null;
-  /** True when a cap held the label below what the score alone would say. */
+  /**
+   * True when a cap actually held the label below its own band — not merely
+   * that some cap exists. A `no-strong` cap on a stock scoring 6.6 changes
+   * nothing, and a marker that fired anyway said "capped" beside a BUY that was
+   * never capped.
+   */
   verdictCapped:  boolean;
+  /** Why, in the words the cap itself gave. Empty when nothing was held back. */
+  capReasons:     string[];
   recommendation: string | null;
   verdictAt:      string | null;
   verdictModel:   string | null;

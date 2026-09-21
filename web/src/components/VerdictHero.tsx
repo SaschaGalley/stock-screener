@@ -14,6 +14,8 @@ interface Props {
     /** The two halves behind `score`, when a score card was stored with it. */
     factorScore?: number | null;
     narrativeScore?: number | null;
+    /** Reasons a cap held the label below its band; empty when none did. */
+    capReasons?: string[];
   } | null;
   /** When the shown verdict was generated (ISO), or null when none is cached. */
   llmGeneratedAt?: string | null;
@@ -88,7 +90,11 @@ export default function VerdictHero({
         {llm ? (
           <div className="flex h-full flex-col">
             <div className="flex items-center gap-3">
-              <RecommendationBadge rec={llm.recommendation} />
+              <RecommendationBadge
+                rec={llm.recommendation}
+                score={llm.score}
+                heldBack={llm.capReasons ?? []}
+              />
               <div className="flex items-center gap-1">
                 <ScoreBar score={llm.score} recommendation={llm.recommendation} />
                 <span className="ml-1 font-mono text-sm font-semibold text-ink-100">{llm.score}/10</span>

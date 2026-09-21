@@ -52,7 +52,7 @@ import {
 import { reportExists, reportPath, symbolDir } from './files.js';
 import { pctChange } from './utils/num.js';
 import { looksLikeSymbol, SAFE_SYMBOL_RE } from './symbols.js';
-import { recommendationVote } from './verdict.js';
+import { recommendationVote, verdictForScore } from './verdict.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
@@ -735,6 +735,12 @@ export function createApp(): express.Express {
         const score = scoreHistory.length > 0
           ? scoreHistory[scoreHistory.length - 1].score
           : stored?.final.score ?? newest?.llmAnalysis.score ?? null;
+        const recommendation = (card?.get('score.final.verdict')?.at === stamp
+          ? card?.get('score.final.verdict')?.text
+          : null)
+          ?? stored?.final.verdict
+          ?? newest?.llmAnalysis.recommendation
+          ?? null;
 
         rows.push({
           symbol,
@@ -749,13 +755,13 @@ export function createApp(): express.Express {
           narrativeScore:  num('score.narrative.score')   ?? stored?.narrative?.score  ?? null,
           scoreConfidence: num('score.factor.confidence') ?? stored?.factor.confidence ?? null,
           scoreAgreement:  num('score.factor.agreement')  ?? stored?.factor.agreement  ?? null,
-          verdictCapped:   stored ? stored.factor.caps.length > 0 : false,
-          recommendation:  (card?.get('score.final.verdict')?.at === stamp
-            ? card?.get('score.final.verdict')?.text
-            : null)
-            ?? stored?.final.verdict
-            ?? newest?.llmAnalysis.recommendation
-            ?? null,
+          recommendation:  recommendation ?? null,
+          // Derived from the two values on screen rather than from the presence
+          // of a cap: a label that sits in its own band was not held back,
+          // whatever caps the payload earned.
+          verdictCapped:   score !== null && recommendation !== null
+            && verdictForScore(score) !== recommendation,
+          capReasons:      stored?.factor.caps.map((c) => c.reason) ?? [],
           verdictAt:      newest?.generatedAt ?? null,
           verdictModel:   newest?.flags.model ?? null,
           fairValueEstimate: newest?.llmAnalysis.fairValueEstimate ?? null,

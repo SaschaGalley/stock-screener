@@ -306,6 +306,13 @@ the only place the boundaries exist:
 | ≥ 3.0 | SELL | red |
 | < 3.0 | STRONG SELL | red |
 
+A cap shows in the list as ⛔ beside the badge, with its reason in the tooltip —
+but **only when it actually held the label back**. `no-strong` on a stock scoring
+6.6 forbids a label that was never on the table, and a marker that fired on the
+mere existence of a cap printed "capped" beside a BUY that was never capped. The
+flag is derived from the two values on screen: `verdictForScore(score) !==
+verdict`.
+
 The colour is *derived* from the band rather than set alongside it. It used to
 have its own thresholds — green from 7, amber from 5 — which disagreed with the
 bands in two of the four zones: a 4.6 printed a red number beside an amber HOLD
@@ -362,7 +369,31 @@ STRONG. On the watchlist this relaxes Ondas (SGI 24.2, TATA −0.08) and CoreWea
 (3.96, −0.09) and keeps Nvidia (1.94, **+0.08** — net income above operating cash
 flow is exactly what the score is for).
 
-The model also stands down entirely for a lender, where receivables are the
+**Altman does not read a balance sheet with no debt on it.** Z was fitted on
+manufacturers and Z′ on other public firms; neither sample held a cash-rich,
+debt-free software company carrying a decade of venture-funded losses, and two
+of the five terms punish exactly that shape. Rubrik prints X2 = −1.15 — an
+accumulated deficit larger than its whole balance sheet — and lands at Z = −2.52
+while holding $603M in **net cash**. It was being held at HOLD from a BUY band
+for it, and so was Zeta. Distress means being unable to service debt, so
+`readAltman` checks that: net cash says there is nothing to default on, interest
+covered at the "excellent" mark says what debt exists is comfortably served, and
+in both cases the criterion abstains and the cap does not fire. Neither makes
+the company healthy — it is still loss-making, and the pillar's own interest
+coverage scores it 0/10 on figures rather than through a borrowed model.
+
+**An uncorroborated model that lands far from the price is not a valuation.**
+With two or three models a wild one is medianed down by its neighbours; with one
+there is nothing to correct it, and the valuation ramp tops out at +60 % margin
+of safety — so a model claiming a stock is worth five times its price scored
+exactly what a solidly cheap one does. Rubrik's lone DCF put fair value at
+$522.81 against $102.23 and took the top of the ranking with it; Fresenius
+Medical's lone Peter Lynch said $101.04 against $23.84. A single model is
+weighed between 0.4× and 2.5× of the price and abstains outside that, which
+costs coverage and therefore confidence — Rubrik went from a 10/10 valuation to
+no valuation at all, which is the honest reading.
+
+The M-Score also stands down entirely for a lender, where receivables are the
 product rather than a by-product of selling something: DSRI asks whether
 receivables outgrew sales, which at a credit company is the loan book doing its
 job. The industry list that already excuses banks from FCFF could not see this

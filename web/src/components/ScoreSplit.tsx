@@ -28,7 +28,6 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
         row.scoreAgreement >= 0.7 ? 'die Linsen ziehen in dieselbe Richtung, der Score darf weit von 5 weg'
         : row.scoreAgreement >= 0.3 ? 'teils widersprüchlich'
         : 'die Linsen heben sich auf; die Mitte ist hier die ehrliche Antwort, kein blasses Urteil'}`,
-    row.verdictCapped ? 'Die Überzeugung ist gedeckelt (Datenqualität, fehlende Coverage oder Bilanzrisiko)' : '',
   ].filter(Boolean).join('\n');
 
   return (
@@ -36,7 +35,6 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
       Z {row.factorScore.toFixed(1)}
       {row.narrativeScore !== null && <> · T {row.narrativeScore.toFixed(1)}</>}
       {conf !== null && <> · {conf}%</>}
-      {row.verdictCapped && <span className="ml-0.5 text-amber-500" title="Überzeugung gedeckelt">⛔</span>}
     </div>
   );
 }

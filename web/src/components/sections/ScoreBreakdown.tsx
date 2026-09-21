@@ -1,5 +1,6 @@
 import type { ScoreCard, ScoreFinding, ScorePillar } from '../../types';
 import { scoreBarColor, scoreColor } from '../stockList';
+import { verdictForScore } from '../../format';
 
 /**
  * Why the number is the number.
@@ -92,8 +93,13 @@ function BlendBar({ card }: { card: ScoreCard }) {
           {final.score.toFixed(1)}
         </span>
         <span className="text-sm font-semibold text-ink-200">{final.verdict}</span>
-        {final.verdict !== factor.uncappedVerdict && factor.caps.length > 0 && (
-          <span className="rounded border border-amber-700 px-1 text-[9px] uppercase text-amber-400">
+        {/* Against the band of the *final* score, not the factor's: those two
+            differ whenever the blend moved the number, which is not a cap. */}
+        {verdictForScore(final.score) !== final.verdict && (
+          <span
+            className="rounded border border-amber-700 px-1 text-[9px] uppercase text-amber-400"
+            title={`Der Score allein wäre ${verdictForScore(final.score)}`}
+          >
             gedeckelt
           </span>
         )}
