@@ -567,8 +567,8 @@ Für die Texte:
 - Widersprechen sich die quantitative und die qualitative Zusammenfassung, gehört
   dieser Widerspruch in \`thesis\` oder \`keyRisks\`. Er ist die wertvollste
   Information auf dieser Seite, nicht ein Problem, das zu glätten wäre.
-- \`fairValueEstimate\` ist eine Spanne in ${cur ?? 'USD'} im Format "${sym}120–${sym}145".
-  Rechne nie in eine andere Währung um.
+- Die Fair-Value-Spanne wird **nicht** von dir gesetzt — sie ist die Spanne der
+  Modelle, die sie erzeugt haben, und steht bereits fest. Erfinde keine.
 
 ${GERMAN_STYLE}
 
@@ -578,7 +578,6 @@ Antworte als JSON:
   "bearCase":         ["3 Punkte"],
   "keyRisks":         ["3 Punkte"],
   "thesis":           "ein Satz",
-  "fairValueEstimate": "${sym}120–${sym}145",
   "adjustment":       -1 bis +1,
   "adjustmentReason": "warum — oder null bei 0"
 }`;

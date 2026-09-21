@@ -37,6 +37,23 @@ export function appendSearchResults(prompt: string, searchResults?: SearchResult
   return full;
 }
 
+/**
+ * Thrown when the model ran out of budget before finishing its JSON.
+ *
+ * Distinct from a malformed response because the remedy is different and the
+ * symptom is identical: a truncated object fails `JSON.parse` with "Unexpected
+ * end of JSON input", which reads as the model misbehaving when it was simply
+ * cut off. On the reasoning models the budget covers thinking as well as
+ * output, so a long prompt can consume it before a single brace is emitted.
+ */
+export class LLMTruncatedError extends Error {
+  constructor(label: string, limit: number | undefined, readonly raw: string) {
+    super(`${label}: the model hit its token limit${limit ? ` (${limit})` : ''} before finishing its JSON`
+      + ` — ${raw.length} characters came back. Raise maxTokens for this stage.`);
+    this.name = 'LLMTruncatedError';
+  }
+}
+
 export class LLMResponseError extends Error {
   constructor(label: string, detail: string, readonly raw: string) {
     super(`${label}: ${detail}`);

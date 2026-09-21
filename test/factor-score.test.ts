@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { analystConsensus, blendScores, computeFactorScore, convictionFor, intrinsicValue, PILLAR_WEIGHTS, readBeneish } from '../src/analysis/score.js';
+import { analystConsensus, blendScores, computeFactorScore, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readBeneish } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -402,6 +402,41 @@ describe('conviction', () => {
     // prints and bands on.
     assert.ok(Math.abs(s.score - expected) <= 0.05, `${s.score} vs ${expected}`);
     assert.ok(Math.abs(s.conviction - convictionFor(s.pillars).conviction) < 1e-9);
+  });
+});
+
+describe('fair value range', () => {
+  it('spans our own models and never the conservative floor', () => {
+    // The first live run asked a model for this and got "€74–€173" beside a
+    // €208 price: it paired a Graham/EPV floor with an intrinsic value because
+    // both were on the card. The span is now the models that produced it.
+    const f = financials();
+    const comp = computeAllMetrics(f, FALLBACK_RATES, peers).composite;
+    const range = fairValueRange(f, comp);
+    const own = intrinsicValue(f, comp).models.map((m) => m.fairValue).sort((a, b) => a - b);
+
+    assert.ok(own.length >= 1, 'fixture should produce at least one model');
+    assert.ok(range.includes(own[0].toFixed(2)), `${range} should start at ${own[0]}`);
+    assert.ok(range.includes(own[own.length - 1].toFixed(2)));
+    if (comp.conservative.median !== null) {
+      assert.ok(!range.includes(comp.conservative.median.toFixed(2)),
+        'the value-lens floor is not one end of the headline range');
+    }
+  });
+
+  it('prints one figure rather than a range when one model survives', () => {
+    const f = financials();
+    const comp = computeAllMetrics(f, FALLBACK_RATES, peers).composite;
+    const one = { ...comp, primary: { ...comp.primary, models: [comp.primary.models[0]] } };
+    assert.ok(!fairValueRange(f, one).includes('–'));
+  });
+
+  it('says N/A rather than inventing one when nothing of ours applies', () => {
+    const blank = financials({
+      freeCashFlow: null, ebit: null, ebitda: null, eps: null, bookValue: null,
+      earningsGrowth: null, revenueGrowth: null,
+    });
+    assert.equal(fairValueRange(blank, computeAllMetrics(blank, FALLBACK_RATES, null).composite), 'N/A');
   });
 });
 

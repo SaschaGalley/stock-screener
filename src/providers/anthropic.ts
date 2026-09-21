@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { CompletionRequest, LLMProvider, parseStructured } from './base.js';
+import { CompletionRequest, LLMProvider, LLMTruncatedError, parseStructured } from './base.js';
 import { logger } from '../utils/logger.js';
 import { defaultModelFor } from '../models.js';
 
@@ -37,6 +37,9 @@ export class AnthropicProvider extends LLMProvider {
       .map((b) => b.text)
       .join('\n');
 
+    if (message.stop_reason === 'max_tokens') {
+      throw new LLMTruncatedError(req.label, req.maxTokens, text);
+    }
     logger.debug(`Claude raw response (${req.label}):`, text.substring(0, 200));
     return parseStructured(text, req.schema, req.label);
   }

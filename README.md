@@ -412,7 +412,24 @@ allowed to talk about is decided by the same arithmetic that decided the score.
 Each stage degrades on its own: a failed data summary means the synthesis reads
 the pillar table directly, a failed narrative means the headline is the factor
 score alone, and a failed synthesis produces a verdict assembled from the
-findings and marked as written without a model.
+findings and marked as written without a model. That last path is not
+theoretical — it fired on the first live run, and the verdict it produced was
+the right score with honest prose and a label saying no model wrote it.
+
+`fairValueEstimate` is **computed, not asked for**. It was the last number the
+synthesis model still invented, and the first live run showed why: given a card
+carrying both an intrinsic value and a conservative floor, it paired the lowest
+figure with the highest and printed "€74–€173" beside a €208 price and a HOLD.
+It is now the span of the models that produced it, and the width of that span is
+information the invented bracket hid — Microsoft's own models disagree from $349
+to $738.
+
+**Token budgets cover reasoning.** On the gpt-5 family `max_completion_tokens`
+counts thinking as well as output, so a long prompt can exhaust the budget
+before a single brace is emitted — which surfaces as `JSON.parse` failing with
+"Unexpected end of JSON input" and reads as the model misbehaving. The providers
+now check `finish_reason` / `stop_reason` and raise `LLMTruncatedError`, which
+names the limit and says to raise it.
 
 ### The blend
 

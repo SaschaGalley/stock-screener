@@ -30,7 +30,7 @@ import {
   SynthesisOutput, SynthesisOutputSchema, TechnicalSignals,
 } from './types.js';
 import { ComputedMetrics } from './analysis/computeMetrics.js';
-import { FactorScoreInput, computeFactorScore, blendScores } from './analysis/score.js';
+import { FactorScoreInput, computeFactorScore, blendScores, fairValueRange } from './analysis/score.js';
 import { renderFactorCard, scoreHeadline } from './output/score-card.js';
 import {
   PromptData, buildDataSummaryPrompt, buildNarrativePrompt, buildSynthesisPrompt,
@@ -204,7 +204,10 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
       system: SYSTEM_SUMMARISER,
       user:   buildDataSummaryPrompt(f, renderFactorCard(factor, { criteria: true }), promptData),
       schema: DataSummaryOutputSchema,
-      maxTokens: 900,
+      // Generous against the output actually wanted (a paragraph). On the
+      // reasoning models this budget covers thinking too, and a stage that runs
+      // out mid-JSON costs the whole call for nothing.
+      maxTokens: 2500,
     }).then((r) => r.summary).catch((e) => {
       logger.warn(`${f.symbol}: data summary failed — synthesis will read the pillar table directly (${(e as Error).message})`);
       return null;
@@ -217,7 +220,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
           system: SYSTEM_SUMMARISER,
           user:   appendSearchResults(buildNarrativePrompt(f, distill ?? undefined, perplexity ?? undefined), searchResults),
           schema: NarrativeOutputSchema,
-          maxTokens: 1200,
+          maxTokens: 3000,
         }).catch((e) => {
           logger.warn(`${f.symbol}: narrative summary failed — headline falls back to the factor score (${(e as Error).message})`);
           return null;
@@ -263,7 +266,9 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
       system: SYSTEM_SYNTHESIS,
       user:   synthesisPrompt,
       schema: SynthesisOutputSchema,
-      maxTokens: 2048,
+      // The largest of the three: nine bullets plus a thesis, and the longest
+      // prompt. GOOGL truncated here on the first live run at 2048.
+      maxTokens: 4000,
     })
     .catch((e): SynthesisOutput | null => {
       logger.warn(`${f.symbol}: synthesis failed — falling back to the computed findings (${(e as Error).message})`);
@@ -289,7 +294,8 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
       bearCase:          prose.bearCase,
       keyRisks:          prose.keyRisks,
       thesis:            prose.thesis,
-      fairValueEstimate: prose.fairValueEstimate,
+      // Computed, not asked for — see `fairValueRange`.
+      fairValueEstimate: fairValueRange(f, metrics.composite),
       // The headline is the blend, not the model's opinion of it.
       score:             final.score,
       recommendation:    final.verdict,
@@ -348,7 +354,6 @@ function fallbackProse(
     thesis: `Ohne Synthese-Modell erzeugt: ${f.symbol} erreicht ${factor.score.toFixed(1)}/10 (${factor.verdict}) aus der reinen Rechnung.`
       + (dataNote ? ` ${dataNote.split('. ')[0]}.` : '')
       + (narrativeSummary ? ` ${narrativeSummary.split('. ')[0]}.` : ''),
-    fairValueEstimate: 'N/A',
     adjustment: 0,
     adjustmentReason: null,
   };

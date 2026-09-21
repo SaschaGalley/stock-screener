@@ -917,7 +917,6 @@ export const SynthesisOutputSchema = z.object({
   bearCase:          z.array(z.string()).min(2).max(5),
   keyRisks:          z.array(z.string()).min(2).max(5),
   thesis:            z.string(),
-  fairValueEstimate: z.string(),
   adjustment:        z.coerce.number().default(0).describe('Correction to the blended score in points; clamped to the configured limit before use'),
   adjustmentReason:  z.string().nullable().default(null).describe('Required whenever the adjustment is non-zero'),
 });

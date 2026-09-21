@@ -232,6 +232,28 @@ export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResul
   };
 }
 
+/**
+ * The fair-value range, spanned by the models that produced it.
+ *
+ * The last number the synthesis model was still inventing, and the first live
+ * run showed why that was a mistake: asked for a range, it took the lowest
+ * figure on the card — a Graham/EPV floor of €74 for a growth industrial — and
+ * the highest, and printed "€74–€173" beside a €208 price and a HOLD. Neither
+ * end was wrong on its own; the pairing was, and nothing in the prompt could
+ * have told it which figures belong together.
+ *
+ * The span of our own models is the honest answer, and its *width* is
+ * information the invented range hid: Microsoft's models disagree from $349 to
+ * $738, and a reader should see that rather than a confident bracket.
+ */
+export function fairValueRange(f: StockFinancials, comp: CompositeFairValueResult): string {
+  const values = intrinsicValue(f, comp).models.map((m) => m.fairValue).sort((a, b) => a - b);
+  if (values.length === 0) return 'N/A';
+  const lo = fmtPrice(values[0], f.tradingCurrency);
+  const hi = fmtPrice(values[values.length - 1], f.tradingCurrency);
+  return lo === hi ? lo : `${lo}–${hi}`;
+}
+
 // ── Reading the M-Score ──────────────────────────────────────────────────────
 
 /**

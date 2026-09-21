@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { CompletionRequest, LLMProvider, parseStructured } from './base.js';
+import { CompletionRequest, LLMProvider, LLMTruncatedError, parseStructured } from './base.js';
 import { logger } from '../utils/logger.js';
 import { defaultModelFor } from '../models.js';
 
@@ -36,7 +36,11 @@ export class OpenAIProvider extends LLMProvider {
       ],
     });
 
-    const text = completion.choices[0]?.message?.content ?? '';
+    const choice = completion.choices[0];
+    const text = choice?.message?.content ?? '';
+    if (choice?.finish_reason === 'length') {
+      throw new LLMTruncatedError(req.label, req.maxTokens, text);
+    }
     logger.debug(`OpenAI raw response (${req.label}):`, text.substring(0, 200));
     return parseStructured(text, req.schema, req.label);
   }
