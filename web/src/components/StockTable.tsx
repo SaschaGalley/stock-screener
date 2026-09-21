@@ -17,8 +17,6 @@ interface Props {
   loading: boolean;
   view:     ListView;
   onViewChange: (next: ListView) => void;
-  /** Kept highlighted while the analysis is open, so returning shows your place. */
-  selectedSymbol: string | null;
   onSelect: (symbol: string) => void;
   onOpenAdmin: () => void;
   /** Symbol → stages the queue currently has in flight for it. */
@@ -36,13 +34,14 @@ interface Props {
  * one fact, and reads better as one cell than as two columns.
  */
 export default function StockTable({
-  rows, total, loading, view, onViewChange, selectedSymbol, onSelect, onOpenAdmin,
+  rows, total, loading, view, onViewChange, onSelect, onOpenAdmin,
   activity = {}, scrollAnchor,
 }: Props) {
   // The table only exists while it is on screen, so it is always the visible
-  // one. Its column labels are sticky, so they hide the first row or so.
+  // one — and nothing is selected while it is: closing the analysis deselects.
+  // Its column labels are sticky, so they hide the first row or so.
   const { containerRef, onScroll } = useListScroll(
-    scrollAnchor, true, selectedSymbol, rows.length,
+    scrollAnchor, true, null, rows.length,
     (el) => el.querySelector('thead')?.getBoundingClientRect().height ?? 0,
   );
 
@@ -105,21 +104,17 @@ export default function StockTable({
             </thead>
             <tbody>
               {rows.map((r) => {
-                const active = r.symbol === selectedSymbol;
                 return (
                   <tr
                     key={r.symbol}
                     data-stock-row
                     data-symbol={r.symbol}
-                    data-selected={active}
                     onClick={() => onSelect(r.symbol)}
                     title={rowTitle(r, fmtBig)}
-                    className={`${ROW_HEIGHT} cursor-pointer border-b border-ink-800 transition ${
-                      active ? 'bg-accent-soft' : 'hover:bg-ink-800'
-                    }`}
+                    className={`${ROW_HEIGHT} cursor-pointer border-b border-ink-800 transition hover:bg-ink-800`}
                   >
-                    <td className={`py-2 pr-2 pl-3 ${active ? 'border-l-2 border-l-accent pl-[10px]' : ''}`}>
-                      <StockIdentity row={r} active={active} stages={activity[r.symbol]} />
+                    <td className="py-2 pr-2 pl-3">
+                      <StockIdentity row={r} active={false} stages={activity[r.symbol]} />
                     </td>
 
                     <td className="px-2 py-2 text-right">

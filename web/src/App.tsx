@@ -135,12 +135,16 @@ export default function App() {
   }, []);
 
   /** Close whatever is open and spread the list back out to full width. */
+  // Closing is a deselect, not just a change of view. The row used to stay lit
+  // in the table afterwards, which read as "still open"; and nothing needs the
+  // selection to survive any more — the table finds its place again by the
+  // stock that was at the top of the list (see useListScroll), not by it.
   const closeOverlay = useCallback(() => {
     withViewTransition(() => {
       setStocksDrawer(false);
-      navigate('overview');
+      setSelected(null);
     });
-  }, [navigate]);
+  }, [setSelected]);
 
   const openAdmin = useCallback(() => {
     setStocksDrawer(false);
@@ -152,7 +156,9 @@ export default function App() {
     const onHashChange = () => {
       const next = readRoute();
       setRoute(next);
-      if (next.symbol) setSelectedRaw(next.symbol);
+      // Both ways, not only when a stock is named: a route without one must
+      // also clear the selection, or back from a stock leaves it lit.
+      setSelectedRaw(next.symbol);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
@@ -308,11 +314,14 @@ export default function App() {
 
     const close = api.analyzeStream(input, settings, {
       onProgress: (ev) => { if (isCurrent()) setProgress((prev) => [...prev, ev]); },
-      onResult:   ({ meta }) => {
+      onResult:   () => {
         if (!isCurrent()) return;
-        // Refresh the list (in case new symbol) and select the resolved one —
-        // but only if the user hasn't moved on to another symbol meanwhile.
-        reloadRows().then(() => { if (isCurrent()) setSelected(meta.symbol); });
+        // Refresh the list so the new score shows — and nothing else. This used
+        // to select the resolved symbol, which reopened the analysis: close it
+        // while a run is going, and the run's end pulled you back out of the
+        // table. Every run starts from the stock already selected, so the
+        // select was either a no-op or exactly that.
+        void reloadRows();
         setRefreshTick((t) => t + 1);
       },
       onError: (msg) => {
@@ -413,7 +422,6 @@ export default function App() {
           loading={rowsLoading}
           view={listView}
           onViewChange={setListView}
-          selectedSymbol={selected}
           onSelect={handleSelectSymbol}
           onOpenAdmin={openAdmin}
           activity={activity}
