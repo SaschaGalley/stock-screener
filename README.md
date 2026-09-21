@@ -88,10 +88,12 @@ Measured across the list, the stock you clicked lands on the pixel it was on, go
 
 - **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and the watchlist filter belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
 - **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull/bear/risks, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
-- **Analyse dialog** (the combination named on the verdict card, or „↻ Neu rechnen…" in the stale banner): every flag combo is its own cached entry, so the dialog lists what is stored — one click shows that one, and costs nothing — and underneath it holds the model, web-search and Perplexity pickers with the button that spends money. Outdated entries stay selectable and carry a ⚠.
+- **Analyse dialog** (the combination named on the verdict card, or „Andere Einstellungen…" in the refresh menu): every flag combo is its own cached entry, so the dialog lists what is stored — one click shows that one, and costs nothing — and underneath it holds the model, web-search and Perplexity pickers with the button that spends money. Outdated entries stay selectable and carry a ⚠.
 
   It used to be a permanent third column, which gave a panel you touch a few times a day the same standing as the analysis itself and a fifth of the window to say it. Both of its jobs are moments rather than states, and a run that costs an API call is better confirmed in a dialog than fired by a stray click on a sidebar button.
-- **Refresh data** (header `↻`) re-fetches the data layer (Yahoo + Finnhub + FRED + technicals) without a single LLM call. The dialog's run button forces a fresh LLM call when something is already cached, overwriting it.
+- **↻ Refresh** (header) is a menu, because pressing it can mean three things that cost different amounts. **Nur Daten** re-fetches the data layer (Yahoo + Finnhub + FRED + technicals + Distill) without a single LLM call. **Alles** does that, waits for it, and then re-runs the analysis with the combination on show — in that order because a run only fetches financials when they have *expired*, so re-running on its own can score a company on numbers that are hours old. **Andere Einstellungen…** opens the dialog.
+
+  When something is out of date the button carries a yellow **!**; its tooltip says what, and the menu marks the entry that fixes it. That replaced a yellow banner across the page, which only appeared after a first refresh and put its own two buttons next to this one — so a full run used to take three places and the right order.
 
 Adding a stock (`+ Hinzufügen` at the bottom of the window, under either density) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit run from the Analyse dialog, so looking a company up never costs an API bill.
 
@@ -776,7 +778,7 @@ financials on the way in, so the series that were never persisted at all start
 with a value rather than a gap. It is idempotent — running it twice changes
 nothing.
 
-The web UI never silently invalidates an analysis — outdated entries stay selectable but show a ⚠ marker and a stale banner that prompts a one-click re-run.
+The web UI never silently invalidates an analysis — outdated entries stay selectable but show a ⚠ marker, and the refresh button carries a **!** that points at the menu entry which brings it up to date.
 
 ## Nightly pipeline
 

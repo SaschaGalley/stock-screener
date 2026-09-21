@@ -293,9 +293,10 @@ export default function App() {
   }, [pollActivity]);
 
   /**
-   * Start an analyze run. `force` bypasses the LLM cache — used by the
-   * sidebar's "Re-run (without cache)" and the StaleBanner's re-run action.
-   * The plain Run button leaves it false so a cached entry serves instantly.
+   * Start an analyze run. `force` bypasses the LLM cache — used by the refresh
+   * menu's „Alles" and by the dialog's run button when the combination is
+   * already stored. A combination with nothing stored runs without it, since a
+   * cache that cannot hit has nothing to bypass.
    */
   function startAnalyze(input: string, force = false) {
     const myRun = ++runIdRef.current;       // claim this run; supersedes any prior
@@ -467,6 +468,7 @@ export default function App() {
               onOpenAdmin={openAdmin}
               onToggleStocks={() => setStocksDrawer((v) => !v)}
               onOpenAnalysis={() => setAnalysisOpen(true)}
+              onRerun={() => startAnalyze(selected, true)}
               flagsLabel={flagsLabel(settings)}
             />
           )}

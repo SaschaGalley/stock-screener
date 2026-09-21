@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StockSummary } from "../types";
 import { fmt, relativeTime } from "../format";
 import { useMoney } from "../currency";
@@ -19,6 +19,22 @@ interface Props {
   onOpenAdmin: () => void;
   /** Below `lg` the stock list is a drawer; this opens it. */
   onToggleStocks: () => void;
+  /**
+   * What is out of date, in a sentence, or null when nothing is. It used to be
+   * a banner across the page with its own buttons; now it is a mark on the one
+   * button that fixes it, and this is what that mark's tooltip says.
+   */
+  staleNote: string | null;
+  /** Which menu entry clears `staleNote` — marked in the menu, so it is found. */
+  staleFix: 'data' | 'everything' | null;
+  /** Re-run the analysis with the combination on show, bypassing the cache. */
+  onRerun: () => void;
+  /** Open the dialog: a different model, search or Perplexity, or a stored one. */
+  onOpenAnalysis: () => void;
+  /** The combination on show, so "everything" says what it will spend. */
+  flagsLabel: string;
+  /** An analysis this page is streaming, or one the queue knows about. */
+  analyzing: boolean;
 }
 
 export default function StockHeader({
@@ -30,6 +46,12 @@ export default function StockHeader({
   onClose,
   onOpenAdmin,
   onToggleStocks,
+  staleNote,
+  staleFix,
+  onRerun,
+  onOpenAnalysis,
+  flagsLabel,
+  analyzing,
 }: Props) {
   const { fmtPrice, fmtBig } = useMoney();
   const [refreshing, setRefreshing] = useState(false);
@@ -50,8 +72,8 @@ export default function StockHeader({
   // for the symbol is easier to trust than two that disagree on the same page.
   const busy = refreshing || activity.length > 0;
 
-  async function handleRefresh() {
-    if (busy) return;
+  async function refreshData(): Promise<boolean> {
+    if (busy) return false;
     setRefreshing(true);
     // Shortly after, not now: the task does not exist until the request reaches
     // the server, so asking in the same tick reliably finds nothing. Half a
@@ -78,13 +100,27 @@ export default function StockHeader({
         console.warn('Distill refresh skipped:', (distillR.reason as Error)?.message);
       }
       onRefreshed?.();
+      return true;
     } catch (e) {
       alert(`Refresh failed: ${(e as Error).message}`);
+      return false;
     } finally {
       clearTimeout(announce);
       setRefreshing(false);
       onActivityChanged?.();
     }
+  }
+
+  /**
+   * Data first, then the analysis — the order the nightly pipeline runs in.
+   *
+   * Not just the analysis on its own: a run reads the stored financials and
+   * only fetches new ones when they have expired, so "re-run" alone can score
+   * a company on numbers that are hours old. Awaiting the refresh is what makes
+   * "everything" mean everything.
+   */
+  async function refreshEverything() {
+    if (await refreshData()) onRerun();
   }
   return (
     <header className="shrink-0 border-b border-ink-800 bg-ink-900 px-4 py-3 sm:px-6 sm:py-4">
@@ -121,15 +157,16 @@ export default function StockHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={busy}
-            className="rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
-            title="Refresh raw data (Yahoo, Finnhub, FRED, technicals) AND Distill briefing — does not call LLM or Perplexity. Distill drain can take up to ~5 min on first-touch tickers."
-          >
-            {busy ? '⟳' : '↻'}
-            <span className="ml-1 hidden sm:inline">{busy ? 'Refreshing…' : 'Refresh'}</span>
-          </button>
+          <RefreshMenu
+            busy={busy}
+            analyzing={analyzing}
+            staleNote={staleNote}
+            staleFix={staleFix}
+            flagsLabel={flagsLabel}
+            onData={() => { void refreshData(); }}
+            onEverything={() => { void refreshEverything(); }}
+            onOther={onOpenAnalysis}
+          />
 
           {/* Hidden on a phone, where four controls squeeze the company name
               down to a stub. Administration is a rare destination and the
@@ -199,5 +236,137 @@ function KV({
       </div>
       {subtle && <div className="text-[10px] text-ink-600">{subtle}</div>}
     </div>
+  );
+}
+
+/**
+ * Refresh, as a choice rather than one fixed action.
+ *
+ * There are three different things someone pressing „Refresh" can mean, and
+ * they cost different amounts: new numbers (free), new numbers and a new
+ * verdict on them (one LLM call), or a verdict from a different model. They
+ * used to be spread over this button, a yellow banner that appeared only after
+ * the first refresh, and a sidebar — so a full run took three places and the
+ * right order. Now it is one menu, and what is out of date is a mark on it.
+ */
+function RefreshMenu({
+  busy, analyzing, staleNote, staleFix, flagsLabel, onData, onEverything, onOther,
+}: {
+  busy: boolean;
+  analyzing: boolean;
+  staleNote: string | null;
+  staleFix: 'data' | 'everything' | null;
+  flagsLabel: string;
+  onData: () => void;
+  onEverything: () => void;
+  onOther: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Outside click and Esc close the menu. Esc listens in the capture phase and
+  // marks the event handled, so the app's own Esc — which closes the whole
+  // analysis — sees it as taken and stands down.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+
+  const pick = (fn: () => void) => () => { setOpen(false); fn(); };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={staleNote ?? 'Daten und Analyse aktualisieren'}
+        className="relative flex items-center gap-1 rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {busy ? '⟳' : '↻'}
+        <span className="hidden sm:inline">{busy ? 'Aktualisiere…' : 'Refresh'}</span>
+        <span aria-hidden className="text-[10px] text-ink-500">▾</span>
+        {staleNote && !busy && (
+          <span
+            aria-label="veraltet"
+            className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold leading-none text-ink-950"
+          >
+            !
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-30 mt-1 w-80 overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-2xl"
+        >
+          {staleNote && (
+            <p className="border-b border-ink-800 bg-amber-950 px-3 py-2 text-[11px] leading-snug text-amber-300">
+              {staleNote}
+            </p>
+          )}
+          <MenuItem
+            title="Nur Daten"
+            detail="Kurse, Fundamentaldaten, Technicals, Distill — kein LLM-Aufruf"
+            flagged={staleFix === 'data'}
+            onClick={pick(onData)}
+          />
+          <MenuItem
+            title="Alles"
+            detail={<>Daten, danach die Analyse neu mit <span className="font-mono text-ink-300">{flagsLabel}</span></>}
+            flagged={staleFix === 'everything'}
+            disabled={analyzing}
+            onClick={pick(onEverything)}
+          />
+          <MenuItem
+            title="Andere Einstellungen…"
+            detail="Modell, Websuche oder Perplexity wählen — oder eine gespeicherte Fassung"
+            disabled={analyzing}
+            onClick={pick(onOther)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({ title, detail, flagged = false, disabled = false, onClick }: {
+  title: string;
+  detail: React.ReactNode;
+  /** The entry that clears what the `!` is about. */
+  flagged?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      className="block w-full border-b border-ink-800 px-3 py-2 text-left transition last:border-b-0 hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <span className="flex items-center gap-1.5 text-xs font-medium text-ink-100">
+        {title}
+        {flagged && (
+          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-ink-950">!</span>
+        )}
+      </span>
+      <span className="mt-0.5 block text-[10px] leading-snug text-ink-500">{detail}</span>
+    </button>
   );
 }
