@@ -26,7 +26,8 @@
     "migrate": "tsx src/db/migrate-cli.ts",
     "dossiers:sync": "tsx src/distill-dossiers-cli.ts",
     "backfill": "tsx src/db/backfill.ts",
-    "rescore": "tsx src/db/rescore.ts"
+    "rescore": "tsx src/db/rescore.ts",
+    "evaluate": "tsx src/db/evaluate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

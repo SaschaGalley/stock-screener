@@ -37,7 +37,7 @@ export function sectorToEtf(sector: string | null): string | null {
   return SECTOR_ETF_MAP[sector] ?? null;
 }
 
-async function fetchDailyBars(symbol: string, daysBack = 200): Promise<DailyBar[]> {
+export async function fetchDailyBars(symbol: string, daysBack = 200): Promise<DailyBar[]> {
   try {
     const from = new Date();
     from.setDate(from.getDate() - daysBack);

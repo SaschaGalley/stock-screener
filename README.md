@@ -601,6 +601,54 @@ would leave its last value behind at the very timestamp being rewritten, which
 is how a pillar once reported 10/10 next to a coverage of 0 %. Rows written by
 the live refresh sit at instants of their own and are never touched.
 
+### Does it predict anything?
+
+Everything above is about *internal* quality: the findings add up, missing data
+costs coverage, two runs over one payload agree. None of that says whether a 7
+was followed by better returns than a 4. `pnpm run evaluate` is the one place
+that asks:
+
+```bash
+pnpm run evaluate                               # 5, 20 and 60 sessions ahead
+pnpm run evaluate -- --horizons 20 --json
+node dist/db/evaluate.js --horizons 5,20        # in the deployed container
+```
+
+On every trading day it ranks the stocks by the score they carried *into* that
+day and by the return over the S&P 500 they made over the next *h* sessions, and
+reports the Spearman correlation of the two rankings (the **rank IC**) — for the
+headline, the factor half, the raw factor score before shrink and conviction,
+every pillar, and the old single-call LLM score as the baseline the whole
+pipeline has to beat. A cross-section cancels the market: a day on which
+everything fell still says whether the high scores fell less. Alongside it: the
+share of days with a positive IC, the top-third-minus-bottom-third return
+spread, and the mean excess return per verdict label.
+
+How to read it, and how not to:
+
+- **Point in time.** A signal counts from observations dated strictly before the
+  formation day, and the return runs from that day's close, so nothing the score
+  saw can be in the return it is credited with. A series that *ends* — the old
+  LLM score, a symbol dropped from the watchlist — stops counting ten days after
+  its last point instead of being carried forward for ever.
+- **Overlap.** Consecutive 20-session windows share 19 days, so twenty daily ICs
+  are roughly one observation, not twenty. The mean uses every day; the
+  t-statistic uses only non-overlapping windows, and `indep.` says how many
+  there were. No t-statistic is printed below three.
+- **Power.** With ~37 stocks one day's IC has a standard error near ±0.17. A
+  useful factor sits around 0.03–0.08. Telling that apart from zero takes many
+  independent windows — months at a 20-session horizon, not weeks. Until then
+  the output is a description of what happened, not evidence about the model.
+- **Hindsight in the model, not the data.** `rescore` rewrites history with
+  today's rules, so the backfilled series is what the current model *would* have
+  said. The inputs are point in time; the rules were not tuned on returns, but
+  the moment they are, this stops being an out-of-sample test.
+
+Nothing is stored: the score series accumulates with every nightly refresh and
+prices are fetched fresh from Yahoo, so each run is a recomputation that knows a
+little more than the last. The pillar weights (`PILLAR_WEIGHTS`) are set by
+judgment today; this is what will eventually be allowed to argue with them.
+
 ## Technical signals gauge
 
 Indicators come from [`trading-signals`](https://github.com/bennycode/trading-signals);
@@ -644,7 +692,8 @@ src/
 │   ├── store.ts           Symbols, snapshots, observations, documents
 │   ├── admin.ts           Runs, settings, entity mappings, filing index
 │   ├── backfill.ts        One-shot import of the old file cache
-│   └── rescore.ts         Re-scores stored history with today's scoring model
+│   ├── rescore.ts         Re-scores stored history with today's scoring model
+│   └── evaluate.ts        CLI for the outcome evaluation (`pnpm run evaluate`)
 ├── files.ts               The two things that stay files (filings, reports)
 ├── sector-medians.ts      Peer-group medians (the app's most expensive read)
 ├── app-config.ts          Operational settings edited from the admin page
@@ -672,6 +721,7 @@ src/
 │   ├── metrics.ts         19 valuation models
 │   ├── computeMetrics.ts  Orchestrates the bundle of models for the web GET
 │   ├── score.ts           The deterministic score: six pillars, caps, the blend
+│   ├── evaluate.ts        Rank IC of every score signal against the returns that followed
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
