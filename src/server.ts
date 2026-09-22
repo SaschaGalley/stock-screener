@@ -11,7 +11,7 @@ import { isHatchetConfigured } from './hatchet/client.js';
 import { runAnalysis } from './cli.js';
 import {
   AnalysisFlagsKey, analysisHash,
-  deleteAnalysis, deleteSymbol, latestSnapshotForAll, latestPointsForAll, latestValueForAll,
+  deleteAnalysis, deleteSymbol, latestSnapshotForAll, latestPointsForAll, latestValueForAll, scoreInstants,
   latestDocument, listAnalyses, listDocuments, listMetrics, listSymbols,
   readAnalysis, readDistillLax, readFinancialsMeta, readFinancialsLax,
   readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax,
@@ -31,11 +31,10 @@ import { distillHintsFor } from './distill-service.js';
 import { syncDistillDossiers } from './distill-content.js';
 import { dossiersFollowStocks, noteDossierIntent, watchlistDelta } from './distill-dossiers.js';
 import { getMarketRates } from './data/fred.js';
-import { getSectorMediansCached } from './sector-medians.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { deriveTechnicalSignals } from './analysis/signals.js';
-import { rescore } from './score-service.js';
 import { cachedEvaluation, EVALUATED_SIGNALS } from './db/evaluate.js';
+import { currentScoreCard, rescoreIfScoringChanged, storedInputs } from './db/rescore.js';
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
 import { searchByQuery } from './data/yfinance.js';
@@ -96,41 +95,27 @@ function logoDomainFromWebsite(url: string | null): string | null {
  * recomputed value. Serving the stored card here would show a detail page whose
  * score disagrees with the row the reader clicked to get to it.
  *
- * Returns the fields to overlay, or nothing when the inputs are unavailable —
- * a detail page is not worth failing over a missing peer-medians call.
+ * It is computed by `currentScoreCard` from the stored snapshots and the
+ * recorded rates — the inputs the series was written from — not from live
+ * fetches, which is what once put GOOGL at STRONG BUY 8.3 here and BUY 7.7 in
+ * the list. Viewing an older analysis carries *its* narrative, so only the
+ * newest one is guaranteed to match the row.
+ *
+ * Returns the fields to overlay, or nothing when the inputs are unavailable.
  */
 async function refreshedCard(
   symbol: string, stored: CachedAnalysisEntry,
 ): Promise<{ scoreCard?: ScoreCard; llmAnalysis?: LLMAnalysis }> {
   try {
-    const financials = await readFinancialsLax(symbol);
-    if (!financials) return {};
-
-    const env = getConfig();
-    const [marketRates, sectorMedians, signalsSnap, config] = await Promise.all([
-      getMarketRates(env.fredApiKey).catch(() => null),
-      getSectorMediansCached(symbol, env.finnhubApiKey).catch(() => null),
-      // The meta reader rather than the TTL one: an older signals payload is
-      // still the best technical picture on file, and the same route family
-      // already serves the bundle from it.
-      readMarketSignalsMeta(symbol),
-      readAppConfig(),
-    ]);
-    const marketSignals = signalsSnap?.data ?? null;
-
-    const scoreCard = rescore({
-      financials,
-      metrics:          computeAllMetrics(financials, marketRates, sectorMedians),
-      sectorMedians,
-      marketSignals,
-      technicalSignals: marketSignals?.technicals
-        ? deriveTechnicalSignals(marketSignals.technicals, financials.price)
-        : null,
-      previous:           stored.scoreCard ?? null,
-      narrativeMaxWeight: config.scoring.narrativeMaxWeight,
-      adjustmentLimit:    config.scoring.adjustmentLimit,
-    });
-
+    // As of the list's newest point, not the wall clock: the row shows the card
+    // the last refresh wrote, and evaluating the same inputs at the same instant
+    // is what makes the two one number rather than two readings a day apart.
+    // An analysis newer than that point moves the instant up to itself.
+    const instants = await scoreInstants(symbol);
+    const lastPoint = instants.length ? instants[instants.length - 1].getTime() : Date.now();
+    const readAt = stored.scoreCard?.narrative?.at ? Date.parse(stored.scoreCard.narrative.at) : 0;
+    const scoreCard = await currentScoreCard(symbol, stored.scoreCard ?? null, Math.max(lastPoint, readAt || 0));
+    if (!scoreCard) return {};
     return {
       scoreCard,
       llmAnalysis: {
@@ -920,15 +905,14 @@ export function createApp(): express.Express {
         buildStockSummary(symbol),
       ]);
 
-      // Try to fetch fresh rates + sector medians for richer metrics, but don't
-      // block on failure — fall back to defaults so the response always succeeds.
-      const [marketRates, sectorMedians] = await Promise.all([
-        getMarketRates(cfg.fredApiKey).catch(() => null),
-        getSectorMediansCached(symbol, cfg.finnhubApiKey),
-      ]);
-
+      // The models on this page are the ones the score was computed from: the
+      // stored peer medians and the recorded rates, not a fresh fetch that can
+      // come back different (an empty peer group, a premium read an hour later)
+      // and leave the fair values here disagreeing with the score beside them.
+      const inputs = await storedInputs(symbol);
+      const sectorMedians = inputs?.sectorMedians ?? null;
       const marketSignals = msSnap?.data ?? null;
-      const metrics = computeAllMetrics(financials, marketRates, sectorMedians);
+      const metrics = computeAllMetrics(financials, inputs?.rates ?? null, sectorMedians);
 
       // Derive TradingView-style buy/sell aggregate from technicals + price.
       const technicalSignals = marketSignals?.technicals
@@ -962,7 +946,7 @@ export function createApp(): express.Express {
         distill,
         metrics,
         sectorMedians,
-        marketRates,
+        marketRates: inputs?.rates ?? null,
         technicalSignals,
         cacheStatus,
       });
@@ -1315,6 +1299,11 @@ const isMain = process.argv[1] && (
 if (isMain) {
   prepareDatabase()
     .then(() => {
+      // In the background: the server answers from the existing series while
+      // the history catches up with a changed scoring model.
+      rescoreIfScoringChanged().catch((e) => {
+        logger.warn(`Re-score on start failed — the series keeps its previous numbers (${(e as Error).message})`);
+      });
       const app = createApp();
       const server = app.listen(PORT, () => {
         logger.success(`Stock-CLI server listening on http://localhost:${PORT}`);

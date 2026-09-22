@@ -173,6 +173,12 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
     };
 
     const psMedian   = median(buckets.priceToSales);
+    // Every peer request failing — a rate limit, an outage — is a failed fetch,
+    // not an empty industry. Returned as a result it was cached as one, and a
+    // burst of requests on 22 September replaced Mastercard's eight-peer
+    // medians with a group of none.
+    if (contributingPeers === 0) return null;
+
     const revGrMedian = median(buckets.revenueGrowthYoY);
     // Approximation: peer median forward P/S ≈ peer median P/S TTM / (1 + peer median revenue growth).
     // Exact would require fetching each peer's forward revenue (one extra API call per peer).

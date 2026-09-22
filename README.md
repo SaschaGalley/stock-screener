@@ -695,6 +695,37 @@ argued from an event, not a standing adjustment). That is what makes the series
 daily: it moves with the price instead of stepping whenever the five-day analysis
 cadence comes round.
 
+**The list and the detail page are one number by construction.** The overview
+reads the newest point of the series; the detail page recomputes the card so its
+arithmetic is current. They used to disagree — GOOGL STRONG BUY 8.3 on the page,
+BUY 7.7 in the row — for four separate reasons, all fixed:
+
+- The re-score ran on fallback rates (a 5.5 % premium against a measured 4.1 %)
+  while the page used live ones. Both now use the rates **recorded** in the macro
+  series for the instant in question (`ratesAt`).
+- The re-score passed no analysis card, so it rewrote recent points as the
+  factor score alone. It now carries the card in force at each instant, decayed
+  exactly as the nightly refresh decays it.
+- The page fetched peer medians and rates live. It now reads the stored
+  snapshots through the same function the series uses (`storedInputs`,
+  `currentScoreCard`), evaluated at the instant of the list's newest point.
+- The re-score only rewrote the instants where financials changed, missing the
+  refresh's own points a few milliseconds away — the newest ones. It now
+  rewrites every recorded score instant.
+
+**After a deploy the server re-scores by itself.** A fingerprint of the scoring
+modules is stored (`app_state`, `scoring.fingerprint`); when the deployed code
+hashes differently the server re-scores the history in the background on start.
+Nothing to run by hand, and no version number to forget to bump. A full manual
+`rescore` stores the fingerprint too.
+
+**Empty peer groups are not peer data.** A rate-limited Finnhub fetch — every
+peer request refused — used to be stored as a group of zero peers with every
+median null (10 of 31 fetches on 16 August), which dropped the peer-multiples
+model and the peer margin from that day's valuation. `getSectorMedians` now
+returns null for it, the last good medians stand in, and every reader skips the
+empty payloads already in the history (`hasPeers`).
+
 History from before the change can be recomputed, because the factor score is a
 pure function of snapshots the database already keeps:
 
@@ -825,7 +856,7 @@ src/
 │   ├── store.ts           Symbols, snapshots, observations, documents
 │   ├── admin.ts           Runs, settings, entity mappings, filing index
 │   ├── backfill.ts        One-shot import of the old file cache
-│   ├── rescore.ts         Re-scores stored history with today's scoring model
+│   ├── rescore.ts         Re-scores stored history on today's code; the current card from stored inputs
 │   └── evaluate.ts        CLI for the outcome evaluation (`pnpm run evaluate`)
 ├── files.ts               The two things that stay files (filings, reports)
 ├── sector-medians.ts      Peer-group medians (the app's most expensive read)

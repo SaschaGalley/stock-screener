@@ -13,8 +13,29 @@
 
 import { SectorMedians } from './types.js';
 import { logger } from './utils/logger.js';
-import { readSectorMedians, writeSectorMedians } from './db/store.js';
+import { readSectorMedians, snapshotHistory, writeSectorMedians } from './db/store.js';
 import { getSectorMedians } from './data/finnhub.js';
+
+/**
+ * Whether a stored peer-median payload is one.
+ *
+ * Until 22 September a rate-limited fetch — every peer request refused — was
+ * stored as a group of zero peers with every median null, and the history
+ * holds dozens of them (10 of 31 fetches on 16 August). They are not a reading
+ * of the industry, so every reader skips them.
+ */
+export function hasPeers(m: SectorMedians | null | undefined): m is SectorMedians {
+  return !!m && (m.peerCount ?? 0) > 0;
+}
+
+/** The newest stored medians that actually came from peers, however old. */
+export async function lastGoodSectorMedians(symbol: string): Promise<SectorMedians | null> {
+  const history = await snapshotHistory<SectorMedians>(symbol, 'sector_medians');
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (hasPeers(history[i].data)) return history[i].data;
+  }
+  return null;
+}
 
 /** Coalesces concurrent requests for the same symbol into one upstream call. */
 const inFlight = new Map<string, Promise<SectorMedians | null>>();
@@ -25,6 +46,10 @@ const inFlight = new Map<string, Promise<SectorMedians | null>>();
  * Returns null instead of throwing — every caller treats peer data as optional
  * enrichment. A failed fetch is deliberately not cached: peers missing for a
  * day because Finnhub hiccuped once would be a worse outcome than retrying.
+ * Meanwhile the last good medians stand in, however old: peer groups change
+ * slowly, and scoring a day without them drops the peer-multiples model and
+ * the peer margin from the valuation — a jump in the series that says nothing
+ * about the company.
  */
 export async function getSectorMediansCached(
   symbol: string,
@@ -33,7 +58,7 @@ export async function getSectorMediansCached(
   if (!apiKey) return null;
 
   const stored = await readSectorMedians(symbol);
-  if (stored) return stored;
+  if (hasPeers(stored)) return stored;
 
   const pending = inFlight.get(symbol);
   if (pending) return pending;
@@ -41,11 +66,14 @@ export async function getSectorMediansCached(
   const request = (async () => {
     try {
       const medians = await getSectorMedians(symbol, apiKey);
-      if (medians) await writeSectorMedians(symbol, medians);
-      return medians;
+      if (medians) {
+        await writeSectorMedians(symbol, medians);
+        return medians;
+      }
+      return await lastGoodSectorMedians(symbol);
     } catch (e) {
       logger.debug(`Sector medians unavailable for ${symbol}: ${(e as Error).message}`);
-      return null;
+      return await lastGoodSectorMedians(symbol).catch(() => null);
     } finally {
       inFlight.delete(symbol);
     }

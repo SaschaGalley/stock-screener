@@ -1104,6 +1104,63 @@ export async function latestScoreCard(symbol: string): Promise<ScoreCard | null>
 }
 
 /**
+ * Every score card an analysis has stored for a symbol, oldest first, with the
+ * instant it was produced — `latestScoreCard` for any moment in the past.
+ */
+export async function scoreCardHistory(symbol: string): Promise<{ card: ScoreCard; producedAt: Date }[]> {
+  const id = await symbolId(symbol);
+  if (id === null) return [];
+  const res = await query<{ data: CachedAnalysisEntry; produced_at: Date }>(
+    `SELECT data, produced_at FROM documents
+      WHERE symbol_id = $1 AND kind = 'verdict' AND schema_ver = $2
+        AND data -> 'scoreCard' IS NOT NULL
+      ORDER BY produced_at`,
+    [id, ANALYSIS_VERSION],
+  );
+  return res.rows
+    .filter((r) => r.data?.scoreCard)
+    .map((r) => ({ card: r.data.scoreCard!, producedAt: r.produced_at }));
+}
+
+/** Every instant at which a score card was recorded for a symbol. */
+export async function scoreInstants(symbol: string): Promise<Date[]> {
+  const id = await symbolId(symbol);
+  if (id === null) return [];
+  const res = await query<{ observed_at: Date }>(
+    `SELECT DISTINCT o.observed_at FROM observations o
+       JOIN metrics m ON m.id = o.metric_id
+      WHERE o.symbol_id = $1 AND m.key = 'score.factor.score'
+      ORDER BY o.observed_at`,
+    [id],
+  );
+  return res.rows.map((r) => r.observed_at);
+}
+
+/**
+ * The global macro series under one key prefix, oldest first per key.
+ *
+ * The rates the models discounted with on any past day are recorded here by
+ * the refresh; reading them back is what lets a re-score use that day's rates
+ * instead of constants.
+ */
+export async function macroHistory(prefix: string): Promise<Map<string, { at: number; value: number }[]>> {
+  const res = await query<{ key: string; observed_at: Date; value: number }>(
+    `SELECT m.key, o.observed_at, o.value
+       FROM macro_observations o JOIN metrics m ON m.id = o.metric_id
+      WHERE m.key LIKE $1 AND o.value IS NOT NULL
+      ORDER BY m.key, o.observed_at`,
+    [`${prefix}%`],
+  );
+  const out = new Map<string, { at: number; value: number }[]>();
+  for (const r of res.rows) {
+    const list = out.get(r.key) ?? [];
+    list.push({ at: r.observed_at.getTime(), value: r.value });
+    out.set(r.key, list);
+  }
+  return out;
+}
+
+/**
  * Newest point of several metrics, for every symbol, in one query.
  *
  * The overview needs four numbers out of the score card per row — the headline,

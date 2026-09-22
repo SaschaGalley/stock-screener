@@ -886,3 +886,18 @@ describe('conviction from a mild consensus', () => {
     assert.ok(Math.abs(mild.conviction - (1 + 0.6 / 3)) < 1e-9);
   });
 });
+
+describe('rates for a past instant', () => {
+  it('reads the newest reading before, reaches forward only when none exists, and falls back last', async () => {
+    const { ratesAt } = await import('../src/db/rescore.js');
+    const h = new Map([
+      ['macro.riskFreeRate', [{ at: 100, value: 0.04 }, { at: 200, value: 0.05 }]],
+      ['macro.equityRiskPremium', [{ at: 300, value: 0.041 }]],
+    ]);
+    const r = ratesAt(h, 250);
+    assert.equal(r.riskFreeRate, 0.05);
+    assert.equal(r.equityRiskPremium, 0.041);       // recorded later, still closer than the constant
+    assert.equal(r.aaaBondYield, FALLBACK_RATES.aaaBondYield);
+    assert.equal(ratesAt(h, 150).riskFreeRate, 0.04);
+  });
+});

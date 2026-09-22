@@ -31,6 +31,21 @@ export async function writeSettingsJson(value: unknown): Promise<void> {
   );
 }
 
+// ── Application state ────────────────────────────────────────────────────────
+
+export async function readAppState(key: string): Promise<string | null> {
+  const row = await queryOne<{ value: string }>('SELECT value FROM app_state WHERE key = $1', [key]);
+  return row?.value ?? null;
+}
+
+export async function writeAppState(key: string, value: string): Promise<void> {
+  await query(
+    `INSERT INTO app_state (key, value) VALUES ($1, $2)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [key, value],
+  );
+}
+
 // ── Pipeline runs (was job-runs.json) ────────────────────────────────────────
 
 export type JobStep = 'data' | 'distill' | 'analysis';
