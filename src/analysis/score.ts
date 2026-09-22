@@ -1127,6 +1127,75 @@ function collectFindings(
   return findings;
 }
 
+// ── Reading the prose more than once ─────────────────────────────────────────
+
+/**
+ * How many independent reads of the same prose the narrative score is taken from.
+ *
+ * Five identical runs over ServiceNow's material came back 5, 5, 5, 6, 7: mostly
+ * one answer, with the occasional outlier. At up to 45 % of the headline an
+ * outlier of two points moves it by most of one — enough to cross a band. The
+ * median of three is the cheapest estimator that ignores a single outlier
+ * outright, and the reads run in parallel, so it costs tokens (a cent or so per
+ * stock on the summary model) and no wall-clock time.
+ */
+export const NARRATIVE_SAMPLES = 3;
+
+/**
+ * Spread between reads, in score points, at which the narrative loses all the
+ * confidence a disagreement can cost it.
+ *
+ * Three reads of the *same* text disagreeing by three points is the text not
+ * determining the answer — the model is filling in. The confidence is scaled by
+ * `1 − spread / (2 × this)`, so full disagreement halves it and never removes it:
+ * the median is still the best single read available.
+ */
+export const NARRATIVE_SPREAD_LIMIT = 3;
+
+export interface NarrativeRead {
+  summary: string;
+  events:  string[];
+  score:   number | null;
+}
+
+export interface CombinedNarrative<R extends NarrativeRead> {
+  /** The read whose score is the median — its prose is the one kept, so text and number agree. */
+  read:              R;
+  score:             number | null;
+  /** Highest minus lowest scoring read; null below two scoring reads. */
+  spread:            number | null;
+  runs:              number;
+  /** Multiplier for the material confidence, from the spread. */
+  confidenceFactor:  number;
+}
+
+/**
+ * The median of several reads of one body of prose.
+ *
+ * Abstention is a vote: when most reads decline to score, the combined read
+ * abstains too, rather than letting the one that did guess decide alone. Among
+ * the scoring reads the kept one is the lower middle on an even count, the
+ * conservative side of a tie.
+ */
+export function combineNarrativeReads<R extends NarrativeRead>(reads: R[]): CombinedNarrative<R> | null {
+  if (reads.length === 0) return null;
+  const scoring = reads
+    .filter((r): r is R & { score: number } => r.score !== null && Number.isFinite(r.score))
+    .sort((a, b) => a.score - b.score);
+
+  if (scoring.length * 2 <= reads.length && scoring.length < reads.length) {
+    const abstaining = reads.find((r) => r.score === null) ?? reads[0];
+    return { read: abstaining, score: null, spread: null, runs: reads.length, confidenceFactor: 1 };
+  }
+
+  const median = scoring[Math.floor((scoring.length - 1) / 2)];
+  const spread = scoring.length >= 2 ? scoring[scoring.length - 1].score - scoring[0].score : null;
+  const confidenceFactor = spread === null
+    ? 1
+    : 1 - Math.min(spread, NARRATIVE_SPREAD_LIMIT) / (2 * NARRATIVE_SPREAD_LIMIT);
+  return { read: median, score: median.score, spread, runs: reads.length, confidenceFactor };
+}
+
 // ── Blending the two halves ──────────────────────────────────────────────────
 
 /**

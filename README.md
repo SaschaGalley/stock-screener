@@ -435,7 +435,9 @@ allowed to talk about is decided by the same arithmetic that decided the score.
    value**: a summariser that knows the stock looks cheap finds the news
    encouraging, which is exactly the contamination the single call suffered from.
    It returns a 0–10 read of the business trajectory, or `null` as an honest
-   abstention.
+   abstention. It is run **three times** in parallel over the identical prompt
+   and the **median** is kept, together with the summary of the read that
+   produced it, so text and number agree (`combineNarrativeReads`).
 3. **Synthese** (the configured analysis model) gets the two short summaries and
    the pillar table, and writes thesis, bull, bear and risks. It does not set the
    score. It may move the blended one by up to ±1 point, with a reason on the
@@ -448,6 +450,18 @@ score alone, and a failed synthesis produces a verdict assembled from the
 findings and marked as written without a model. That last path is not
 theoretical — it fired on the first live run, and the verdict it produced was
 the right score with honest prose and a label saying no model wrote it.
+
+**Why three narrative reads.** Five identical runs over ServiceNow's material
+came back 5, 5, 5, 6, 7; GOOGL 6, 6, 6, 6, 7; Airbus 8 five times. Mostly one
+answer, with the occasional outlier — and at up to 45 % of the headline a
+two-point outlier moves the headline by most of a point, enough to cross a band.
+A median of three discards a single outlier outright; the reads run in parallel,
+so it costs about a cent per stock on the summary model and no wall-clock time.
+Abstention is a vote: if most reads decline to score, the result abstains. The
+spread between reads is kept (`score.narrative.spread`) and scales the
+narrative's confidence by `1 − spread / 6` down to half at a spread of three —
+three reads of the same text disagreeing by three points is the text not
+determining the answer.
 
 `fairValueEstimate` is **computed, not asked for**, and it leads with the median:
 `$123.64 (3 Modelle: $39.22–$222.76)`. A bare min–max hands both ends to

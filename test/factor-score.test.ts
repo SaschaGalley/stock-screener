@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { analystConsensus, blendScores, computeFactorScore, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish } from '../src/analysis/score.js';
+import { analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -690,5 +690,35 @@ describe('blending the two halves', () => {
       adjustment: 1, adjustmentReason: 'Rekordquartal', adjustmentLimit: 1,
     });
     assert.ok(!b.verdict.startsWith('STRONG'));
+  });
+});
+
+describe('narrative reads', () => {
+  const read = (score: number | null, tag = String(score)) => ({ summary: tag, events: [], score });
+
+  it('keeps the median read, prose and number together, and ignores one outlier', () => {
+    const c = combineNarrativeReads([read(5, 'a'), read(7, 'b'), read(5, 'c')])!;
+    assert.equal(c.score, 5);
+    assert.equal(c.read.score, 5);
+    assert.equal(c.spread, 2);
+    assert.ok(c.confidenceFactor < 1 && c.confidenceFactor > 0.5);
+  });
+
+  it('abstains when most reads abstain', () => {
+    assert.equal(combineNarrativeReads([read(null), read(null), read(8)])!.score, null);
+    assert.equal(combineNarrativeReads([read(null), read(6), read(8)])!.score, 6);
+  });
+
+  it('never removes more than half the confidence, and none at agreement', () => {
+    assert.equal(combineNarrativeReads([read(6), read(6), read(6)])!.confidenceFactor, 1);
+    assert.equal(combineNarrativeReads([read(1), read(5), read(9)])!.confidenceFactor, 0.5);
+  });
+
+  it('takes the conservative middle on an even count, and survives a lone read', () => {
+    assert.equal(combineNarrativeReads([read(4), read(6)])!.score, 4);
+    const lone = combineNarrativeReads([read(7)])!;
+    assert.equal(lone.score, 7);
+    assert.equal(lone.spread, null);
+    assert.equal(combineNarrativeReads([]), null);
   });
 });

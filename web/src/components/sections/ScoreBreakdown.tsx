@@ -57,7 +57,8 @@ export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
           {narrative && (
             <Note
               title="Text"
-              subtitle={`${narrative.sources.join(', ') || 'keine Quellen'} · ohne Kenntnis der Bewertung gelesen`}
+              subtitle={`${narrative.sources.join(', ') || 'keine Quellen'} · ohne Kenntnis der Bewertung gelesen`
+                + (narrative.spread != null ? ` · Median aus ${narrative.runs} Lesungen, Spanne ${narrative.spread.toFixed(1)}` : '')}
             >
               {narrative.summary}
               {narrative.events.length > 0 && (

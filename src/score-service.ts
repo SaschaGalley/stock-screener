@@ -30,7 +30,9 @@ import {
   SynthesisOutput, SynthesisOutputSchema, TechnicalSignals,
 } from './types.js';
 import { ComputedMetrics } from './analysis/computeMetrics.js';
-import { FactorScoreInput, computeFactorScore, blendScores, fairValueRange } from './analysis/score.js';
+import {
+  FactorScoreInput, NARRATIVE_SAMPLES, blendScores, combineNarrativeReads, computeFactorScore, fairValueRange,
+} from './analysis/score.js';
 import { renderFactorCard, scoreHeadline } from './output/score-card.js';
 import {
   PromptData, buildDataSummaryPrompt, buildNarrativePrompt, buildSynthesisPrompt,
@@ -222,7 +224,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
     : createProviderForModel(input.summaryModel, input.nativeSearch ?? false);
 
   say(`Zusammenfassungen mit ${input.summaryModel}…`);
-  const [dataNote, narrativeOut] = await Promise.all([
+  const [dataNote, narrativeReads] = await Promise.all([
     summariser.complete({
       label:  'data-summary',
       system: SYSTEM_SUMMARISER,
@@ -238,31 +240,41 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
     }),
 
     narrator === null
-      ? Promise.resolve<NarrativeOutput | null>(null)
-      : narrator.complete({
+      ? Promise.resolve<NarrativeOutput[]>([])
+      // Several independent reads of the same prompt; see NARRATIVE_SAMPLES.
+      // A read that fails is dropped rather than failing the others.
+      : Promise.all(Array.from({ length: NARRATIVE_SAMPLES }, () => narrator.complete({
           label:  'narrative',
           system: SYSTEM_SUMMARISER,
           user:   appendSearchResults(buildNarrativePrompt(f, distill ?? undefined, perplexity ?? undefined), searchResults),
           schema: NarrativeOutputSchema,
           maxTokens: 3000,
-        }).catch((e) => {
-          logger.warn(`${f.symbol}: narrative summary failed — headline falls back to the factor score (${(e as Error).message})`);
+        }).catch((e): null => {
+          logger.warn(`${f.symbol}: one narrative read failed (${(e as Error).message})`);
           return null;
-        }),
+        }))).then((reads) => reads.filter((r): r is NarrativeOutput => r !== null)),
   ]);
 
-  const narrative = narrativeOut === null ? null : {
-    summary:    narrativeOut.summary,
-    events:     narrativeOut.events,
-    score:      narrativeOut.score,
-    confidence: material.confidence,
+  const combined = combineNarrativeReads(narrativeReads);
+  if (narrator !== null && combined === null) {
+    logger.warn(`${f.symbol}: every narrative read failed — headline falls back to the factor score`);
+  }
+
+  const narrative = combined === null ? null : {
+    summary:    combined.read.summary,
+    events:     combined.read.events,
+    score:      combined.score,
+    confidence: material.confidence * combined.confidenceFactor,
+    spread:     combined.spread,
+    runs:       combined.runs,
     sources:    material.sources,
     model:      input.summaryModel,
     at:         new Date().toISOString(),
   };
 
   if (narrative) {
-    say(`Narrativ-Score ${narrative.score === null ? 'Enthaltung' : `${narrative.score.toFixed(1)}/10`} aus ${material.sources.join(', ')}`);
+    const agreement = narrative.spread == null ? '' : ` (Median aus ${narrative.runs} Lesungen, Spanne ${narrative.spread.toFixed(1)})`;
+    say(`Narrativ-Score ${narrative.score === null ? 'Enthaltung' : `${narrative.score.toFixed(1)}/10`}${agreement} aus ${material.sources.join(', ')}`);
   }
 
   // ── Stage 3: the thesis, told the arithmetic before it answers ────────────
