@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict } from '../src/analysis/score.js';
+import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict, saturate } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -493,11 +493,12 @@ describe('conviction', () => {
   });
 
   it('composes with trust rather than replacing it', () => {
-    // The headline is the raw deviation times both multipliers, and the two
+    // The headline is the raw deviation times both multipliers (bent only past
+    // the STRONG bands — see `saturate`), and the two
     // answer different questions: how much of this can we trust, and how much
     // of it do the lenses corroborate.
     const s = score();
-    const expected = 5 + (s.raw - 5) * s.shrink * s.conviction;
+    const expected = 5 + saturate((s.raw - 5) * s.shrink * s.conviction);
 
     // Half a tenth: the published score is rounded to the decimal everything
     // prints and bands on.
@@ -824,5 +825,22 @@ describe('conservative models outside their population', () => {
   it('reads an ordinary balance sheet with every model', () => {
     const r = names({ roe: 0.15, dividendYield: 0.03, payoutRatio: 0.6 });
     assert.ok(!r.excluded.some((e) => /not the capital base|not how this firm distributes/.test(e)));
+  });
+});
+
+describe('saturation at the ends of the scale', () => {
+  it('leaves the middle untouched and bends only beyond the STRONG bands', () => {
+    assert.equal(saturate(2.5), 2.5);
+    assert.equal(saturate(-3), -3);
+    assert.ok(saturate(5.24) < 5 && saturate(5.24) > 4.5);
+  });
+  it('keeps order, meets the line smoothly, and never passes the end', () => {
+    let prev = -Infinity;
+    for (let d = -12; d <= 12; d += 0.25) {
+      const v = saturate(d);
+      assert.ok(v > prev && Math.abs(v) < 5);
+      prev = v;
+    }
+    assert.ok(Math.abs(saturate(3.001) - 3.001) < 1e-6);
   });
 });

@@ -46,7 +46,7 @@ import { ANALYST_CONSENSUS_MODEL, borrowsToLend, reliableMargin } from './metric
 import { worstSeverity } from './data-quality.js';
 import { fmt, fmtBig, fmtPct, fmtPrice, fmtSignedPct } from '../format.js';
 import { toFiniteNumber } from '../utils/num.js';
-import { verdictForScore } from '../verdict.js';
+import { SCORE_BANDS, verdictForScore } from '../verdict.js';
 
 // ── Configuration ────────────────────────────────────────────────────────────
 //
@@ -1030,6 +1030,32 @@ export function convictionFor(pillars: ScorePillar[]): { agreement: number; conv
  * a tenth each is ample resolution for a ranking, and rounding here means the
  * stored value, the printed value and the banded value are one number.
  */
+/**
+ * Where the conviction stretch stops being linear: the STRONG BUY band's
+ * distance from neutral, read from the bands rather than repeated here.
+ */
+const SATURATION_KNEE = (SCORE_BANDS.find((b) => b.verdict === 'STRONG BUY')?.min ?? 8) - 5;
+
+/**
+ * The stretched deviation from neutral, bent so it approaches the end of the
+ * scale instead of running off it.
+ *
+ * `(raw − 5) × trust × conviction` is linear with no ceiling, and a unanimous,
+ * well-covered case overshoots: Alphabet's 8.56 raw × 0.92 × 1.6 came to
+ * 10.24 and was clipped to 10.0 — a perfect score, and one it would share with
+ * anything else past the edge, so the ranking stopped at the top. Inside the
+ * knee (±3, the STRONG bands) nothing changes; beyond it the curve is
+ * `knee + (5 − knee) · tanh((|d| − knee) / (5 − knee))`, which meets the line
+ * with the same slope, keeps every order, and reaches 10 only in the limit.
+ * No label moves: everything beyond the knee was already STRONG.
+ */
+export function saturate(deviation: number): number {
+  const d = Math.abs(deviation);
+  if (d <= SATURATION_KNEE) return deviation;
+  const room = 5 - SATURATION_KNEE;
+  return Math.sign(deviation) * (SATURATION_KNEE + room * Math.tanh((d - SATURATION_KNEE) / room));
+}
+
 function published(score: number): number {
   return Math.round(Math.max(0, Math.min(10, score)) * 10) / 10;
 }
@@ -1150,7 +1176,7 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
   // lenses actually corroborate. Half-weight at zero confidence rather than a
   // collapse to 5: a blind score still has to rank, it just must not shout.
   const shrink = 0.4 + 0.6 * confidence;
-  const score = published(5 + (raw - 5) * shrink * conviction);
+  const score = published(5 + saturate((raw - 5) * shrink * conviction));
 
   // ── Caps ──────────────────────────────────────────────────────────────────
   const caps: ScoreCap[] = [];

@@ -282,6 +282,14 @@ Three properties the code is built to keep:
   confidence`, where confidence combines coverage, the composite's own
   confidence, the data-quality audit and whether the fundamentals are stale.
   Conviction is agreement — see below.
+- **The ends of the scale are approached, not hit.** The stretch is linear with
+  no ceiling, and a unanimous, well-covered case overshot: Alphabet came to
+  10.24 and was clipped to a perfect 10.0 it would have shared with anything
+  else past the edge. `saturate` leaves the deviation untouched inside ±3 (the
+  STRONG bands, read from `SCORE_BANDS`) and bends it beyond with a tanh that
+  meets the line at the same slope: order is kept, 10 and 0 are reached only in
+  the limit, and no label changes, because everything past the knee was already
+  STRONG. Alphabet now reads 9.6, Nu 9.1.
 
 ### What the price requires
 
