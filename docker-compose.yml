@@ -191,7 +191,7 @@ services:
   # Everything that is not rate-limited by a machine or a bill: the nightly
   # parent (which only waits), the data refreshes (already capped by the Finnhub
   # and Yahoo budgets), and ping.
-  stockcli-worker:
+  stockcli-worker-general:
     <<: *worker
     environment:
       <<: *app-env

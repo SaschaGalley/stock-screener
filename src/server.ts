@@ -1280,7 +1280,7 @@ async function viaHatchet<O>(enqueue: () => Promise<O>, inline: () => Promise<O>
 export class NoWorkerError extends Error {
   constructor() {
     super('No Hatchet worker is running — start one with `pnpm hatchet:worker` '
-      + '(in production, the stockcli-worker container).');
+      + '(in production, the stockcli-worker-* containers).');
     this.name = 'NoWorkerError';
   }
 }
