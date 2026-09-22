@@ -295,7 +295,25 @@ export type AltmanReading =
   | 'distress'        // in the distress zone, with debt it does not comfortably serve
   | 'deficit-driven'  // in the zone on net cash: an accumulated deficit, not insolvency
   | 'serviced'        // in the zone, but interest is covered many times over
+  | 'out-of-sample'   // a utility: a population no Z-Score variant was fitted on
   | 'unknown';
+
+/**
+ * Sectors no Z-Score variant was estimated on.
+ *
+ * Altman's samples were manufacturers (Z) and non-manufacturing industrials
+ * (Z′, Z″); utilities were left out of all of them, as financials were. Their
+ * shape defeats the terms on sight: asset turnover (X5) is structurally low for
+ * a fleet of power plants, working capital (X1) runs negative by design, and
+ * retained earnings (X2) say more about accounting history than solvency. Vistra
+ * prints X2 ≈ 0 — it emerged from the Energy Future Holdings bankruptcy under
+ * fresh-start accounting in 2016 and has distributed since — and X5 = 0.46, and
+ * lands at Z = 1.33 "distress" while issuing $1.5 B of notes into a market that
+ * took them. The zone was costing it 30 % of the health pillar and capping the
+ * verdict at HOLD; interest coverage and leverage, which the pillar reads
+ * directly, are the figures that actually measure a utility's solvency.
+ */
+export const ALTMAN_EXCLUDED_SECTORS = ['Utilities'];
 
 /**
  * What the Z-Score is actually saying about this company.
@@ -327,6 +345,15 @@ export function readAltman(
   const base = z.score !== null
     ? `Altman Z ${z.score.toFixed(2)} (${z.model}-Modell, Grenzen ${z.thresholds.distress}/${z.thresholds.safe})`
     : 'Altman Z nicht berechenbar';
+
+  if (f.sector && ALTMAN_EXCLUDED_SECTORS.includes(f.sector) && z.score !== null) {
+    return {
+      reading: 'out-of-sample',
+      note: `${base} — nicht gewertet: kein Z-Score-Modell wurde auf Versorgern geschätzt `
+        + `(niedriger Kapitalumschlag ${fmt(z.x5)} und negatives Working Capital sind dort Normalfall). `
+        + 'Solvenz lesen hier Zinsdeckung und Verschuldung direkt.',
+    };
+  }
 
   if (z.zone !== 'distress') {
     return {

@@ -426,6 +426,16 @@ in both cases the criterion abstains and the cap does not fire. Neither makes
 the company healthy — it is still loss-making, and the pillar's own interest
 coverage scores it 0/10 on figures rather than through a borrowed model.
 
+**Nor a utility.** No Z-Score variant was estimated on utilities — Altman left
+them out of every sample, as he did financials — and their shape defeats the
+terms on sight: asset turnover (X5) is structurally low for a fleet of plants,
+working capital runs negative by design, and retained earnings reflect
+accounting history. Vistra, under fresh-start accounting since leaving
+bankruptcy in 2016, prints X2 ≈ 0 and X5 = 0.46 and landed at Z = 1.33
+"distress" — costing it 30 % of the health pillar and a HOLD ceiling — in the
+same week it placed $1.5 B of notes. `ALTMAN_EXCLUDED_SECTORS` makes the
+criterion abstain there; interest coverage and leverage carry the pillar.
+
 **An uncorroborated model that lands far from the price is not a valuation.**
 With two or three models a wild one is medianed down by its neighbours; with one
 there is nothing to correct it, and the valuation ramp tops out at +60 % margin

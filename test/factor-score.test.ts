@@ -314,6 +314,15 @@ describe('reading the Z-Score', () => {
     assert.equal(r.reading, 'distress');
   });
 
+  it('does not read a utility at all, whatever its zone', () => {
+    // Vistra: Z 1.33 on the manufacturer model, X5 0.46, X2 ≈ 0 after
+    // fresh-start accounting — and debt it does not serve at the excellent mark.
+    const r = z({ sector: 'Utilities', totalCash: 1_000_000, totalDebt: 900_000_000 },
+      { interestCoverage: { ratio: 2.1, interpretation: 'fair' } });
+    assert.equal(r.reading, 'out-of-sample');
+    assert.match(r.note, /Versorgern/);
+  });
+
   it('caps only on the reading that survived, and the criterion follows it', () => {
     const cashRich = financials({ totalCash: 700_000_000, totalDebt: 50_000_000 });
     const s = computeFactorScore({
