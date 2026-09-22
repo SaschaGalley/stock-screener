@@ -1050,15 +1050,19 @@ function reducePillar(
 }
 
 /** Apply the ceilings in order of severity; `hold-ceiling` subsumes `no-strong`. */
-function capVerdict(verdict: Recommendation, caps: ScoreCap[]): Recommendation {
+export function capVerdict(verdict: Recommendation, caps: ScoreCap[]): Recommendation {
   let out: Recommendation = verdict;
-  if (caps.some((c) => c.limit === 'no-strong' || c.limit === 'hold-ceiling')) {
+  // Uncertainty tempers both extremes: a payload we cannot trust supports no
+  // strong call in either direction.
+  if (caps.some((c) => c.limit === 'no-strong')) {
     if (out === 'STRONG BUY')  out = 'BUY';
     if (out === 'STRONG SELL') out = 'SELL';
   }
-  // A ceiling caps enthusiasm, not alarm: a distressed balance sheet is no
-  // reason to upgrade a SELL.
-  if (caps.some((c) => c.limit === 'hold-ceiling') && out === 'BUY') out = 'HOLD';
+  // A ceiling is a warning — distress, a supported manipulation flag — so it
+  // caps enthusiasm and never softens alarm. It used to share the branch above
+  // and turned Vistra's STRONG SELL into SELL on the strength of the very
+  // "distress" reading that made it bearish.
+  if (caps.some((c) => c.limit === 'hold-ceiling') && (out === 'STRONG BUY' || out === 'BUY')) out = 'HOLD';
   return out;
 }
 

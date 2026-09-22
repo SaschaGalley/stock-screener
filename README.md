@@ -371,9 +371,12 @@ a fourth hue.
 
 Separately, **caps** limit the label without touching the number: a data-quality
 error, no analyst coverage, or confidence below 45 % forbids the STRONG variants;
-a supported Beneish flag or an Altman distress zone also forbids BUY. A cap never
-upgrades a bearish verdict — a distressed balance sheet is no reason to lift a
-SELL.
+a supported Beneish flag or an Altman distress zone forbids BUY and STRONG BUY.
+The two differ on the bearish side on purpose: uncertainty tempers both
+extremes, so `no-strong` also turns STRONG SELL into SELL, but a warning only
+caps enthusiasm — a distressed balance sheet is no reason to soften a STRONG
+SELL, and it once did (Vistra, held at SELL by the distress reading that made it
+bearish).
 
 ### Two things the pillars deliberately do not read
 

@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish } from '../src/analysis/score.js';
+import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -278,6 +278,19 @@ describe('uncertainty', () => {
       dataQualityWarnings: [ERROR_WARNING],
     });
     assert.ok(['SELL', 'HOLD', 'STRONG SELL'].includes(bad.verdict));
+  });
+});
+
+describe('caps', () => {
+  const cap = (limit: 'no-strong' | 'hold-ceiling') => [{ limit, reason: 'x' }] as never;
+  it('lets a warning cap enthusiasm but never soften alarm', () => {
+    assert.equal(capVerdict('STRONG BUY', cap('hold-ceiling')), 'HOLD');
+    assert.equal(capVerdict('BUY', cap('hold-ceiling')), 'HOLD');
+    assert.equal(capVerdict('STRONG SELL', cap('hold-ceiling')), 'STRONG SELL');
+  });
+  it('lets uncertainty temper both extremes', () => {
+    assert.equal(capVerdict('STRONG BUY', cap('no-strong')), 'BUY');
+    assert.equal(capVerdict('STRONG SELL', cap('no-strong')), 'SELL');
   });
 });
 
