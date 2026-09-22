@@ -35,6 +35,7 @@ export type {
   DistillEntityCandidate,
   DistillEntityUnresolvedResponse,
   PerplexityRefreshResponse,
+  EvaluationResponse,
 } from '../../src/api-types';
 
 // ── Domain types, from the modules that model them ───────────────────────────

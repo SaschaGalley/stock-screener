@@ -8,6 +8,7 @@ import AnalysisModal, { flagsLabel } from './components/AnalysisModal';
 import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
 import AdminPage from './pages/AdminPage';
+import EvaluationPage from './pages/EvaluationPage';
 import { applyListView, DEFAULT_LIST_VIEW, type ListView } from './components/stockList';
 import { EMPTY_ANCHOR, type ListScrollAnchor } from './components/useListScroll';
 import type { Settings, OverviewRow, ProgressEvent, SearchChoice } from './types';
@@ -23,12 +24,13 @@ const DEFAULT_SETTINGS: Settings = {
  * Hash routing.
  *
  * `#/overview` is the list, `#/stock/AAPL` is the list with that stock open
- * beside it, `#/admin` is the administration. Bare `#AAPL` still resolves to a
+ * beside it, `#/admin` is the administration, `#/evaluation` the score's
+ * track record. Bare `#AAPL` still resolves to a
  * stock: those links are in bookmarks and history, and honouring them costs one
  * branch. No hash is the list — the app's resting state is the whole list, not
  * an empty detail pane waiting to be told what to show.
  */
-type ViewName = 'overview' | 'analysis' | 'admin';
+type ViewName = 'overview' | 'analysis' | 'admin' | 'evaluation';
 
 interface RouteState {
   view:   ViewName;
@@ -42,12 +44,14 @@ function readRoute(): RouteState {
   const key = head.toLowerCase();
   if (key === 'overview') return { view: 'overview', symbol: null };
   if (key === 'admin')    return { view: 'admin', symbol: null };
+  if (key === 'evaluation') return { view: 'evaluation', symbol: null };
   if (key === 'stock')    return { view: 'analysis', symbol: tail ? tail.toUpperCase() : null };
   return { view: 'analysis', symbol: raw.toUpperCase() };   // legacy `#AAPL`
 }
 
 function routeToHash(route: RouteState): string {
   if (route.view === 'admin')    return '#/admin';
+  if (route.view === 'evaluation') return '#/evaluation';
   if (route.view === 'analysis' && route.symbol) return `#/stock/${route.symbol}`;
   return '#/overview';
 }
@@ -149,6 +153,11 @@ export default function App() {
   const openAdmin = useCallback(() => {
     setStocksDrawer(false);
     navigate('admin');
+  }, [navigate]);
+
+  const openEvaluation = useCallback(() => {
+    setStocksDrawer(false);
+    navigate('evaluation');
   }, [navigate]);
 
   // React to back/forward navigation
@@ -367,9 +376,10 @@ export default function App() {
    * selected — a deleted symbol, a truncated link — falls back to the list
    * instead of a detail pane with nothing in it.
    */
-  const isAdmin    = route.view === 'admin';
-  const isAnalysis = route.view === 'analysis' && selected !== null;
-  const isTable    = !isAdmin && !isAnalysis;
+  const isAdmin      = route.view === 'admin';
+  const isEvaluation = route.view === 'evaluation';
+  const isAnalysis   = route.view === 'analysis' && selected !== null;
+  const isTable      = !isAdmin && !isEvaluation && !isAnalysis;
 
   // Esc is the keyboard counterpart of the ✕ — for the analysis and the
   // administration alike. Skipped while a field has focus, where Esc means
@@ -413,6 +423,7 @@ export default function App() {
       )}
 
       {isAdmin && <AdminPage onClose={closeOverlay} />}
+      {isEvaluation && <EvaluationPage onClose={closeOverlay} />}
 
       {/* The list at full width. Cheap to rebuild, so it mounts and unmounts. */}
       {isTable && (
@@ -424,6 +435,7 @@ export default function App() {
           onViewChange={setListView}
           onSelect={handleSelectSymbol}
           onOpenAdmin={openAdmin}
+          onOpenEvaluation={openEvaluation}
           activity={activity}
           scrollAnchor={listScrollRef}
         />
@@ -499,7 +511,7 @@ export default function App() {
 
       {/* One add field for the whole window, below whichever density is up —
           the table used to have no way to add a stock at all. */}
-      {!isAdmin && (
+      {!isAdmin && !isEvaluation && (
         <AnalyzeForm
           onAdd={addStock}
           analyzing={loading}

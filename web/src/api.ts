@@ -20,6 +20,7 @@ import type {
   AddStockResponse,
   SchedulerStatus,
   ActivityEntry,
+  EvaluationResponse,
 } from './types';
 
 const BASE = '/api';
@@ -138,6 +139,10 @@ export const api = {
   // The set of chartable numbers is a query parameter now, not a fixed shape:
   // `listMetrics` is the picker's data source and `getSeries` draws whatever
   // was picked.
+
+  /** Rank IC of the stored scores against later returns. Slow when not cached server-side. */
+  getEvaluation: (horizons: number[], fresh = false) =>
+    jsonFetch<EvaluationResponse>(`${BASE}/evaluation?horizons=${horizons.join(',')}${fresh ? '&fresh=1' : ''}`),
 
   listMetrics: (domain?: string) =>
     jsonFetch<{ metrics: MetricCatalogEntry[] }>(

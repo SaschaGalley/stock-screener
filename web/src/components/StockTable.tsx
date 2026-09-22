@@ -5,7 +5,7 @@ import RecommendationBadge from './RecommendationBadge';
 import StockListControls from './StockListControls';
 import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT, HEADER_HEIGHT } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
-import { GearIcon } from './icons';
+import { ChartIcon, GearIcon } from './icons';
 import { averageScore, scoreColor, type ListView } from './stockList';
 import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
 
@@ -19,6 +19,7 @@ interface Props {
   onViewChange: (next: ListView) => void;
   onSelect: (symbol: string) => void;
   onOpenAdmin: () => void;
+  onOpenEvaluation: () => void;
   /** Symbol → stages the queue currently has in flight for it. */
   activity?: Record<string, string[]>;
   /** Shared with the rail, so collapsing the columns doesn't move the list. */
@@ -34,7 +35,7 @@ interface Props {
  * one fact, and reads better as one cell than as two columns.
  */
 export default function StockTable({
-  rows, total, loading, view, onViewChange, onSelect, onOpenAdmin,
+  rows, total, loading, view, onViewChange, onSelect, onOpenAdmin, onOpenEvaluation,
   activity = {}, scrollAnchor,
 }: Props) {
   // The table only exists while it is on screen, so it is always the visible
@@ -64,6 +65,13 @@ export default function StockTable({
         )}
         <div className="ml-auto flex items-center gap-3">
           <StockListControls view={view} onChange={onViewChange} layout="bar" />
+          <button
+            onClick={onOpenEvaluation}
+            title="Auswertung — sagt der Score die spätere Rendite voraus?"
+            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
+          >
+            <ChartIcon />
+          </button>
           <button
             onClick={onOpenAdmin}
             title="Administration — Cronjobs, Watchlist, Modelle"

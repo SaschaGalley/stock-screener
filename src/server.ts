@@ -35,6 +35,7 @@ import { getSectorMediansCached } from './sector-medians.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { deriveTechnicalSignals } from './analysis/signals.js';
 import { rescore } from './score-service.js';
+import { cachedEvaluation, EVALUATED_SIGNALS } from './db/evaluate.js';
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
 import { searchByQuery } from './data/yfinance.js';
@@ -789,6 +790,27 @@ export function createApp(): express.Express {
         return a.symbol.localeCompare(b.symbol);
       });
       res.json({ rows });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/evaluation?horizons=5,20,60&fresh=1 ─────────────────────────
+  // Rank IC of every stored score signal against the returns that followed —
+  // see src/analysis/evaluate.ts. Cached for hours: it fetches a year of
+  // prices per symbol and its inputs move once a day.
+  app.get('/api/evaluation', async (req, res, next) => {
+    try {
+      const horizons = typeof req.query.horizons === 'string'
+        ? req.query.horizons.split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0 && n <= 250)
+        : [];
+      const { at, value } = cachedEvaluation(horizons.length ? horizons : [5, 20, 60], req.query.fresh === '1');
+      const evaluation = await value;
+      res.json({
+        computedAt: new Date(at).toISOString(),
+        signals:    EVALUATED_SIGNALS.map(({ key, title, pillar }) => ({ key, title, pillar: pillar ?? false })),
+        evaluation,
+      });
     } catch (e) {
       next(e);
     }

@@ -241,3 +241,10 @@ export interface DistillEntityUnresolvedResponse {
   entityStatus: string | null;
   candidates:   DistillEntityCandidate[];
 }
+
+/** GET /api/evaluation — how the stored scores ranked the returns that followed. */
+export interface EvaluationResponse {
+  computedAt: string;
+  signals:    { key: string; title: string; pillar: boolean }[];
+  evaluation: import('./analysis/evaluate.js').Evaluation;
+}

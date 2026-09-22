@@ -670,6 +670,14 @@ pnpm run evaluate -- --horizons 20 --json
 node dist/db/evaluate.js --horizons 5,20        # in the deployed container
 ```
 
+The same numbers are in the web app under **Auswertung** (the chart icon beside
+the gear on the overview, `#/evaluation`), backed by `GET /api/evaluation`. The
+server keeps a result for six hours — a run fetches a year of prices per symbol
+and its inputs move once a day — and **Neu berechnen** forces a fresh one. Each
+row carries a plain verdict on how much the sample supports it: *zu wenig Daten*
+below three independent windows, then *nicht von Zufall zu unterscheiden*,
+*Tendenz* from |t| ≥ 1, *belastbar* from |t| ≥ 2.
+
 On every trading day it ranks the stocks by the score they carried *into* that
 day and by the return over the S&P 500 they made over the next *h* sessions, and
 reports the Spearman correlation of the two rankings (the **rank IC**) — for the
