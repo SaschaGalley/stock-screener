@@ -352,8 +352,20 @@ So the deviation from neutral is multiplied by how much the pillars agree:
 
 ```
 agreement  = |Σ w·dev| / Σ w·|dev|      # 1 = unanimous, 0 = they cancel
-conviction = 1 + 0.6 × agreement        # 1 when fewer than three pillars scored
+strength   = min(1, Σ w·|dev| / 1.5)    # mean distance from neutral vs the BUY band's
+conviction = 1 + 0.6 × agreement × strength   # 1 when fewer than three pillars scored
 ```
+
+**Strength** exists because agreement is a ratio and blind to scale: six lenses
+a hair above neutral agree as perfectly as six at 9. MercadoLibre's pillars ran
+from 5.0 to 7.1 — a mean distance of 1.18 points against a watchlist median near
+2.5 — and took the full 1.6×, six mild leans multiplied like six convictions. A
+lean smaller than the distance to a BUY verdict (1.5, read from `SCORE_BANDS`)
+is a weak vote either way, so below it the stretch scales down in proportion.
+Today that touches one stock (MercadoLibre 6.6 → 6.5). A stricter threshold of
+2.0 would also move MercadoLibre and Honeywell from BUY to HOLD; which one is
+right is a question for `pnpm run evaluate` — compare `factor.raw` with
+`factor.score` once there are enough windows — not for taste.
 
 Direction-blind: six unanimously bearish pillars earn the same conviction as six
 bullish ones. It needs at least three scored pillars, because with one the

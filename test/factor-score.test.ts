@@ -844,3 +844,19 @@ describe('saturation at the ends of the scale', () => {
     assert.ok(Math.abs(saturate(3.001) - 3.001) < 1e-6);
   });
 });
+
+describe('conviction from a mild consensus', () => {
+  const pillars = (scores: number[]) => scores.map((score, i) => ({
+    key: PILLAR_KEYS[i], label: '', weight: 1 / scores.length, effectiveWeight: 1 / scores.length,
+    score, coverage: 1, criteria: [],
+  })) as unknown as ScorePillar[];
+
+  it('gives six mild leans less stretch than six strong ones, at the same agreement', () => {
+    const mild = convictionFor(pillars([5.5, 5.5, 5.5, 5.5, 5.5, 5.5]));
+    const strong = convictionFor(pillars([8, 8, 8, 8, 8, 8]));
+    assert.equal(mild.agreement, 1);
+    assert.equal(strong.agreement, 1);
+    assert.ok(Math.abs(strong.conviction - 1.6) < 1e-9);
+    assert.ok(Math.abs(mild.conviction - (1 + 0.6 / 3)) < 1e-9);
+  });
+});

@@ -111,6 +111,20 @@ const STRONG_MIN_CONFIDENCE = 0.45;
 const MAX_CONVICTION = 1.6;
 
 /**
+ * How far from neutral the lenses must sit, on average, before their agreement
+ * earns the full stretch: the BUY band's distance from 5, read from the bands.
+ *
+ * Agreement counts directions, not distances. MercadoLibre's pillars ran from
+ * 5.0 to 7.1 — a weighted mean distance of 1.18 points, against a watchlist
+ * median near 2.5 — and still agreed perfectly and took the full 1.6×: six
+ * mild leans multiplied as if they were six convictions. A lean smaller than
+ * the distance to a BUY verdict is a weak vote for either direction, so below
+ * it the stretch scales down in proportion. Above it — everything on the list
+ * except MercadoLibre today — nothing changes.
+ */
+const CONVICTION_FULL_STRENGTH = (SCORE_BANDS.find((b) => b.verdict === 'BUY')?.min ?? 6.5) - 5;
+
+/**
  * Pillars needed before agreement means anything.
  *
  * With one scored pillar agreement is trivially perfect — there is nothing for
@@ -1007,12 +1021,17 @@ export function convictionFor(pillars: ScorePillar[]): { agreement: number; conv
   const scored = pillars.filter((p) => p.score !== null);
   const net = scored.reduce((s, p) => s + p.effectiveWeight * ((p.score as number) - 5), 0);
   const gross = scored.reduce((s, p) => s + p.effectiveWeight * Math.abs((p.score as number) - 5), 0);
+  const weight = scored.reduce((s, p) => s + p.effectiveWeight, 0);
   const agreement = gross === 0 ? 0 : Math.abs(net) / gross;
+  // Agreement is a ratio and blind to scale: six lenses a hair above neutral
+  // agree as perfectly as six at 9. See CONVICTION_FULL_STRENGTH.
+  const meanDistance = weight > 0 ? gross / weight : 0;
+  const strength = Math.min(1, meanDistance / CONVICTION_FULL_STRENGTH);
 
   return {
     agreement,
     conviction: scored.length >= CONVICTION_MIN_PILLARS
-      ? 1 + (MAX_CONVICTION - 1) * agreement
+      ? 1 + (MAX_CONVICTION - 1) * agreement * strength
       : 1,
   };
 }
