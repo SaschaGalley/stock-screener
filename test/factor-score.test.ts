@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict, saturate } from '../src/analysis/score.js';
+import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict, saturate, unsaturate } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -701,9 +701,29 @@ describe('blending the two halves', () => {
     const under = blend({ adjustment: -5, adjustmentReason: 'Rückruf' });
     const none = blend({ adjustment: 0, adjustmentReason: 'sollte verschwinden' });
 
-    assert.equal(over.adjustment, 1);
-    assert.equal(under.adjustment, -1);
+    assert.equal(over.adjustmentRequested, 1);
+    assert.equal(under.adjustmentRequested, -1);
     assert.equal(none.adjustmentReason, null);
+  });
+
+  it('applies a correction exactly inside the bands and bends it towards the ends', () => {
+    const at = (factorScore: number, adjustment: number) => blendScores({
+      factor: { ...score(), score: factorScore, confidence: 1, agreement: 1 },
+      narrativeScore: null, narrativeConfidence: 0,
+      adjustment, adjustmentReason: 'Anlass',
+    });
+    const middle = at(6.0, 1);
+    assert.ok(Math.abs(middle.adjustment - 1) < 0.01 && middle.score === 7);
+
+    // A 9.4 used to become 10.4, clipped to a perfect 10 and recorded as +1.0.
+    const top = at(9.4, 1);
+    assert.ok(top.score < 10 && top.score > 9.4);
+    assert.ok(Math.abs(top.score - (top.blend + top.adjustment)) <= 0.05);
+    assert.equal(top.adjustmentRequested, 1);
+    assert.ok(top.adjustment < 1);
+
+    const bottom = at(0.8, -1);
+    assert.ok(bottom.score > 0 && bottom.score < 0.8);
   });
 
   it('keeps the caps: prose cannot argue past a flagged balance sheet', () => {
@@ -834,6 +854,12 @@ describe('saturation at the ends of the scale', () => {
     assert.equal(saturate(-3), -3);
     assert.ok(saturate(5.24) < 5 && saturate(5.24) > 4.5);
   });
+  it('is inverted exactly by unsaturate', () => {
+    for (const d of [-4.9, -3.5, -1, 0, 2.2, 3.4, 4.7]) {
+      assert.ok(Math.abs(saturate(unsaturate(d)) - d) < 1e-9);
+    }
+  });
+
   it('keeps order, meets the line smoothly, and never passes the end', () => {
     let prev = -Infinity;
     for (let d = -12; d <= 12; d += 0.25) {

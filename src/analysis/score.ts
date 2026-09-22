@@ -1075,6 +1075,17 @@ export function saturate(deviation: number): number {
   return Math.sign(deviation) * (SATURATION_KNEE + room * Math.tanh((d - SATURATION_KNEE) / room));
 }
 
+/** Inverse of `saturate`: the linear deviation a published one came from. */
+export function unsaturate(deviation: number): number {
+  const d = Math.abs(deviation);
+  if (d <= SATURATION_KNEE) return deviation;
+  const room = 5 - SATURATION_KNEE;
+  // The published scale ends at 0 and 10, where the inverse runs off to
+  // infinity; a blend sitting exactly on the end is held a hair inside it.
+  const t = Math.min((d - SATURATION_KNEE) / room, 1 - 1e-9);
+  return Math.sign(deviation) * (SATURATION_KNEE + room * Math.atanh(t));
+}
+
 function published(score: number): number {
   return Math.round(Math.max(0, Math.min(10, score)) * 10) / 10;
 }
@@ -1478,11 +1489,20 @@ export function blendScores(input: BlendInput): FinalScore {
     ? (factorWeight * factor.score + narrativeWeight * (input.narrativeScore as number)) / total
     : factor.score;
 
-  const adjustment = Number.isFinite(input.adjustment)
+  const requested = Number.isFinite(input.adjustment)
     ? Math.max(-limit, Math.min(limit, input.adjustment))
     : 0;
 
-  const score = published(blend + adjustment);
+  // The correction is added where the score is still linear and bent back
+  // afterwards. Added on the published scale it did two wrong things near the
+  // ends: a +1 on a 9.4 blend came to 10.4, was clipped to a perfect 10.0 and
+  // still recorded as "+1.0" although 0.6 had been applied; and a point up
+  // there skipped the whole compressed zone that `saturate` had built, weighing
+  // more than a point in the middle. Inside the STRONG bands both paths agree
+  // exactly, so an ordinary correction is still exactly what the model asked.
+  const corrected = 5 + saturate(unsaturate(blend - 5) + requested);
+  const score = published(corrected);
+  const adjustment = corrected - blend;
 
   // The caps were earned by the payload, not by the score, so they survive the
   // blend: a model cannot talk its way past a flagged balance sheet by writing
@@ -1495,7 +1515,8 @@ export function blendScores(input: BlendInput): FinalScore {
     blend:            Math.round(blend * 100) / 100,
     factorWeight:     Math.round((total > 0 ? factorWeight / total : 1) * 1000) / 1000,
     narrativeWeight:  Math.round((total > 0 ? narrativeWeight / total : 0) * 1000) / 1000,
-    adjustment:       Math.round(adjustment * 100) / 100,
-    adjustmentReason: adjustment === 0 ? null : input.adjustmentReason,
+    adjustment:          Math.round(adjustment * 100) / 100,
+    adjustmentRequested: Math.round(requested * 100) / 100,
+    adjustmentReason:    requested === 0 ? null : input.adjustmentReason,
   };
 }

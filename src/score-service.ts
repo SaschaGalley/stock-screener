@@ -355,8 +355,9 @@ function blendNote(
 
 Die Gewichte sind die beiden Konfidenzen, nicht eine Meinung: schwache Daten
 geben der Prosa Gewicht, dünne Prosa gibt es den Zahlen zurück. Dein
-\`adjustment\` wird danach addiert und auf ±${limit.toFixed(1)} Punkte begrenzt;
-Deckel auf der Überzeugung bleiben davon unberührt.`;
+\`adjustment\` wird danach addiert und auf ±${limit.toFixed(1)} Punkte begrenzt —
+jenseits von 8 bzw. unter 2 wirkt es schwächer, weil sich die Skala dort ihren
+Enden nur annähert. Deckel auf der Überzeugung bleiben davon unberührt.`;
 }
 
 /**
@@ -438,7 +439,9 @@ export function rescore(input: RescoreInput): ScoreCard {
     factor,
     narrativeScore:      narrative?.score ?? null,
     narrativeConfidence: (narrative?.confidence ?? 0) * decay,
-    adjustment:          (prev?.final.adjustment ?? 0) * decay,
+    // The request, not what it amounted to: the applied figure was already
+    // bent by `saturate`, and bending it again would shrink it twice.
+    adjustment:          (prev?.final.adjustmentRequested ?? prev?.final.adjustment ?? 0) * decay,
     adjustmentReason:    prev?.final.adjustmentReason ?? null,
     narrativeMaxWeight:  input.narrativeMaxWeight,
     adjustmentLimit:     input.adjustmentLimit,

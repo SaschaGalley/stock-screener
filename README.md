@@ -647,8 +647,19 @@ Mechanics that keep it honest:
 factorWeight    = factor confidence
 narrativeWeight = narrative confidence × 0.45
 blend           = weighted mean of the two scores
-score           = clamp(blend + adjustment)
+score           = 5 + saturate(unsaturate(blend − 5) + adjustment)
 ```
+
+The synthesis model's correction is added where the scale is still linear and
+bent back afterwards. Inside the STRONG bands that is exactly `blend +
+adjustment`; towards the ends it is less. Added on the published scale, as it
+used to be, a +1 on a 9.4 blend came to 10.4, was clipped to a perfect 10.0 and
+was still recorded as "+1.0" although 0.6 had been applied — and a point up
+there skipped the whole compressed zone that `saturate` builds, weighing more
+than a point in the middle. `final.adjustment` is now what was applied
+(`score − blend`), `final.adjustmentRequested` what the model asked for; a card
+carried forward by the nightly refresh decays the request, not the bent result,
+so it is not shrunk twice.
 
 Both weights are confidences, so neither side argues its own case: a flagged
 payload hands weight to the prose automatically, a thin or stale dossier hands it

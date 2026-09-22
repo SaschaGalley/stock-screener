@@ -864,7 +864,8 @@ export const FinalScoreSchema = z.object({
   blend:            z.number().describe('The blend before the adjustment'),
   factorWeight:     z.number().describe('Weight the deterministic score carried in the blend (0–1)'),
   narrativeWeight:  z.number().describe('Weight the narrative score carried in the blend (0–1)'),
-  adjustment:       z.number().describe('Synthesis model’s correction in score points, bounded to ±1'),
+  adjustment:       z.number().describe('Correction actually applied, in published score points: `score − blend`. Equals the requested one inside the STRONG bands, smaller towards the ends of the scale'),
+  adjustmentRequested: z.number().optional().describe('Synthesis model’s correction as asked, bounded to ±1 and added before the ends of the scale are bent; the value a carried-forward card decays'),
   adjustmentReason: z.string().nullable().describe('Why the correction was applied; null when it was zero'),
 });
 export type FinalScore = z.infer<typeof FinalScoreSchema>;

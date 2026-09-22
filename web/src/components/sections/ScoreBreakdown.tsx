@@ -123,7 +123,15 @@ function BlendBar({ card }: { card: ScoreCard }) {
           </>
         )}
         {' → '}{final.blend.toFixed(1)}
-        {final.adjustment !== 0 && <> {final.adjustment > 0 ? '+' : '−'} {Math.abs(final.adjustment).toFixed(1)} Korrektur</>}
+        {final.adjustment !== 0 && (
+          <span
+            title={final.adjustmentRequested != null && Math.abs(final.adjustmentRequested - final.adjustment) >= 0.05
+              ? `Angefragt ${final.adjustmentRequested > 0 ? '+' : ''}${final.adjustmentRequested.toFixed(1)} — nahe dem Skalenende wirkt eine Korrektur schwächer`
+              : undefined}
+          >
+            {' '}{final.adjustment > 0 ? '+' : '−'} {Math.abs(final.adjustment).toFixed(1)} Korrektur
+          </span>
+        )}
       </div>
 
       <p className="mt-1.5 text-[10px] leading-relaxed text-ink-500">
