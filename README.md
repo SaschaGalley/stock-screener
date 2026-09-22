@@ -239,7 +239,7 @@ between BUY and HOLD on a rounding error.
 |--------|--------|-------|
 | **Bewertung** | 30 % | Margin of safety against our own models only (see below), share of them showing undervaluation, the conservative tier as a value lens, own multiples against the peer medians, and what the price requires (below) |
 | **Qualität** | 20 % | Piotroski (abstains below 5 computable signals), ROIC minus the DCF's own WACC, operating margin vs peers, revenue growth vs peers, Rule of 40 |
-| **Bilanz & Risiko** | 15 % | Altman Z against its own model's thresholds, interest coverage, net debt / EBITDA, current ratio, Beneish |
+| **Bilanz & Risiko** | 15 % | Altman Z against its own model's thresholds, interest coverage, net debt / EBITDA, current ratio (without prepaid revenue where it is material), Beneish |
 | **Analystenkonsens** | 15 % | Weighted rating (Strong Buy +2 … Strong Sell −2), mean-target upside |
 | **Markt & Momentum** | 10 % | The TradingView-style signals verdict, relative strength vs SPY and sector, 52-week position |
 | **Erwartungen** | 10 % | 30-day EPS estimate drift, net revisions, surprise history, month-over-month rating change |
@@ -287,6 +287,18 @@ Two choices worth knowing:
   cash flow, and the requirement is itself a free-cash-flow margin. Peer medians
   only from five peers up — thin groups produced medians from −53 % to 1.5 % for
   companies nobody would call loss-making.
+
+### A liability that is not a debt
+
+A subscription business collects a year in advance and books it as a current
+liability it settles by delivering the service, not by paying cash. At
+ServiceNow that deferred revenue is 80 % of current liabilities, so the reported
+current ratio of 0.70 scored one of the most liquid balance sheets on the list
+0/10. Where deferred revenue is at least a quarter of current liabilities
+(`deferredRevenueShare`, from the annual balance sheet), the liquidity criterion
+reads the ratio without it — `currentRatio / (1 − share)` — and says so in the
+note: ServiceNow 0.70 → 3.4, Microsoft 1.23 → 2.2, Rubrik 1.64 → 8.8. Below a
+quarter the adjustment is noise and the ratio is read as reported.
 
 ### Agreement, and why the middle is not always bland
 

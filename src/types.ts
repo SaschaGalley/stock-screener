@@ -108,6 +108,7 @@ export const StockFinancialsSchema = z.object({
   debtToEquity:      z.number().nullable().describe('Total debt divided by shareholders equity (ratio, not percentage)'),
   currentRatio:      z.number().nullable().describe('Current assets / current liabilities; liquidity indicator (Piotroski F6)'),
   quickRatio:        z.number().nullable().describe('(Current assets − inventory) / current liabilities; stricter liquidity measure'),
+  deferredRevenueShare: z.number().nullable().describe('Current deferred revenue / current liabilities, latest annual balance sheet (decimal). Prepaid subscriptions sit in current liabilities without being cash owed, so a high share makes the current ratio understate liquidity'),
 
   // ── Income Statement (annual, latest) ───────────────────────────────────────
   revenue:          z.number().nullable().describe('Total revenue from the most recent annual income statement'),

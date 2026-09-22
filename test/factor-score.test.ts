@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish } from '../src/analysis/score.js';
+import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -763,5 +763,17 @@ describe('what the price requires', () => {
     assert.ok(Math.abs(pts(0.10) - 0.5) < 1e-9);
     assert.equal(pts(0.20), 0);
     assert.equal(pts(0.05), 1);
+  });
+});
+
+describe('current ratio of a subscription business', () => {
+  it('sets prepaid revenue aside once it is a material share of current liabilities', () => {
+    const r = adjustedCurrentRatio(financials({ currentRatio: 0.7, deferredRevenueShare: 0.8 }));
+    assert.ok(Math.abs(r.ratio! - 3.5) < 1e-9);
+    assert.equal(r.deferredShare, 0.8);
+  });
+  it('reads an ordinary balance sheet as reported', () => {
+    assert.deepEqual(adjustedCurrentRatio(financials({ currentRatio: 1.2, deferredRevenueShare: 0.1 })), { ratio: 1.2, deferredShare: null });
+    assert.deepEqual(adjustedCurrentRatio(financials({ currentRatio: 1.2, deferredRevenueShare: null })), { ratio: 1.2, deferredShare: null });
   });
 });

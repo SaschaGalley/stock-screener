@@ -40,7 +40,9 @@ import { coerce, LeafKind, readPath } from './walk.js';
 //     served to the models as if they had been checked.
 // 19: adds sharesOutstandingAnnual / prevYear.sharesOutstanding (Piotroski F7)
 //     and interestInOperatingCashFlow, which decides the DCF's FCFF add-back.
-export const FINANCIALS_VERSION     = 19;
+// 20: adds deferredRevenueShare, which the health pillar needs to read a
+//     subscription business's current ratio without its prepayments.
+export const FINANCIALS_VERSION     = 20;
 export const ANALYSIS_VERSION       = 5;
 export const NEWS_VERSION           = 1;
 export const MARKET_SIGNALS_VERSION = 2;

@@ -1125,6 +1125,12 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     debtToEquity:      num(fd.debtToEquity),
     currentRatio:      num(fd.currentRatio),
     quickRatio:        num(fd.quickRatio),
+    // A ratio of two statement figures, so no FX conversion.
+    deferredRevenueShare: (() => {
+      const dr = num((bs as any).currentDeferredRevenue);
+      return dr !== null && totalCurrentLiabilities !== null && totalCurrentLiabilities > 0
+        ? dr / totalCurrentLiabilities : null;
+    })(),
 
     revenue:          preferStatement(fxc(num(fd.totalRevenue)), statementRevenue ?? fxc(num(inc.totalRevenue))),
     grossProfit:      fxc(num(fd.grossProfits) ?? grossProfit),

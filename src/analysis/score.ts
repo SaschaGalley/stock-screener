@@ -745,8 +745,40 @@ function qualityPillar(
   ];
 }
 
+/**
+ * Share of current liabilities that must be prepaid revenue before the current
+ * ratio is read without it.
+ *
+ * A subscription business collects a year in advance and books it as a current
+ * liability it will settle by delivering software, not by paying cash. At
+ * ServiceNow that is 80 % of current liabilities: a reported ratio of 0.70 is
+ * 3.4 once the prepayments are set aside, and scoring the 0.70 gave one of the
+ * most liquid balance sheets on the list 0/10. Below a quarter the adjustment
+ * is noise, so an ordinary company's ratio is read as reported.
+ */
+export const DEFERRED_REVENUE_MIN_SHARE = 0.25;
+
+/** Beyond this the denominator is too small to divide by with any meaning. */
+const DEFERRED_REVENUE_MAX_SHARE = 0.9;
+
+/**
+ * The current ratio with prepaid revenue taken out of the liabilities.
+ *
+ * The share comes from the annual balance sheet and the ratio from the latest
+ * quarter; the share moves slowly, so scaling the fresh ratio by it is closer
+ * to the truth than either the stale annual ratio or the unadjusted fresh one.
+ */
+export function adjustedCurrentRatio(f: StockFinancials): { ratio: number | null; deferredShare: number | null } {
+  const ratio = toFiniteNumber(f.currentRatio);
+  const share = toFiniteNumber(f.deferredRevenueShare);
+  if (ratio === null || share === null || share < DEFERRED_REVENUE_MIN_SHARE) return { ratio, deferredShare: null };
+  const s = Math.min(share, DEFERRED_REVENUE_MAX_SHARE);
+  return { ratio: ratio / (1 - s), deferredShare: share };
+}
+
 function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] {
   const z = m.altmanZ;
+  const liquidity = adjustedCurrentRatio(f);
   const beneish = readBeneish(f, m.beneish);
   // Zone boundaries differ by model, so the ramp is built from the thresholds
   // the calculation itself used rather than from constants repeated here.
@@ -792,8 +824,11 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
           : 'EBITDA nicht positiv — Verschuldungsgrad nicht aussagekräftig'),
 
     criterion('liquidity', 'Current Ratio', 0.10,
-      ramp(f.currentRatio, 0.8, 2.0),
-      f.currentRatio !== null ? `Current Ratio ${fmt(f.currentRatio, 'x')}` : 'Keine Liquiditätskennzahl'),
+      ramp(liquidity.ratio, 0.8, 2.0),
+      liquidity.ratio === null ? 'Keine Liquiditätskennzahl'
+        : liquidity.deferredShare === null ? `Current Ratio ${fmt(f.currentRatio, 'x')}`
+        : `Current Ratio ${fmt(f.currentRatio, 'x')} — ohne vorausbezahlte Umsätze `
+          + `(${fmtPct(liquidity.deferredShare, 0)} der kurzfristigen Verbindlichkeiten) ${fmt(liquidity.ratio, 'x')}`),
 
     criterion('beneish', 'Bilanzqualität (Beneish)', 0.10,
       // A reading the model cannot support scores nothing rather than zero —
