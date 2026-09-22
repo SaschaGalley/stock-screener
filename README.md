@@ -215,6 +215,31 @@ Pass `--search` without a value to auto-select the native search for the active 
 | 18 | **Sortino Ratio** | Risk-adjusted return using downside deviation, live risk-free rate |
 | 19 | **Beneish M-Score** | 8-variable earnings-manipulation detector, gated on min variable coverage |
 
+**The conservative tier only counts models that fit the company.** Measured
+over the watchlist, its median sat below 0.3× the price for 20 of 31 stocks —
+less a value lens than a price-to-book ratio in disguise, because three of its
+five models were being run outside the firms they describe:
+
+- **Graham Number and RIM abstain above 40 % ROE** (`BOOK_ANCHOR_MAX_ROE`). Both
+  start from book value, which stops being the capital base once a company has
+  handed it back through buybacks or never needed much. The Graham Number is
+  √(22.5 · EPS · BVPS), i.e. a function of P/E × P/B alone; RIM capped ROE at
+  30 % *and* kept the shrunken book, and valued Mastercard (ROE 241 %) at 3 % of
+  its price.
+- **DDM abstains below a 40 % payout ratio** (`DDM_MIN_PAYOUT`). Gordon's model
+  values the dividend stream and nothing else — the business itself for a firm
+  paying out most of its earnings, a rounding error for NVIDIA (1 %) or
+  Alphabet (4 %), which it priced at 4 % of the share price.
+- **The value-lens criterion needs two surviving models**
+  (`CONSERVATIVE_MIN_MODELS`); one is not a lens — Berkshire's came down to
+  Graham's V* alone and scored 10/10 on it.
+
+Excluded models are listed with their reason in the composite's exclusions.
+Graham's V* and EPV stay for everyone: they value earnings, not the balance
+sheet, and a no-growth value that sits far below the price is exactly what the
+lens is for. Where book value is the right anchor and the price is simply far
+above it — Tesla, AMD, ServiceNow at 0.05–0.13× — the reading is unchanged.
+
 ## Score and verdict
 
 Score and recommendation used to come out of one LLM call: the models, the

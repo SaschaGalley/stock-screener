@@ -799,3 +799,30 @@ describe('current ratio of a subscription business', () => {
     assert.deepEqual(adjustedCurrentRatio(financials({ currentRatio: 1.2, deferredRevenueShare: null })), { ratio: 1.2, deferredShare: null });
   });
 });
+
+describe('conservative models outside their population', () => {
+  const names = (over: Partial<StockFinancials>) => {
+    const m = computeAllMetrics(financials(over), FALLBACK_RATES, null);
+    return {
+      used: m.composite.conservative.models.map((x) => x.name),
+      excluded: m.composite.excludedModels.map((x) => `${x.name}: ${x.reason}`),
+    };
+  };
+
+  it('does not anchor on a book the firm has handed back', () => {
+    const r = names({ roe: 1.5 });
+    assert.ok(!r.used.includes('Graham Number') && !r.used.includes('Residual Income (RIM)'));
+    assert.ok(r.excluded.some((e) => /Graham Number: ROE 150/.test(e)));
+  });
+
+  it('does not value a token dividend as the business', () => {
+    const r = names({ dividendYield: 0.01, payoutRatio: 0.1 });
+    assert.ok(!r.used.includes('DDM (Gordon)'));
+    assert.ok(r.excluded.some((e) => /DDM \(Gordon\): Payout 10/.test(e)));
+  });
+
+  it('reads an ordinary balance sheet with every model', () => {
+    const r = names({ roe: 0.15, dividendYield: 0.03, payoutRatio: 0.6 });
+    assert.ok(!r.excluded.some((e) => /not the capital base|not how this firm distributes/.test(e)));
+  });
+});

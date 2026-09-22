@@ -1628,8 +1628,44 @@ function tierStats(price: number, models: CompositeContributor[]): CompositeTier
   return { median: med, mean: meanV, p25, p75, min: minV, max: maxV, marginOfSafety: mos, models };
 }
 
+/**
+ * Return on equity above which book value is no longer the capital that earns
+ * the profits.
+ *
+ * Graham's Number and the residual-income model both start from book value.
+ * That is the right anchor for the firms they were built on — asset-heavy,
+ * retaining their earnings — and the wrong one for a company that has handed
+ * its capital back through buybacks or never needed much: Mastercard earns
+ * 241 % on its book, Apple 149 %. The Graham Number then reduces to a function
+ * of P/E × P/B (it is √(22.5 · EPS · BVPS)) and priced both at a tenth of the
+ * share price; RIM caps ROE at 30 % *and* keeps the shrunken book, and priced
+ * Mastercard at 3 %. Above 40 % the book is under two and a half years of
+ * earnings, and the models abstain instead of reporting the buyback history as
+ * a valuation.
+ */
+export const BOOK_ANCHOR_MAX_ROE = 0.40;
+
+/**
+ * Payout ratio below which the dividend is not how the firm distributes value.
+ *
+ * Gordon's model values the dividend stream and nothing else. For a company
+ * paying out most of its earnings that is the business; for NVIDIA (1 %) or
+ * Alphabet (4 %) it is a rounding error, and the model priced both at 4 % of
+ * the share price. Below 40 % the dividend is a token beside retention and
+ * buybacks, and the model abstains.
+ */
+export const DDM_MIN_PAYOUT = 0.40;
+
 export function calculateCompositeFairValue(financials: StockFinancials, inputs: CompositeInputs): CompositeFairValueResult {
   const price = financials.price;
+  const roe = financials.roe;
+  const bookNotAnchor = roe !== null && Number.isFinite(roe) && roe > BOOK_ANCHOR_MAX_ROE
+    ? `ROE ${(roe * 100).toFixed(0)} % — book value is not the capital base (buybacks or a capital-light model), so a book-anchored value measures the balance sheet, not the business`
+    : undefined;
+  const payout = financials.payoutRatio;
+  const tokenDividend = inputs.ddm.isApplicable && payout !== null && Number.isFinite(payout) && payout < DDM_MIN_PAYOUT
+    ? `Payout ${(payout * 100).toFixed(0)} % — the dividend is not how this firm distributes value, so a dividend-only value understates it`
+    : undefined;
   const rimExcessTooNegative = inputs.rim.excessReturn !== null && inputs.rim.excessReturn < -0.03;
 
   const primary: CompositeContributor[]      = [];
@@ -1666,16 +1702,17 @@ export function calculateCompositeFairValue(financials: StockFinancials, inputs:
   }
 
   // ── CONSERVATIVE tier ──
-  add('conservative', 'Graham Number',     inputs.graham.grahamNumber,     'Requires positive EPS and book value');
+  add('conservative', 'Graham Number',     inputs.graham.grahamNumber,     'Requires positive EPS and book value', bookNotAnchor);
   add('conservative', 'Graham Revised V*', inputs.grahamRevised.fairValue, 'Requires positive EPS and growth');
   add('conservative', 'EPV (Greenwald)',   inputs.epv.fairValue,           'Requires positive EBIT', fcffInapplicable);
   add('conservative', 'Residual Income (RIM)', inputs.rim.fairValue, 'Requires positive book value and ROE',
-    rimExcessTooNegative
+    bookNotAnchor ?? (rimExcessTooNegative
       ? `Trailing ROE far below cost of equity (excess ${(inputs.rim.excessReturn! * 100).toFixed(1)}pp) — RIM understates future earning power for firms in heavy investment phase`
-      : undefined);
+      : undefined));
   add('conservative', 'DDM (Gordon)',
     inputs.ddm.isApplicable ? inputs.ddm.fairValue : null,
-    inputs.ddm.isApplicable ? 'g approaches r — model unstable' : 'No dividend');
+    inputs.ddm.isApplicable ? 'g approaches r — model unstable' : 'No dividend',
+    tokenDividend);
 
   const primaryTier      = tierStats(price, primary);
   const conservativeTier = tierStats(price, conservative);

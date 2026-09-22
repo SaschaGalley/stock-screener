@@ -625,13 +625,19 @@ export function marketImplied(
   return { required, benchmark: best[1], ratio: Math.max(required, 0) / best[1], basis: best[0] };
 }
 
+/** Fewest conservative models whose median counts as the value lens. */
+export const CONSERVATIVE_MIN_MODELS = 2;
+
 function valuationPillar(
   f: StockFinancials, m: ComputedMetrics, peers: SectorMedians | null,
 ): ScoreCriterion[] {
   const c = f.tradingCurrency;
   const comp: CompositeFairValueResult = m.composite;
 
-  const consMos = comp.conservative.marginOfSafety;
+  // One surviving model is not a lens: Berkshire's conservative tier came down
+  // to Graham's V* alone and scored 10/10 on it. Two or more, or nothing.
+  const consModels = comp.conservative.models.length;
+  const consMos = consModels >= CONSERVATIVE_MIN_MODELS ? comp.conservative.marginOfSafety : null;
   const iv = intrinsicValue(f, comp);
 
   // Intrinsic value only. The sell-side target belongs in the primary tier of a
@@ -682,7 +688,10 @@ function valuationPillar(
     criterion('conservative-mos', 'Value-Lens (konservative Modelle)', 0.15,
       ramp(consMos, -0.50, 0.30),
       comp.conservative.median !== null
-        ? `Konservativer Fair Value ${fmtPrice(comp.conservative.median, c)} — MoS ${fmtSignedPct(consMos)} (Graham, EPV, RIM, DDM)`
+        ? consMos !== null
+          ? `Konservativer Fair Value ${fmtPrice(comp.conservative.median, c)} — MoS ${fmtSignedPct(consMos)} `
+            + `(${comp.conservative.models.map((x) => x.name).join(', ')})`
+          : `Nur ein konservatives Modell anwendbar (${comp.conservative.models[0].name}) — keine Linse, nicht gewertet`
         : 'Keine konservativen Modelle anwendbar'),
 
     criterion('peer-multiples', 'Multiples gegen Sektormedian', 0.15,
