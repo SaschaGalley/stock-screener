@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish } from '../src/analysis/score.js';
+import { analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -720,5 +720,48 @@ describe('narrative reads', () => {
     assert.equal(lone.score, 7);
     assert.equal(lone.spread, null);
     assert.equal(combineNarrativeReads([]), null);
+  });
+});
+
+describe('what the price requires', () => {
+  const base = financials();
+  const metrics = computeAllMetrics(base, FALLBACK_RATES, null);
+  const withMargin = (over: Record<string, number | null>) => ({
+    ...metrics,
+    reverseDCF: {
+      ...metrics.reverseDCF,
+      impliedMargin: {
+        fcfMargin: 0.20, revenueBase: 1, revenueGrowth: 0.1, growthSource: 'analyst consensus' as const,
+        discountRate: 0.09, currentFcfMargin: 0.10, currentNopatMargin: 0.10, interpretation: '',
+        ...over,
+      },
+    },
+  });
+
+  it('holds the requirement against the best margin already shown', () => {
+    const r = marketImplied(base, withMargin({ currentNopatMargin: 0.03, currentFcfMargin: 0.30 }), null)!;
+    assert.equal(r.basis, 'fcf');
+    assert.ok(Math.abs(r.ratio - 0.2 / 0.3) < 1e-9);
+  });
+
+  it('abstains where no positive margin exists to compare with', () => {
+    assert.equal(marketImplied(base, withMargin({ currentNopatMargin: -0.1, currentFcfMargin: -0.5 }), null), null);
+  });
+
+  it('ignores the median of a thin peer group', () => {
+    const thin = { operatingMargin: 0.9, peerCount: 2 } as SectorMedians;
+    assert.notEqual(marketImplied(base, withMargin({}), thin)!.basis, 'peers');
+    const real = { operatingMargin: 0.9, peerCount: 8 } as SectorMedians;
+    assert.equal(marketImplied(base, withMargin({}), real)!.basis, 'peers');
+  });
+
+  it('reads 5 at exactly the achievable margin, and 0 / 10 at twice / half of it', () => {
+    const pts = (req: number) => computeFactorScore({
+      financials: base, metrics: withMargin({ fcfMargin: req }), sectorMedians: null,
+      marketSignals: null, technicalSignals: null,
+    }).pillars.find((p) => p.key === 'valuation')!.criteria.find((c) => c.key === 'market-implied')!.points!;
+    assert.ok(Math.abs(pts(0.10) - 0.5) < 1e-9);
+    assert.equal(pts(0.20), 0);
+    assert.equal(pts(0.05), 1);
   });
 });

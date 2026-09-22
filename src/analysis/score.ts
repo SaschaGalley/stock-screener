@@ -529,6 +529,75 @@ function criterion(
   return { key, label, weight, points, note, impact: null };
 }
 
+/**
+ * What the price requires, against what the business can plausibly earn.
+ *
+ * Every other valuation criterion asks "what is it worth" from our own
+ * assumptions — a growth rate, a discount rate, a multiple. This one inverts
+ * the question: take the consensus revenue path as given and solve for the
+ * steady margin at which today's enterprise value is fair (the reverse SVR in
+ * `calculateImpliedMargin`). That is the lens a growth investor actually uses,
+ * and it is the one the conservative models cannot supply.
+ *
+ * Margin rather than the reverse DCF's implied FCF growth, deliberately. The
+ * reverse DCF solves for *free-cash-flow* growth and the only forward figure to
+ * hold it against is *revenue* growth; the two agree only while margins are
+ * stable. Intel "required 64 % growth against 13 % consensus" because its free
+ * cash flow was depressed, not because its price was absurd. Solving for the
+ * margin on the consensus revenue path compares like with like.
+ *
+ * The yardstick is the best margin the business has *already shown* — after-tax
+ * operating margin or free-cash-flow margin, whichever is higher — or the peer
+ * median after tax where a real peer group exists. Operating margin alone
+ * punished exactly the firms the lens is for: UiPath earns 3 % GAAP but 31 %
+ * free cash flow, and the requirement (19 %) is itself a free-cash-flow margin,
+ * so the second is the like-for-like comparison. Peers only from five up: the
+ * medians of thin groups ran from −53 % to 1.5 % for companies nobody would
+ * call loss-making. Generous by design — the conservative lens is already three
+ * criteria strong — and abstaining where no positive margin exists to hold the
+ * requirement against.
+ */
+export interface MarketImplied {
+  required:  number;
+  benchmark: number;
+  /** required ÷ benchmark: 1 is priced for exactly the achievable margin. */
+  ratio:     number;
+  basis:     'operating' | 'fcf' | 'peers';
+}
+
+const IMPLIED_BASIS_LABEL: Record<MarketImplied['basis'], string> = {
+  operating: 'eigene operative Marge nach Steuern',
+  fcf:       'eigene Free-Cash-Flow-Marge',
+  peers:     'Peer-Median nach Steuern',
+};
+
+/** Ratio at which the criterion reads 0 (and its inverse, 10) — log-symmetric around 1. */
+export const IMPLIED_MARGIN_RATIO_LIMIT = 2;
+
+/** Fewest peers whose median margin is a credible yardstick. */
+export const IMPLIED_MARGIN_MIN_PEERS = 5;
+
+export function marketImplied(
+  f: StockFinancials, m: ComputedMetrics, peers: SectorMedians | null,
+): MarketImplied | null {
+  const im = m.reverseDCF.impliedMargin;
+  const required = toFiniteNumber(im?.fcfMargin);
+  if (!im || required === null) return null;
+  const tax = Math.min(0.35, Math.max(0.10, toFiniteNumber(f.taxRate) ?? 0.21));
+  const peerOp = (peers?.peerCount ?? 0) >= IMPLIED_MARGIN_MIN_PEERS ? toFiniteNumber(peers?.operatingMargin) : null;
+  const candidates: [MarketImplied['basis'], number | null][] = [
+    ['operating', toFiniteNumber(im.currentNopatMargin)],
+    ['fcf',       toFiniteNumber(im.currentFcfMargin)],
+    ['peers',     peerOp !== null ? peerOp * (1 - tax) : null],
+  ];
+  let best: [MarketImplied['basis'], number] | null = null;
+  for (const [basis, v] of candidates) {
+    if (v !== null && v > 0 && (best === null || v > best[1])) best = [basis, v];
+  }
+  if (best === null) return null;
+  return { required, benchmark: best[1], ratio: Math.max(required, 0) / best[1], basis: best[0] };
+}
+
 function valuationPillar(
   f: StockFinancials, m: ComputedMetrics, peers: SectorMedians | null,
 ): ScoreCriterion[] {
@@ -567,14 +636,18 @@ function valuationPillar(
   const rel = meanOf(relParts);
   const relCount = relParts.filter((p) => p !== null).length;
 
+  const implied = marketImplied(f, m, peers);
+  const lim = Math.log(IMPLIED_MARGIN_RATIO_LIMIT);
+  const impliedGrowth = m.reverseDCF.impliedMargin?.revenueGrowth;
+
   return [
-    criterion('composite-mos', 'Composite Margin of Safety', 0.45,
+    criterion('composite-mos', 'Composite Margin of Safety', 0.35,
       ramp(mos, -0.30, 0.60),
       !compositeUsable ? thinNote
         : `Eigener Fair Value ${fmtPrice(fair, c)} vs. Kurs ${fmtPrice(f.price, c)} — MoS ${fmtSignedPct(mos)} `
           + `über ${intrinsic.length} Modelle (${intrinsic.map((x) => x.name).join(', ')})`),
 
-    criterion('models-undervalued', 'Anteil unterbewertender Modelle', 0.20,
+    criterion('models-undervalued', 'Anteil unterbewertender Modelle', 0.15,
       pct,
       !compositeUsable ? thinNote
         : `${((pct ?? 0) * 100).toFixed(0)} % der eigenen Modelle sehen die Aktie unter Fair Value`),
@@ -585,11 +658,20 @@ function valuationPillar(
         ? `Konservativer Fair Value ${fmtPrice(comp.conservative.median, c)} — MoS ${fmtSignedPct(consMos)} (Graham, EPV, RIM, DDM)`
         : 'Keine konservativen Modelle anwendbar'),
 
-    criterion('peer-multiples', 'Multiples gegen Sektormedian', 0.20,
+    criterion('peer-multiples', 'Multiples gegen Sektormedian', 0.15,
       rel,
       rel !== null
         ? `${relCount} Multiples gegen ${peers?.peerCount ?? 0} Peers: P/E ${fmt(m.ratios.pe, 'x')} vs. ${fmt(peers?.pe, 'x')}, EV/EBITDA ${fmt(m.evMultiples.evToEbitda, 'x')} vs. ${fmt(peers?.evToEbitda, 'x')}`
         : 'Keine Peer-Mediane verfügbar — relative Bewertung nicht prüfbar'),
+
+    criterion('market-implied', 'Was der Kurs verlangt', 0.20,
+      implied ? ramp(Math.log(Math.max(implied.ratio, 1e-6)), lim, -lim) : null,
+      implied
+        ? `Der Kurs ist fair bei dauerhaft ${fmtPct(implied.required)} Marge auf dem Konsens-Umsatzpfad `
+          + `(${fmtPct(impliedGrowth ?? null)} Wachstum, auslaufend) — erreichbar erscheinen ${fmtPct(implied.benchmark)} `
+          + `(${IMPLIED_BASIS_LABEL[implied.basis]}), `
+          + `verlangt also das ${implied.ratio.toFixed(1)}-fache`
+        : 'Keine positive Marge, an der sich die vom Kurs verlangte messen ließe'),
   ];
 }
 

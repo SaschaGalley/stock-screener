@@ -237,7 +237,7 @@ between BUY and HOLD on a rounding error.
 
 | Pillar | Weight | Reads |
 |--------|--------|-------|
-| **Bewertung** | 30 % | Margin of safety against our own models only (see below), share of them showing undervaluation, the conservative tier as a value lens, own multiples against the peer medians |
+| **Bewertung** | 30 % | Margin of safety against our own models only (see below), share of them showing undervaluation, the conservative tier as a value lens, own multiples against the peer medians, and what the price requires (below) |
 | **Qualität** | 20 % | Piotroski (abstains below 5 computable signals), ROIC minus the DCF's own WACC, operating margin vs peers, revenue growth vs peers, Rule of 40 |
 | **Bilanz & Risiko** | 15 % | Altman Z against its own model's thresholds, interest coverage, net debt / EBITDA, current ratio, Beneish |
 | **Analystenkonsens** | 15 % | Weighted rating (Strong Buy +2 … Strong Sell −2), mean-target upside |
@@ -257,6 +257,36 @@ Three properties the code is built to keep:
   confidence`, where confidence combines coverage, the composite's own
   confidence, the data-quality audit and whether the fundamentals are stale.
   Conviction is agreement — see below.
+
+### What the price requires
+
+Four of the five valuation criteria ask *what is it worth* from our own
+assumptions. The fifth (`market-implied`, 20 % of the pillar) inverts the
+question the way a growth investor would: take the consensus revenue path as
+given and solve for the steady margin at which today's enterprise value is fair
+— the reverse SVR — then hold that against the best margin the business has
+**already shown**: after-tax operating margin or free-cash-flow margin, whichever
+is higher, or the peer median after tax when there are at least five peers.
+
+The reading is log-symmetric around 1: priced for exactly the achievable margin
+reads 5, twice it reads 0, half of it reads 10. Measured over the watchlist:
+GOOGL requires 12 % against 30 % shown (10/10), NVIDIA 31 % against 48 %, Tesla
+82 % against 5 % (0/10). Rank correlation with the other four criteria 0.54 —
+related, as it should be, but mostly information they did not carry.
+
+Two choices worth knowing:
+
+- **Margin, not the reverse DCF's implied growth.** The reverse DCF solves for
+  *free-cash-flow* growth, and the only forward number to hold that against is
+  *revenue* growth; the two agree only while margins are stable. Intel
+  "required 64 % growth against 13 % consensus" because its free cash flow was
+  depressed, not because its price was absurd. Solving for the margin on the
+  consensus revenue path compares like with like.
+- **The best shown margin, not the operating one.** Operating margin alone
+  punished the very firms the lens is for: UiPath earns 3 % GAAP and 31 % free
+  cash flow, and the requirement is itself a free-cash-flow margin. Peer medians
+  only from five peers up — thin groups produced medians from −53 % to 1.5 % for
+  companies nobody would call loss-making.
 
 ### Agreement, and why the middle is not always bland
 
