@@ -40,6 +40,7 @@ import {
   AnalystRatingDelta, CompositeFairValueResult, EarningsRevisions, FactorScore,
   FinalScore, MarketSignals, PillarKey, Recommendation, ScoreCap, ScoreCriterion,
   ScoreFinding, ScorePillar, SectorMedians, StockFinancials, TechnicalSignals,
+  NarrativeDimensions,
 } from '../types.js';
 import { ComputedMetrics } from './computeMetrics.js';
 import { ANALYST_CONSENSUS_MODEL, borrowsToLend, reliableMargin } from './metrics.js';
@@ -1364,6 +1365,35 @@ export const NARRATIVE_SAMPLES = 3;
  * the median is still the best single read available.
  */
 export const NARRATIVE_SPREAD_LIMIT = 3;
+
+/**
+ * Rated dimensions a narrative score needs; fewer is the sources not covering
+ * the business, and the read abstains.
+ */
+export const NARRATIVE_MIN_DIMENSIONS = 2;
+
+/**
+ * The narrative score, computed from the per-dimension ratings.
+ *
+ * The model used to answer with one number, and one number is where a single
+ * headline swings the whole read: the rubric's "0 — several independent sources
+ * describe a deterioration" matched Apple's regulatory news one to one, and a
+ * business growing 16 % came back 0.0 and pulled the headline to SELL. The
+ * forensic brief is built to find bear evidence, so a rubric that counts bear
+ * evidence is satisfied for every stock. Rated one dimension at a time, a bad
+ * week in one of them costs what one dimension is worth, and the extremes need
+ * every dimension to agree. `5 + 2.5 × mean`, so all at −2 is 0 and all at +2 is
+ * 10; the model never chooses the number itself.
+ */
+export function narrativeScoreFrom(dimensions: NarrativeDimensions | null | undefined): number | null {
+  const rated = Object.values(dimensions ?? {})
+    .map((d) => d?.rating)
+    .filter((r): r is number => typeof r === 'number' && Number.isFinite(r))
+    .map((r) => Math.max(-2, Math.min(2, r)));
+  if (rated.length < NARRATIVE_MIN_DIMENSIONS) return null;
+  const mean = rated.reduce((a, b) => a + b, 0) / rated.length;
+  return Math.round((5 + 2.5 * mean) * 10) / 10;
+}
 
 export interface NarrativeRead {
   summary: string;

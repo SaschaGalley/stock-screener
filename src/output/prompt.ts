@@ -484,24 +484,42 @@ Bewertung soll beantworten, wie sich das Geschäft laut diesen Quellen entwickel
 — nicht, ob die Aktie günstig ist. Die Bewertungsfrage wird an anderer Stelle
 deterministisch beantwortet und danach mit deiner zusammengeführt.
 
-Der \`score\` bezieht sich auf die **Geschäftsentwicklung, wie die Quellen sie
-beschreiben**:
-- **10** — Auftragslage, Wettbewerbsposition, Management-Ausführung, Regulierung
-  und Produktzyklus zeigen übereinstimmend nach oben, belegt durch datierte
-  Ereignisse.
-- **5** — gemischt, oder die Quellen tragen zu wenig, um eine Richtung zu stützen.
-- **0** — mehrere unabhängige Quellen beschreiben eine Verschlechterung.
+Bewerte die **Geschäftsentwicklung, wie die Quellen sie beschreiben**, und zwar
+getrennt in fünf Dimensionen. Den Gesamtwert rechnet danach der Code aus — du
+setzt keine Gesamtnote.
+
+| Dimension    | Frage |
+|--------------|-------|
+| \`demand\`     | Wie entwickeln sich Nachfrage, Aufträge, Umsatz? |
+| \`position\`   | Gewinnt oder verliert das Unternehmen gegenüber Wettbewerbern, Kunden, Lieferanten? |
+| \`execution\`  | Liefert das Management, was es angekündigt hat? Führung, Kapitalallokation, Margen-Umsetzung |
+| \`regulation\` | Regulierung, Recht, Politik, Zölle — was davon ist **entschieden** und trifft das Geschäft? |
+| \`product\`    | Produktzyklus, Pipeline, Technologie |
+
+Skala je Dimension:
+- **+2 / −2** — nur für etwas, das bereits in den Zahlen steht oder entschieden
+  ist: ein unterschriebener Auftrag, ein verlorener Großkunde, ein Verbot in Kraft,
+  ein Rückruf, ein verfehltes Quartal. Datiert.
+- **+1 / −1** — eine klare Richtung, von unabhängigen Quellen berichtet, aber noch
+  nicht in den Ergebnissen; oder eine reine Unternehmensaussage.
+- **0** — gemischt, oder nichts bewegt diese Dimension spürbar.
+- **null** — die Quellen sagen dazu nichts. Eine ehrliche Lücke ist brauchbar,
+  eine erfundene 0 nicht.
 
 Regeln:
+- **Bewertung gehört nicht hierher.** Kurs, KGV, Multiples, Kursziele und
+  Analystenratings, die in den Quellen auftauchen, fließen in keine Dimension —
+  das wird an anderer Stelle gemessen.
+- **Die forensische Recherche hat gezielt nach Belegen gegen die Bullen-These
+  gesucht.** Dass sie welche findet, ist erwartet und für sich kein Signal —
+  bewerte, *was* sie gefunden hat. Eine eröffnete Untersuchung, eine Klage oder
+  ein Risiko ist höchstens −1; −2 erst, wenn es entschieden ist und trifft.
 - **Sektor-Dossiers sind Hintergrund, keine Aussage über dieses Unternehmen.**
   Ein Branchengegenwind ist ein Grund nachzusehen, ob die Firma ihn teilt — kein
-  Befund, dass sie ihn teilt. Wo die Firma von ihrer Branche abweicht, ist genau
-  das das Signal.
+  Befund, dass sie ihn teilt.
 - Rohe Einzelmeldungen wiegen als eine Quelle, nicht als ein Trend.
 - \`events\` sind konkrete, datierte Vorgänge (Auftrag, Zulassung, Rückruf,
   Personalwechsel, Kapitalmaßnahme) — keine Einschätzungen.
-- Tragen die Quellen nichts Belastbares, setze \`score\` auf \`null\`. Eine
-  ehrliche Enthaltung ist brauchbar; eine erfundene 5 ist es nicht.
 
 ${GERMAN_STYLE}
 
@@ -509,7 +527,13 @@ Antworte als JSON:
 {
   "summary": "4–6 Sätze zur qualitativen Lage.",
   "events":  ["bis zu 5 datierte, konkrete Vorgänge"],
-  "score":   0-10 oder null
+  "dimensions": {
+    "demand":     { "rating": -2, -1, 0, 1, 2 oder null, "note": "Beleg in einem Halbsatz" },
+    "position":   { "rating": ..., "note": "..." },
+    "execution":  { "rating": ..., "note": "..." },
+    "regulation": { "rating": ..., "note": "..." },
+    "product":    { "rating": ..., "note": "..." }
+  }
 }`;
 }
 
@@ -518,6 +542,8 @@ export interface SynthesisInputs {
   card:      string;
   dataNote:  string | null;
   narrative: { summary: string; events: string[]; score: number | null; sources: string[] } | null;
+  /** The Perplexity findings, compact — what the bull and bear cases may cite beyond the summary. */
+  research?: string | null;
   /** How the code will combine the two, stated before the model answers. */
   blendNote: string;
 }
@@ -545,7 +571,11 @@ ${s.narrative.events.length > 0 ? `\nKonkrete Vorgänge:\n${s.narrative.events.m
     : `### Qualitative Zusammenfassung
 
 Keine — für dieses Unternehmen lagen weder Distill-Dossier noch Perplexity-Recherche vor.
-Der Score ruht damit allein auf der Arithmetik; sag das in \`keyRisks\`.`;
+Der Score ruht damit allein auf der Arithmetik; sag das im \`bearCase\`.`;
+
+  const research = s.research
+    ? `### Recherche-Befunde (Perplexity, gezielt nach dem gesucht, was die Zahlen nicht zeigen)\n\n${s.research}`
+    : '';
 
   return `## ${f.symbol} — ${f.companyName}
 
@@ -556,6 +586,8 @@ ${s.card}
 ${s.dataNote ? `### Quantitative Zusammenfassung\n\n${s.dataNote}` : ''}
 
 ${narrative}
+
+${research}
 
 ### So entsteht der Headline-Score
 
@@ -576,13 +608,24 @@ zulässig ist sie, wenn du die vorliegenden Zahlen bloß anders gewichten würde
 diese Gewichtung ist bereits getroffen. Ohne solchen Anlass: \`adjustment: 0\` und
 \`adjustmentReason: null\`.
 
-Für die Texte:
-- \`bullCase\`, \`bearCase\`, \`keyRisks\`: je genau 3 Punkte à 15–25 Wörter, jeder mit
-  einer konkreten Zahl aus den Zusammenfassungen oben.
-- Führe mit der stärksten Einzeltatsache, nicht mit Kontext.
-- Jeder Punkt steht für sich — keine Konnektoren.
-- Widersprechen sich die quantitative und die qualitative Zusammenfassung, gehört
-  dieser Widerspruch in \`thesis\` oder \`keyRisks\`. Er ist die wertvollste
+Für die Texte — Bull und Bear Case sind das Erste, was ein Leser nach dem Urteil
+sieht, und sollen ihm den Fall erklären, nicht die Säulentabelle nacherzählen:
+- \`bullCase\` und \`bearCase\`: je 3–5 Punkte à 25–45 Wörter. Jeder Punkt nennt eine
+  Tatsache mit ihrem Beleg (Zahl, Datum, Quelle) **und** warum sie für die Aktie
+  zählt.
+- **Beide Seiten schöpfen aus allen Quellen.** Wo qualitative Zusammenfassung oder
+  Recherche-Befunde vorliegen, stammen mindestens zwei Punkte je Seite von dort —
+  Aufträge, Produkte, Management, Regulierung, geprüfte oder widerlegte Thesen.
+  Kennzahlen der Säulen belegen und ergänzen, sie sind nicht der ganze Fall.
+- **Risiken gehören in den \`bearCase\`**, nicht in eine eigene Liste: was noch nicht
+  eingetreten ist, aber den Fall brechen würde, mit dem, was es auslöst.
+- \`watch\`: 2–3 konkrete, beobachtbare Auslöser, die das Urteil ändern würden, je
+  mit Richtung — „↑ wenn …" oder „↓ wenn …": eine Kennzahl, die eine Schwelle
+  kreuzt, eine terminierte Entscheidung, ein Quartal. Keine allgemeinen Risiken.
+- Führe mit der stärksten Einzeltatsache, nicht mit Kontext. Keine Konnektoren
+  zwischen den Punkten.
+- Widersprechen sich die quantitative und die qualitative Seite, gehört dieser
+  Widerspruch in \`thesis\` oder den \`bearCase\`. Er ist die wertvollste
   Information auf dieser Seite, nicht ein Problem, das zu glätten wäre.
 - Die Fair-Value-Spanne wird **nicht** von dir gesetzt — sie ist die Spanne der
   Modelle, die sie erzeugt haben, und steht bereits fest. Erfinde keine.
@@ -591,9 +634,9 @@ ${GERMAN_STYLE}
 
 Antworte als JSON:
 {
-  "bullCase":         ["3 Punkte"],
-  "bearCase":         ["3 Punkte"],
-  "keyRisks":         ["3 Punkte"],
+  "bullCase":         ["3–5 Punkte"],
+  "bearCase":         ["3–5 Punkte, Risiken eingeschlossen"],
+  "watch":            ["2–3 Auslöser mit ↑/↓"],
   "thesis":           "ein Satz",
   "adjustment":       -1 bis +1,
   "adjustmentReason": "warum — oder null bei 0"

@@ -58,6 +58,8 @@ export type {
   ScoreCriterion,
   ScoreFinding,
   FactorScore,
+  NarrativeDimension,
+  NarrativeDimensions,
   StockFinancials,
   MarketSignals,
   NewsItem,

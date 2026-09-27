@@ -32,6 +32,7 @@ import {
 import { ComputedMetrics } from './analysis/computeMetrics.js';
 import {
   FactorScoreInput, NARRATIVE_SAMPLES, blendScores, combineNarrativeReads, computeFactorScore, fairValueRange,
+  narrativeScoreFrom,
 } from './analysis/score.js';
 import { renderFactorCard, scoreHeadline } from './output/score-card.js';
 import {
@@ -255,7 +256,10 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
         }))).then((reads) => reads.filter((r): r is NarrativeOutput => r !== null)),
   ]);
 
-  const combined = combineNarrativeReads(narrativeReads);
+  // The score is computed from the dimensions, never taken from the model.
+  const combined = combineNarrativeReads(
+    narrativeReads.map((r) => ({ ...r, score: narrativeScoreFrom(r.dimensions) })),
+  );
   if (narrator !== null && combined === null) {
     logger.warn(`${f.symbol}: every narrative read failed — headline falls back to the factor score`);
   }
@@ -264,6 +268,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
     summary:    combined.read.summary,
     events:     combined.read.events,
     score:      combined.score,
+    dimensions: combined.read.dimensions,
     confidence: material.confidence * combined.confidenceFactor,
     spread:     combined.spread,
     runs:       combined.runs,
@@ -291,6 +296,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
   const synthesisPrompt = buildSynthesisPrompt(f, {
     card:      renderFactorCard(factor),
     dataNote,
+    research:  perplexity?.findings ? researchDigest(perplexity.findings) : null,
     narrative: narrative && { summary: narrative.summary, events: narrative.events, score: narrative.score, sources: narrative.sources },
     blendNote: blendNote(factor.score, narrative?.score ?? null, preview, input.adjustmentLimit ?? 1),
   });
@@ -302,9 +308,10 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
       system: SYSTEM_SYNTHESIS,
       user:   synthesisPrompt,
       schema: SynthesisOutputSchema,
-      // The largest of the three: nine bullets plus a thesis, and the longest
-      // prompt. GOOGL truncated here on the first live run at 2048.
-      maxTokens: 4000,
+      // The largest of the three: up to ten argued bullets, the triggers and a
+      // thesis over the longest prompt. GOOGL truncated at 2048 on the first
+      // live run; the longer bullets need the headroom.
+      maxTokens: 6000,
     })
     .catch((e): SynthesisOutput | null => {
       logger.warn(`${f.symbol}: synthesis failed — falling back to the computed findings (${(e as Error).message})`);
@@ -328,7 +335,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
     llmAnalysis: {
       bullCase:          prose.bullCase,
       bearCase:          prose.bearCase,
-      keyRisks:          prose.keyRisks,
+      watch:             prose.watch,
       thesis:            prose.thesis,
       // Computed, not asked for — see `fairValueRange`.
       fairValueEstimate: fairValueRange(f, metrics.composite),
@@ -338,6 +345,30 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
     },
     nativeSearchQueries: narrator?.getNativeSearchQueries() ?? [],
   };
+}
+
+/**
+ * The Perplexity findings the thesis may cite, compact.
+ *
+ * The synthesis used to see only the narrative summariser's paragraph, so its
+ * bull and bear cases leaned on the one input it had in full: the pillar table.
+ * These few lines are what makes a bull point about a checked claim, or a bear
+ * point about a dated event, possible at all — without reopening the whole
+ * prose the pipeline was built to keep out.
+ */
+function researchDigest(findings: PerplexityFindings): string {
+  const line = (x: { date: string | null; what: string; independent: boolean }) =>
+    `- ${x.date ? `${x.date} · ` : ''}${x.independent ? 'unabhängig' : 'Unternehmensquelle'} — ${x.what}`;
+  const claim: Record<string, string> = {
+    independent: 'unabhängig belegt', 'management-only': 'nur Management', contradicted: 'widerlegt',
+  };
+  return [
+    findings.events.length ? `Ereignisse:\n${findings.events.slice(0, 5).map(line).join('\n')}` : '',
+    findings.bearEvidence.length ? `Belege gegen die Bullen-These:\n${findings.bearEvidence.slice(0, 5).map(line).join('\n')}` : '',
+    findings.bullClaims.length
+      ? `Geprüfte Bullen-Thesen:\n${findings.bullClaims.slice(0, 5).map((c) => `- ${c.claim} — ${claim[c.evidence] ?? c.evidence}: ${c.detail}`).join('\n')}`
+      : '',
+  ].filter(Boolean).join('\n\n');
 }
 
 /** The blend, spelled out for the model that is about to be allowed to nudge it. */
@@ -379,15 +410,16 @@ function fallbackProse(
   const pad = (rows: string[], filler: string) =>
     rows.length >= 2 ? rows : [...rows, filler, filler].slice(0, 2);
 
+  // Risks belong to the bear side now — caps, gaps and divergences with it.
   const risks = factor.findings
     .filter((x) => x.kind === 'cap' || x.kind === 'gap' || x.kind === 'divergence')
-    .slice(0, 3)
+    .slice(0, 2)
     .map((x) => x.note);
 
   return {
     bullCase: pad(pick('driver'), 'Keine Säule trug den Score nennenswert.'),
-    bearCase: pad(pick('drag'),   'Keine Säule belastete den Score nennenswert.'),
-    keyRisks: pad(risks, `Kein Synthese-Modell verfügbar — ${scoreHeadline(factor).replace(/\*\*/g, '')}`),
+    bearCase: pad([...pick('drag'), ...risks], 'Keine Säule belastete den Score nennenswert.'),
+    watch:    [],
     thesis: `Ohne Synthese-Modell erzeugt: ${f.symbol} erreicht ${factor.score.toFixed(1)}/10 (${factor.verdict}) aus der reinen Rechnung.`
       + (dataNote ? ` ${dataNote.split('. ')[0]}.` : '')
       + (narrativeSummary ? ` ${narrativeSummary.split('. ')[0]}.` : ''),

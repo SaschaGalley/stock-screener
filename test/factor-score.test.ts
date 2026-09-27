@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict, saturate, unsaturate } from '../src/analysis/score.js';
+import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict, saturate, unsaturate, narrativeScoreFrom } from '../src/analysis/score.js';
 import { recommendationTone, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -899,5 +899,25 @@ describe('rates for a past instant', () => {
     assert.equal(r.equityRiskPremium, 0.041);       // recorded later, still closer than the constant
     assert.equal(r.aaaBondYield, FALLBACK_RATES.aaaBondYield);
     assert.equal(ratesAt(h, 150).riskFreeRate, 0.04);
+  });
+});
+
+describe('narrative score from dimensions', () => {
+  const dims = (...ratings: (number | null)[]) => Object.fromEntries(
+    ['demand', 'position', 'execution', 'regulation', 'product'].map((k, i) => [k, { rating: ratings[i] ?? null, note: '' }]),
+  );
+
+  it('lets one bad dimension cost one dimension, not the whole read', () => {
+    // Apple: regulation decided against it, the business itself growing.
+    assert.equal(narrativeScoreFrom(dims(1, 0, 1, -2, 1)), 5.5);
+  });
+  it('reaches the ends only when every dimension agrees', () => {
+    assert.equal(narrativeScoreFrom(dims(-2, -2, -2, -2, -2)), 0);
+    assert.equal(narrativeScoreFrom(dims(2, 2, 2, 2, 2)), 10);
+  });
+  it('abstains below two rated dimensions and ignores the unrated', () => {
+    assert.equal(narrativeScoreFrom(dims(-2, null, null, null, null)), null);
+    assert.equal(narrativeScoreFrom(dims(2, null, null, null, 0)), 7.5);
+    assert.equal(narrativeScoreFrom(null), null);
   });
 });

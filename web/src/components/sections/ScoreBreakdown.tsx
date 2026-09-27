@@ -1,4 +1,4 @@
-import type { ScoreCard, ScoreFinding, ScorePillar } from '../../types';
+import type { NarrativeDimension, NarrativeDimensions, ScoreCard, ScoreFinding, ScorePillar } from '../../types';
 import { scoreBarColor, scoreColor } from '../stockList';
 import { verdictForScore } from '../../format';
 
@@ -60,6 +60,7 @@ export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
               subtitle={`${narrative.sources.join(', ') || 'keine Quellen'} · ohne Kenntnis der Bewertung gelesen`
                 + (narrative.spread != null ? ` · Median aus ${narrative.runs} Lesungen, Spanne ${narrative.spread.toFixed(1)}` : '')}
             >
+              {narrative.dimensions && <Dimensions dimensions={narrative.dimensions} />}
               {narrative.summary}
               {narrative.events.length > 0 && (
                 <ul className="mt-2 space-y-0.5 text-[10px] text-ink-500">
@@ -70,6 +71,39 @@ export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+const DIMENSION_LABELS: Record<NarrativeDimension, string> = {
+  demand:     'Nachfrage',
+  position:   'Position',
+  execution:  'Ausführung',
+  regulation: 'Regulierung',
+  product:    'Produkt',
+};
+
+/** The five ratings the narrative score is computed from, each with its evidence on hover. */
+function Dimensions({ dimensions }: { dimensions: NarrativeDimensions }) {
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {(Object.keys(DIMENSION_LABELS) as NarrativeDimension[]).map((key) => {
+        const d = dimensions[key];
+        const r = d?.rating;
+        const cls = r == null ? 'border-ink-700 text-ink-500'
+          : r > 0 ? 'border-emerald-700 text-emerald-400'
+          : r < 0 ? 'border-red-800 text-red-400'
+          : 'border-ink-600 text-ink-300';
+        return (
+          <span
+            key={key}
+            title={d?.note || 'Die Quellen sagen dazu nichts'}
+            className={`cursor-help rounded border px-1.5 py-0.5 font-mono text-[10px] ${cls}`}
+          >
+            {DIMENSION_LABELS[key]} {r == null ? '–' : r > 0 ? `+${r}` : r}
+          </span>
+        );
+      })}
     </div>
   );
 }

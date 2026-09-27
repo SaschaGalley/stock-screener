@@ -75,7 +75,9 @@ export function parseStructured<T>(text: string, schema: z.ZodType<T>, label: st
 
   let json: unknown;
   try {
-    json = JSON.parse(raw);
+    // A signed rating written the way a person would — `"rating": +1` — is not
+    // JSON, and Haiku writes it that way often enough to lose whole reads.
+    json = JSON.parse(raw.replace(/(:\s*)\+(\d)/g, '$1$2'));
   } catch (e) {
     throw new LLMResponseError(label, `response was not JSON (${(e as Error).message})`, text);
   }

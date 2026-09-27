@@ -261,6 +261,9 @@ export default function AnalysisView({
               }}
             />
 
+            {/* TIER 2: THE CASE FOR AND AGAINST — what a reader wants right after the verdict. */}
+            {llm && <BullBearRisks llm={llm} />}
+
             {/* How that verdict was arrived at — the calculation, not a retelling. */}
             {analysis?.scoreCard && (
               <Section
@@ -271,9 +274,6 @@ export default function AnalysisView({
                 <ScoreBreakdown card={analysis.scoreCard} />
               </Section>
             )}
-
-            {/* TIER 2: BULL/BEAR/RISKS */}
-            {llm && <BullBearRisks llm={llm} />}
 
             {/* TIER 3: COMPOSITE BAR CHART (Primary + Conservative tiers) */}
             {(m.composite.primary.models.length > 0 ||

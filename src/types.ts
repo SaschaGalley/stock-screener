@@ -830,6 +830,25 @@ export const FactorScoreSchema = z.object({
 export type FactorScore = z.infer<typeof FactorScoreSchema>;
 
 /**
+ * The dimensions of the qualitative read — what a business's trajectory is made
+ * of, judged one at a time so no single headline can swing the whole score.
+ */
+export const NARRATIVE_DIMENSIONS = ['demand', 'position', 'execution', 'regulation', 'product'] as const;
+export type NarrativeDimension = (typeof NARRATIVE_DIMENSIONS)[number];
+
+const DimensionRatingSchema = z.object({
+  rating: z.number().int().min(-2).max(2).nullable()
+    .describe('−2 … +2 direction of this dimension as the sources describe it; null when the sources say nothing about it'),
+  note:   z.string().default('').describe('One short clause naming the evidence behind the rating'),
+});
+
+export const NarrativeDimensionsSchema = z.object(
+  Object.fromEntries(NARRATIVE_DIMENSIONS.map((d) => [d, DimensionRatingSchema.optional()])) as
+    Record<NarrativeDimension, z.ZodOptional<typeof DimensionRatingSchema>>,
+);
+export type NarrativeDimensions = z.infer<typeof NarrativeDimensionsSchema>;
+
+/**
  * The qualitative half, scored from prose alone.
  *
  * Produced by a summariser that never sees a valuation model, so this number
@@ -843,6 +862,7 @@ export const NarrativeScoreSchema = z.object({
   score:      z.number().min(0).max(10).nullable().describe('0–10 qualitative read; null when the sources carried nothing to judge'),
   confidence: z.number().min(0).max(1).describe('How much material there was to judge and how fresh, reduced when repeated reads disagree — drives the blend weight'),
   spread:     z.number().nullable().optional().describe('Highest minus lowest score across the repeated reads of the same prose; the narrative score is their median'),
+  dimensions: NarrativeDimensionsSchema.optional().describe('The per-dimension ratings of the kept read; the score is 5 + 2.5 × their mean'),
   runs:       z.number().int().optional().describe('How many reads the narrative score was taken from'),
   sources:    z.array(z.string()).describe('Which prose blocks were available (distill-company, distill-sector, perplexity, search)'),
   model:      z.string().describe('Model that produced this summary'),
@@ -881,9 +901,10 @@ export type ScoreCard = z.infer<typeof ScoreCardSchema>;
 // ─── LLM Output ───────────────────────────────────────────────────────────────
 
 export const LLMAnalysisSchema = z.object({
-  bullCase:          z.array(z.string()).min(2).max(5).describe('3 short bullet points making the bull case — each ~20 words, specific catalyst or strength with a concrete data point'),
-  bearCase:          z.array(z.string()).min(2).max(5).describe('3 short bullet points making the bear case — same format'),
-  keyRisks:          z.array(z.string()).min(2).max(5).describe('Top 3 risks with specific data points'),
+  bullCase:          z.array(z.string()).min(2).max(6).describe('3–5 points making the bull case — each a fact with its evidence and why it matters, drawn from the numbers and the qualitative sources alike'),
+  bearCase:          z.array(z.string()).min(2).max(6).describe('3–5 points making the bear case, forward-looking risks included — same format'),
+  keyRisks:          z.array(z.string()).optional().describe('Legacy: separate risk bullets from before 27 September. Risks now live in the bear case'),
+  watch:             z.array(z.string()).optional().describe('2–3 concrete, observable triggers that would change the verdict, each with its direction'),
   thesis:            z.string().describe('Single 1–2 sentence investment thesis summarising the overall view'),
   score:             z.number().min(0).max(10).describe('Overall investment attractiveness score from 0 (avoid) to 10 (strong conviction buy)'),
   recommendation:    z.enum(RECOMMENDATIONS).describe('Structured recommendation label'),
@@ -910,16 +931,16 @@ export const DataSummaryOutputSchema = z.object({
 export type DataSummaryOutput = z.infer<typeof DataSummaryOutputSchema>;
 
 export const NarrativeOutputSchema = z.object({
-  summary: z.string().describe('German synthesis of the qualitative sources'),
-  events:  z.array(z.string()).default([]).describe('Concrete dated developments the sources report'),
-  score:   z.number().min(0).max(10).nullable().describe('0–10 read of the business trajectory; null is an honest abstention'),
+  summary:    z.string().describe('German synthesis of the qualitative sources'),
+  events:     z.array(z.string()).default([]).describe('Concrete dated developments the sources report'),
+  dimensions: NarrativeDimensionsSchema.describe('One rating per dimension; the score is computed from these in code'),
 });
 export type NarrativeOutput = z.infer<typeof NarrativeOutputSchema>;
 
 export const SynthesisOutputSchema = z.object({
-  bullCase:          z.array(z.string()).min(2).max(5),
-  bearCase:          z.array(z.string()).min(2).max(5),
-  keyRisks:          z.array(z.string()).min(2).max(5),
+  bullCase:          z.array(z.string()).min(2).max(6),
+  bearCase:          z.array(z.string()).min(2).max(6),
+  watch:             z.array(z.string()).max(4).default([]),
   thesis:            z.string(),
   adjustment:        z.coerce.number().default(0).describe('Correction to the blended score in points; clamped to the configured limit before use'),
   adjustmentReason:  z.string().nullable().default(null).describe('Required whenever the adjustment is non-zero'),

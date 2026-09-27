@@ -534,12 +534,17 @@ allowed to talk about is decided by the same arithmetic that decided the score.
    results and nothing else. It is shown **no price, no multiple and no fair
    value**: a summariser that knows the stock looks cheap finds the news
    encouraging, which is exactly the contamination the single call suffered from.
-   It returns a 0–10 read of the business trajectory, or `null` as an honest
-   abstention. It is run **three times** in parallel over the identical prompt
+   It does not return a score. It rates five dimensions — demand, competitive
+   position, execution, regulation, product — each from −2 to +2 (or `null` when
+   the sources say nothing), with the evidence in a clause, and the code computes
+   `5 + 2.5 × mean` (`narrativeScoreFrom`, at least two rated dimensions or it
+   abstains). It is run **three times** in parallel over the identical prompt
    and the **median** is kept, together with the summary of the read that
    produced it, so text and number agree (`combineNarrativeReads`).
-3. **Synthese** (the configured analysis model) gets the two short summaries and
-   the pillar table, and writes thesis, bull, bear and risks. It does not set the
+3. **Synthese** (the configured analysis model) gets the two short summaries, the
+   pillar table and a compact digest of the Perplexity findings, and writes the
+   thesis, a bull and a bear case of 3–5 argued points each (risks belong to the
+   bear side), and 2–3 triggers that would change the verdict (`watch`). It does not set the
    score. It may move the blended one by up to ±1 point, with a reason on the
    record, and only for something the pillars provably cannot see — an announced
    takeover, a regulatory decision, a recall.
@@ -550,6 +555,26 @@ score alone, and a failed synthesis produces a verdict assembled from the
 findings and marked as written without a model. That last path is not
 theoretical — it fired on the first live run, and the verdict it produced was
 the right score with honest prose and a label saying no model wrote it.
+
+**Why dimensions instead of a number.** Apple came back with a narrative score of
+0.0 for a business guiding 9–11 % growth, which pulled a factor score of 5.0 to a
+SELL at 3.1. The single-number rubric read "0 — several independent sources
+describe a deterioration", and the forensic brief is built to find exactly that:
+EU, Germany, the US, the UK and India each supplied one. On the same material
+Haiku answered 3–4 and cited the P/E from the Distill briefing — valuation leaking
+into a read built to be blind to it — while gpt-5.4-mini answered 5. Rated one
+dimension at a time, Apple's decided regulatory losses cost what one dimension is
+worth (regulation −2, the rest between −1 and +1: 4.0–5.5 across three models),
+and 0 or 10 need all five to agree. The prompt also says outright that valuation
+in the sources is not part of any dimension, that the brief's bear evidence is
+expected and weighed for what it found, and that an opened probe is at most −1.
+The five ratings are shown as chips in the breakdown, each with its evidence.
+
+**Bull and bear first.** On the detail page the case for and against now sits
+directly under the verdict, above "Wie der Score entsteht", in two columns —
+Key Risks mostly repeated the bear case in a narrower third column and are folded
+into it (older analyses included). What is genuinely different, the triggers that
+would move the verdict, runs full width underneath.
 
 **Why three narrative reads.** Five identical runs over ServiceNow's material
 came back 5, 5, 5, 6, 7; GOOGL 6, 6, 6, 6, 7; Airbus 8 five times. Mostly one

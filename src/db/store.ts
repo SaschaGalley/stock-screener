@@ -567,8 +567,8 @@ export function verdictText(a: LLMAnalysis): string {
     'Bull Case:', ...bullets(a.bullCase),
     '',
     'Bear Case:', ...bullets(a.bearCase),
-    '',
-    'Risiken:', ...bullets(a.keyRisks),
+    ...(a.keyRisks?.length ? ['', 'Risiken:', ...bullets(a.keyRisks)] : []),
+    ...(a.watch?.length ? ['', 'Was das Urteil ändern würde:', ...bullets(a.watch)] : []),
   ].join('\n');
 }
 
