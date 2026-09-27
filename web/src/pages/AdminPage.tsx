@@ -171,6 +171,16 @@ export default function AdminPage({ onClose }: Props) {
     }
   }
 
+  async function testAlert() {
+    setError(null);
+    try {
+      const r = await api.testAlert();
+      setNotice(r.ok ? 'Testnachricht gesendet.' : 'Der Webhook hat die Testnachricht nicht angenommen.');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function stopRun() {
     try {
       await api.stopJob();
@@ -394,7 +404,7 @@ export default function AdminPage({ onClose }: Props) {
         {/* ── Referenzuniversum ──────────────────────────────────────────── */}
         <Card
           title={`Referenzuniversum (${meta.referenceSymbols} gespeichert)`}
-          hint="Der S&P 500, nach der Watchlist rotierend aktualisiert und nur mit Zahlen bewertet — die Grundgesamtheit für Kalibrierung und Auswertung. Erscheint nie in der Liste, wird nie analysiert."
+          hint="S&P 500, EURO STOXX 50 und DAX, nach der Watchlist rotierend aktualisiert und nur mit Zahlen bewertet — die Grundgesamtheit für Kalibrierung und Auswertung. Erscheint nie in der Liste, wird nie analysiert."
         >
           <Toggle
             checked={config.universe.enabled}
@@ -419,6 +429,52 @@ export default function AdminPage({ onClose }: Props) {
                 && ` · jede der ${meta.universeSize} etwa alle ${Math.max(1, Math.round(meta.universeSize / config.universe.batchSize))} Nächte`}
             </span>
           </div>
+          {meta.universeSize > 0 && (
+            <p className="text-[11px] text-ink-400">
+              {meta.universeFresh} von {meta.universeSize} in den letzten 7 Tagen aktualisiert
+            </p>
+          )}
+          <div className="rounded border border-ink-800 bg-ink-950/40 px-3 py-2 text-[11px] leading-relaxed text-ink-400">
+            Kalibrierung {meta.calibration.generatedAt
+              ? `vom ${new Date(meta.calibration.generatedAt).toLocaleDateString('de-DE')}`
+              : 'fehlt'}
+            {' '}· {meta.calibration.symbols} Aktien, {meta.calibration.observations} Beobachtungen
+            {' '}· Prämienkorrektur {meta.calibration.premiumAdjustment >= 0 ? '+' : '−'}
+            {Math.abs(meta.calibration.premiumAdjustment * 100).toFixed(2).replace('.', ',')} Pkt.
+            {meta.calibration.due && (
+              <div className="mt-1 text-amber-400">
+                Neukalibrierung fällig: {meta.calibration.due} — <span className="font-mono">pnpm run calibrate</span>, dann committen.
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* ── Benachrichtigungen ─────────────────────────────────────────── */}
+        <Card
+          title="Benachrichtigungen"
+          hint="Ein Urteilswechsel auf der Watchlist wird gemeldet, sobald er einen weiteren Nachtlauf gehalten hat — ein Score auf der Bandgrenze meldet sich so nicht jede Nacht. Alle Wechsel stehen außerdem über der Übersicht."
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-[11px] text-ink-400">Webhook-URL</label>
+            <input
+              value={config.alerts.webhookUrl}
+              onChange={(e) => patch((d) => { d.alerts.webhookUrl = e.target.value.trim(); })}
+              placeholder="https://hooks.slack.com/… oder https://discord.com/api/webhooks/…"
+              className={`${inputCls} min-w-[280px] flex-1 font-mono`}
+            />
+            <button
+              onClick={() => void testAlert()}
+              disabled={!config.alerts.webhookUrl || dirty}
+              title={dirty ? 'Erst speichern' : 'Eine Testnachricht an die gespeicherte URL senden'}
+              className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
+            >
+              Test senden
+            </button>
+          </div>
+          <p className="text-[11px] leading-relaxed text-ink-500">
+            Leer = aus. Gesendet wird ein JSON-POST mit <span className="font-mono">text</span> (Slack) und{' '}
+            <span className="font-mono">content</span> (Discord) sowie Symbol, altem und neuem Urteil und Score.
+          </p>
         </Card>
 
         {/* ── Watchlist ──────────────────────────────────────────────────── */}

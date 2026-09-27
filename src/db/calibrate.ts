@@ -12,6 +12,12 @@
  * longer counts for longer, but a busy week of refreshes does not count more
  * than a quiet one.
  *
+ * First, though, it measures the model's premium adjustment: for every stock
+ * with a DCF, the shift of the market premium at which the base case equals
+ * the price, and the median of those shifts (`modelPremiumAdjustment`). The
+ * distributions are then collected with that adjustment in force, since the
+ * DCF's probability above the price moves with it.
+ *
  * The output is code: reviewed, committed, and a change to it re-scores the
  * history like any other scoring change. Figures come from the payloads, never
  * from returns, so calibrating does not fit the score to what happened next.
@@ -22,12 +28,16 @@ import { resolve } from 'path';
 
 import { getConfig } from '../config.js';
 import { computeAllMetrics } from '../analysis/computeMetrics.js';
-import { collectCalibrated, CriterionDistribution, percentiles } from '../analysis/calibration.js';
+import {
+  collectCalibrated, CriterionDistribution, percentiles, sectorKey, usePremiumAdjustment,
+} from '../analysis/calibration.js';
+import { modelRates } from '../analysis/computeMetrics.js';
+import { baseFairValue } from '../analysis/dcf.js';
 import { computeFactorScore } from '../analysis/score.js';
 import { StockFinancials } from '../types.js';
 import { logger } from '../utils/logger.js';
 import { closePool, waitForDatabase } from './client.js';
-import { storedInputs } from './rescore.js';
+import { storedInputs, type StoredInputs } from './rescore.js';
 import { listSymbols, snapshotHistory } from './store.js';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -44,6 +54,55 @@ async function weeklyInstants(symbol: string, weeks: number): Promise<number[]> 
   return [...byWeek.values()].sort((a, b) => a - b);
 }
 
+/** How far either way the premium may be shifted in the search, and how finely. */
+const PREMIUM_SEARCH = { range: 0.04, steps: 30 } as const;
+
+/**
+ * The shift of the market premium at which the DCF's base case values one
+ * stock at its price. A stock no shift within the range can price sits at the
+ * range's edge rather than dropping out: the ones the model finds dearest are
+ * exactly the ones that need the largest cut, and leaving them out pulled the
+ * median towards zero. Null only where there is no DCF — a lender, a firm with
+ * no margin to converge to.
+ */
+export function impliedPremiumShift(inputs: StoredInputs): number | null {
+  const { financials: f, rates, sectorMedians } = inputs;
+  const price = f.price;
+  if (typeof price !== 'number' || !(price > 0)) return null;
+  const at = (shift: number) => baseFairValue(f, modelRates(f, rates, shift), sectorMedians);
+  let lo: number = -PREMIUM_SEARCH.range;
+  let hi: number = PREMIUM_SEARCH.range;
+  const vLo = at(lo);
+  const vHi = at(hi);
+  if (vLo === null || vHi === null) return null;
+  // Value falls as the premium rises.
+  if (vLo < price) return lo;
+  if (vHi > price) return hi;
+  for (let i = 0; i < PREMIUM_SEARCH.steps; i++) {
+    const mid = (lo + hi) / 2;
+    const v = at(mid);
+    if (v === null) return null;
+    if (v > price) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** The median shift over every stored stock's newest inputs, and how many stocks it rests on. */
+export async function impliedPremiumAdjustment(): Promise<{ adjustment: number; stocks: number; iqr: [number, number] } | null> {
+  const shifts: number[] = [];
+  for (const symbol of await listSymbols('all')) {
+    const inputs = await storedInputs(symbol);
+    if (!inputs) continue;
+    const shift = impliedPremiumShift(inputs);
+    if (shift !== null) shifts.push(shift);
+  }
+  if (shifts.length < 20) return null;
+  const q = percentiles(shifts);
+  // Rounded to a twentieth of a point: finer is noise, and the number is read by people.
+  const adjustment = Math.round(q[50] / 0.0005) * 0.0005;
+  return { adjustment, stocks: shifts.length, iqr: [q[25], q[75]] };
+}
+
 export async function calibrate(weeks: number): Promise<{
   table: Record<string, CriterionDistribution>; symbols: number; observations: number;
 }> {
@@ -58,11 +117,17 @@ export async function calibrate(weeks: number): Promise<{
     for (const at of instants) {
       const inputs = await storedInputs(symbol, at);
       if (!inputs) continue;
-      collectCalibrated((key, value) => {
+      // A figure read within its sector joins both its sector's distribution
+      // and the market's, which a thin sector falls back to.
+      const add = (key: string, value: number) => {
         const entry = byKey.get(key) ?? { values: [], symbols: new Set<string>() };
         entry.values.push(value);
         entry.symbols.add(symbol);
         byKey.set(key, entry);
+      };
+      collectCalibrated((key, value, sector) => {
+        add(key, value);
+        if (sector) add(sectorKey(key, sector), value);
       }, () => computeFactorScore({
         financials:       inputs.financials,
         metrics:          computeAllMetrics(inputs.financials, inputs.rates, inputs.sectorMedians),
@@ -83,10 +148,16 @@ export async function calibrate(weeks: number): Promise<{
   return { table, symbols: scoredSymbols, observations };
 }
 
-function render(result: Awaited<ReturnType<typeof calibrate>>, weeks: number): string {
+function render(
+  result: Awaited<ReturnType<typeof calibrate>>, weeks: number,
+  premium: Awaited<ReturnType<typeof impliedPremiumAdjustment>>,
+): string {
   const lines = [
     '// Generated by `pnpm run calibrate` (src/db/calibrate.ts) — do not edit by hand.',
     `// ${result.symbols} symbols, ${result.observations} weekly observations over the last ${weeks} weeks.`,
+    premium
+      ? `// Premium adjustment from ${premium.stocks} DCFs, interquartile range ${(premium.iqr[0] * 100).toFixed(2)} to ${(premium.iqr[1] * 100).toFixed(2)} points.`
+      : '// No premium adjustment: too few DCFs to measure one.',
     '',
     "import type { CalibrationTable } from './calibration.js';",
     '',
@@ -94,6 +165,7 @@ function render(result: Awaited<ReturnType<typeof calibrate>>, weeks: number): s
     `  generatedAt: ${JSON.stringify(new Date().toISOString())} as string | null,`,
     `  symbols: ${result.symbols},`,
     `  observations: ${result.observations},`,
+    `  premiumAdjustment: ${premium ? Number(premium.adjustment.toFixed(4)) : 0} as number,`,
     '} as const;',
     '',
     'export const CALIBRATION: CalibrationTable = {',
@@ -122,8 +194,16 @@ if (isMain) {
   (async () => {
     getConfig();
     await waitForDatabase();
+    // The adjustment is measured with none in force, then held for the
+    // collection, whose DCF probabilities depend on it.
+    usePremiumAdjustment(0);
+    const premium = await impliedPremiumAdjustment();
+    usePremiumAdjustment(premium?.adjustment ?? 0);
+    if (premium) {
+      logger.info(`Premium adjustment ${(premium.adjustment * 100).toFixed(2)} points from ${premium.stocks} DCFs`);
+    }
     const result = await calibrate(weeks);
-    writeFileSync(out, render(result, weeks));
+    writeFileSync(out, render(result, weeks, premium));
     logger.success(
       `Calibrated ${Object.keys(result.table).length} criteria from ${result.symbols} symbols `
       + `(${result.observations} observations) → ${out}`,

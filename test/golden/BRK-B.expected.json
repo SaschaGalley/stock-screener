@@ -64,14 +64,14 @@
     "coverage": 17.2673
   },
   "factor": {
-    "score": 6.5,
-    "raw": 6.1761,
+    "score": 6.6,
+    "raw": 6.22174,
     "verdict": "BUY",
     "confidence": 0.856,
-    "agreement": 0.719,
+    "agreement": 0.768,
     "pillars": {
       "valuation": 5.71364,
-      "quality": 3.84935,
+      "quality": 4.07754,
       "health": 10,
       "consensus": 5.77731,
       "momentum": 5.00544,

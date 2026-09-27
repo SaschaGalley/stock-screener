@@ -55,14 +55,14 @@
     "coverage": -0.0210816
   },
   "factor": {
-    "score": 4.8,
-    "raw": 4.75033,
+    "score": 4.9,
+    "raw": 4.88386,
     "verdict": "HOLD",
     "confidence": 0.608,
-    "agreement": 0.116,
+    "agreement": 0.058,
     "pillars": {
       "valuation": 2.39254,
-      "quality": 2.90909,
+      "quality": 3.57676,
       "health": 6.97354,
       "consensus": 6.13509,
       "momentum": 5.43827,

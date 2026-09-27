@@ -198,8 +198,24 @@ export interface ConfigResponse {
   distillApiUrl: string;
   /** Reference symbols stored so far — the universe the score is calibrated and evaluated on. */
   referenceSymbols: number;
-  /** Members of the index as last fetched; 0 before the first full run. */
+  /** Members of the indices as last fetched, former members in their grace period included; 0 before the first full run. */
   universeSize:     number;
+  /** Of those, how many were refreshed within the last seven days. */
+  universeFresh:    number;
+  /** The committed calibration table, and whether it should be regenerated. */
+  calibration: {
+    generatedAt:       string | null;
+    symbols:           number;
+    observations:      number;
+    premiumAdjustment: number;
+    /** Why a recalibration is due, or null. */
+    due:               string | null;
+  };
+}
+
+/** `GET /api/verdict-changes` */
+export interface VerdictChangesResponse {
+  changes: import('./db/store.js').VerdictChange[];
 }
 
 /** `PUT /api/config` */

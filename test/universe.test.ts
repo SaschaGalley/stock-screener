@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { csvRecord, parseConstituents, yahooTicker } from '../src/data/universe.js';
+import { csvRecord, parseConstituents, parseWikiTickers, yahooTicker } from '../src/data/universe.js';
+import { activeMembers, nextMembership, unionMembers } from '../src/universe.js';
 import { RateWindow } from '../src/utils/rate-window.js';
 import { settledPool } from '../src/utils/pool.js';
 
@@ -97,5 +98,71 @@ describe('the reference pool', () => {
     let checks = 0;
     await settledPool([1, 2, 3, 4, 5], 1, async (n) => { started.push(n); }, async () => ++checks <= 2);
     assert.deepEqual(started, [1, 2]);
+  });
+});
+
+describe('European indices from Wikipedia', () => {
+  const eurostoxx = [
+    '{| class="wikitable sortable" id="constituents" style="white-space: nowrap"',
+    '! Ticker !! Main listing !! Name !! Corporate form',
+    '|-',
+    "|ADS.DE || {{Flagicon|Germany}} {{FWB|ADS}} || [[Adidas]] || ''[[Aktiengesellschaft]]''",
+    '|-',
+    '|AIR.PA || {{Flagicon|France}} {{EuronextParis|AIR|NL0000235190|XPAR}} || [[Airbus]] || SE',
+    '|-',
+    '|DBK.DE',
+    '|{{Flagicon|Germany}} {{FWB|DBK}}',
+    '|[[Deutsche Bank]]',
+    '|AG',
+    '|}',
+  ].join('\n');
+  const dax = [
+    '{| class="wikitable sortable" id="Zusammensetzung"',
+    '|-',
+    '! Name',
+    '!Symbol!! Branche !!class="unsortable"| Logo !! [[Indexgewichtung|Indexgewicht]] in %',
+    '|-',
+    '| [[Adidas]]',
+    '|ADS|| Sportartikel || style="text-align:center" | [[Datei:Adidas.svg|120x40px]] ||style="text-align:center"| 2,500',
+    '|-',
+    '| [[Allianz SE|Allianz]]',
+    '|ALV|| Versicherungen ||style="text-align:center"| [[Datei:Allianz.svg|120x40px]] ||style="text-align:center"| 8,411',
+    '|}',
+  ].join('\n');
+
+  it('reads the ticker column, whether a row sits on one line or on several', () => {
+    assert.deepEqual(parseWikiTickers(eurostoxx, { tableId: 'constituents', column: 'Ticker' }), ['ADS.DE', 'AIR.PA', 'DBK.DE']);
+  });
+
+  it('adds the exchange where the table gives only the Xetra symbol', () => {
+    assert.deepEqual(parseWikiTickers(dax, { tableId: 'Zusammensetzung', column: 'Symbol', suffix: '.DE' }), ['ADS.DE', 'ALV.DE']);
+  });
+
+  it('reads nothing from a page without the table', () => {
+    assert.deepEqual(parseWikiTickers('no table here', { tableId: 'constituents', column: 'ticker' }), []);
+  });
+});
+
+describe('membership', () => {
+  it('counts a company once when two indices list it on different exchanges', () => {
+    const all = unionMembers({ sp500: ['EL', 'MMM'], eurostoxx50: ['AIR.PA', 'EL.PA', 'SAN.MC', 'SAN.PA'], dax: ['AIR.DE', 'SAP.DE'] });
+    assert.deepEqual(all, ['EL', 'MMM', 'AIR.PA', 'EL.PA', 'SAN.MC', 'SAN.PA', 'SAP.DE']);
+  });
+
+  it('keeps an index\'s last list when its fetch fails, so an outage is not an exodus', () => {
+    const prev = { bySource: { sp500: ['A', 'B'], eurostoxx50: ['AIR.PA'] }, departed: {} };
+    const next = nextMembership(prev, { sp500: ['A', 'B'], eurostoxx50: null, dax: null }, '2026-09-27');
+    assert.deepEqual(next.bySource.eurostoxx50, ['AIR.PA']);
+    assert.deepEqual(next.departed, {});
+  });
+
+  it('records who left, scores them for the grace period, and forgets a departure that reverses', () => {
+    const prev = { bySource: { sp500: ['A', 'B', 'C'] }, departed: {} };
+    const left = nextMembership(prev, { sp500: ['A', 'C'], eurostoxx50: [], dax: [] }, '2026-09-27');
+    assert.deepEqual(left.departed, { B: '2026-09-27' });
+    assert.ok(activeMembers(left, '2026-10-27').includes('B'), 'still scored a month later');
+    assert.ok(!activeMembers(left, '2027-01-27').includes('B'), 'gone after the quarter');
+    const back = nextMembership(left, { sp500: ['A', 'B', 'C'], eurostoxx50: [], dax: [] }, '2026-10-01');
+    assert.deepEqual(back.departed, {});
   });
 });

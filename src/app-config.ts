@@ -114,8 +114,18 @@ export const AppConfigSchema = z.object({
    */
   universe: z.object({
     enabled:   z.boolean().default(true),
-    /** Reference symbols refreshed per night; the index comes round every 500 / batchSize nights. */
+    /** Reference symbols refreshed per night; the universe comes round every size / batchSize nights. */
     batchSize: z.number().int().min(0).max(600).default(100),
+  }).prefault({}),
+
+  /**
+   * Where a verdict change on the watchlist is announced once it has held
+   * (`src/alerts.ts`): any endpoint that takes a JSON POST — Slack reads
+   * `text`, Discord `content`. Empty is off; every change is still listed on
+   * the overview.
+   */
+  alerts: z.object({
+    webhookUrl: z.union([z.string().url(), z.literal('')]).default(''),
   }).prefault({}),
 });
 

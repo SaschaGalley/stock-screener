@@ -192,6 +192,98 @@ export async function symbolFacts(
   return new Map(res.rows.map((r) => [r.symbol, { sector: r.sector, currency: r.currency }]));
 }
 
+/** Whether a symbol is in the database only as a member of the reference universe. */
+export async function isReferenceSymbol(symbol: string): Promise<boolean> {
+  const row = await queryOne<{ reference: boolean }>('SELECT reference FROM symbols WHERE symbol = $1', [symbol.toUpperCase()]);
+  return row?.reference ?? false;
+}
+
+/** The published verdict and score at every recorded instant of the last `days`, oldest first. */
+export async function recentVerdictPoints(
+  symbol: string, days: number,
+): Promise<{ at: Date; verdict: string; score: number | null }[]> {
+  const series = await readSeries(symbol, ['score.final.verdict', 'score.final.score'], {
+    from: new Date(Date.now() - days * 86_400_000),
+  });
+  const scores = new Map((series.find((x) => x.key === 'score.final.score')?.points ?? []).map((p) => [p.at, p.value]));
+  return (series.find((x) => x.key === 'score.final.verdict')?.points ?? [])
+    .filter((p) => !!p.text)
+    .map((p) => ({ at: new Date(p.at), verdict: p.text as string, score: scores.get(p.at) ?? null }))
+    .sort((a, b) => a.at.getTime() - b.at.getTime());
+}
+
+export async function recordVerdictChange(
+  symbol: string,
+  change: { from: string; to: string; fromScore: number | null; toScore: number | null; at: Date },
+  source: 'refresh' | 'analysis',
+): Promise<void> {
+  const id = await upsertSymbol(symbol);
+  await query(
+    `INSERT INTO verdict_changes (symbol_id, at, from_verdict, to_verdict, from_score, to_score, source)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [id, change.at, change.from, change.to, change.fromScore, change.toScore, source],
+  );
+}
+
+export async function announcedVerdict(symbol: string): Promise<string | null> {
+  const row = await queryOne<{ verdict: string }>(
+    `SELECT a.verdict FROM verdict_announced a JOIN symbols s ON s.id = a.symbol_id WHERE s.symbol = $1`,
+    [symbol.toUpperCase()],
+  );
+  return row?.verdict ?? null;
+}
+
+export async function setAnnouncedVerdict(symbol: string, verdict: string, score: number | null): Promise<void> {
+  const id = await upsertSymbol(symbol);
+  await query(
+    `INSERT INTO verdict_announced (symbol_id, verdict, score, at) VALUES ($1, $2, $3, now())
+     ON CONFLICT (symbol_id) DO UPDATE SET verdict = EXCLUDED.verdict, score = EXCLUDED.score, at = now()`,
+    [id, verdict, score],
+  );
+}
+
+export interface VerdictChange {
+  symbol:      string;
+  companyName: string | null;
+  at:          string;
+  from:        string;
+  to:          string;
+  fromScore:   number | null;
+  toScore:     number | null;
+  source:      'refresh' | 'analysis';
+}
+
+/** The newest verdict changes on the watchlist, newest first. */
+export async function recentVerdictChanges(limit = 30): Promise<VerdictChange[]> {
+  const res = await query<{
+    symbol: string; company_name: string | null; at: Date; from_verdict: string; to_verdict: string;
+    from_score: number | null; to_score: number | null; source: 'refresh' | 'analysis';
+  }>(
+    `SELECT s.symbol, s.company_name, v.at, v.from_verdict, v.to_verdict, v.from_score, v.to_score, v.source
+       FROM verdict_changes v JOIN symbols s ON s.id = v.symbol_id
+      WHERE NOT s.reference
+      ORDER BY v.at DESC LIMIT $1`,
+    [limit],
+  );
+  return res.rows.map((r) => ({
+    symbol: r.symbol, companyName: r.company_name, at: r.at.toISOString(),
+    from: r.from_verdict, to: r.to_verdict, fromScore: r.from_score, toScore: r.to_score, source: r.source,
+  }));
+}
+
+/** How many of `symbols` had their financials confirmed within the last `days`. */
+export async function refreshedWithin(symbols: string[], days: number): Promise<number> {
+  if (symbols.length === 0) return 0;
+  const row = await queryOne<{ n: number }>(
+    `SELECT count(DISTINCT s.id)::int AS n
+       FROM symbols s
+       JOIN snapshots sn ON sn.symbol_id = s.id AND sn.kind = 'financials'
+      WHERE s.symbol = ANY($1) AND sn.last_seen_at >= now() - make_interval(days => $2)`,
+    [symbols.map((x) => x.toUpperCase()), days],
+  );
+  return row?.n ?? 0;
+}
+
 /** Symbols per scope, for the admin page's counts. */
 export async function symbolCounts(): Promise<Record<Exclude<SymbolScope, 'all'>, number>> {
   const row = await queryOne<{ watchlist: number; reference: number }>(

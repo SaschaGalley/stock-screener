@@ -82,6 +82,12 @@ export interface MarketRates {
   equityRiskPremium:  number;                                 // Damodaran implied ERP, trailing 12 month
   creditSpreads:      CreditSpreads;                          // ICE BofA option-adjusted spread per rating bucket
   localRiskFreeRates: Partial<Record<RateCurrency, number>>;  // ten-year government yields for non-dollar cash flows
+  /**
+   * What the models add to the market's premium so that they price the
+   * typical stock at its price (`modelRates`, `pnpm run calibrate`). Absent on
+   * the market's own rates; `equityRiskPremium` already includes it where set.
+   */
+  premiumAdjustment?: number;
 }
 
 /**

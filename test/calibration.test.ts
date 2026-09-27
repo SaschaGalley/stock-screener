@@ -46,18 +46,31 @@ describe('calibrated points', () => {
   const table = { 'x.y': { quantiles: percentiles(Array.from({ length: 101 }, (_, i) => i)), n: 101, symbols: 40 } };
 
   it('uses the distribution when there is one, flipped where less is better', () => {
-    close(calibrated('x.y', 80, 1, () => null, table), 0.8);
-    close(calibrated('x.y', 80, -1, () => null, table), 0.2);
+    close(calibrated('x.y', 80, 1, () => null, { table }), 0.8);
+    close(calibrated('x.y', 80, -1, () => null, { table }), 0.2);
   });
 
   it('falls back to the explicit ramp without one, or with too few stocks behind it', () => {
-    assert.equal(calibrated('missing', 80, 1, () => 0.42, table), 0.42);
+    assert.equal(calibrated('missing', 80, 1, () => 0.42, { table }), 0.42);
     const thin = { 'x.y': { ...table['x.y'], symbols: 3 } };
-    assert.equal(calibrated('x.y', 80, 1, () => 0.42, thin), 0.42);
+    assert.equal(calibrated('x.y', 80, 1, () => 0.42, { table: thin }), 0.42);
+  });
+
+  it('reads a figure within its sector where the sector is deep enough, else against the market', () => {
+    const utilities = percentiles(Array.from({ length: 101 }, (_, i) => 2 + i * 0.04));   // 2 … 6
+    const withSector = {
+      'h.lev': { quantiles: percentiles(Array.from({ length: 101 }, (_, i) => i * 0.04)), n: 101, symbols: 200 },  // 0 … 4
+      'h.lev@Utilities': { quantiles: utilities, n: 30, symbols: 30 },
+      'h.lev@Energy': { quantiles: utilities, n: 5, symbols: 5 },
+    };
+    // 4× EBITDA is the worst of the market and the middle of the utilities.
+    close(calibrated('h.lev', 4, -1, () => null, { table: withSector }), 0);
+    close(calibrated('h.lev', 4, -1, () => null, { table: withSector, sector: 'Utilities' }), 0.5);
+    close(calibrated('h.lev', 4, -1, () => null, { table: withSector, sector: 'Energy' }), 0, 1e-9);
   });
 
   it('abstains on a missing figure rather than calling it average', () => {
-    assert.equal(calibrated('x.y', null, 1, () => 0.5, table), null);
+    assert.equal(calibrated('x.y', null, 1, () => 0.5, { table }), null);
   });
 });
 

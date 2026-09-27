@@ -47,6 +47,7 @@ import {
   ANALYST_CONSENSUS_MODEL, BeneishReading, FAIR_VALUE_BOUNDS, PEER_MULTIPLES_MODEL, aggregateFairValue, beneishReading,
   reliableMargin,
 } from './metrics.js';
+import { borrowsToLend, isBalanceSheetFinancial } from './dcf.js';
 import { calibrated } from './calibration.js';
 import { valuationBasis } from './basis.js';
 import { worstSeverity } from './data-quality.js';
@@ -740,41 +741,91 @@ function qualityPillar(
   const peerGrowth = toFiniteNumber(peers?.revenueGrowthYoY);
   const growthGap = growth !== null && peerGrowth !== null ? growth - peerGrowth : null;
 
+  // Read within the sector wherever a sector is deep enough: a utility's
+  // margins and a software company's are not one scale (`calibrated`).
+  const inSector = { sector: f.sector };
+
+  // Three figures the research keeps finding and the pillar did not read. For
+  // a lender none of them means anything: its gross profit is its interest
+  // margin and its cash flow from operations is its loan book moving.
+  const lender = isBalanceSheetFinancial(f) || borrowsToLend(f);
+  const assets = toFiniteNumber(f.totalAssets);
+  const priorAssets = toFiniteNumber(f.prevYear?.totalAssets);
+  const avgAssets = assets !== null && assets > 0
+    ? (priorAssets !== null && priorAssets > 0 ? (assets + priorAssets) / 2 : assets) : null;
+  const gp = toFiniteNumber(f.grossProfit);
+  const grossProfitability = !lender && gp !== null && assets !== null && assets > 0 ? gp / assets : null;
+  const ni = toFiniteNumber(f.netIncome);
+  const ocf = toFiniteNumber(f.operatingCashFlow);
+  const accruals = !lender && ni !== null && ocf !== null && avgAssets !== null ? (ni - ocf) / avgAssets : null;
+  const sharesNow = toFiniteNumber(f.sharesOutstandingAnnual);
+  const sharesBefore = toFiniteNumber(f.prevYear?.sharesOutstanding);
+  const issuance = sharesNow !== null && sharesBefore !== null && sharesBefore > 0 ? sharesNow / sharesBefore - 1 : null;
+
   return [
-    criterion('piotroski', 'Piotroski F-Score', 0.30,
+    criterion('piotroski', 'Piotroski F-Score', 0.20,
       calibrated('quality.piotroski', pioRatio, 1, (v) => ramp(v, 0.35, 0.90)),
       pio.maxScore >= PIOTROSKI_MIN_SIGNALS
         ? `F-Score ${pio.score}/${pio.maxScore} (${pio.interpretation})`
         : `F-Score nur aus ${pio.maxScore}/9 berechenbaren Signalen — nicht belastbar`,
       pioRatio),
 
-    criterion('roic-spread', 'ROIC über Kapitalkosten', 0.25,
-      calibrated('quality.roic-spread', excess, 1, (v) => ramp(v, -0.05, 0.15)),
+    criterion('roic-spread', 'ROIC über Kapitalkosten', 0.20,
+      calibrated('quality.roic-spread', excess, 1, (v) => ramp(v, -0.05, 0.15), inSector),
       excess !== null
         ? `ROIC ${fmtPct(roic)} gegen WACC ${fmtPct(wacc)} — Spread ${fmtSignedPct(excess)}`
         : 'ROIC oder WACC nicht berechenbar',
       excess),
 
-    criterion('margin', 'Marge', 0.20,
+    // Novy-Marx (2013): gross profit over assets ranks future returns about as
+    // well as book-to-market does, and in the opposite stocks. It is measured
+    // before the lines a business can shape — marketing, research, one-offs.
+    criterion('gross-profitability', 'Bruttogewinn / Bilanzsumme', 0.15,
+      calibrated('quality.gross-profitability', grossProfitability, 1, (v) => ramp(v, 0, 0.6), inSector),
+      grossProfitability !== null
+        ? `Bruttogewinn ${fmtPct(grossProfitability)} der Bilanzsumme (vier Quartale)`
+        : lender ? 'Für Kreditgeber nicht aussagekräftig' : 'Kein Bruttogewinn ausgewiesen',
+      grossProfitability),
+
+    criterion('margin', 'Marge', 0.15,
       marginGap !== null ? calibrated('quality.margin-vs-peers', marginGap, 1, (v) => ramp(v, -0.10, 0.10))
-        : calibrated('quality.margin', margin, 1, (v) => ramp(v, -0.05, 0.25)),
+        : calibrated('quality.margin', margin, 1, (v) => ramp(v, -0.05, 0.25), inSector),
       margin === null ? 'Keine Margendaten'
         : pair.peer !== null
           ? `${pair.kind}marge ${fmtPct(margin)}${fromStatement} gegen Peer-Median ${fmtPct(pair.peer)}`
           : `${pair.kind}marge ${fmtPct(margin)}${fromStatement} (kein Peer-Vergleich verfügbar)`,
       marginGap ?? margin),
 
-    criterion('growth', 'Umsatzwachstum', 0.15,
+    criterion('growth', 'Umsatzwachstum', 0.10,
       growthGap !== null ? calibrated('quality.growth-vs-peers', growthGap, 1, (v) => ramp(v, -0.125, 0.125))
-        : calibrated('quality.growth', growth, 1, (v) => ramp(v, -0.05, 0.25)),
+        : calibrated('quality.growth', growth, 1, (v) => ramp(v, -0.05, 0.25), inSector),
       growth === null ? 'Kein Umsatzwachstum ausgewiesen'
         : peerGrowth !== null
           ? `Umsatzwachstum ${fmtSignedPct(growth)} (vier Quartale) gegen Peer-Median ${fmtSignedPct(peerGrowth)}`
           : `Umsatzwachstum ${fmtSignedPct(growth)} (vier Quartale)`,
       growthGap ?? growth),
 
-    criterion('rule-of-40', 'Rule of 40', 0.10,
-      calibrated('quality.rule-of-40', m.ruleOf40.score, 1, (v) => ramp(v, 20, 60)),
+    // Sloan (1996): earnings well ahead of the cash behind them tend not to
+    // last, and the market is slow to notice. Less is better.
+    criterion('accruals', 'Accruals (Gewinn über Cashflow)', 0.10,
+      calibrated('quality.accruals', accruals, -1, (v) => ramp(v, 0.08, -0.08), inSector),
+      accruals !== null
+        ? `Gewinn minus operativer Cashflow ${fmtSignedPct(accruals)} der Bilanzsumme (vier Quartale)`
+        : lender ? 'Für Kreditgeber nicht aussagekräftig' : 'Gewinn oder operativer Cashflow fehlt',
+      accruals),
+
+    // Pontiff and Woodgate (2008): companies that issue shares go on to trail,
+    // companies that buy them back to lead. Split-adjusted, diluted where both
+    // years report it — the same count Piotroski's F7 reads.
+    criterion('net-issuance', 'Netto-Aktienausgabe', 0.05,
+      calibrated('quality.net-issuance', issuance, -1, (v) => ramp(v, 0.05, -0.03), inSector),
+      issuance !== null
+        ? `Aktienzahl ${fmtSignedPct(issuance)} gegenüber dem Vorjahr (${issuance > 0 ? 'Verwässerung' : issuance < 0 ? 'Rückkäufe' : 'unverändert'})`
+        : 'Keine Aktienzahlen für zwei Geschäftsjahre',
+      issuance),
+
+    criterion('rule-of-40', 'Rule of 40', 0.05,
+      calibrated('quality.rule-of-40', m.ruleOf40.score, 1, (v) => ramp(v, 20, 60), inSector),
       m.ruleOf40.score !== null
         ? `Rule of 40: ${m.ruleOf40.score.toFixed(1)} (${m.ruleOf40.passes ? 'bestanden' : 'verfehlt'})`
         : 'Rule of 40 nicht berechenbar',
@@ -852,13 +903,18 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
 
   const beneishValue = fromLabel(beneish.reading, { clean: 1, grey: 0.5, flagged: 0 });
 
+  // Within the sector: leverage that is a utility's business model is a
+  // software company's warning sign. Beneish reads manipulation, which is not
+  // a sector's habit, and stays against the market.
+  const inSector = { sector: f.sector };
+
   return [
     criterion('altman', 'Altman Z-Score', 0.30,
-      calibrated('health.altman', zPosition, 1, (v) => ramp(v, 0, 1)),
+      calibrated('health.altman', zPosition, 1, (v) => ramp(v, 0, 1), inSector),
       altman.note, zPosition),
 
     criterion('interest-cover', 'Zinsdeckung', 0.25,
-      calibrated('health.interest-cover', coverage, 1, (v) => ramp(v, 1, 8)),
+      calibrated('health.interest-cover', coverage, 1, (v) => ramp(v, 1, 8), inSector),
       ic.ratio !== null
         ? `Operatives Ergebnis deckt Zinsen ${ic.ratio.toFixed(1)}x (${ic.interpretation})`
         : ic.interpretation === 'unknown' && (debt ?? 0) > 0
@@ -867,7 +923,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
       coverage),
 
     criterion('leverage', 'Nettoverschuldung / EBITDA', 0.25,
-      calibrated('health.leverage', leverage, -1, (v) => (v <= 0 ? 1 : ramp(v, 4, 1))),
+      calibrated('health.leverage', leverage, -1, (v) => (v <= 0 ? 1 : ramp(v, 4, 1)), inSector),
       netDebt === null ? 'Keine Verschuldungsdaten'
         : netDebt <= 0 ? `Nettoliquidität ${fmtBig(-netDebt, f.tradingCurrency)} — keine Nettoverschuldung`
         : ebitda !== null && ebitda > 0
@@ -876,7 +932,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
       leverage),
 
     criterion('liquidity', 'Current Ratio', 0.10,
-      calibrated('health.liquidity', liquidity.ratio, 1, (v) => ramp(v, 0.8, 2.0)),
+      calibrated('health.liquidity', liquidity.ratio, 1, (v) => ramp(v, 0.8, 2.0), inSector),
       liquidity.ratio === null ? 'Keine Liquiditätskennzahl'
         : liquidity.deferredShare === null ? `Current Ratio ${fmt(f.currentRatio, 'x')}`
         : `Current Ratio ${fmt(f.currentRatio, 'x')} — ohne vorausbezahlte Umsätze `

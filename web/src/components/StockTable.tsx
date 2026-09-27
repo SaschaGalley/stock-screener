@@ -6,6 +6,7 @@ import StockListControls from './StockListControls';
 import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT, HEADER_HEIGHT } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { ChartIcon, GearIcon } from './icons';
+import VerdictChanges from './VerdictChanges';
 import { averageScore, scoreColor, type ListView } from './stockList';
 import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
 
@@ -81,6 +82,8 @@ export default function StockTable({
           </button>
         </div>
       </div>
+
+      <VerdictChanges onSelect={onSelect} />
 
       <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-auto">
         {loading && total === 0 ? (

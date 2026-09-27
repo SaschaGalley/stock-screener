@@ -15,8 +15,11 @@ import {
   latestDocument, listAnalyses, listDocuments, listMetrics, listSymbols,
   readAnalysis, readDistillLax, readFinancialsMeta, readFinancialsLax,
   readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax,
-  readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry, symbolCounts,
+  readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry, symbolCounts, refreshedWithin,
+  recentVerdictChanges,
 } from './db/store.js';
+import { sendWebhook } from './alerts.js';
+import { CALIBRATION_META, calibrationDue } from './analysis/calibration.js';
 import { migrate } from './db/migrate.js';
 import { storedMembers } from './universe.js';
 import { syncCatalog } from './db/catalog.js';
@@ -557,6 +560,14 @@ export function createApp(): express.Express {
         distillApiUrl: cfg.distillApiUrl,
         referenceSymbols: counts.reference,
         universeSize:     members.length,
+        universeFresh:    await refreshedWithin(members, 7),
+        calibration: {
+          generatedAt:       CALIBRATION_META.generatedAt,
+          symbols:           CALIBRATION_META.symbols,
+          observations:      CALIBRATION_META.observations,
+          premiumAdjustment: CALIBRATION_META.premiumAdjustment,
+          due:               calibrationDue(counts.watchlist + counts.reference),
+        },
       });
     } catch (e) {
       next(e);
@@ -808,6 +819,34 @@ export function createApp(): express.Express {
         weightHorizon: report.weightHorizon,
       };
       res.json(body);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/verdict-changes?limit=30 ──────────────────────────────────────
+  // The moments a watchlist stock's verdict moved to another band, newest first.
+  app.get('/api/verdict-changes', async (req, res, next) => {
+    try {
+      const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 30));
+      res.json({ changes: await recentVerdictChanges(limit) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── POST /api/alerts/test ──────────────────────────────────────────────────
+  // One message to the configured webhook, so the admin page can show it works
+  // before the first real change needs it.
+  app.post('/api/alerts/test', async (_req, res, next) => {
+    try {
+      const url = (await readAppConfig()).alerts.webhookUrl;
+      if (!url) {
+        res.status(400).json({ ok: false, error: 'Keine Webhook-URL gespeichert' });
+        return;
+      }
+      const ok = await sendWebhook(url, { text: 'stock-cli: Test — so sieht eine Urteilsänderung aus: AAPL: HOLD → BUY (6.7)', test: true });
+      res.json({ ok });
     } catch (e) {
       next(e);
     }

@@ -1,5 +1,6 @@
 import { StockFinancials, SectorMedians } from '../types.js';
 import { FALLBACK_RATES, MarketRates, ratesForCurrency } from '../data/fred.js';
+import { modelPremiumAdjustment } from './calibration.js';
 import {
   calculateDCF, calculateGraham, calculateRatios, calculateReverseDCF,
   calculatePeterLynch, calculateEVMultiples, calculateRuleOf40,
@@ -31,6 +32,27 @@ export interface ComputedMetrics {
   composite:        ReturnType<typeof calculateCompositeFairValue>;
 }
 
+/**
+ * The market's premium can go this low and no lower once the model's
+ * adjustment is added: a year in which both fell together should not have the
+ * DCF discount equities at the rate of a government bond.
+ */
+export const MIN_EQUITY_PREMIUM = 0.015;
+
+/**
+ * The rates the models price one stock with: the risk-free rate of the
+ * currency its cash flows are in, net of the default spread its government
+ * carries over the US, and the market's premium plus the model's adjustment
+ * (`modelPremiumAdjustment`).
+ */
+export function modelRates(
+  financials: StockFinancials, marketRates: MarketRates | null, adjustment = modelPremiumAdjustment(),
+): MarketRates {
+  const local = ratesForCurrency(marketRates ?? FALLBACK_RATES, financials.tradingCurrency, financials.currencyDefaultSpread ?? 0);
+  const premium = Math.max(MIN_EQUITY_PREMIUM, local.equityRiskPremium + adjustment);
+  return { ...local, equityRiskPremium: premium, premiumAdjustment: premium - local.equityRiskPremium };
+}
+
 /** Run every valuation model on cached financials. Cheap (<10ms total). */
 export function computeAllMetrics(
   financials:    StockFinancials,
@@ -41,7 +63,7 @@ export function computeAllMetrics(
   // into the trading currency, so that is the currency whose yield applies —
   // net of the default spread its government carries over the US.
   const base = marketRates ?? FALLBACK_RATES;
-  const rates = ratesForCurrency(base, financials.tradingCurrency, financials.currencyDefaultSpread ?? 0);
+  const rates = modelRates(financials, base);
   // Graham's Y is a corporate AAA yield: the dollar AAA spread over Treasuries,
   // on top of this currency's own government rate.
   const aaaYield = rates.riskFreeRate + (base.aaaBondYield - base.riskFreeRate);

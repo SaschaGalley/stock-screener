@@ -7,6 +7,7 @@ export const CALIBRATION_META = {
   generatedAt: "2026-09-27T20:44:23.806Z" as string | null,
   symbols: 242,
   observations: 274,
+  premiumAdjustment: 0 as number,
 } as const;
 
 export const CALIBRATION: CalibrationTable = {

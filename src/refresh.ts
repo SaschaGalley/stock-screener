@@ -19,6 +19,7 @@ import { syncDistillDossiers } from './distill-content.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { rescore } from './score-service.js';
 import { readAppConfig } from './app-config.js';
+import { noteVerdict } from './alerts.js';
 import {
   MarketSignals, NewsItem, OptionsSignals, ScoreCard, StockFinancials,
 } from './types.js';
@@ -232,6 +233,8 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
     metrics,
     scoreCard,
   });
+
+  if (!reference) await noteVerdict(symbol, 'refresh');
 
   logger.success(`Data refreshed for ${symbol}`);
   return { symbol, financials: bundle.financials, news, marketSignals, scoreCard };

@@ -317,6 +317,26 @@ whichever one weighs more, so Intel's half-weight DCF next to a full-weight peer
 multiple had come out as the peer multiple alone. The bounded mean lets both
 speak and neither shout.
 
+**The model's own premium.** Damodaran's implied premium is the one at which
+*his* cash flows for the S&P 500 equal its price. Ours are harsher: growth fades
+within ten years, taxes converge to the marginal rate, and reinvestment is paid
+for at the firm's own sales-to-capital. At his premium the DCF valued the
+median stock of the universe at 71 % of its price, and seventy per cent of all
+stocks below it. That was a statement about the model, and it was printed on
+every detail page as though it were one about the market.
+
+So the models discount at the market's premium plus an adjustment
+(`modelPremiumAdjustment`). `pnpm run calibrate` measures the adjustment: for
+every stock with a DCF, it finds the shift of the premium at which the base
+case equals the price, and takes the median. A stock that no shift within four
+points can reach sits at the edge of that range rather than dropping out. The
+ones the model finds dearest need the largest cut, and leaving them out pulled
+the median towards zero. The adjustment is committed with the calibration
+table. At runtime the premium is Damodaran's month plus the adjustment, never
+below 1.5 %. The DCF's assumptions line shows both parts. A fair value now says
+which stocks are cheap for this model, and the market as a whole sits near its
+price, as the implied premium says it should.
+
 ## Score and verdict
 
 Score and recommendation used to come out of one LLM call: the models, the
@@ -340,7 +360,7 @@ between BUY and HOLD on a rounding error.
 | Pillar | Weight | Reads |
 |--------|--------|-------|
 | **Bewertung** | 30 % | The share of the DCF's 512 scenarios above the price (else our other models in logs), own multiples against the peer medians, the margin the price requires against the best one shown, and the conservative tier as a value lens |
-| **Qualität** | 20 % | Piotroski (abstains below 5 computable signals), ROIC minus the DCF's own WACC, margin vs peers (operating against operating, net against net), four-quarter revenue growth vs peers, Rule of 40 |
+| **Qualität** | 20 % | Piotroski (abstains below 5 computable signals), ROIC minus the DCF's own WACC, gross profit over assets, margin vs peers (operating against operating, net against net), four-quarter revenue growth vs peers, accruals, net share issuance, Rule of 40 |
 | **Bilanz & Risiko** | 15 % | Altman Z as a position between its own model's thresholds, interest coverage, net debt / EBITDA, current ratio (without prepaid revenue where it is material), Beneish |
 | **Analystenkonsens** | 15 % | Weighted rating (Strong Buy +2 … Strong Sell −2), mean-target upside |
 | **Markt & Momentum** | 10 % | Return over twelve months skipping the last, closeness to the 52-week high, relative strength vs the sector ETF |
@@ -414,6 +434,36 @@ them were off-centre too:
 Zero is the natural point for one stock, not for the population. So those
 criteria are calibrated as well. The ramps remain as the fallback for a key
 without a distribution, and they are what the tests pin.
+
+**The balance sheet and quality are read within the sector.** Against the whole
+market, utilities scored a median 2.0 on the balance sheet and real estate 1.7,
+with both near 3.5 on quality. A utility carries four times EBITDA in net debt
+because regulated returns let it, so it was being punished for being a utility.
+Those criteria now take their percentile within the stock's own sector, where
+the sector holds at least twelve stocks (`MIN_SECTOR_CALIBRATION_SYMBOLS`), and
+against the market where it does not. The table keeps each sector's
+distribution beside the market's (`health.leverage@Utilities`). Two stay against
+the market on purpose. Beneish reads manipulation, which is no sector's habit.
+Piotroski reads a company's change on its own last year, so it is already
+relative. Valuation stays against the market as well: which sector is cheap is
+a bet the score is allowed to make.
+
+**Three factors the research keeps finding** are now part of quality:
+
+- **Gross profit over assets** (Novy-Marx, 2013) ranks future returns about as
+  well as book-to-market does, in largely different stocks. It is measured
+  before the lines a business can shape: marketing, research, one-offs.
+- **Accruals** (Sloan, 1996): earnings well ahead of the cash behind them tend
+  not to last, and the market is slow to notice. Less is better.
+- **Net share issuance** (Pontiff and Woodgate, 2008): issuers go on to trail,
+  buyers-back to lead. It reads the same split-adjusted share count as
+  Piotroski's F7.
+
+None of the three means anything for a lender, whose gross profit is its
+interest margin and whose operating cash flow is its loan book moving, so they
+abstain there. The pillar's weights are Piotroski 20 %, ROIC spread 20 %, gross
+profitability 15 %, margin 15 %, growth 10 %, accruals 10 %, issuance 5 % and
+Rule of 40 5 %.
 
 The effect, measured over the same 242 stocks (the watchlist and 205 members of
 the S&P 500) under three ways of reading the criteria:
@@ -591,6 +641,29 @@ extremes, so `no-strong` also turns STRONG SELL into SELL, but a warning only
 caps enthusiasm — a distressed balance sheet is no reason to soften a STRONG
 SELL, and it once did (Vistra, held at SELL by the distress reading that made it
 bearish).
+
+### Verdict changes
+
+Every time a watchlist stock's published verdict moves to another band, the
+change is recorded (`verdict_changes`, `src/alerts.ts`). The last week's moves
+sit in a strip above the overview, so nobody has to compare two days of the
+list by eye.
+
+Announcing them is a separate step, because a score on a band's edge — 6.5 is
+BUY, 6.4 is HOLD — flips with every refresh. A change is announced only once the
+new verdict has held through a refresh at least 18 hours later, and only if it
+differs from the verdict announced last (`verdict_announced`). A stock that goes
+HOLD → BUY → HOLD overnight announces nothing. The data step and the analysis
+write minutes apart, and a second write in the same night does not count as
+holding. A stock's first reading is where it stands, not news.
+
+Announcements go to a webhook configured under **⚙ Administration**. That can
+be any endpoint that takes a JSON POST: the body carries `text` for Slack and
+`content` for Discord, plus the symbol, both verdicts and the score. Empty is
+off, and **Test senden** checks a stored URL. The comparison is always against
+the stored series, which a re-score after a model change rewrites too: a new
+scoring model moves verdicts in bulk, and that is a deploy, not news about the
+companies.
 
 ### Two things the pillars deliberately do not read
 
@@ -1069,13 +1142,34 @@ where the typical stock sits on each criterion, and the evaluation asks whether
 the score ranked the stocks that did better. Asked of 37 stocks picked by one
 person, both answer questions about that person's taste.
 
-So the nightly run also scores the **S&P 500** (`src/universe.ts`). The member
-list comes from the community-maintained
-[`datasets/s-and-p-500-companies`](https://github.com/datasets/s-and-p-500-companies)
-file on GitHub, with share classes in Yahoo's spelling (`BRK.B` → `BRK-B`). The
-last good list is kept in `app_state`, so a night without GitHub uses
-yesterday's. A download that parses to fewer than 400 members is treated as a
-failed one rather than as a smaller index.
+So the nightly run also scores three indices (`src/universe.ts`), 576 stocks
+in all:
+
+| Index | Where the list comes from |
+|---|---|
+| S&P 500 | the community-maintained [`datasets/s-and-p-500-companies`](https://github.com/datasets/s-and-p-500-companies) file on GitHub, with share classes in Yahoo's spelling (`BRK.B` → `BRK-B`) |
+| EURO STOXX 50 | the constituents table of the English Wikipedia article, whose tickers carry the main listing's suffix (`AIR.PA`, `ASML.AS`) |
+| DAX | the constituents table of the German article, Xetra symbols with `.DE` added |
+
+Europe is in it because the watchlist is: a euro listing read only against
+American ones is read against a market it does not trade in. A company two
+indices list on different exchanges counts once: the DAX lists Airbus on
+Xetra, the EURO STOXX 50 in Paris. Only suffixed tickers are compared, and only
+across indices. EL is Estée Lauder in New York, EL.PA is EssilorLuxottica, and
+SAN.MC and SAN.PA are a bank and a drugmaker. Finnhub's free tier does not
+cover European listings, so those stocks have no peer group, and the criteria
+that need one abstain or fall back to their own figures.
+
+Each index's last good list is kept in `app_state`, so a night without GitHub or
+Wikipedia uses yesterday's. A list that parses to fewer members than the index
+has (400, 40, 30) counts as a failed download, not a smaller index.
+
+**Leaving is part of the record.** A stock usually falls before it drops out of
+an index. An evaluation that stops scoring it the day it leaves only ever sees
+the survivors. So a member that leaves every index is scored for another 90
+days (`DEPARTED_GRACE_DAYS`), a quarter and the evaluation's longest horizon,
+before the rotation lets it go. A failed download never counts as leaving: the
+index keeps its last list.
 
 A reference symbol is a row in `symbols` with `reference = true`, and it is
 stored exactly like any other: snapshots, observations, the score series. What
@@ -1093,7 +1187,7 @@ differs is where it shows up:
 a 60-per-minute Finnhub budget, and a reference stock does not need to be
 current to the day. After the watchlist is done, a full run refreshes the
 `universe.batchSize` members (default 100, **⚙ Administration**) that were
-refreshed longest ago, so the index comes round every five nights. The rotation
+refreshed longest ago, so the universe comes round every six nights. The rotation
 keeps no state of its own: whatever a night did not reach is oldest the next
 night. A symbol that has never refreshed counts from its first attempt, so a
 delisted ticker queues behind the rest instead of taking the first slot every
@@ -1154,6 +1248,7 @@ cancel, and the momentum pillar reads the return series directly instead.
 | FRED | 10Y Treasury, Moody's AAA, ten-year government yields for 19 currencies, VIX, DXY, yield curve, HY spreads, sector ETF prices |
 | SEC EDGAR | Latest 10-K / 10-Q filings; operating lease liabilities from XBRL (US filers only) |
 | [`datasets/s-and-p-500-companies`](https://github.com/datasets/s-and-p-500-companies) | S&P 500 members — the reference universe |
+| Wikipedia (`EURO_STOXX_50`, de: `DAX`) | EURO STOXX 50 and DAX members — the reference universe |
 | Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
 | Perplexity Sonar | Optional forensic brief — dated events, contrary evidence, bull claims graded against the evidence; goes to the narrative stage, which never sees the valuation |
 
@@ -1225,7 +1320,8 @@ src/
 ├── app-config.ts          Operational settings edited from the admin page
 ├── scheduler.ts           Nightly pipeline — one cron, one queue, one symbol at a time
 ├── pipeline/steps.ts      The steps a run applies to a symbol, shared by both schedulers
-├── universe.ts            The reference universe: members, and tonight's rotation
+├── universe.ts            The reference universe: members per index, departures, tonight's rotation
+├── alerts.ts              Verdict changes: recorded when they happen, announced once they hold
 ├── currencies.ts          Yahoo's quote currencies and the unit behind each (GBp → GBP)
 ├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
 ├── distill-dossiers.ts    Mirrors the watchlist onto Distill's dossier switches
@@ -1240,7 +1336,7 @@ src/
 │   ├── finnhub.ts         News, basic metrics, peer-group medians
 │   ├── fred.ts            FRED rates (live 10Y, AAA, …) and the local ten-year yields
 │   ├── country-risk.ts    Damodaran's country risk premiums, default spreads and tax rates
-│   ├── universe.ts        S&P 500 members from the datasets file
+│   ├── universe.ts        Index members: the S&P 500 file, EURO STOXX 50 and DAX from Wikipedia
 │   ├── macro.ts           SPY + sector-ETF bundles, yield curve, VIX
 │   ├── perplexity.ts      Sonar-Pro forensic brief → structured findings
 │   ├── distill.ts         Distill briefing service — briefings for a resolved entity
@@ -1292,6 +1388,7 @@ web/
 │       ├── StockTable.tsx         The list at full width (Übersicht)
 │       ├── StockRail.tsx          The same list at rail width, beside an analysis
 │       ├── StockListControls.tsx  Search · sort · watchlist, shared by both
+│       ├── VerdictChanges.tsx     The week's verdict changes above the overview
 │       ├── AnalysisModal.tsx      Stored analyses + model/search/pplx, as a dialog
 │       ├── AnalysisView.tsx       Centre detail; renders all sections
 │       ├── VerdictHero.tsx        Verdict + composite + analyst hero cards
@@ -1383,7 +1480,7 @@ Per symbol, in order:
 | 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
 | 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`). Free, with nothing to configure | on |
 | 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-5.6-terra` |
-| 4 | **Referenz** | After the whole watchlist, on full runs only: the next S&P 500 members of the [reference universe](#the-reference-universe), numbers and factor score only | on, 100 per night |
+| 4 | **Referenz** | After the whole watchlist, on full runs only: the next members of the [reference universe](#the-reference-universe) (S&P 500, EURO STOXX 50, DAX), numbers and factor score only | on, 100 per night |
 
 Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).
 

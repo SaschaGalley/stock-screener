@@ -21,6 +21,7 @@ import type {
   SchedulerStatus,
   ActivityEntry,
   EvaluationResponse,
+  VerdictChangesResponse,
 } from './types';
 
 const BASE = '/api';
@@ -173,6 +174,14 @@ export const api = {
 
   getConfig: () =>
     jsonFetch<ConfigResponse>(`${BASE}/config`),
+
+  /** The newest band changes on the watchlist. */
+  getVerdictChanges: (limit = 30) =>
+    jsonFetch<VerdictChangesResponse>(`${BASE}/verdict-changes?limit=${limit}`),
+
+  /** One test message to the configured webhook. */
+  testAlert: () =>
+    jsonFetch<{ ok: boolean; error?: string }>(`${BASE}/alerts/test`, { method: 'POST' }),
 
   /** Whole-object write; the server reinstalls the cron before answering. */
   saveConfig: (config: AppConfig) =>

@@ -9,6 +9,7 @@ import { logger } from './utils/logger.js';
 import { getFinancials, getOptionsSignals, resolveSymbol, searchByQuery } from './data/yfinance.js';
 import { getNews } from './data/finnhub.js';
 import { fetchFinancialsBundle } from './refresh.js';
+import { noteVerdict } from './alerts.js';
 import { getSectorMediansCached } from './sector-medians.js';
 import { fmtBig } from './analysis/metrics.js';
 import { fmtPrice } from './format.js';
@@ -625,6 +626,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     scoreCard,
     technicalSignals,
   });
+  await noteVerdict(symbol, 'analysis');
 
   const meta: AnalysisRunMeta = {
     symbol,

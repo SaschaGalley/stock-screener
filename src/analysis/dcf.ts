@@ -585,7 +585,7 @@ export function isPlausibleFairValue(fv: number | null | undefined, price: numbe
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 type DcfBase = Pick<DCFResult,
-  'fairValue' | 'fairValueBear' | 'fairValueBull' | 'distribution' | 'riskFreeRate' | 'equityRiskPremium'
+  'fairValue' | 'fairValueBear' | 'fairValueBull' | 'distribution' | 'riskFreeRate' | 'equityRiskPremium' | 'premiumAdjustment'
   | 'countryRiskPremium' | 'terminalGrowthRate' | 'forecastYears' | 'projectedFCFs' | 'terminalValue'
   | 'enterpriseValue' | 'terminalShare'>;
 
@@ -604,6 +604,18 @@ function calculateDCF_skipped(
   };
 }
 
+/**
+ * The base-case value per share alone, without the simulation — for solving
+ * the premium at which the model prices a stock at its price, a few dozen
+ * evaluations per stock.
+ */
+export function baseFairValue(f: StockFinancials, rates: MarketRates, peers: SectorMedians | null = null): number | null {
+  const built = dcfInputs(f, rates, peers);
+  if ('skip' in built || built.inputs.forwardSkip) return null;
+  const value = valueFirm(built.inputs.assumptions);
+  return value ? equityPerShare(value.enterpriseValue, built.inputs.basis) : null;
+}
+
 export function calculateDCF(
   f: StockFinancials, rates: MarketRates, peers: SectorMedians | null = null,
 ): DCFResult {
@@ -611,6 +623,7 @@ export function calculateDCF(
   const base: DcfBase = {
     fairValue: null, fairValueBear: null, fairValueBull: null, distribution: null,
     riskFreeRate: rates.riskFreeRate, equityRiskPremium: rates.equityRiskPremium,
+    premiumAdjustment: rates.premiumAdjustment ?? 0,
     countryRiskPremium: toFiniteNumber(f.countryRiskPremium),
     terminalGrowthRate: terminalGrowth(rates), forecastYears: FORECAST_YEARS,
     projectedFCFs: [], terminalValue: null, enterpriseValue: null, terminalShare: null,
@@ -638,7 +651,8 @@ export function calculateDCF(
       + `operating margin ${pct(a.marginNow)} → ${pct(a.marginTarget)} (${inputs.targetMarginSource}) · `
       + `sales/capital ${a.salesToCapital.toFixed(2)} (${inputs.salesToCapitalSource}) · tax ${pct(a.taxNow)} → ${pct(a.taxTerminal)} · `
       + `WACC ${pct(a.discountRate)} → ${pct(a.terminalDiscountRate)} (β ${inputs.beta.toFixed(2)} adj., rf ${pct(rates.riskFreeRate)}, `
-      + `ERP ${pct(rates.equityRiskPremium)}${f.countryRiskPremium ? ` + country ${pct(f.countryRiskPremium)}` : ''}${debtNote}) · `
+      + `ERP ${pct(rates.equityRiskPremium)}${rates.premiumAdjustment ? ` (market ${pct(rates.equityRiskPremium - rates.premiumAdjustment)}, model ${rates.premiumAdjustment > 0 ? '+' : '−'}${pct(Math.abs(rates.premiumAdjustment))})` : ''}`
+      + `${f.countryRiskPremium ? ` + country ${pct(f.countryRiskPremium)}` : ''}${debtNote}) · `
       + `terminal ROIC ${pct(value!.terminalRoic)}`
     : fair !== null && fair <= 0
       ? 'No equity value at these inputs — the forecast cash flows do not cover the debt and the reinvestment growth requires.'

@@ -14,7 +14,9 @@ import { useCalibrationTable } from '../src/analysis/calibration.js';
 import { calculateDCF, calculateReverseDCF } from '../src/analysis/metrics.js';
 import { adjustedBeta, betaPrior, costOfEquity, MATURE_MAX_DEBT_SHARE, wacc } from '../src/analysis/cost-of-capital.js';
 import { valuationBasis } from '../src/analysis/basis.js';
-import { dcfInputs, MIN_TERMINAL_SPREAD } from '../src/analysis/dcf.js';
+import { baseFairValue, dcfInputs, MIN_TERMINAL_SPREAD } from '../src/analysis/dcf.js';
+import { MIN_EQUITY_PREMIUM, modelRates } from '../src/analysis/computeMetrics.js';
+import { impliedPremiumShift } from '../src/db/calibrate.js';
 import { FALLBACK_RATES, MarketRates } from '../src/data/fred.js';
 import type { StockFinancials } from '../src/types.js';
 
@@ -233,5 +235,38 @@ describe('reverse DCF', () => {
     const reverse = calculateReverseDCF(f, rates(0.0475));
     assert.equal(calculateDCF(f, rates(0.0475)).fairValue, null, 'no margin to converge to, no forward value');
     assert.ok(reverse.impliedMargin !== null && reverse.impliedMargin.requiredMargin > 0);
+  });
+});
+
+describe('the model\'s premium', () => {
+  it('adds the adjustment to the market\'s premium and records it', () => {
+    const r = modelRates(financials(), rates(0.0475, 0.041), -0.015);
+    close(r.equityRiskPremium, 0.026, 1e-12);
+    close(r.premiumAdjustment, -0.015, 1e-12);
+  });
+
+  it('never discounts equities below a floor over the government bond', () => {
+    const r = modelRates(financials(), rates(0.0475, 0.02), -0.015);
+    assert.equal(r.equityRiskPremium, MIN_EQUITY_PREMIUM);
+    close(r.premiumAdjustment, MIN_EQUITY_PREMIUM - 0.02, 1e-12);
+  });
+
+  it('finds the shift at which the DCF values a stock at its price', () => {
+    const f = financials();
+    const r = rates(0.0475, 0.041);
+    const fair = baseFairValue(f, modelRates(f, r, 0))!;
+    // Priced a fifth above the model: the market is discounting at a lower premium.
+    const dear = { ...f, price: fair * 1.2, marketCap: fair * 1.2 * 10_000_000 } as typeof f;
+    const shift = impliedPremiumShift({ financials: dear, rates: r, sectorMedians: null, marketSignals: null, technicalSignals: null })!;
+    assert.ok(shift < 0, `${shift}`);
+    close(baseFairValue(dear, modelRates(dear, r, shift)), dear.price, dear.price * 1e-3);
+  });
+
+  it('puts a stock no shift can reach at the edge of the range instead of leaving it out', () => {
+    const f = financials();
+    const r = rates(0.0475, 0.041);
+    const fair = baseFairValue(f, modelRates(f, r, 0))!;
+    const absurd = { ...f, price: fair * 50, marketCap: fair * 50 * 10_000_000 } as typeof f;
+    assert.equal(impliedPremiumShift({ financials: absurd, rates: r, sectorMedians: null, marketSignals: null, technicalSignals: null }), -0.04);
   });
 });

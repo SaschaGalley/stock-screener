@@ -77,13 +77,13 @@
   },
   "factor": {
     "score": 6.7,
-    "raw": 6.37902,
+    "raw": 6.33831,
     "verdict": "BUY",
     "confidence": 0.91,
-    "agreement": 0.543,
+    "agreement": 0.536,
     "pillars": {
       "valuation": 3.24592,
-      "quality": 7.64538,
+      "quality": 7.44182,
       "health": 10,
       "consensus": 7.37213,
       "momentum": 4.47048,
