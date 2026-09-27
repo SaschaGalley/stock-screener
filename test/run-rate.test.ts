@@ -11,11 +11,15 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { useCalibrationTable } from '../src/analysis/calibration.js';
 
 import { calculateDCF, calculateEVMultiples, calculateReverseDCF } from '../src/analysis/metrics.js';
 import { runRateToTrailing, seasonallyAdjustedRunRate, SEASONAL_GAP_THRESHOLD } from '../src/analysis/run-rate.js';
 import { FALLBACK_RATES, type MarketRates } from '../src/data/fred.js';
 import type { StockFinancials } from '../src/types.js';
+
+// The explicit ramps, not whichever calibration is committed.
+useCalibrationTable({});
 
 const rates: MarketRates = { ...FALLBACK_RATES, riskFreeRate: 0.04, aaaBondYield: 0.05, equityRiskPremium: 0.045 };
 

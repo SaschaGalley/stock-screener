@@ -838,6 +838,7 @@ export const ScoreCriterionSchema = z.object({
   weight: z.number().describe('Weight inside its pillar, before renormalising over missing siblings'),
   note:   z.string().describe('One line naming the actual figures behind the points'),
   impact: z.number().nullable().describe('Signed contribution to the raw score in points; all impacts sum to raw − 5'),
+  value:  z.number().nullable().optional().describe('The figure the points were read from (a probability, a ratio, a margin) — what the calibration collects to find the criterion\'s neutral point'),
 });
 export type ScoreCriterion = z.infer<typeof ScoreCriterionSchema>;
 

@@ -44,8 +44,10 @@ import {
 } from '../types.js';
 import { ComputedMetrics } from './computeMetrics.js';
 import {
-  ANALYST_CONSENSUS_MODEL, BeneishReading, FAIR_VALUE_BOUNDS, aggregateFairValue, beneishReading, reliableMargin,
+  ANALYST_CONSENSUS_MODEL, BeneishReading, FAIR_VALUE_BOUNDS, PEER_MULTIPLES_MODEL, aggregateFairValue, beneishReading,
+  reliableMargin,
 } from './metrics.js';
+import { calibrated } from './calibration.js';
 import { valuationBasis } from './basis.js';
 import { worstSeverity } from './data-quality.js';
 import { fmt, fmtBig, fmtPct, fmtPrice, fmtSignedPct } from '../format.js';
@@ -201,16 +203,22 @@ function meanOf(values: (number | null)[]): number | null {
  * Own multiple against the peer median, as points.
  *
  * Expressed as a ratio rather than a difference so it works across multiples
- * with wildly different scales: 0.6× the peer median scores full marks, 1.6×
- * scores none. Non-positive values on either side are meaningless here (a
- * negative P/E is not "cheap"), so they read as missing.
+ * with wildly different scales, and read in logs so it is neutral where it
+ * should be: at the peer median, 5. The old ramp from 0.6× to 1.6× put the
+ * neutral point at 1.1× — trading at the median read as slightly cheap. Now
+ * 1/1.6 of the median scores full marks and 1.6× none. Non-positive values on
+ * either side are meaningless here (a negative P/E is not "cheap"), so they
+ * read as missing.
  */
 function relativeMultiple(own: number | null | undefined, median: number | null | undefined): number | null {
   const o = toFiniteNumber(own);
   const m = toFiniteNumber(median);
   if (o === null || m === null || o <= 0 || m <= 0) return null;
-  return ramp(o / m, 1.6, 0.6);
+  return ramp(Math.log(o / m), RELATIVE_MULTIPLE_RANGE, -RELATIVE_MULTIPLE_RANGE);
 }
+
+/** How far from the peer median, in logs, a multiple reads 0 or 10: 1.6× and 1/1.6. */
+const RELATIVE_MULTIPLE_RANGE = Math.log(1.6);
 
 // ── Intrinsic value, without the borrowed opinion ────────────────────────────
 
@@ -246,13 +254,18 @@ function relativeMultiple(own: number | null | undefined, median: number | null 
  * awarding full marks for an arithmetic accident. The bounds are the ones every
  * model is held to before aggregation (`FAIR_VALUE_BOUNDS`).
  */
-export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResult): {
+export function intrinsicValue(
+  f: StockFinancials, comp: CompositeFairValueResult, opts: { absoluteOnly?: boolean } = {},
+): {
   models: CompositeFairValueResult['primary']['models'];
   fair:   number | null;
   mos:    number | null;
   pct:    number | null;
 } {
-  const models = comp.primary.models.filter((m) => m.name !== ANALYST_CONSENSUS_MODEL);
+  // The peer multiple is its own criterion in the valuation pillar; counting it
+  // again inside the intrinsic value would give the relative lens two votes.
+  const models = comp.primary.models.filter((m) => m.name !== ANALYST_CONSENSUS_MODEL
+    && !(opts.absoluteOnly && m.name === PEER_MULTIPLES_MODEL));
   if (models.length === 0 || !(f.price > 0)) {
     return { models, fair: null, mos: null, pct: null };
   }
@@ -261,7 +274,7 @@ export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResul
     const ratio = models[0].fairValue / f.price;
     if (ratio < FAIR_VALUE_BOUNDS.low || ratio > FAIR_VALUE_BOUNDS.high) return { models, fair: null, mos: null, pct: null };
   }
-  // Each model held to the bounds, then the weighted median of their logs: a
+  // Each model held to the bounds, then the weighted mean of their logs: a
   // median over two numbers is their mean, and Berkshire's pair of a broken
   // peer multiple and an uncapped Lynch value came to +442 %.
   const fair = aggregateFairValue(f.price, models, FAIR_VALUE_BOUNDS);
@@ -518,9 +531,9 @@ function netRatingDelta(d: AnalystRatingDelta | null | undefined): number | null
 
 /** Local builder so each pillar reads as a list of criteria and nothing else. */
 function criterion(
-  key: string, label: string, weight: number, points: number | null, note: string,
+  key: string, label: string, weight: number, points: number | null, note: string, value: number | null = null,
 ): ScoreCriterion {
-  return { key, label, weight, points, note, impact: null };
+  return { key, label, weight, points, note, impact: null, value: value !== null && Number.isFinite(value) ? value : null };
 }
 
 /**
@@ -589,82 +602,103 @@ function valuationPillar(
   f: StockFinancials, m: ComputedMetrics, peers: SectorMedians | null,
 ): ScoreCriterion[] {
   const c = f.tradingCurrency;
+  const P = (x: number | null | undefined) => fmtPrice(x ?? null, c);
   const comp: CompositeFairValueResult = m.composite;
 
-  // One surviving model is not a lens: Berkshire's conservative tier came down
-  // to Graham's V* alone and scored 10/10 on it. Two or more, or nothing.
-  const consModels = comp.conservative.models.length;
-  const consMos = consModels >= CONSERVATIVE_MIN_MODELS ? comp.conservative.marginOfSafety : null;
-  const iv = intrinsicValue(f, comp);
+  // ── 1. What it is worth, with the uncertainty of that ──────────────────────
+  // The DCF answers with 512 scenarios, and the share of them above the price
+  // is the figure read: a wide distribution lands near the middle instead of
+  // claiming a margin of safety it cannot support. It is read against where the
+  // reference stocks land, not against one half: the model fades growth faster
+  // than the market's own implied premium assumes, so it finds most large caps
+  // dear, and that is a property of the model, not information about any one
+  // stock. Where there is no DCF (a lender, a firm with no margin to converge
+  // to), the remaining models of our own — the excess return model, Lynch's
+  // rule — are read in logs against the price.
+  const dist = m.dcf.distribution;
+  let intrinsic: { points: number | null; note: string; value: number | null };
+  if (dist) {
+    intrinsic = {
+      points: calibrated('valuation.intrinsic', dist.probabilityAbovePrice, 1, (v) => v),
+      value:  dist.probabilityAbovePrice,
+      note:   `DCF: ${(dist.probabilityAbovePrice * 100).toFixed(0)} % der ${dist.draws} Szenarien über dem Kurs — `
+        + `Median ${P(dist.p50)}, 80 %-Spanne ${P(dist.p10)}–${P(dist.p90)} gegen ${P(f.price)}`,
+    };
+  } else {
+    const iv = intrinsicValue(f, comp, { absoluteOnly: true });
+    const x = iv.fair !== null ? Math.log(iv.fair / f.price) : null;
+    intrinsic = x !== null
+      ? {
+          points: calibrated('valuation.intrinsic-models', x, 1, (v) => ramp(v, -Math.LN2, Math.LN2)),
+          value:  x,
+          note:   `Eigener Wert ${P(iv.fair)} gegen ${P(f.price)} (${fmtSignedPct(iv.mos)}) aus `
+            + `${iv.models.map((x) => x.name).join(', ')} — kein DCF: ${m.dcf.assumptions}`,
+        }
+      : {
+          points: null,
+          value:  null,
+          note:   iv.models.length === 1
+            ? `Einziges eigenes Modell (${iv.models[0].name}) setzt den Wert auf ${P(iv.models[0].fairValue)} gegen `
+              + `${P(f.price)} — zu weit auseinander, um von einem unbestätigten Modell geglaubt zu werden`
+            : `Kein eigenes Bewertungsmodell anwendbar — ${m.dcf.assumptions}`,
+        };
+  }
 
-  // Intrinsic value only. The sell-side target belongs in the primary tier of a
-  // *fair value* — it is a genuine third opinion — but this scorer also reads
-  // the consensus as a pillar in its own right, and leaving the target in both
-  // places counts it twice. Measured: the target sat in the tier for 37 of 37
-  // stocks and made up 46 % of it, so a consensus configured at 15 % was
-  // actually carrying 21 %. The published composite is untouched; the pillar
-  // simply takes the one contributor that is not our arithmetic back out.
-  const { models: intrinsic, fair, mos, pct } = iv;
-  const compositeUsable = fair !== null;
-  const thinNote = intrinsic.length === 1
-    ? `Einziges eigenes Modell (${intrinsic[0].name}) setzt den Fair Value auf `
-      + `${fmtPrice(intrinsic[0].fairValue, c)} gegen einen Kurs von ${fmtPrice(f.price, c)} — `
-      + 'das liegt zu weit auseinander, um von einem unbestätigten Modell geglaubt zu werden, '
-      + 'und wird daher nicht bewertet'
-    : 'Kein eigenes Bewertungsmodell anwendbar (ohne das Analystenziel, '
-      + 'das als eigene Säule zählt) — die Bewertung ist hier nicht prüfbar';
-
-  // Relative cheapness is a second lens, not a second helping of the first:
-  // the composite asks "what is it worth", this asks "what do comparable firms
-  // trade at". They disagree often enough to be worth keeping apart.
+  // ── 2. What comparable firms trade at ───────────────────────────────────────
   const relParts = [
-    relativeMultiple(m.ratios.pe,             peers?.pe),
-    relativeMultiple(m.evMultiples.evToEbitda, peers?.evToEbitda),
+    relativeMultiple(m.ratios.pe,                peers?.pe),
+    relativeMultiple(m.evMultiples.evToEbitda,   peers?.evToEbitda),
     relativeMultiple(m.evMultiples.priceToSales, peers?.priceToSales),
-    relativeMultiple(m.evMultiples.priceToFCF, peers?.priceToFCF),
+    relativeMultiple(m.evMultiples.priceToFCF,   peers?.priceToFCF),
   ];
   const rel = meanOf(relParts);
   const relCount = relParts.filter((p) => p !== null).length;
 
+  // ── 3. What the price requires ──────────────────────────────────────────────
   const implied = marketImplied(f, m, peers);
   const lim = Math.log(IMPLIED_MARGIN_RATIO_LIMIT);
   const impliedGrowth = m.reverseDCF.impliedMargin?.revenueGrowth;
 
+  // ── 4. The value lens ───────────────────────────────────────────────────────
+  // One surviving model is not a lens: Berkshire's conservative tier came down
+  // to Graham's V* alone and scored 10/10 on it. Two or more, or nothing. The
+  // conservative models sit below the price for almost every growing firm by
+  // design, so their neutral point is where the reference stocks sit, not 0.
+  const consModels = comp.conservative.models.length;
+  const consMedian = consModels >= CONSERVATIVE_MIN_MODELS ? comp.conservative.median : null;
+  const consLog = consMedian !== null && consMedian > 0 ? Math.log(consMedian / f.price) : null;
+
   return [
-    criterion('composite-mos', 'Composite Margin of Safety', 0.35,
-      ramp(mos, -0.30, 0.60),
-      !compositeUsable ? thinNote
-        : `Eigener Fair Value ${fmtPrice(fair, c)} vs. Kurs ${fmtPrice(f.price, c)} — MoS ${fmtSignedPct(mos)} `
-          + `über ${intrinsic.length} Modelle (${intrinsic.map((x) => x.name).join(', ')})`),
+    criterion('intrinsic', 'Innerer Wert (DCF-Szenarien)', 0.35, intrinsic.points, intrinsic.note, intrinsic.value),
 
-    criterion('models-undervalued', 'Anteil unterbewertender Modelle', 0.15,
-      pct,
-      !compositeUsable ? thinNote
-        : `${((pct ?? 0) * 100).toFixed(0)} % der eigenen Modelle sehen die Aktie unter Fair Value`),
-
-    criterion('conservative-mos', 'Value-Lens (konservative Modelle)', 0.15,
-      ramp(consMos, -0.50, 0.30),
-      comp.conservative.median !== null
-        ? consMos !== null
-          ? `Konservativer Fair Value ${fmtPrice(comp.conservative.median, c)} — MoS ${fmtSignedPct(consMos)} `
-            + `(${comp.conservative.models.map((x) => x.name).join(', ')})`
-          : `Nur ein konservatives Modell anwendbar (${comp.conservative.models[0].name}) — keine Linse, nicht gewertet`
-        : 'Keine konservativen Modelle anwendbar'),
-
-    criterion('peer-multiples', 'Multiples gegen Sektormedian', 0.15,
+    criterion('peer-multiples', 'Multiples gegen Peer-Median', 0.20,
       rel,
       rel !== null
-        ? `${relCount} Multiples gegen ${peers?.peerCount ?? 0} Peers: P/E ${fmt(m.ratios.pe, 'x')} vs. ${fmt(peers?.pe, 'x')}, EV/EBITDA ${fmt(m.evMultiples.evToEbitda, 'x')} vs. ${fmt(peers?.evToEbitda, 'x')}`
-        : 'Keine Peer-Mediane verfügbar — relative Bewertung nicht prüfbar'),
+        ? `${relCount} Multiples gegen ${peers?.peerCount ?? 0} Peers: P/E ${fmt(m.ratios.pe, 'x')} vs. ${fmt(peers?.pe, 'x')}, `
+          + `EV/EBITDA ${fmt(m.evMultiples.evToEbitda, 'x')} vs. ${fmt(peers?.evToEbitda, 'x')}`
+        : 'Keine Peer-Mediane verfügbar — relative Bewertung nicht prüfbar',
+      rel),
 
-    criterion('market-implied', 'Was der Kurs verlangt', 0.20,
-      implied ? ramp(Math.log(Math.max(implied.ratio, 1e-6)), lim, -lim) : null,
+    criterion('market-implied', 'Was der Kurs verlangt', 0.25,
+      implied
+        ? calibrated('valuation.market-implied', Math.log(Math.max(implied.ratio, 1e-6)), -1, (v) => ramp(v, lim, -lim))
+        : null,
       implied
         ? `Der Kurs ist fair bei einer operativen Zielmarge von ${fmtPct(implied.required)} auf dem Umsatzpfad `
           + `(${fmtPct(impliedGrowth ?? null)} Wachstum, auslaufend) — gezeigt wurden ${fmtPct(implied.benchmark)} `
-          + `(${IMPLIED_BASIS_LABEL[implied.basis]}), `
-          + `verlangt also das ${implied.ratio.toFixed(1)}-fache`
-        : 'Keine positive Marge, an der sich die vom Kurs verlangte messen ließe'),
+          + `(${IMPLIED_BASIS_LABEL[implied.basis]}), verlangt also das ${implied.ratio.toFixed(1)}-fache`
+        : 'Keine positive Marge, an der sich die vom Kurs verlangte messen ließe',
+      implied ? Math.log(Math.max(implied.ratio, 1e-6)) : null),
+
+    criterion('value-lens', 'Value-Lens (konservative Modelle)', 0.20,
+      calibrated('valuation.value-lens', consLog, 1, (v) => ramp(v, Math.log(0.5), Math.log(1.3))),
+      comp.conservative.median !== null
+        ? consMedian !== null
+          ? `Konservativer Wert ${P(consMedian)} gegen ${P(f.price)} (${fmtSignedPct(consMedian / f.price - 1)}) `
+            + `aus ${comp.conservative.models.map((x) => x.name).join(', ')}`
+          : `Nur ein konservatives Modell anwendbar (${comp.conservative.models[0].name}) — keine Linse, nicht gewertet`
+        : 'Keine konservativen Modelle anwendbar',
+      consLog),
   ];
 }
 
@@ -684,57 +718,67 @@ function qualityPillar(
   const wacc = toFiniteNumber(m.dcf.discountRate);
   const excess = roic !== null && wacc !== null ? roic - wacc : null;
 
-  // The audited margin, not the flagged one — see `reliableMargin`.
+  // The audited margin, not the flagged one — see `reliableMargin`. Operating
+  // against operating and net against net: the peer fallback used to put a
+  // company's operating margin beside its peers' net one.
   const op = reliableMargin(f, 'operatingMargin');
   const net = reliableMargin(f, 'netMargin');
-  const marginRead = op.value !== null ? op : net;
-  const margin = marginRead.value;
-  const fromStatement = marginRead.source === 'statement'
+  const pair = op.value !== null && peers?.operatingMargin != null
+    ? { own: op, peer: peers.operatingMargin, kind: 'Operative' }
+    : net.value !== null && peers?.netMargin != null
+      ? { own: net, peer: peers.netMargin, kind: 'Netto-' }
+      : { own: op.value !== null ? op : net, peer: null as number | null, kind: op.value !== null ? 'Operative' : 'Netto-' };
+  const margin = pair.own.value;
+  const fromStatement = pair.own.source === 'statement'
     ? ' (Jahresabschluss — die gemeldete Trailing-Marge widerspricht ihm und ist geflaggt)'
     : '';
-  const peerMargin = peers?.operatingMargin ?? peers?.netMargin ?? null;
-  // Against peers where we have them, against an absolute band where we don't.
-  const marginPoints = peerMargin !== null && margin !== null
-    ? ramp(margin - peerMargin, -0.10, 0.10)
-    : ramp(margin, -0.05, 0.25);
+  const marginGap = margin !== null && pair.peer !== null ? margin - pair.peer : null;
 
+  // Four quarters against four on both sides now; Yahoo's figure was one
+  // quarter against its year-ago quarter, compared with the peers' twelve months.
   const growth = valuationBasis(f).revenueGrowth;
-  const peerGrowth = peers?.revenueGrowthYoY ?? null;
+  const peerGrowth = toFiniteNumber(peers?.revenueGrowthYoY);
+  const growthGap = growth !== null && peerGrowth !== null ? growth - peerGrowth : null;
 
   return [
     criterion('piotroski', 'Piotroski F-Score', 0.30,
-      ramp(pioRatio, 0.35, 0.90),
+      calibrated('quality.piotroski', pioRatio, 1, (v) => ramp(v, 0.35, 0.90)),
       pio.maxScore >= PIOTROSKI_MIN_SIGNALS
         ? `F-Score ${pio.score}/${pio.maxScore} (${pio.interpretation})`
-        : `F-Score nur aus ${pio.maxScore}/9 berechenbaren Signalen — nicht belastbar`),
+        : `F-Score nur aus ${pio.maxScore}/9 berechenbaren Signalen — nicht belastbar`,
+      pioRatio),
 
     criterion('roic-spread', 'ROIC über Kapitalkosten', 0.25,
-      ramp(excess, -0.05, 0.15),
+      calibrated('quality.roic-spread', excess, 1, (v) => ramp(v, -0.05, 0.15)),
       excess !== null
         ? `ROIC ${fmtPct(roic)} gegen WACC ${fmtPct(wacc)} — Spread ${fmtSignedPct(excess)}`
-        : 'ROIC oder WACC nicht berechenbar'),
+        : 'ROIC oder WACC nicht berechenbar',
+      excess),
 
-    criterion('margin', 'Operative Marge', 0.20,
-      marginPoints,
+    criterion('margin', 'Marge', 0.20,
+      marginGap !== null ? ramp(marginGap, -0.10, 0.10)
+        : calibrated('quality.margin', margin, 1, (v) => ramp(v, -0.05, 0.25)),
       margin === null ? 'Keine Margendaten'
-        : peerMargin !== null
-          ? `Operative Marge ${fmtPct(margin)}${fromStatement} gegen Sektormedian ${fmtPct(peerMargin)}`
-          : `Operative Marge ${fmtPct(margin)}${fromStatement} (kein Peer-Vergleich verfügbar)`),
+        : pair.peer !== null
+          ? `${pair.kind}marge ${fmtPct(margin)}${fromStatement} gegen Peer-Median ${fmtPct(pair.peer)}`
+          : `${pair.kind}marge ${fmtPct(margin)}${fromStatement} (kein Peer-Vergleich verfügbar)`,
+      marginGap ?? margin),
 
     criterion('growth', 'Umsatzwachstum', 0.15,
-      peerGrowth !== null && growth !== null
-        ? ramp(growth - peerGrowth, -0.10, 0.15)
-        : ramp(growth, -0.05, 0.25),
+      growthGap !== null ? ramp(growthGap, -0.125, 0.125)
+        : calibrated('quality.growth', growth, 1, (v) => ramp(v, -0.05, 0.25)),
       growth === null ? 'Kein Umsatzwachstum ausgewiesen'
         : peerGrowth !== null
-          ? `Umsatzwachstum ${fmtSignedPct(growth)} gegen Sektormedian ${fmtSignedPct(peerGrowth)}`
-          : `Umsatzwachstum ${fmtSignedPct(growth)}`),
+          ? `Umsatzwachstum ${fmtSignedPct(growth)} (vier Quartale) gegen Peer-Median ${fmtSignedPct(peerGrowth)}`
+          : `Umsatzwachstum ${fmtSignedPct(growth)} (vier Quartale)`,
+      growthGap ?? growth),
 
     criterion('rule-of-40', 'Rule of 40', 0.10,
-      ramp(m.ruleOf40.score, 20, 60),
+      calibrated('quality.rule-of-40', m.ruleOf40.score, 1, (v) => ramp(v, 20, 60)),
       m.ruleOf40.score !== null
         ? `Rule of 40: ${m.ruleOf40.score.toFixed(1)} (${m.ruleOf40.passes ? 'bestanden' : 'verfehlt'})`
-        : 'Rule of 40 nicht berechenbar'),
+        : 'Rule of 40 nicht berechenbar',
+      m.ruleOf40.score),
   ];
 }
 
@@ -769,134 +813,189 @@ export function adjustedCurrentRatio(f: StockFinancials): { ratio: number | null
   return { ratio: ratio / (1 - s), deferredShare: share };
 }
 
+/**
+ * Interest coverage a debt-free, profitable firm is read at: nothing to cover
+ * is better than any ratio a borrower reports.
+ */
+const DEBT_FREE_COVERAGE = 1000;
+
 function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] {
   const z = m.altmanZ;
   const liquidity = adjustedCurrentRatio(f);
   const beneish = readBeneish(f, m.beneish);
-  // Zone boundaries differ by model, so the ramp is built from the thresholds
-  // the calculation itself used rather than from constants repeated here.
+  // Zone boundaries differ by model, so the Z-Score is read as its position
+  // between the model's own distress and safe thresholds — 0 at distress, 1 at
+  // safe — which puts Z and Z″ on one scale. A reading the model cannot
+  // support abstains, and the pillar renormalises onto interest coverage,
+  // leverage and liquidity.
   const altman = readAltman(f, m);
-  // A reading the model cannot support abstains, and the pillar renormalises
-  // onto interest coverage, leverage and liquidity — which measure solvency
-  // directly rather than through a model fitted on a different population.
-  const zPoints = altman.reading === 'safe' || altman.reading === 'grey' || altman.reading === 'distress'
-    ? (z.score !== null
-        ? ramp(z.score, z.thresholds.distress, z.thresholds.safe)
-        : fromLabel(altman.reading, { safe: 1, grey: 0.5, distress: 0 }))
+  const zPosition = (altman.reading === 'safe' || altman.reading === 'grey' || altman.reading === 'distress') && z.score !== null
+    ? (z.score - z.thresholds.distress) / (z.thresholds.safe - z.thresholds.distress)
     : null;
 
   const cash = toFiniteNumber(f.totalCash) ?? 0;
   const debt = toFiniteNumber(f.totalDebt);
   const ebitda = toFiniteNumber(f.ebitda);
   const netDebt = debt === null ? null : debt - cash;
-  // Net cash is the best case and a negative ratio would otherwise land at the
-  // wrong end of the ramp; state it as full marks explicitly.
+  // Net cash is the best case; its ratio to EBITDA is negative and ranks at the
+  // top of the scale, which is where it belongs.
   const leverage = netDebt === null ? null
-    : netDebt <= 0 ? 1
-    : ebitda !== null && ebitda > 0 ? ramp(netDebt / ebitda, 4, 1)
+    : ebitda !== null && ebitda > 0 ? netDebt / ebitda
+    : netDebt <= 0 ? -1
     : null;
 
+  const ic = m.interestCoverage;
+  const coverage = ic.ratio !== null ? ic.ratio
+    : ic.interpretation === 'excellent' ? DEBT_FREE_COVERAGE
+    : ic.interpretation === 'critical' ? 0
+    : null;
+
+  const beneishValue = fromLabel(beneish.reading, { clean: 1, grey: 0.5, flagged: 0 });
+
   return [
-    criterion('altman', 'Altman Z-Score', 0.30, zPoints, altman.note),
+    criterion('altman', 'Altman Z-Score', 0.30,
+      calibrated('health.altman', zPosition, 1, (v) => ramp(v, 0, 1)),
+      altman.note, zPosition),
 
     criterion('interest-cover', 'Zinsdeckung', 0.25,
-      m.interestCoverage.ratio !== null
-        ? ramp(m.interestCoverage.ratio, 1, 8)
-        : fromLabel(m.interestCoverage.interpretation, {
-            excellent: 1, good: 0.75, fair: 0.5, poor: 0.25, critical: 0,
-          }),
-      m.interestCoverage.ratio !== null
-        ? `EBIT deckt Zinsen ${m.interestCoverage.ratio.toFixed(1)}x (${m.interestCoverage.interpretation})`
-        : `Zinsdeckung: ${m.interestCoverage.interpretation}`),
+      calibrated('health.interest-cover', coverage, 1, (v) => ramp(v, 1, 8)),
+      ic.ratio !== null
+        ? `Operatives Ergebnis deckt Zinsen ${ic.ratio.toFixed(1)}x (${ic.interpretation})`
+        : ic.interpretation === 'unknown' && (debt ?? 0) > 0
+          ? 'Schulden vorhanden, aber kein Zinsaufwand ausgewiesen — Zinsdeckung nicht lesbar'
+          : `Zinsdeckung: ${ic.interpretation}`,
+      coverage),
 
-    criterion('leverage', 'Nettoverschuldung / EBITDA', 0.25, leverage,
+    criterion('leverage', 'Nettoverschuldung / EBITDA', 0.25,
+      calibrated('health.leverage', leverage, -1, (v) => (v <= 0 ? 1 : ramp(v, 4, 1))),
       netDebt === null ? 'Keine Verschuldungsdaten'
         : netDebt <= 0 ? `Nettoliquidität ${fmtBig(-netDebt, f.tradingCurrency)} — keine Nettoverschuldung`
         : ebitda !== null && ebitda > 0
           ? `Nettoverschuldung ${fmt(netDebt / ebitda, 'x', 1)} EBITDA`
-          : 'EBITDA nicht positiv — Verschuldungsgrad nicht aussagekräftig'),
+          : 'EBITDA nicht positiv — Verschuldungsgrad nicht aussagekräftig',
+      leverage),
 
     criterion('liquidity', 'Current Ratio', 0.10,
-      ramp(liquidity.ratio, 0.8, 2.0),
+      calibrated('health.liquidity', liquidity.ratio, 1, (v) => ramp(v, 0.8, 2.0)),
       liquidity.ratio === null ? 'Keine Liquiditätskennzahl'
         : liquidity.deferredShare === null ? `Current Ratio ${fmt(f.currentRatio, 'x')}`
         : `Current Ratio ${fmt(f.currentRatio, 'x')} — ohne vorausbezahlte Umsätze `
-          + `(${fmtPct(liquidity.deferredShare, 0)} der kurzfristigen Verbindlichkeiten) ${fmt(liquidity.ratio, 'x')}`),
+          + `(${fmtPct(liquidity.deferredShare, 0)} der kurzfristigen Verbindlichkeiten) ${fmt(liquidity.ratio, 'x')}`,
+      liquidity.ratio),
 
     criterion('beneish', 'Bilanzqualität (Beneish)', 0.10,
-      // A reading the model cannot support scores nothing rather than zero —
-      // the same rule the F-Score and the composite already follow.
-      fromLabel(beneish.reading, { clean: 1, grey: 0.5, flagged: 0 }),
-      beneish.note),
+      // A reading the model cannot support scores nothing rather than zero.
+      calibrated('health.beneish', beneishValue, 1, (v) => v),
+      beneish.note, beneishValue),
   ];
 }
 
-function momentumPillar(signals: MarketSignals | null, tech: TechnicalSignals | null): ScoreCriterion[] {
+/**
+ * The market's own verdict, as the research measures it.
+ *
+ * This pillar used to lean 40 % on the TradingView-style vote — twelve moving
+ * averages saying "trend" and seven oscillators saying "oversold is a buy",
+ * the two halves betting on opposite things in one number. What the evidence
+ * supports is simpler: the return over the last twelve months skipping the
+ * most recent one (Jegadeesh and Titman — the skipped month is where
+ * short-term reversal lives), and how close the price is to its 52-week high
+ * (George and Hwang, 2004). The gauge stays on the page; it no longer votes.
+ */
+function momentumPillar(signals: MarketSignals | null): ScoreCriterion[] {
   const t = signals?.technicals ?? null;
+  const y1 = toFiniteNumber(t?.returns?.y1);
+  const m1 = toFiniteNumber(t?.returns?.m1);
+  const mom = y1 !== null && m1 !== null && 1 + m1 > 0 ? (1 + y1) / (1 + m1) - 1 : null;
+  const drawdown = toFiniteNumber(t?.drawdownFromHighPct);
+  const nearHigh = drawdown !== null ? 1 + drawdown : null;
+  const rsSector = toFiniteNumber(t?.rsVsSector3M);
 
   return [
-    criterion('technical-verdict', 'Technisches Gesamtbild', 0.40,
-      tech ? (tech.overall.score + 1) / 2 : null,
-      tech
-        ? `Technik ${tech.overall.verdict} — ${tech.overall.buy} Kauf-, ${tech.overall.sell} Verkaufssignale (Score ${tech.overall.score.toFixed(2)})`
-        : 'Keine Kurshistorie für technische Signale'),
+    criterion('momentum-12-1', 'Momentum 12–1 Monate', 0.50,
+      calibrated('momentum.12-1', mom, 1, (v) => ramp(v, -0.30, 0.50)),
+      mom !== null
+        ? `Rendite der letzten zwölf Monate ohne den jüngsten: ${fmtSignedPct(mom)} (1M ${fmtSignedPct(m1)})`
+        : 'Keine zwölfmonatige Kurshistorie',
+      mom),
 
-    criterion('rs-market', 'Relative Stärke vs. Markt (3M)', 0.25,
-      ramp(t?.rsVsSPY3M, -0.15, 0.15),
-      t?.rsVsSPY3M != null ? `3M gegen SPY ${fmtSignedPct(t.rsVsSPY3M)}` : 'Keine Relative Stärke vs. Markt'),
+    criterion('52w-high', 'Nähe zum 52-Wochen-Hoch', 0.30,
+      calibrated('momentum.52w-high', nearHigh, 1, (v) => ramp(v, 0.60, 1.0)),
+      nearHigh !== null
+        ? `Kurs bei ${(nearHigh * 100).toFixed(0)} % des 52-Wochen-Hochs`
+        : 'Keine 52-Wochen-Spanne',
+      nearHigh),
 
-    criterion('rs-sector', 'Relative Stärke vs. Sektor (3M)', 0.15,
-      ramp(t?.rsVsSector3M, -0.15, 0.15),
-      t?.rsVsSector3M != null ? `3M gegen Sektor-ETF ${fmtSignedPct(t.rsVsSector3M)}` : 'Kein Sektor-ETF zugeordnet'),
-
-    criterion('range-position', '52-Wochen-Position', 0.20,
-      ramp(t?.position52WPct, 0.15, 0.70),
-      t?.position52WPct != null
-        ? `${(t.position52WPct * 100).toFixed(0)} % der 52-Wochen-Spanne, Drawdown vom Hoch ${fmtSignedPct(t.drawdownFromHighPct)}`
-        : 'Keine 52-Wochen-Spanne'),
+    criterion('rs-sector', 'Relative Stärke vs. Sektor (3M)', 0.20,
+      ramp(rsSector, -0.15, 0.15),
+      rsSector !== null ? `3M gegen Sektor-ETF ${fmtSignedPct(rsSector)}` : 'Kein Sektor-ETF zugeordnet',
+      rsSector),
   ];
 }
 
-function revisionsPillar(f: StockFinancials, signals: MarketSignals | null): ScoreCriterion[] {
+/**
+ * Estimate revisions, as a share of the analysts who could have revised.
+ *
+ * Revision counts used to be summed over four overlapping periods — one
+ * analyst lowering a quarter and the year counted up to four times — and read
+ * on a fixed ±4 scale whether one analyst covered the stock or sixty. Breadth
+ * is the net count over the analysts publishing an estimate, for the current
+ * and the next fiscal year, and it is neutral at zero without calibration.
+ */
+function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons: AnalystConsensus): ScoreCriterion[] {
   const r: EarningsRevisions | null = signals?.revisions ?? null;
   const periods = r?.perPeriod ?? [];
   const year = periods.find((p) => p.period === '0y') ?? periods.find((p) => p.period === '+1y');
 
-  // Revision counts are summed across periods: a single quarter's flow is thin,
-  // and the four periods move together often enough that the sum is the signal.
-  const netValues = periods.map((p) => toFiniteNumber(p.netRevision30d)).filter((v): v is number => v !== null);
-  const net = netValues.length > 0 ? netValues.reduce((s, v) => s + v, 0) : null;
+  const analystsFor = (period: string) =>
+    toFiniteNumber((f.earningsEstimates ?? []).find((e) => e.period === period)?.numberOfAnalysts);
+  let net = 0, analysts = 0;
+  for (const period of ['0y', '+1y']) {
+    const n = toFiniteNumber(periods.find((p) => p.period === period)?.netRevision30d);
+    const a = analystsFor(period);
+    if (n === null || a === null || a <= 0) continue;
+    net += n;
+    analysts += a;
+  }
+  const breadth = analysts > 0 ? net / analysts : null;
 
   const surprises = f.earningsSurprises ?? [];
   const scored = surprises.filter((q) => toFiniteNumber(q.surprisePct) !== null);
   const beats = scored.filter((q) => (q.surprisePct as number) > 0).length;
+  const beatShare = scored.length > 0 ? beats / scored.length : null;
 
-  const ratingDelta = netRatingDelta(r?.analystRatingMoMDelta);
+  const delta = netRatingDelta(r?.analystRatingMoMDelta);
+  const ratingDrift = delta !== null && cons.total > 0 ? delta / cons.total : null;
 
   return [
     criterion('eps-drift', 'EPS-Schätzungsdrift (30 Tage)', 0.35,
       ramp(year?.epsChange30dPct, -0.03, 0.03),
       year?.epsChange30dPct != null
-        ? `Konsens-EPS ${year.period === '0y' ? 'laufendes Jahr' : 'Folgejahr'} ${fmtSignedPct(year.epsChange30dPct)} in 30 Tagen (${fmt(year.epsTrend.ago30d)} → ${fmt(year.epsTrend.current)})`
-        : 'Keine Schätzungsdrift verfügbar'),
+        ? `Konsens-EPS ${year.period === '0y' ? 'laufendes Jahr' : 'Folgejahr'} ${fmtSignedPct(year.epsChange30dPct)} in 30 Tagen (${fmt(year.epsTrend?.ago30d)} → ${fmt(year.epsTrend?.current)})`
+        : 'Keine Schätzungsdrift verfügbar',
+      toFiniteNumber(year?.epsChange30dPct)),
 
-    criterion('net-revisions', 'Netto-Revisionen (30 Tage)', 0.30,
-      ramp(net, -4, 4),
-      net !== null
-        ? `Netto ${net >= 0 ? '+' : ''}${net} Revisionen über ${periods.length} Perioden`
-        : 'Keine Revisionszählungen verfügbar'),
+    criterion('revision-breadth', 'Revisionsbreite (30 Tage)', 0.30,
+      ramp(breadth, -0.30, 0.30),
+      breadth !== null
+        ? `Netto ${net >= 0 ? '+' : ''}${net} Revisionen bei ${analysts} Schätzungen (lfd. und nächstes Jahr) — ${fmtSignedPct(breadth)}`
+        : 'Keine Revisionszählungen verfügbar',
+      breadth),
 
+    // Three quarters of all quarters beat the consensus; beating it is the norm,
+    // and only its frequency against that norm is information.
     criterion('surprises', 'Ergebnisüberraschungen', 0.20,
-      scored.length > 0 ? beats / scored.length : null,
-      scored.length > 0
+      calibrated('revisions.surprises', beatShare, 1, (v) => ramp(v, 0.5, 1.0)),
+      beatShare !== null
         ? `${beats} von ${scored.length} Quartalen über Konsens`
-        : 'Keine Überraschungshistorie'),
+        : 'Keine Überraschungshistorie',
+      beatShare),
 
     criterion('rating-drift', 'Rating-Veränderung (MoM)', 0.15,
-      ramp(ratingDelta, -2, 2),
-      ratingDelta !== null
-        ? `Analystenratings netto ${ratingDelta >= 0 ? '+' : ''}${ratingDelta} gegenüber Vormonat`
-        : 'Keine Rating-Veränderung gegenüber Vormonat'),
+      ramp(ratingDrift, -0.10, 0.10),
+      delta !== null
+        ? `Analystenratings netto ${delta >= 0 ? '+' : ''}${delta} gegenüber Vormonat bei ${cons.total} Analysten`
+        : 'Keine Rating-Veränderung gegenüber Vormonat',
+      ratingDrift),
   ];
 }
 
@@ -934,18 +1033,22 @@ function consensusPillar(
       + 'Potenzials ist der Kursrückgang und nicht die Einschätzung'
     : '';
 
+  // Sell-side ratings lean buy — the watchlist averaged +0.43 on −1…+1 — so the
+  // neutral point is the typical rating, not an even split of buys and sells.
   return [
     criterion('rating', 'Gewichtetes Analystenrating', 0.75,
-      cons.score !== null ? (cons.score + 1) / 2 : null,
+      calibrated('consensus.rating', cons.score, 1, (v) => (v + 1) / 2),
       cons.score !== null
         ? `${cons.label} — ${cons.total} Analysten, ${cons.buySharePct?.toFixed(0)} % Kauf, gewichteter Score ${cons.score >= 0 ? '+' : ''}${cons.score.toFixed(2)}`
-        : 'Keine Analystenabdeckung für dieses Listing'),
+        : 'Keine Analystenabdeckung für dieses Listing',
+      cons.score),
 
     criterion('target-upside', 'Kursziel-Potenzial', TARGET_UPSIDE_WEIGHT,
-      ramp(cons.upside, -0.10, 0.35),
+      calibrated('consensus.target-upside', cons.upside, 1, (v) => ramp(v, -0.10, 0.35)),
       cons.upside !== null
         ? `Mittleres Kursziel ${fmtPrice(f.targetMeanPrice, c)} — ${fmtSignedPct(cons.upside)} zum Kurs ${fmtPrice(f.price, c)}${stale}`
-        : 'Kein Konsens-Kursziel'),
+        : 'Kein Konsens-Kursziel',
+      cons.upside),
   ];
 }
 
@@ -1090,7 +1193,7 @@ export interface FactorScoreInput {
  * snapshots — which is the entire point of calling it deterministic.
  */
 export function computeFactorScore(input: FactorScoreInput): FactorScore {
-  const { financials: f, metrics: m, sectorMedians, marketSignals, technicalSignals } = input;
+  const { financials: f, metrics: m, sectorMedians, marketSignals } = input;
   const cons = analystConsensus(f);
 
   const built: Omit<ScorePillar, 'effectiveWeight'>[] = [
@@ -1098,8 +1201,8 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
     reducePillar('quality',   qualityPillar(f, m, sectorMedians)),
     reducePillar('health',    healthPillar(f, m)),
     reducePillar('consensus', consensusPillar(f, cons, marketSignals)),
-    reducePillar('momentum',  momentumPillar(marketSignals, technicalSignals)),
-    reducePillar('revisions', revisionsPillar(f, marketSignals)),
+    reducePillar('momentum',  momentumPillar(marketSignals)),
+    reducePillar('revisions', revisionsPillar(f, marketSignals, cons)),
   ];
 
   // A pillar with nothing to say is dropped rather than scored 5/10, and the
@@ -1445,11 +1548,13 @@ export function blendScores(input: BlendInput): FinalScore {
 
   const hasNarrative = input.narrativeScore !== null && Number.isFinite(input.narrativeScore);
 
-  // Trusted *and* saying something. `agreement` is 0 when the pillars cancel,
-  // and a score that is 5.0 because its evidence nets off is not an opinion the
-  // blend should defend at full strength.
-  const factorWeight = factor.confidence
-    * (FACTOR_WEIGHT_FLOOR + (1 - FACTOR_WEIGHT_FLOOR) * factor.agreement);
+  // Saying something: `agreement` is 0 when the pillars cancel, and a score
+  // that is 5.0 because its evidence nets off is not an opinion the blend should
+  // defend at full strength. Not weighted by confidence again — the factor score
+  // has already been pulled towards neutral by it (`shrink`), and weighting the
+  // shrunk score by the same confidence counted a thin payload's doubt twice:
+  // its influence fell with the square of its confidence.
+  const factorWeight = FACTOR_WEIGHT_FLOOR + (1 - FACTOR_WEIGHT_FLOOR) * factor.agreement;
   const narrativeWeight = hasNarrative
     ? Math.max(0, Math.min(1, input.narrativeConfidence)) * maxNarr
     : 0;

@@ -339,12 +339,12 @@ between BUY and HOLD on a rounding error.
 
 | Pillar | Weight | Reads |
 |--------|--------|-------|
-| **Bewertung** | 30 % | Margin of safety against our own models only (see below), share of them showing undervaluation, the conservative tier as a value lens, own multiples against the peer medians, and what the price requires (below) |
-| **Qualität** | 20 % | Piotroski (abstains below 5 computable signals), ROIC minus the DCF's own WACC, operating margin vs peers, revenue growth vs peers, Rule of 40 |
-| **Bilanz & Risiko** | 15 % | Altman Z against its own model's thresholds, interest coverage, net debt / EBITDA, current ratio (without prepaid revenue where it is material), Beneish |
+| **Bewertung** | 30 % | The share of the DCF's 512 scenarios above the price (else our other models in logs), own multiples against the peer medians, the margin the price requires against the best one shown, and the conservative tier as a value lens |
+| **Qualität** | 20 % | Piotroski (abstains below 5 computable signals), ROIC minus the DCF's own WACC, margin vs peers (operating against operating, net against net), four-quarter revenue growth vs peers, Rule of 40 |
+| **Bilanz & Risiko** | 15 % | Altman Z as a position between its own model's thresholds, interest coverage, net debt / EBITDA, current ratio (without prepaid revenue where it is material), Beneish |
 | **Analystenkonsens** | 15 % | Weighted rating (Strong Buy +2 … Strong Sell −2), mean-target upside |
-| **Markt & Momentum** | 10 % | The TradingView-style signals verdict, relative strength vs SPY and sector, 52-week position |
-| **Erwartungen** | 10 % | 30-day EPS estimate drift, net revisions, surprise history, month-over-month rating change |
+| **Markt & Momentum** | 10 % | Return over twelve months skipping the last, closeness to the 52-week high, relative strength vs the sector ETF |
+| **Erwartungen** | 10 % | 30-day EPS estimate drift, revision breadth (net revisions over the analysts publishing), surprise history, month-over-month rating change over the analysts covering |
 
 Three properties the code is built to keep:
 
@@ -367,6 +367,66 @@ Three properties the code is built to keep:
   meets the line at the same slope: order is kept, 10 and 0 are reached only in
   the limit, and no label changes, because everything past the knee was already
   STRONG. Alphabet now reads 9.6, Nu 9.1.
+
+### Every criterion is read against where the typical stock sits
+
+A criterion maps a figure onto 0–1 points, and the score treats 0.5 as "says
+nothing either way". With hand-set ramps that was an assumption, and on the
+watchlist it was wrong for most criteria:
+
+- The analyst rating averaged +0.43 on a −1…+1 scale, so the median stock scored
+  7.1 on it. Sell-side ratings lean buy.
+- Three quarters of all quarters beat the consensus, so beating it was worth 7.5
+  for the typical company.
+- The balance-sheet pillar had a median of 8.6, with seven stocks at a perfect
+  10. The valuation pillar's neutral point was a 15 % margin of safety.
+
+Two pillars that always vote bullish are not evidence; they are an offset. They
+added half a point to every raw score. Worse, because agreement counts
+directions, bullish cases looked corroborated (conviction 1.33 on average) and
+bearish ones contested (1.20).
+
+So a criterion without a natural neutral point is read as a **percentile**
+(`src/analysis/calibration.ts`): the figure's rank among the same criterion
+measured across the stored stocks. Ties sit at the middle of their run.
+`pnpm run calibrate` scores the history once a week per symbol, collects each
+such figure as the scorer reads it, and writes the 101 percentiles to
+`calibration-table.ts`. That file is committed, so a recalibration is a code
+change that re-scores the history like any other.
+
+Criteria that do have a natural zero keep their explicit ramps: growth and
+margin against the peer median, relative strength against the sector, estimate
+drift, revision breadth and rating drift. The DCF's probability and the margin
+the price requires are calibrated too, although they look natural. The model
+fades growth faster than the market's own implied premium assumes, so it finds
+most large caps dear, and that says something about the model, not about any
+one stock.
+
+On the stored watchlist the effect is:
+
+| | before | after |
+|---|---|---|
+| Median health / consensus pillar | 8.6 / 7.4 | 4.8 / 4.9 |
+| Conviction, bullish vs bearish cases | 1.33 vs 1.20 | 1.29 vs 1.29 |
+
+**The bands are symmetric.** HOLD used to run from 4.5 to 6.5 — set where the
+old LLM verdicts sat — so a BUY needed 1.5 points above neutral and a SELL half
+of one. With every criterion centred, 5 is neutral, and the bands now sit 1.5
+and 3 points either side of it.
+
+**Momentum is what the research measures.** The pillar leaned 40 % on the
+TradingView-style vote, where twelve moving averages say "trend" and seven
+oscillators say "oversold is a buy" — two opposite bets in one number. It now
+reads the return over twelve months skipping the most recent one (Jegadeesh and
+Titman; the skipped month is where short-term reversal lives), closeness to the
+52-week high (George and Hwang, 2004), and the three-month strength against the
+sector. The gauge stays on the page and no longer votes.
+
+**Revisions count analysts, not events.** Net revisions were summed over four
+overlapping periods, so one analyst cutting a quarter and the year counted up
+to four times, and they were read on a fixed ±4 scale whether one analyst
+covered the stock or sixty. Breadth is now net revisions over the analysts
+publishing an estimate, for the current and the next fiscal year.
 
 ### What the price requires
 
@@ -467,9 +527,9 @@ the only place the boundaries exist:
 |-------|---------|--------|
 | ≥ 8.0 | STRONG BUY | green |
 | ≥ 6.5 | BUY | green |
-| ≥ 4.5 | HOLD | amber |
-| ≥ 3.0 | SELL | red |
-| < 3.0 | STRONG SELL | red |
+| ≥ 3.5 | HOLD | amber |
+| ≥ 2.0 | SELL | red |
+| < 2.0 | STRONG SELL | red |
 
 A cap shows in the list as ⛔ beside the badge, with its reason in the tooltip —
 but **only when it actually held the label back**. `no-strong` on a stock scoring
@@ -747,7 +807,7 @@ Mechanics that keep it honest:
 ### The blend
 
 ```
-factorWeight    = factor confidence
+factorWeight    = 0.5 + 0.5 × factor agreement
 narrativeWeight = narrative confidence × 0.45
 blend           = weighted mean of the two scores
 score           = 5 + saturate(unsaturate(blend − 5) + adjustment)
@@ -764,18 +824,19 @@ than a point in the middle. `final.adjustment` is now what was applied
 carried forward by the nightly refresh decays the request, not the bent result,
 so it is not shrunk twice.
 
-Both weights are confidences, so neither side argues its own case: a flagged
-payload hands weight to the prose automatically, a thin or stale dossier hands it
-back. Narrative confidence is computed from the material — which sources arrived
-and how old the newest is — never self-reported by the model. At equal confidence
-the split lands near 69/31 in favour of the arithmetic.
+Neither side argues its own case. A flagged payload arrives already pulled
+towards neutral by its own confidence (`shrink`), so its deviation carries less
+into the blend. A thin or stale dossier hands its weight back. Narrative
+confidence is computed from the material — which sources arrived and how old the
+newest is — never self-reported by the model. The factor half used to be
+weighted by its confidence *as well*, so a doubtful payload's influence fell
+with the square of its doubt. Its confidence now counts once.
 
-The factor side is weighted by agreement as well as confidence, because those
-come apart. Apple's data is impeccable (confidence 0.86) and its pillars cancel
-(agreement 0.04), so its 4.9 is a standoff rather than a verdict — and weighted
-by confidence alone that non-statement outvoted the prose three to one. A factor
+The factor side is weighted by agreement, because trust and having something to
+say come apart. Apple's data is impeccable (confidence 0.86) and its pillars
+cancel (agreement 0.04), so its 4.9 is a standoff rather than a verdict. A factor
 half whose lenses cancel keeps `FACTOR_WEIGHT_FLOOR` (half) of its weight, and
-the qualitative read gets the room, which is precisely where a qualitative read
+the qualitative read gets the room. That is precisely where a qualitative read
 is worth most: the numbers have already declared a draw.
 
 The pillar weights themselves are deliberately **not** configurable from the
@@ -925,6 +986,10 @@ TradingView-style aggregation on top of that in `src/analysis/signals.ts`:
 - **Moving averages** — SMA/EMA 10, 20, 50, 100, 200 vs price
 - **Oscillators** — RSI14, Stochastic %K/%D, MACD histogram, CCI20, Williams %R, momentum
 - **Overall** — weighted blend mapped to STRONG BUY / BUY / NEUTRAL / SELL / STRONG SELL
+
+The gauge is shown on the page and does not vote in the score. Its moving
+averages bet on trend and its oscillators on reversal, so the two halves partly
+cancel, and the momentum pillar reads the return series directly instead.
 
 ## Data sources
 

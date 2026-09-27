@@ -11,9 +11,13 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { useCalibrationTable } from '../src/analysis/calibration.js';
 
 import { auditFinancials } from '../src/analysis/data-quality.js';
 import type { StockFinancials } from '../src/types.js';
+
+// The explicit ramps, not whichever calibration is committed.
+useCalibrationTable({});
 
 function financials(over: Partial<StockFinancials> = {}): StockFinancials {
   return {

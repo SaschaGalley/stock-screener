@@ -9,6 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { useCalibrationTable } from '../src/analysis/calibration.js';
 
 import { calculateDCF, calculateReverseDCF } from '../src/analysis/metrics.js';
 import { adjustedBeta, costOfEquity, MATURE_MAX_DEBT_SHARE, wacc } from '../src/analysis/cost-of-capital.js';
@@ -16,6 +17,9 @@ import { valuationBasis } from '../src/analysis/basis.js';
 import { dcfInputs, MIN_TERMINAL_SPREAD } from '../src/analysis/dcf.js';
 import { FALLBACK_RATES, MarketRates } from '../src/data/fred.js';
 import type { StockFinancials } from '../src/types.js';
+
+// The explicit ramps, not whichever calibration is committed.
+useCalibrationTable({});
 
 const rates = (riskFreeRate: number, equityRiskPremium = 0.041): MarketRates =>
   ({ ...FALLBACK_RATES, riskFreeRate, equityRiskPremium });

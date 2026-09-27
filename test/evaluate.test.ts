@@ -7,8 +7,12 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { useCalibrationTable } from '../src/analysis/calibration.js';
 
 import { evaluate, MIN_CROSS_SECTION, ranks, spearman, type Close, type SignalPoint } from '../src/analysis/evaluate.js';
+
+// The explicit ramps, not whichever calibration is committed.
+useCalibrationTable({});
 
 const DAYS = 40;
 const day = (i: number): string => new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);

@@ -8,6 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { useCalibrationTable } from '../src/analysis/calibration.js';
 
 import {
   aggregateFairValue, beneishReading, calculateBeneish, calculateCompositeFairValue, calculateDCF, calculateDDM,
@@ -16,6 +17,9 @@ import {
 } from '../src/analysis/metrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
 import type { SectorMedians, StockFinancials } from '../src/types.js';
+
+// The explicit ramps, not whichever calibration is committed.
+useCalibrationTable({});
 
 const rates = { ...FALLBACK_RATES, riskFreeRate: 0.0475, equityRiskPremium: 0.0409 };
 

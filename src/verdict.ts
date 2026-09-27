@@ -33,14 +33,17 @@ export type Recommendation = (typeof RECOMMENDATIONS)[number];
  * number, and a 6.6 a BUY with a green badge and an amber one: two of the four
  * zones disagreed with the chip sitting next to them.
  *
- * The bands are set where the LLM's own labels sat, so a stored history and a
- * fresh factor score remain comparable on the same axis.
+ * Symmetric around 5. They used to be set where the LLM's own labels sat — HOLD
+ * from 4.5 to 6.5, so a stock needed 1.5 points above neutral to be a BUY and
+ * half a point below to be a SELL — and with every criterion now centred on
+ * its reference distribution, 5 genuinely is neutral and the distance to a
+ * verdict is the same in both directions.
  */
 export const SCORE_BANDS: { min: number; verdict: Recommendation }[] = [
   { min: 8.0,        verdict: 'STRONG BUY' },
   { min: 6.5,        verdict: 'BUY' },
-  { min: 4.5,        verdict: 'HOLD' },
-  { min: 3.0,        verdict: 'SELL' },
+  { min: 3.5,        verdict: 'HOLD' },
+  { min: 2.0,        verdict: 'SELL' },
   { min: -Infinity,  verdict: 'STRONG SELL' },
 ];
 

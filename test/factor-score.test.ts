@@ -11,15 +11,19 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { useCalibrationTable } from '../src/analysis/calibration.js';
 
 import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict, saturate, unsaturate, narrativeScoreFrom } from '../src/analysis/score.js';
-import { recommendationTone, verdictForScore } from '../src/verdict.js';
+import { recommendationTone, SCORE_BANDS, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
 import { PILLAR_KEYS } from '../src/types.js';
 import type {
   DataQualityWarning, MarketSignals, SectorMedians, ScorePillar, StockFinancials, TechnicalSignals,
 } from '../src/types.js';
+
+// The explicit ramps, not whichever calibration is committed.
+useCalibrationTable({});
 
 function financials(over: Partial<StockFinancials> = {}): StockFinancials {
   return {
@@ -214,10 +218,10 @@ describe('missing data', () => {
       'the target must not count as one of our models');
 
     const valuation = s.pillars.find((p) => p.key === 'valuation');
-    const composite = valuation?.criteria.find((c) => c.key === 'composite-mos');
+    const intrinsic = valuation?.criteria.find((c) => c.key === 'intrinsic');
 
-    assert.equal(composite?.points, null, 'nothing of our own survived, so it abstains');
-    assert.match(composite?.note ?? '', /Analystenziel/);
+    assert.equal(intrinsic?.points, null, 'nothing of our own survived, so it abstains');
+    assert.match(intrinsic?.note ?? '', /Kein eigenes Bewertungsmodell/);
     assert.ok((valuation?.coverage ?? 1) < 1, 'the loss is charged to coverage');
   });
 
@@ -553,8 +557,8 @@ describe('score bands', () => {
     const cases: [number, string][] = [
       [10, 'STRONG BUY'], [8.0, 'STRONG BUY'], [7.99, 'BUY'],
       [6.5, 'BUY'], [6.49, 'HOLD'],
-      [4.5, 'HOLD'], [4.49, 'SELL'],
-      [3.0, 'SELL'], [2.99, 'STRONG SELL'], [0, 'STRONG SELL'],
+      [3.5, 'HOLD'], [3.49, 'SELL'],
+      [2.0, 'SELL'], [1.99, 'STRONG SELL'], [0, 'STRONG SELL'],
     ];
     for (const [score, verdict] of cases) {
       assert.equal(verdictForScore(score), verdict, `${score} should be ${verdict}`);
@@ -568,8 +572,18 @@ describe('score bands', () => {
     // which is what this asserts — the two zones that used to disagree.
     assert.equal(recommendationTone(verdictForScore(4.6)), 'neutral');
     assert.equal(recommendationTone(verdictForScore(6.6)), 'positive');
-    assert.equal(recommendationTone(verdictForScore(4.4)), 'negative');
+    assert.equal(recommendationTone(verdictForScore(3.4)), 'negative');
     assert.equal(recommendationTone(verdictForScore(6.4)), 'neutral');
+  });
+
+  it('is symmetric around neutral', () => {
+    // HOLD used to run from 4.5 to 6.5: a BUY needed 1.5 points, a SELL half of one.
+    const buy = SCORE_BANDS.find((b) => b.verdict === 'BUY')!.min;
+    const hold = SCORE_BANDS.find((b) => b.verdict === 'HOLD')!.min;
+    const strongBuy = SCORE_BANDS.find((b) => b.verdict === 'STRONG BUY')!.min;
+    const sell = SCORE_BANDS.find((b) => b.verdict === 'SELL')!.min;
+    assert.equal(buy - 5, 5 - hold);
+    assert.equal(strongBuy - 5, 5 - sell);
   });
 
   it('agrees with the score the scorer produces', () => {
@@ -681,19 +695,15 @@ describe('blending the two halves', () => {
     assert.ok(draws.score > speaks.score, 'a standoff lets the prose move the headline');
   });
 
-  it('hands weight to the prose exactly as the numbers lose confidence', () => {
-    const confident = blendScores({
-      factor: { ...factor, confidence: 0.9 },
+  it('counts the factor score\'s confidence once — in its shrink, not again in its weight', () => {
+    const at = (confidence: number) => blendScores({
+      factor: { ...factor, confidence },
       narrativeScore: 5, narrativeConfidence: 1, adjustment: 0, adjustmentReason: null,
     });
-    const doubtful = blendScores({
-      factor: { ...factor, confidence: 0.2 },
-      narrativeScore: 5, narrativeConfidence: 1, adjustment: 0, adjustmentReason: null,
-    });
-
-    assert.ok(doubtful.narrativeWeight > confident.narrativeWeight);
-    // The arithmetic still leads when it is trusted.
-    assert.ok(confident.factorWeight > confident.narrativeWeight);
+    // A doubtful payload is already pulled towards neutral before it arrives here.
+    assert.equal(at(0.9).factorWeight, at(0.2).factorWeight);
+    // The arithmetic still leads over prose of equal standing.
+    assert.ok(at(0.9).factorWeight > at(0.9).narrativeWeight);
   });
 
   it('clamps the model correction and drops a reason for a zero one', () => {

@@ -1008,6 +1008,9 @@ export interface CompositeInputs {
  */
 export const ANALYST_CONSENSUS_MODEL = 'Analyst Consensus';
 
+/** The composite's relative lens, named for the scorer that reads it separately. */
+export const PEER_MULTIPLES_MODEL = 'Peer Multiples';
+
 /** Return on equity above which book value is no longer the capital that earns the profits. */
 export const BOOK_ANCHOR_MAX_ROE = 0.40;
 
@@ -1161,7 +1164,7 @@ export function calculateCompositeFairValue(financials: StockFinancials, inputs:
   } else {
     add('primary', 'DCF (Revenue-Driven)', inputs.dcf.fairValue, inputs.dcf.assumptions, undefined, dcfWeight(inputs.dcf));
   }
-  add('primary', 'Peer Multiples', inputs.peerMultiples.medianFairPrice, 'No peer-group data', undefined,
+  add('primary', PEER_MULTIPLES_MODEL, inputs.peerMultiples.medianFairPrice, 'No peer-group data', undefined,
     (inputs.peerMultiples.peerCount ?? 0) >= 5 ? MODEL_WEIGHT.full : MODEL_WEIGHT.discounted);
   add('primary', 'Peter Lynch', inputs.peterLynch.fairValue,
     'Requires positive earnings and 5–25 % consensus or three-year growth', undefined, MODEL_WEIGHT.discounted);

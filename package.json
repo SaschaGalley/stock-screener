@@ -27,6 +27,7 @@
     "dossiers:sync": "tsx src/distill-dossiers-cli.ts",
     "backfill": "tsx src/db/backfill.ts",
     "rescore": "tsx src/db/rescore.ts",
+    "calibrate": "tsx src/db/calibrate.ts",
     "evaluate": "tsx src/db/evaluate.ts"
   },
   "dependencies": {
