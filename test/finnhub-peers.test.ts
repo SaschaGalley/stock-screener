@@ -45,6 +45,18 @@ describe('peer group', () => {
     assert.equal((await getSectorMedians('SELF', 'key'))?.pe, 22);
   });
 
+  it('reads the peers\' median beta, without a listing that does not trade with the index', async () => {
+    serve(['SELF', 'P1', 'P2', 'P3', 'P4'], {
+      P1: { beta: 1.1 }, P2: { beta: 1.4 }, P3: { beta: 1.6 }, P4: { beta: -0.2 },
+    });
+    assert.equal((await getSectorMedians('SELF', 'key'))?.beta, 1.4);
+  });
+
+  it('has no industry beta from fewer than three peers', async () => {
+    serve(['SELF', 'P1', 'P2', 'P3'], { P1: { beta: 1.1, peTTM: 10 }, P2: { beta: 1.4, peTTM: 12 }, P3: { peTTM: 14 } });
+    assert.equal((await getSectorMedians('SELF', 'key'))?.beta, null);
+  });
+
   it('prefers the sub-industry and drops shells a fiftieth of the company\'s size', async () => {
     serve({ subIndustry: ['BRK.A', 'CODI', 'CNNE'], industry: ['V', 'MA', 'PYPL'] }, {
       'BRK-B': { marketCapitalization: 1_000_000 },

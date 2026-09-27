@@ -279,7 +279,7 @@ The rest of the discounting follows from the same review:
 
 | Input | Now | Why |
 |---|---|---|
-| Beta | Blume-adjusted (0.67 × raw + 0.33), within 0.8–2.0 | A five-year regression beta drifts a third of the way to 1 in the next window. A European ADR against the S&P 500 read 0.28 and discounted Sanofi at 7 % |
+| Beta | Two thirds its own regression beta, one third the peers' median beta — else 1 — within 0.8–2.0 | A five-year regression beta drifts a third of the way back in the next window (Blume). Back towards what is known about stocks like it, not towards the market (Vasicek): a chipmaker measured at 1.1 on a quiet five years is likelier a 1.3 business than a 1.0 one. A stock with no beta takes its peers'. The floor stays because a European ADR against the S&P 500 read 0.28 and discounted Sanofi at 7 % |
 | Equity premium | Damodaran's implied ERP + the headquarters country's premium over the US | The implied ERP is measured on the S&P 500. Nu and MercadoLibre were being discounted as if they operated in Ohio |
 | Local risk-free rate | The currency's ten-year yield less its government's default spread over the US | A Mexican or Indian yield prices that government's credit risk too |
 | Cost of debt | Risk-free + rating spread + the country's default spread | — |
@@ -1208,7 +1208,7 @@ src/
 │   ├── metrics.ts         19 valuation models
 │   ├── dcf.ts             The revenue-driven DCF, its 512 draws and the reverse solves
 │   ├── basis.ts           Shares, debt and the equity bridge every model values against
-│   ├── cost-of-capital.ts Blume beta, country premium, synthetic rating, WACC, stable growth
+│   ├── cost-of-capital.ts Beta shrunk towards the peers', country premium, synthetic rating, WACC, stable growth
 │   ├── trailing.ts        Trailing twelve months rebuilt from the quarters
 │   ├── sampling.ts        Halton points and the normal quantile for the simulation
 │   ├── computeMetrics.ts  Orchestrates the bundle of models for the web GET

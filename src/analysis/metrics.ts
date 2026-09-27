@@ -29,7 +29,7 @@ import { FALLBACK_RATES, MarketRates } from '../data/fred.js';
 import { seasonallyAdjustedRunRate } from './run-rate.js';
 import { consecutiveQuarters, latestValue, YearPoint } from './trailing.js';
 import { ValuationBasis, equityPerShare, valuationBasis } from './basis.js';
-import { costOfEquity, terminalGrowth, wacc } from './cost-of-capital.js';
+import { adjustedBeta, betaPrior, costOfEquity, terminalGrowth, wacc } from './cost-of-capital.js';
 import { borrowsToLend, isPlausibleFairValue, LENDER_NOTE } from './dcf.js';
 import { quantileSorted } from './sampling.js';
 import { toFiniteNumber } from '../utils/num.js';
@@ -529,11 +529,13 @@ const DDM_MAX_GROWTH = 0.15;
  * from year one, which priced a company raising its dividend 10 % a year as if
  * it were a bond.
  */
-export function calculateDDM(financials: StockFinancials, marketRates?: MarketRates): DDMResult {
+export function calculateDDM(
+  financials: StockFinancials, marketRates?: MarketRates, peers: SectorMedians | null = null,
+): DDMResult {
   const rates = marketRates ?? FALLBACK_RATES;
   const dy = toFiniteNumber(financials.dividendYield);
   const price = financials.price;
-  const requiredReturn = costOfEquity(financials, rates);
+  const requiredReturn = costOfEquity(financials, rates, adjustedBeta(financials.beta, betaPrior(peers)));
   const gT = Math.max(0, terminalGrowth(rates));
   const none = (isApplicable: boolean, dps: number | null = null, g: number | null = null): DDMResult => ({
     fairValue: null, dividendPerShare: dps, dividendGrowthRate: g, terminalGrowthRate: gT, requiredReturn, isApplicable,
@@ -577,10 +579,12 @@ const EPV_MARGIN_YEARS = 5;
  * for ever; averaging over a cycle is what Greenwald's normalisation is for.
  * Tax is the marginal rate a mature firm pays, not the year's effective one.
  */
-export function calculateEPV(financials: StockFinancials, marketRates?: MarketRates): EPVResult {
+export function calculateEPV(
+  financials: StockFinancials, marketRates?: MarketRates, peers: SectorMedians | null = null,
+): EPVResult {
   const rates = marketRates ?? FALLBACK_RATES;
   const b = valuationBasis(financials);
-  const r = wacc(financials, b, rates);
+  const r = wacc(financials, b, rates, adjustedBeta(financials.beta, betaPrior(peers)));
   const taxRate = Math.max(b.taxRate, b.marginalTaxRate);
   const margins = b.operatingMargins.slice(-EPV_MARGIN_YEARS);
   const current = b.operatingIncome !== null && b.revenue !== null && b.revenue > 0 ? b.operatingIncome / b.revenue : null;
@@ -654,10 +658,12 @@ function sustainableRoe(f: StockFinancials, b: ValuationBasis): number | null {
  * version stopped excess returns dead after year five with nothing after, and
  * so priced every good bank at little above its book.
  */
-export function calculateRIM(financials: StockFinancials, marketRates?: MarketRates): RIMResult {
+export function calculateRIM(
+  financials: StockFinancials, marketRates?: MarketRates, peers: SectorMedians | null = null,
+): RIMResult {
   const rates = marketRates ?? FALLBACK_RATES;
   const b = valuationBasis(financials);
-  const ke = costOfEquity(financials, rates);
+  const ke = costOfEquity(financials, rates, adjustedBeta(financials.beta, betaPrior(peers)));
   const gT = Math.max(0, terminalGrowth(rates));
   const bv0 = b.equity !== null && b.dilutedShares !== null && b.dilutedShares > 0 ? b.equity / b.dilutedShares : null;
   const roe0 = sustainableRoe(financials, b);

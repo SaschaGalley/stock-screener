@@ -12,7 +12,7 @@ import { describe, it } from 'node:test';
 import { useCalibrationTable } from '../src/analysis/calibration.js';
 
 import { calculateDCF, calculateReverseDCF } from '../src/analysis/metrics.js';
-import { adjustedBeta, costOfEquity, MATURE_MAX_DEBT_SHARE, wacc } from '../src/analysis/cost-of-capital.js';
+import { adjustedBeta, betaPrior, costOfEquity, MATURE_MAX_DEBT_SHARE, wacc } from '../src/analysis/cost-of-capital.js';
 import { valuationBasis } from '../src/analysis/basis.js';
 import { dcfInputs, MIN_TERMINAL_SPREAD } from '../src/analysis/dcf.js';
 import { FALLBACK_RATES, MarketRates } from '../src/data/fred.js';
@@ -66,6 +66,21 @@ describe('cost of equity', () => {
   it('pulls a regression beta a third of the way towards one', () => {
     close(adjustedBeta(2.2), 0.67 * 2.2 + 0.33, 1e-12);
     close(adjustedBeta(1), 1, 1e-12);
+  });
+
+  it('pulls it towards the peers\' beta instead, where there is a peer group', () => {
+    close(adjustedBeta(1.1, 1.4), 0.67 * 1.1 + 0.33 * 1.4, 1e-12);
+    assert.equal(adjustedBeta(null, 1.4), 1.4, 'no beta of its own: the bottom-up beta');
+    assert.equal(betaPrior({ beta: 1.4 } as never), 1.4);
+    assert.equal(betaPrior({ beta: null } as never), 1);
+    assert.equal(betaPrior(null), 1);
+  });
+
+  it('discounts a stock in a high-beta industry at a higher rate than the same stock alone', () => {
+    const alone = calculateDCF(financials({ beta: 1.1 }), rates(0.0475));
+    const amongChipmakers = calculateDCF(financials({ beta: 1.1 }), rates(0.0475), { beta: 1.6 } as never);
+    assert.ok(amongChipmakers.discountRate! > alone.discountRate!);
+    close(amongChipmakers.beta, 0.67 * 1.1 + 0.33 * 1.6, 1e-12);
   });
 
   it('does not believe a listing that barely moves with the index', () => {

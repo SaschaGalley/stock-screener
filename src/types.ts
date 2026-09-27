@@ -444,7 +444,7 @@ export const DCFResultSchema = z.object({
   terminalDiscountRate: z.number().nullable().describe('WACC the rate converges to by year ten: the same capital structure at beta 1 — a mature firm'),
   costOfDebt:         z.number().nullable().describe('Pre-tax cost of debt kd (decimal): risk-free rate + the live ICE BofA spread for the synthetic rating + the headquarters country\'s default spread; null for debt-free firms'),
   syntheticRating:    z.enum(RATINGS as [Rating, ...Rating[]]).nullable().describe("Rating bucket the firm's interest coverage (operating income ÷ interest) earns on Damodaran's table; null when unrated (priced as BBB) or debt-free"),
-  beta:               z.number().nullable().describe('Beta used for CAPM: Blume-adjusted (0.67 × raw + 0.33), bounded to 0.8–2.0'),
+  beta:               z.number().nullable().describe('Beta used for CAPM: two thirds the regression beta, one third the peers\' median beta (else 1), bounded to 0.8–2.0'),
   riskFreeRate:       z.number().describe("Risk-free rate used (decimal): the ten-year government yield in the stock's trading currency, the Treasury for dollars"),
   equityRiskPremium:  z.number().describe("Equity risk premium used (Damodaran's implied ERP for the latest month, decimal)"),
   countryRiskPremium: z.number().nullable().describe('Premium the headquarters country adds over the United States (decimal)'),
@@ -760,6 +760,8 @@ export const SectorMediansSchema = z.object({
   roic:             z.number().nullable().describe('Median return on invested capital of the peer group (decimal)'),
   // Growth
   revenueGrowthYoY: z.number().nullable().describe('Median YoY revenue growth of the peer group TTM (decimal)'),
+  // Risk
+  beta:             z.number().nullable().optional().describe('Median five-year beta of the peers (Finnhub, against the S&P 500), from at least three of them — the prior a stock\'s own beta is shrunk towards'),
   peerCount: z.number().describe('Number of peers whose data was successfully fetched'),
   peers:     z.array(z.string()).describe('List of peer ticker symbols used to compute medians'),
   emptyGroup: z.boolean().optional().describe('True when Finnhub answered but no peer survived the filters (the company itself, shells a fiftieth of its size) — no peer group, as opposed to a failed fetch, and the current state until the next reading'),

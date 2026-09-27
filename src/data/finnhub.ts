@@ -171,6 +171,12 @@ const SAME_ISSUER_MARKET_CAP = 0.01;
  */
 const PRICED_MULTIPLES = new Set(['pe', 'evToEbitda', 'evToRevenue', 'priceToFCF', 'priceToSales', 'pb']);
 
+/**
+ * …and a beta at or below zero is a listing that does not trade with the index
+ * it was measured against, not a business that hedges the market.
+ */
+const MUST_BE_POSITIVE = new Set([...PRICED_MULTIPLES, 'beta']);
+
 /** A peer this small against the company prices something else — a shell, not a comparable. */
 const MIN_PEER_SIZE = 0.02;
 
@@ -216,7 +222,7 @@ function emptyPeerGroup(): SectorMedians {
     pe: null, evToEbitda: null, evToRevenue: null, priceToFCF: null, priceToSales: null,
     forwardPriceToSales: null, runRatePriceToSales: null, pb: null,
     operatingMargin: null, netMargin: null, roe: null, roic: null, revenueGrowthYoY: null,
-    peerCount: 0, peers: [], emptyGroup: true,
+    beta: null, peerCount: 0, peers: [], emptyGroup: true,
   };
 }
 
@@ -256,19 +262,19 @@ export async function getSectorMedians(
     const buckets: Record<string, number[]> = {
       pe: [], evToEbitda: [], evToRevenue: [], priceToFCF: [], priceToSales: [], pb: [],
       operatingMargin: [], netMargin: [], roe: [], roic: [], revenueGrowthYoY: [],
-      runRatePriceToSales: [],
+      runRatePriceToSales: [], beta: [],
     };
 
     const caps: Record<string, number> = {
       pe: 500, evToEbitda: 300, evToRevenue: 100, priceToFCF: 500, priceToSales: 100, pb: 100,
-      operatingMargin: 1, netMargin: 1, roe: 5, roic: 5, revenueGrowthYoY: 2,
+      operatingMargin: 1, netMargin: 1, roe: 5, roic: 5, revenueGrowthYoY: 2, beta: 5,
     };
 
     const fieldMap: Record<string, string> = {
       pe: 'peTTM', evToEbitda: 'evEbitdaTTM', evToRevenue: 'evRevenueTTM',
       priceToFCF: 'pfcfShareTTM', priceToSales: 'psTTM', pb: 'pb',
       operatingMargin: 'operatingMarginTTM', netMargin: 'netProfitMarginTTM',
-      roe: 'roeTTM', revenueGrowthYoY: 'revenueGrowthTTMYoy',
+      roe: 'roeTTM', revenueGrowthYoY: 'revenueGrowthTTMYoy', beta: 'beta',
     };
 
     // Margin/growth fields come as percentages from Finnhub — convert to decimals
@@ -285,7 +291,7 @@ export async function getSectorMedians(
         if (typeof raw !== 'number' || !isFinite(raw)) continue;
         const v = pctFields.has(key) ? raw / 100 : raw;
         if (v > caps[key] || v < -caps[key]) continue;
-        if (PRICED_MULTIPLES.has(key) && v <= 0) continue;
+        if (MUST_BE_POSITIVE.has(key) && v <= 0) continue;
         buckets[key].push(v);
       }
       const roic = latestAnnualRoic(r.value);
@@ -338,6 +344,8 @@ export async function getSectorMedians(
       roe:                 median(buckets.roe),
       roic:                median(buckets.roic),
       revenueGrowthYoY:    revGrMedian,
+      // A median of one or two betas is a peer's beta, not the industry's.
+      beta:                buckets.beta.length >= MIN_GROUP ? median(buckets.beta) : null,
       peerCount:           contributingPeers,
       peers,
     };

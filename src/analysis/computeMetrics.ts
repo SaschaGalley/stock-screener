@@ -56,9 +56,10 @@ export function computeAllMetrics(
   const grahamRevised    = calculateGrahamRevised(financials, aaaYield);
   const piotroski        = calculatePiotroski(financials);
   const altmanZ          = calculateAltmanZ(financials);
-  const ddm              = calculateDDM(financials, rates);
-  const epv              = calculateEPV(financials, rates);
-  const rim              = calculateRIM(financials, rates);
+  // One beta for every model that prices equity: shrunk towards the peers'.
+  const ddm              = calculateDDM(financials, rates, sectorMedians);
+  const epv              = calculateEPV(financials, rates, sectorMedians);
+  const rim              = calculateRIM(financials, rates, sectorMedians);
   const ncav             = calculateNCAV(financials);
   const peerMultiples    = calculatePeerMultiples(financials, sectorMedians);
   const interestCoverage = calculateInterestCoverage(financials);

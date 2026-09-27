@@ -38,7 +38,7 @@ import { Rating } from '../data/ratings.js';
 import { DCFResult, ImpliedMargin, ReverseDCFResult, SectorMedians, StockFinancials } from '../types.js';
 import { toFiniteNumber } from '../utils/num.js';
 import { ValuationBasis, bridgeNetDebt, equityPerShare, valuationBasis } from './basis.js';
-import { MATURE_MAX_DEBT_SHARE, adjustedBeta, costOfDebt, terminalGrowth, wacc } from './cost-of-capital.js';
+import { MATURE_MAX_DEBT_SHARE, adjustedBeta, betaPrior, costOfDebt, terminalGrowth, wacc } from './cost-of-capital.js';
 import { haltonPoints, normalQuantile, quantileSorted } from './sampling.js';
 
 // ── Shape of the forecast ────────────────────────────────────────────────────
@@ -531,7 +531,7 @@ export function dcfInputs(
   const forwardSkip = marginTarget > 0 ? null
     : `DCF not applicable — operating margin ${(marginNow * 100).toFixed(1)} % with no profitable record or peer group to converge to.`;
 
-  const beta = adjustedBeta(f.beta);
+  const beta = adjustedBeta(f.beta, betaPrior(peers));
   const r = wacc(f, b, rates, beta);
   const rT = wacc(f, b, rates, 1, MATURE_MAX_DEBT_SHARE);
   const gT = Math.min(rf, Math.max(clamp(g2, GROWTH_BOUNDS.min, GROWTH_BOUNDS.max), TERMINAL_GROWTH_FLOOR * rf), rT - MIN_TERMINAL_SPREAD);
@@ -590,11 +590,13 @@ type DcfBase = Pick<DCFResult,
   | 'enterpriseValue' | 'terminalShare'>;
 
 /** A DCF with nothing to say, saying why. */
-function calculateDCF_skipped(f: StockFinancials, _rates: MarketRates, reason: string, base: DcfBase): DCFResult {
+function calculateDCF_skipped(
+  f: StockFinancials, peers: SectorMedians | null, reason: string, base: DcfBase,
+): DCFResult {
   return {
     ...base,
     discountRate: null, terminalDiscountRate: null, costOfDebt: null, syntheticRating: null,
-    beta: adjustedBeta(f.beta), revenueBase: null, growthYear1: null, growthYear2: null, growthSource: null,
+    beta: adjustedBeta(f.beta, betaPrior(peers)), revenueBase: null, growthYear1: null, growthYear2: null, growthSource: null,
     operatingMargin: null, targetMargin: null, targetMarginSource: null,
     salesToCapital: null, salesToCapitalSource: null, taxRate: null, terminalTaxRate: null,
     terminalRoic: null, terminalReinvestmentRate: null, netDebt: null,
@@ -613,10 +615,10 @@ export function calculateDCF(
     terminalGrowthRate: terminalGrowth(rates), forecastYears: FORECAST_YEARS,
     projectedFCFs: [], terminalValue: null, enterpriseValue: null, terminalShare: null,
   };
-  if ('skip' in built) return calculateDCF_skipped(f, rates, built.skip, base);
+  if ('skip' in built) return calculateDCF_skipped(f, peers, built.skip, base);
   const { inputs } = built;
   base.terminalGrowthRate = inputs.assumptions.terminalGrowth;
-  if (inputs.forwardSkip) return calculateDCF_skipped(f, rates, inputs.forwardSkip, base);
+  if (inputs.forwardSkip) return calculateDCF_skipped(f, peers, inputs.forwardSkip, base);
   const a = inputs.assumptions;
   const b = inputs.basis;
   const value = valueFirm(a);

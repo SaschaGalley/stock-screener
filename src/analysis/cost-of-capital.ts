@@ -8,25 +8,37 @@
 
 import { MarketRates } from '../data/fred.js';
 import { Rating, ratingForCoverage, UNRATED } from '../data/ratings.js';
-import { StockFinancials } from '../types.js';
+import { SectorMedians, StockFinancials } from '../types.js';
 import { toFiniteNumber } from '../utils/num.js';
 import { ValuationBasis } from './basis.js';
 
 /**
- * Blume's adjustment. A five-year regression beta is a noisy estimate, and
- * betas measured high or low drift towards 1 in the next window — Blume (1971)
- * measured the drift at about a third, which is why every terminal quotes
- * `0.67 × raw + 0.33`. NVIDIA's 2.1 becomes 1.74 and its cost of equity falls
- * by a point and a half.
+ * A regression beta pulled a third of the way towards its prior.
+ *
+ * A five-year regression beta is a noisy estimate, and betas measured high or
+ * low drift back in the next window — Blume (1971) measured the drift at about
+ * a third, which is why every terminal quotes `0.67 × raw + 0.33`. Blume drifts
+ * every stock towards the market's 1. Vasicek (1973) drifts it towards what is
+ * known about stocks like it, and that is the prior here when there is a peer
+ * group: the median of the peers' betas (`betaPrior`). A chipmaker measured at
+ * 1.1 is more likely a 1.3 business on a quiet five years than a 1.0 one, and a
+ * utility measured at 0.9 more likely a 0.6. A stock with no beta of its own
+ * takes its peers' — the bottom-up beta, pure.
  *
  * The floor stays where it was. A regression beta near zero is usually a
  * listing that barely correlates with the index it is measured against — a
  * European pharma's ADR against the S&P 500 read 0.28 — rather than a business
  * with no market risk, and at 0.5 Sanofi was discounted at 7 %.
  */
-export function adjustedBeta(raw: number | null | undefined): number {
-  const b = toFiniteNumber(raw) ?? 1;
-  return Math.max(BETA_FLOOR, Math.min(BETA_CAP, 0.67 * b + 0.33));
+export function adjustedBeta(raw: number | null | undefined, prior = 1): number {
+  const b = toFiniteNumber(raw) ?? prior;
+  return Math.max(BETA_FLOOR, Math.min(BETA_CAP, 0.67 * b + 0.33 * prior));
+}
+
+/** What a stock's beta is shrunk towards: its peers' median beta, else the market's 1. */
+export function betaPrior(peers: SectorMedians | null | undefined): number {
+  const b = toFiniteNumber(peers?.beta);
+  return b !== null && b > 0 ? b : 1;
 }
 
 /** Bounds after adjustment: stale quotes and one-off spikes should not price a business. */

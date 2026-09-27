@@ -57,7 +57,8 @@ export const MARKET_SIGNALS_VERSION = 2;
 // Sector medians 2: adds runRatePriceToSales, the benchmark SVR is compared to.
 // Sector medians 3: roic is finally populated (it read a Finnhub key that never existed).
 // Sector medians 4: negative multiples and the company's own other share classes leave the peer group.
-export const SECTOR_MEDIANS_VERSION = 4;
+// Sector medians 5: the peers' median beta, the prior a stock's own beta is shrunk towards.
+export const SECTOR_MEDIANS_VERSION = 5;
 
 const FINANCIALS_TTL_MS     = 60 * 60 * 1000;
 const NEWS_TTL_MS           = 30 * 60 * 1000;
