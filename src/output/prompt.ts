@@ -357,10 +357,10 @@ function contextSection(f: StockFinancials, d: PromptData): string {
 
 **Was der Kurs bereits unterstellt**
 - Reverse DCF: ${d.reverseDCF.isPossible && d.reverseDCF.impliedGrowthRate !== null
-    ? `${fmtPct(d.reverseDCF.impliedGrowthRate)} FCF-Wachstum p.a. in Stufe 1 bei r=${fmtPct(d.reverseDCF.discountRate)}`
+    ? `${fmtPct(d.reverseDCF.impliedGrowthRate)} Umsatzwachstum in den ersten zwei Jahren (auslaufend) bei WACC ${fmtPct(d.reverseDCF.discountRate)}${d.reverseDCF.consensusGrowth !== null ? `, Konsens ${fmtPct(d.reverseDCF.consensusGrowth)}` : ''}`
     : 'nicht berechenbar'}
-- Reverse SVR: ${im
-    ? `Der heutige EV verlangt dauerhaft ${fmtPct(im.fcfMargin)} FCF-Marge auf ${fmtBig(im.revenueBase, cur)} Run-Rate-Umsatz bei ${fmtPct(im.revenueGrowth)} Wachstum (${im.growthSource}). Heute: NOPAT-Marge ${fmtPct(im.currentNopatMargin)}, FCF-Marge ${fmtPct(im.currentFcfMargin)}. ${im.interpretation}`
+- Verlangte Marge: ${im
+    ? `Der heutige Kurs verlangt eine operative Zielmarge von ${fmtPct(im.requiredMargin)} auf ${fmtBig(im.revenueBase, cur)} Umsatz bei ${fmtPct(im.revenueGrowth)} Wachstum (${im.growthSource}); gezeigt wurden bestenfalls ${fmtPct(im.achievableMargin)} (${im.achievableBasis ?? '—'}). ${im.interpretation}`
     : 'nicht berechenbar'}${seasonal}
 
 **Kursbild**

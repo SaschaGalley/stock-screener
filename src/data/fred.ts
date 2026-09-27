@@ -39,27 +39,32 @@ async function fetchLatestDecimal(seriesId: string, apiKey: string): Promise<num
  * monthly long-term rate series on FRED, published about three months behind.
  * The euro uses the Bund — the euro-area aggregate folds in Italian and Spanish
  * credit spreads, and a risk-free rate must not carry any.
+ *
+ * `issuer` is the government behind the yield, as Damodaran's country table
+ * names it: a Mexican or Indian government yield carries that government's
+ * default spread, which `ratesForCurrency` takes back out before the rate is
+ * called risk-free.
  */
 export const LOCAL_TEN_YEAR = {
-  EUR: 'IRLTLT01DEM156N',
-  GBP: 'IRLTLT01GBM156N',
-  CHF: 'IRLTLT01CHM156N',
-  JPY: 'IRLTLT01JPM156N',
-  CAD: 'IRLTLT01CAM156N',
-  AUD: 'IRLTLT01AUM156N',
-  SEK: 'IRLTLT01SEM156N',
-  NOK: 'IRLTLT01NOM156N',
-  DKK: 'IRLTLT01DKM156N',
-  KRW: 'IRLTLT01KRM156N',
-  NZD: 'IRLTLT01NZM156N',
-  PLN: 'IRLTLT01PLM156N',
-  CZK: 'IRLTLT01CZM156N',
-  HUF: 'IRLTLT01HUM156N',
-  ILS: 'IRLTLT01ILM156N',
-  MXN: 'IRLTLT01MXM156N',
-  ZAR: 'IRLTLT01ZAM156N',
-  CLP: 'IRLTLT01CLM156N',
-  INR: 'INDIRLTLT01STM',
+  EUR: { series: 'IRLTLT01DEM156N', issuer: 'Germany' },
+  GBP: { series: 'IRLTLT01GBM156N', issuer: 'United Kingdom' },
+  CHF: { series: 'IRLTLT01CHM156N', issuer: 'Switzerland' },
+  JPY: { series: 'IRLTLT01JPM156N', issuer: 'Japan' },
+  CAD: { series: 'IRLTLT01CAM156N', issuer: 'Canada' },
+  AUD: { series: 'IRLTLT01AUM156N', issuer: 'Australia' },
+  SEK: { series: 'IRLTLT01SEM156N', issuer: 'Sweden' },
+  NOK: { series: 'IRLTLT01NOM156N', issuer: 'Norway' },
+  DKK: { series: 'IRLTLT01DKM156N', issuer: 'Denmark' },
+  KRW: { series: 'IRLTLT01KRM156N', issuer: 'Korea' },
+  NZD: { series: 'IRLTLT01NZM156N', issuer: 'New Zealand' },
+  PLN: { series: 'IRLTLT01PLM156N', issuer: 'Poland' },
+  CZK: { series: 'IRLTLT01CZM156N', issuer: 'Czech Republic' },
+  HUF: { series: 'IRLTLT01HUM156N', issuer: 'Hungary' },
+  ILS: { series: 'IRLTLT01ILM156N', issuer: 'Israel' },
+  MXN: { series: 'IRLTLT01MXM156N', issuer: 'Mexico' },
+  ZAR: { series: 'IRLTLT01ZAM156N', issuer: 'South Africa' },
+  CLP: { series: 'IRLTLT01CLM156N', issuer: 'Chile' },
+  INR: { series: 'INDIRLTLT01STM',  issuer: 'India' },
 } as const;
 
 export type RateCurrency = keyof typeof LOCAL_TEN_YEAR;
@@ -121,12 +126,18 @@ export const FALLBACK_RATES: MarketRates = {
  * mature-market premium he applies everywhere before country risk, and ICE's
  * dollar indices are the deep market for rating spreads. A currency without a
  * FRED series keeps the dollar rate, as every stock did before. Yahoo quotes
- * London in pence ("GBp"), which counts in pounds.
+ * London in pence ("GBp"), which counts in pounds. `issuerDefaultSpread` is the
+ * payload's `currencyDefaultSpread`: what the currency's government pays over
+ * the US for its default risk.
  */
-export function ratesForCurrency<R extends MarketRates>(rates: R, currency: string | null | undefined): R {
+export function ratesForCurrency<R extends MarketRates>(
+  rates: R, currency: string | null | undefined, issuerDefaultSpread = 0,
+): R {
   const major = majorCurrency(currency);
   const local = major ? rates.localRiskFreeRates[major as RateCurrency] : undefined;
-  return local === undefined ? rates : { ...rates, riskFreeRate: local };
+  // A Mexican or Indian ten-year yield prices that government's default risk
+  // too; the risk-free rate is what is left once it is taken out.
+  return local === undefined ? rates : { ...rates, riskFreeRate: local - Math.max(0, issuerDefaultSpread) };
 }
 
 /**
@@ -232,7 +243,7 @@ export async function getMarketRates(apiKey?: string | null): Promise<FetchedRat
       fred('DAAA'),
       getImpliedERP(),
       Promise.all(RATING_BUCKETS.map((b) => fred(b.fredSeries))),
-      Promise.all(RATE_CURRENCIES.map((c) => fred(LOCAL_TEN_YEAR[c]))),
+      Promise.all(RATE_CURRENCIES.map((c) => fred(LOCAL_TEN_YEAR[c].series))),
     ]);
 
     const observed: ObservedRates = { creditSpreads: {}, localRiskFreeRates: {} };

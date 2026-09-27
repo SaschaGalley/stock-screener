@@ -64,7 +64,7 @@ const MarketRatesSchema = z.object({
   ]))),
   localRiskFreeRates: z.object(Object.fromEntries(RATE_CURRENCIES.map((c) => [
     c,
-    z.number().describe(`${c} ten-year government bond yield (decimal), FRED ${LOCAL_TEN_YEAR[c]}, monthly`),
+    z.number().describe(`${c} ten-year government bond yield (decimal), FRED ${LOCAL_TEN_YEAR[c].series}, monthly`),
   ]))),
 });
 

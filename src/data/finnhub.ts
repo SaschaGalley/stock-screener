@@ -124,31 +124,87 @@ const SAME_ISSUER_MARKET_CAP = 0.01;
  */
 const PRICED_MULTIPLES = new Set(['pe', 'evToEbitda', 'evToRevenue', 'priceToFCF', 'priceToSales', 'pb']);
 
-export async function getSectorMedians(symbol: string, apiKey: string): Promise<SectorMedians | null> {
+/** A peer this small against the company prices something else — a shell, not a comparable. */
+const MIN_PEER_SIZE = 0.02;
+
+/** Fewer usable peers than this and a grouping is not a peer group. */
+const MIN_GROUP = 3;
+
+type MetricResult = PromiseSettledResult<FinnhubMetricResponse>;
+
+/**
+ * One grouping's peers and their metrics, without the company itself under
+ * another share class and without firms a fiftieth of its size.
+ */
+async function peerGroup(
+  symbol: string, apiKey: string, grouping: 'subIndustry' | 'industry', ownCap: number | null,
+  metricFor: (p: string) => Promise<FinnhubMetricResponse>,
+): Promise<{ peers: string[]; metrics: MetricResult[] }> {
+  const raw = await fetchFinnhub(
+    `/stock/peers?symbol=${encodeURIComponent(symbol)}&grouping=${grouping}`, apiKey,
+  ) as string[];
+  if (!Array.isArray(raw)) return { peers: [], metrics: [] };
+  const candidates = raw.filter((p) => p !== symbol && !sameIssuer(symbol, p)).slice(0, 8);
+  const fetched = await Promise.allSettled(candidates.map(metricFor));
+  const keep = candidates.map((p, i) => {
+    const r = fetched[i];
+    if (ownCap === null || ownCap <= 0 || r.status !== 'fulfilled') return true;
+    const cap = toFiniteNumber(r.value?.metric?.marketCapitalization);
+    if (cap === null) return true;
+    if (Math.abs(cap - ownCap) / ownCap < SAME_ISSUER_MARKET_CAP) {
+      logger.debug(`Sector medians: ${p} is ${symbol} under another share class — dropped`);
+      return false;
+    }
+    return cap >= ownCap * MIN_PEER_SIZE;
+  });
+  return {
+    peers: candidates.filter((_, i) => keep[i]),
+    metrics: fetched.filter((_, i) => keep[i]),
+  };
+}
+
+/** A peer reading that found no peers to read. */
+function emptyPeerGroup(): SectorMedians {
+  return {
+    pe: null, evToEbitda: null, evToRevenue: null, priceToFCF: null, priceToSales: null,
+    forwardPriceToSales: null, runRatePriceToSales: null, pb: null,
+    operatingMargin: null, netMargin: null, roe: null, roic: null, revenueGrowthYoY: null,
+    peerCount: 0, peers: [], emptyGroup: true,
+  };
+}
+
+export interface SectorMedianOptions {
+  /**
+   * Whether a thin sub-industry may fall back to Finnhub's industry grouping.
+   * Finnhub files Berkshire and Mastercard in one "industry" with PayPal and a
+   * mortgage lender, and the sub-industry sorts that out for the payment
+   * networks — but for Berkshire it holds only shell companies a fraction of a
+   * percent of its size. For an insurer or a bank no peer group is the honest
+   * answer then, not the payment networks.
+   */
+  industryFallback?: boolean;
+}
+
+export async function getSectorMedians(
+  symbol: string, apiKey: string, opts: SectorMedianOptions = {},
+): Promise<SectorMedians | null> {
   try {
-    // 1. Fetch peer tickers
-    const peersRaw = await fetchFinnhub(
-      `/stock/peers?symbol=${encodeURIComponent(symbol)}&grouping=industry`, apiKey,
-    ) as string[];
-    if (!Array.isArray(peersRaw) || peersRaw.length === 0) return null;
-
-    // Exclude the stock itself and its other share classes, cap at 8 peers
-    let peers = peersRaw.filter((p) => p !== symbol && !sameIssuer(symbol, p)).slice(0, 8);
-
-    // 2. Fetch metrics for all peers in parallel, and our own for its market cap
+    // 1. Our own metrics, for the market cap the peers are measured against
     const metricFor = (p: string) =>
       fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(p)}&metric=all`, apiKey) as Promise<FinnhubMetricResponse>;
-    const [own, ...fetched] = await Promise.allSettled([metricFor(symbol), ...peers.map(metricFor)]);
-    const ownCap = own.status === 'fulfilled' ? toFiniteNumber(own.value?.metric?.marketCapitalization) : null;
-    const isTwin = (r: PromiseSettledResult<FinnhubMetricResponse>): boolean => {
-      if (ownCap === null || ownCap <= 0 || r.status !== 'fulfilled') return false;
-      const cap = toFiniteNumber(r.value?.metric?.marketCapitalization);
-      return cap !== null && Math.abs(cap - ownCap) / ownCap < SAME_ISSUER_MARKET_CAP;
-    };
-    const twins = new Set(peers.filter((_, i) => isTwin(fetched[i])));
-    for (const t of twins) logger.debug(`Sector medians: ${t} is ${symbol} under another share class — dropped`);
-    const metrics = fetched.filter((_, i) => !twins.has(peers[i]));
-    peers = peers.filter((p) => !twins.has(p));
+    const own = await metricFor(symbol).catch(() => null);
+    const ownCap = toFiniteNumber(own?.metric?.marketCapitalization);
+
+    // 2. The finest grouping that is a group: sub-industry, else industry
+    let { peers, metrics } = await peerGroup(symbol, apiKey, 'subIndustry', ownCap, metricFor);
+    const usable = (ms: MetricResult[]) => ms.filter((r) => r.status === 'fulfilled' && r.value?.metric).length;
+    if (usable(metrics) < MIN_GROUP && opts.industryFallback !== false) {
+      const wider = await peerGroup(symbol, apiKey, 'industry', ownCap, metricFor);
+      if (usable(wider.metrics) > usable(metrics)) ({ peers, metrics } = wider);
+    }
+    // Finnhub answered and nothing survived: no peer group, which is a reading —
+    // unlike a failed fetch, it must not be papered over with an older group.
+    if (peers.length === 0) return emptyPeerGroup();
 
     // 3. Collect valid values per metric
     const buckets: Record<string, number[]> = {

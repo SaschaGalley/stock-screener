@@ -1,11 +1,12 @@
 /**
- * Run-rate revenue: SVR, its seasonally adjusted twin, and the reverse SVR.
+ * Run-rate revenue: SVR, its seasonally adjusted twin, and the margin the
+ * price requires.
  *
  * The properties pinned here are the ones the numbers are only worth showing
  * for: steady growth cannot open a gap between SVR and its adjusted value, a
- * seasonal peak moves SVR but not the adjusted figure, the implied margin
+ * seasonal peak moves SVR but not the adjusted figure, the required margin
  * inverts back to the margin a firm was priced at, and it still answers for a
- * firm burning cash, where the FCF-based reverse DCF cannot.
+ * firm burning cash, where the forward DCF has nothing to converge to.
  */
 
 import assert from 'node:assert/strict';
@@ -104,68 +105,47 @@ describe('seasonally adjusted SVR', () => {
   });
 });
 
-describe('reverse SVR', () => {
-  it('recovers the FCF margin a firm was priced at, even while it burns cash', () => {
-    const margin = 0.2;
-    const base = financials();
-    const ev = calculateEVMultiples(base);
-    const runRateRevenue = base.marketCap / ev.seasonallyAdjustedValuationRatio!;
-
-    // Price the firm with the forward DCF at that margin on the same revenue path.
-    const dcf = calculateDCF(
-      { ...base, freeCashFlow: margin * runRateRevenue },
-      rates,
-      { growthRate: ev.latestQuarterYoYGrowth! },
-    );
-    const priced = financials({ price: dcf.fairValue!, marketCap: dcf.fairValue! * 10_000_000 });
-    const reverse = calculateReverseDCF(priced, rates);
-
-    assert.equal(reverse.isPossible, false);
-    assert.equal(reverse.impliedMargin?.growthSource, 'latest quarter YoY');
-    close(reverse.impliedMargin?.fcfMargin, margin);
-    close(reverse.impliedMargin?.currentFcfMargin, -20 / 90);
-    assert.equal(reverse.impliedMargin?.currentNopatMargin, null);
-    assert.match(reverse.impliedMargin!.interpretation, /No operating profit today/);
+describe('the margin the price requires', () => {
+  // A grower with a 10 % operating margin today and a 30 % YoY run rate.
+  const grower = (over: Partial<StockFinancials> = {}) => financials({
+    ebit: 9_000_000, trailingSource: 'quarters', bookValue: 3, ...over,
   });
 
-  it('judges the implied margin against the firm\'s own after-tax operating margin', () => {
-    const margin = 0.2;
-    const base = financials();
-    const ev = calculateEVMultiples(base);
-    const runRateRevenue = base.marketCap / ev.seasonallyAdjustedValuationRatio!;
-    const dcf = calculateDCF({ ...base, freeCashFlow: margin * runRateRevenue }, rates, { growthRate: ev.latestQuarterYoYGrowth! });
+  it('inverts the forward DCF back to the margin it was priced at', () => {
+    const f = grower();
+    const dcf = calculateDCF(f, rates);
+    const priced = { ...f, price: dcf.fairValue!, marketCap: dcf.fairValue! * 10_000_000 };
+    close(calculateReverseDCF(priced, rates).impliedMargin?.requiredMargin, dcf.targetMargin!, 1e-4);
+  });
 
-    /** Priced at a 20% margin, with EBIT set so today's after-tax operating margin is `nopatMargin`. */
-    const at = (nopatMargin: number) => calculateReverseDCF(financials({
-      price: dcf.fairValue!,
-      marketCap: dcf.fairValue! * 10_000_000,
-      ebit: (nopatMargin * 90_000_000) / (1 - 0.21),
-    }), rates).impliedMargin!;
+  it('still answers for a firm burning cash, and says there is no profit to hold it against', () => {
+    const im = calculateReverseDCF(grower({ ebit: -18_000_000 }), rates).impliedMargin!;
+    assert.ok(im.requiredMargin > 0);
+    assert.equal(im.achievableMargin, null);
+    assert.match(im.interpretation, /has not shown a profit/);
+  });
 
-    const comfortable = at(0.25);
-    const stretched = at(0.08);
-
-    close(comfortable.fcfMargin, margin);
-    close(comfortable.currentNopatMargin, 0.25);
-    assert.match(comfortable.interpretation, /^0\.8× .* holds even if margins slip/);
-    assert.match(stretched.interpretation, /^2\.5× .* step change/);
+  it('reads the requirement against the best margin shown', () => {
+    const f = grower();
+    const dcf = calculateDCF(f, rates);
+    const at = (price: number) => calculateReverseDCF({ ...f, price, marketCap: price * 10_000_000 }, rates).impliedMargin!;
+    assert.match(at(dcf.fairValue! * 0.5).interpretation, /holds even if margins slip/);
+    assert.match(at(dcf.fairValue! * 3).interpretation, /step change/);
   });
 
   it('prefers consensus revenue growth, capped like the DCF', () => {
-    const estimate = (revenueGrowth: number) => financials({
+    const estimate = (revenueGrowth: number) => grower({
       earningsEstimates: [{ period: '+1y', revenueGrowth }] as StockFinancials['earningsEstimates'],
     });
-
     const moderate = calculateReverseDCF(estimate(0.45), rates).impliedMargin;
     const extreme = calculateReverseDCF(estimate(0.90), rates).impliedMargin;
-
     assert.equal(moderate?.growthSource, 'analyst consensus');
     close(moderate?.revenueGrowth, 0.45);
     close(extreme?.revenueGrowth, 0.60);
   });
 
   it('has no answer without revenue', () => {
-    const none = financials({ quarterlyRevenues: [], revenue: null });
+    const none = grower({ quarterlyRevenues: [], revenue: null });
     assert.equal(calculateReverseDCF(none, rates).impliedMargin, null);
   });
 });

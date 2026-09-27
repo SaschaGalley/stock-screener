@@ -5,7 +5,9 @@ import { getNews, getBasicFinancials } from './data/finnhub.js';
 import { getOperatingLeaseLiabilities } from './data/edgar.js';
 import { getSectorMediansCached } from './sector-medians.js';
 import { getMacroBundle } from './data/macro.js';
-import { getMarketRates } from './data/fred.js';
+import { LOCAL_TEN_YEAR, RateCurrency, getMarketRates } from './data/fred.js';
+import { countryRiskFor, getCountryRiskTable } from './data/country-risk.js';
+import { majorCurrency } from './currencies.js';
 import { computeTechnicals } from './analysis/technical.js';
 import { deriveTechnicalSignals } from './analysis/signals.js';
 import {
@@ -77,6 +79,19 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
   if (bundle.financials.financialCurrency === 'USD' && (bundle.financials.leaseObligations ?? 0) > 0) {
     bundle.financials.operatingLeaseLiabilities = await getOperatingLeaseLiabilities(symbol);
   }
+  // What the headquarters country adds to a US-measured cost of capital, and
+  // what the trading currency's government yield carries over risk-free —
+  // recorded on the payload so a re-score of this day reads this day's table.
+  const countryRisk = await getCountryRiskTable();
+  if (countryRisk) {
+    const own = countryRiskFor(countryRisk, bundle.financials.country);
+    bundle.financials.countryRiskPremium   = own?.premium ?? null;
+    bundle.financials.countryDefaultSpread = own?.defaultSpread ?? null;
+    bundle.financials.marginalTaxRate      = own?.taxRate ?? null;
+    const major = majorCurrency(bundle.financials.tradingCurrency);
+    const issuer = major && major in LOCAL_TEN_YEAR ? LOCAL_TEN_YEAR[major as RateCurrency].issuer : null;
+    bundle.financials.currencyDefaultSpread = issuer ? countryRiskFor(countryRisk, issuer)?.defaultSpread ?? null : null;
+  }
   await writeFinancials(symbol, bundle.financials, runId);
 
   // News (best effort)
@@ -143,7 +158,7 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
   // shows. The 19 valuation models are computed here rather than only on
   // request, because their outputs are the series the whole store exists for.
   const sectorMedians = cfg.finnhubApiKey
-    ? await getSectorMediansCached(symbol, cfg.finnhubApiKey)
+    ? await getSectorMediansCached(symbol, cfg.finnhubApiKey, bundle.financials)
     : null;
 
   const technicalSignals = deriveTechnicalSignals(technicals, bundle.financials.price);

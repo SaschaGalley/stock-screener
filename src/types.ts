@@ -185,6 +185,12 @@ export const StockFinancialsSchema = z.object({
   wkn:          z.string().nullable().describe('Wertpapierkennnummer — 6-char German identifier; derived from ISIN for DE0 stocks'),
   country:      z.string().nullable().optional().describe('Country of the headquarters from Yahoo assetProfile — the country risk premium is read for it'),
 
+  // ── Country risk (Damodaran's table, relative to the United States) ─────────
+  countryRiskPremium:    z.number().nullable().optional().describe('Equity risk premium the headquarters country carries over the United States (decimal; slightly negative for Aaa countries) — added to the implied ERP, which is measured on the S&P 500'),
+  countryDefaultSpread:  z.number().nullable().optional().describe('Sovereign default spread of the headquarters country over the United States (decimal, ≥ 0) — added to the cost of debt'),
+  marginalTaxRate:       z.number().nullable().optional().describe('Marginal corporate tax rate of the headquarters country (decimal) — the rate a mature business converges to in the DCF'),
+  currencyDefaultSpread: z.number().nullable().optional().describe('Default spread of the government whose yield is the risk-free rate for the trading currency, over the United States (decimal, ≥ 0) — taken out of that yield before it is called risk-free'),
+
   // ── Finnhub-enriched ─────────────────────────────────────────────────────────
   roic:                z.number().nullable().describe('Return on invested capital for the latest fiscal year (decimal), from Finnhub series.annual.roic; caps the DCF terminal ROIC together with the peer median'),
   epsGrowth3Y:         z.number().nullable().describe('3-year EPS compound annual growth rate (decimal) from Finnhub epsGrowth3Y ÷ 100; preferred over TTM earningsGrowth in Graham Revised'),
@@ -418,26 +424,50 @@ export type TechnicalSignals = z.infer<typeof TechnicalSignalsSchema>;
 
 // ─── Result Types ─────────────────────────────────────────────────────────────
 
+export const DcfDistributionSchema = z.object({
+  p10: z.number().describe('10th percentile of value per share across the simulation'),
+  p25: z.number().describe('25th percentile'),
+  p50: z.number().describe('Median value per share across the simulation'),
+  p75: z.number().describe('75th percentile'),
+  p90: z.number().describe('90th percentile'),
+  probabilityAbovePrice: z.number().describe('Share of the simulated values above the current price (0–1) — what the valuation pillar reads'),
+  draws: z.number().describe('Simulated draws the percentiles are taken over'),
+});
+export type DcfDistribution = z.infer<typeof DcfDistributionSchema>;
+
 export const DCFResultSchema = z.object({
-  fairValue:          z.number().nullable().describe('Base-case 2-stage DCF fair value per share (FCFF discounted at WACC, equity-bridge applied: + cash − debt); null for banks, insurers and brokers'),
-  fairValueBear:      z.number().nullable().describe('Bear-case fair value: stage-1 growth × 0.5 (floored at terminal + 1pp), WACC + 2pp'),
-  fairValueBull:      z.number().nullable().describe('Bull-case fair value: stage-1 growth × 1.5 (capped at 75%), WACC − 2pp (kept 1pp above terminal growth)'),
-  discountRate:       z.number().describe('Discount rate used: WACC = E/V·(CAPM cost of equity) + D/V·kd·(1−tax)'),
-  costOfDebt:         z.number().nullable().describe('Pre-tax cost of debt kd (decimal): risk-free rate + the live ICE BofA spread for the synthetic rating; null for debt-free firms'),
-  syntheticRating:    z.enum(RATINGS as [Rating, ...Rating[]]).nullable().describe("Rating bucket the firm's interest coverage (EBIT ÷ interest) earns on Damodaran's table; null when unrated (priced as BBB) or debt-free"),
-  beta:               z.number().nullable().describe('Beta used for CAPM (capped at [0.8, 2.0] per SWS convention)'),
+  fairValue:          z.number().nullable().describe('Base-case value per share: ten years of free cash flow to the firm built from revenue, operating margin, tax and reinvestment, plus a terminal value, discounted mid-year at WACC and bridged to equity; null for banks, insurers, brokers and lenders, and for firms with no margin to converge to'),
+  fairValueBear:      z.number().nullable().describe('10th percentile of the simulated values per share'),
+  fairValueBull:      z.number().nullable().describe('90th percentile of the simulated values per share'),
+  distribution:       DcfDistributionSchema.nullable().describe('The value per share under 512 deterministic draws of growth, target margin, sales-to-capital, discount rate and terminal growth'),
+  discountRate:       z.number().nullable().describe('WACC for the first five years: E/V·(CAPM cost of equity) + D/V·kd·(1 − marginal tax)'),
+  terminalDiscountRate: z.number().nullable().describe('WACC the rate converges to by year ten: the same capital structure at beta 1 — a mature firm'),
+  costOfDebt:         z.number().nullable().describe('Pre-tax cost of debt kd (decimal): risk-free rate + the live ICE BofA spread for the synthetic rating + the headquarters country\'s default spread; null for debt-free firms'),
+  syntheticRating:    z.enum(RATINGS as [Rating, ...Rating[]]).nullable().describe("Rating bucket the firm's interest coverage (operating income ÷ interest) earns on Damodaran's table; null when unrated (priced as BBB) or debt-free"),
+  beta:               z.number().nullable().describe('Beta used for CAPM: Blume-adjusted (0.67 × raw + 0.33), bounded to 0.5–2.0'),
   riskFreeRate:       z.number().describe("Risk-free rate used (decimal): the ten-year government yield in the stock's trading currency, the Treasury for dollars"),
   equityRiskPremium:  z.number().describe("Equity risk premium used (Damodaran's implied ERP for the latest month, decimal)"),
-  stage1Growth:       z.number().describe('Stage-1 (years 1–5) FCF growth rate (decimal)'),
-  terminalGrowthRate: z.number().describe('Stable terminal growth rate after fade (decimal); capped at the risk-free rate — no firm outgrows the economy forever'),
-  terminalRoic:       z.number().describe("Return on new capital in perpetuity (decimal): the firm's ROIC capped at its peer median, never below WACC"),
-  terminalReinvestmentRate: z.number().describe('Share of terminal NOPAT reinvested to grow at the terminal rate: g ÷ terminal ROIC (decimal)'),
-  stage1Years:        z.number().describe('Number of years in stage 1 (high-growth, default 5)'),
-  fadeYears:          z.number().describe('Number of years for linear growth fade (default 5)'),
-  projectedFCFs:      z.array(z.number()).describe('Year-by-year projected free cash flows over the full horizon (stage1 + fade)'),
-  terminalValue:      z.number().nullable().describe('Terminal value at end of fade period: NOPAT(n+1) × (1 − g ÷ terminal ROIC) / (r − g); built on FCFF where NOPAT is not positive'),
-  enterpriseValue:    z.number().nullable().describe('Sum of PV(FCFs) + PV(terminal) — pre-equity-bridge enterprise value'),
-  netDebt:            z.number().nullable().describe('Total debt − total cash; subtracted from EV to get equity value'),
+  countryRiskPremium: z.number().nullable().describe('Premium the headquarters country adds over the United States (decimal)'),
+  revenueBase:        z.number().nullable().describe('Trailing twelve-month revenue the forecast starts from'),
+  growthYear1:        z.number().nullable().describe('Revenue growth in year one (decimal): consensus for the current fiscal year, else trailing'),
+  growthYear2:        z.number().nullable().describe('Revenue growth in year two (decimal): consensus for next fiscal year, else trailing; from year three it fades to terminal growth with a half-life of about two and a half years'),
+  growthSource:       z.enum(['analyst consensus', 'trailing twelve months', 'steady state']).nullable().describe('Where the growth path starts from'),
+  operatingMargin:    z.number().nullable().describe('Trailing operating margin the forecast starts from (decimal)'),
+  targetMargin:       z.number().nullable().describe('Operating margin reached by year five and held (decimal): the highest of today\'s, the recent years\' average and the consensus-implied one, else halfway to the peer median'),
+  targetMarginSource: z.enum(['current', 'own history', 'consensus', 'halfway to peers']).nullable().describe('Where the target margin comes from: today\'s, the recent years\' average, the margin next year\'s consensus earnings and revenue imply, or halfway to the peer median'),
+  salesToCapital:     z.number().nullable().describe('Revenue added per unit of capital reinvested: growth is paid for at this rate'),
+  salesToCapitalSource: z.enum(['history', 'balance sheet', 'default']).nullable().describe('How sales-to-capital was measured: revenue over operating capital (equity + debt − cash − investments), else the last years\' marginal ratio, else 1.5'),
+  taxRate:            z.number().nullable().describe('Effective tax rate the forecast starts from (decimal)'),
+  terminalTaxRate:    z.number().nullable().describe('Marginal rate it converges to by year ten (decimal)'),
+  terminalGrowthRate: z.number().describe('Stable growth after year ten (decimal): the second-year growth rate, held between half and all of the risk-free rate, and at least two points below the terminal WACC'),
+  terminalRoic:       z.number().nullable().describe('Return on new capital in perpetuity (decimal): target margin after tax × sales to capital, capped at own and peer ROIC, never below the terminal WACC'),
+  terminalReinvestmentRate: z.number().nullable().describe('Share of terminal NOPAT reinvested to grow at the terminal rate: g ÷ terminal ROIC (decimal)'),
+  forecastYears:      z.number().describe('Years forecast explicitly before the terminal value'),
+  projectedFCFs:      z.array(z.number()).describe('Year-by-year free cash flow to the firm over the forecast'),
+  terminalValue:      z.number().nullable().describe('Terminal value at the end of the forecast: NOPAT(n+1) × (1 − g ÷ ROIC) / (r − g)'),
+  enterpriseValue:    z.number().nullable().describe('Present value of the forecast cash flows and the terminal value'),
+  terminalShare:      z.number().nullable().describe('Share of enterprise value that sits in the terminal value (decimal)'),
+  netDebt:            z.number().nullable().describe('What stands between firm value and the common shareholders: debt − cash − non-operating investments + minority interest + preferred equity'),
   assumptions:        z.string().describe('Human-readable summary of key DCF assumptions'),
 });
 export type DCFResult = z.infer<typeof DCFResultSchema>;
@@ -467,33 +497,33 @@ export const RatioResultSchema = z.object({
 export type RatioResult = z.infer<typeof RatioResultSchema>;
 
 export const ImpliedMarginSchema = z.object({
-  fcfMargin:        z.number().describe('Reverse SVR: the steady margin on revenue (decimal) at which today\'s enterprise value is fair — free cash flow through the forecast, and in the terminal value the operating margin that also funds stable-growth reinvestment (g ÷ terminal ROIC), as in the forward DCF. Revenue follows the DCF\'s stage-1 + fade path and the margin applies from year one, so a firm still ramping up needs a higher mature margin than this'),
-  revenueBase:      z.number().describe('Annual revenue the path starts from: seasonally adjusted run-rate, else latest quarter × 4, else TTM'),
-  revenueGrowth:    z.number().describe('Stage-1 revenue growth used (decimal), fading to terminal growth exactly like the DCF'),
-  growthSource:     z.enum(['analyst consensus', 'latest quarter YoY', 'trailing 12 months']).describe('Where the revenue growth came from, in order of preference'),
-  discountRate:     z.number().describe('WACC used (decimal) — the cash flow is unlevered, as in the forward DCF'),
-  currentFcfMargin: z.number().nullable().describe('Trailing FCF / TTM revenue (decimal), for comparison with what the market requires'),
-  currentNopatMargin: z.number().nullable().describe('Today\'s after-tax operating margin: normalised EBIT × (1 − tax) / TTM revenue (decimal) — the same operating profit the DCF\'s terminal value starts from, and so the yardstick the implied margin is judged against. Null without EBIT or revenue'),
-  interpretation:   z.string().describe('Plain-English verdict on how the implied margin compares with today\'s after-tax operating margin; no verdict for firms without operating profit'),
+  requiredMargin:   z.number().describe('The operating margin (decimal, pre-tax) the business has to settle at for today\'s price to be fair, on the DCF\'s own revenue path, reinvestment and discount rate'),
+  achievableMargin: z.number().nullable().describe('The best operating margin already shown: today\'s, the recent years\' average, or the peer median (five peers or more)'),
+  achievableBasis:  z.enum(['current', 'history', 'peers']).nullable().describe('Which of the three the achievable margin is'),
+  ratio:            z.number().nullable().describe('Required ÷ achievable: 1 is priced for exactly what the business has shown'),
+  revenueBase:      z.number().describe('Trailing revenue the path starts from'),
+  revenueGrowth:    z.number().describe('Growth in the second forecast year (decimal), fading to terminal growth'),
+  growthSource:     z.enum(['analyst consensus', 'trailing twelve months', 'steady state']).describe('Where the revenue growth came from'),
+  discountRate:     z.number().describe('WACC used (decimal)'),
+  interpretation:   z.string().describe('Plain-English verdict on how the required margin compares with the achievable one'),
 });
 export type ImpliedMargin = z.infer<typeof ImpliedMarginSchema>;
 
 export const ReverseDCFResultSchema = z.object({
-  impliedGrowthRate: z.number().nullable().describe('Stage-1 FCF growth rate (decimal) implied by the current market price, solved by inverting the 2-stage DCF model'),
-  discountRate:      z.number().describe('WACC used (decimal) — the forward DCF\'s discount rate, cash flow and terminal value, so the implied growth is what that model would need'),
+  impliedGrowthRate: z.number().nullable().describe('Revenue growth (years one and two, decimal) at which the forward DCF equals the current price, margin path held'),
+  consensusGrowth:   z.number().nullable().describe('Consensus revenue growth for next fiscal year, for comparison; null without coverage'),
+  discountRate:      z.number().nullable().describe('WACC used (decimal) — the forward DCF\'s own'),
   terminalGrowthRate: z.number().describe('Terminal growth rate assumption used (decimal)'),
-  stage1Years:       z.number().describe('Stage-1 horizon in years (default 5)'),
-  fadeYears:         z.number().describe('Fade horizon in years (default 5)'),
-  interpretation:    z.string().describe('Plain-English verdict on whether the implied growth rate is realistic'),
-  isPossible:        z.boolean().describe('False when the reverse solve has no valid solution (e.g. negative FCF)'),
-  impliedMargin:     ImpliedMarginSchema.nullable().describe('The same inversion on revenue instead of FCF — solvable for pre-profit firms, where the FCF solve is not. Null without revenue or a growth rate'),
+  interpretation:    z.string().describe('Plain-English verdict on the implied growth'),
+  isPossible:        z.boolean().describe('False when the growth solve has no answer'),
+  impliedMargin:     ImpliedMarginSchema.nullable().describe('The margin the price requires — solvable for pre-profit firms, where the growth solve is not'),
 });
 export type ReverseDCFResult = z.infer<typeof ReverseDCFResultSchema>;
 
 export const PeterLynchResultSchema = z.object({
-  fairValue:            z.number().nullable().describe('Lynch fair value: EPS × growth rate (no dividend); requires positive growth'),
-  fairValueWithDividend: z.number().nullable().describe('Lynch fair value including dividend yield: EPS × (growth rate + dividend yield %)'),
-  growthRate:           z.number().nullable().describe('Growth rate used in the Lynch formula (decimal); sourced from earningsGrowth or revenueGrowth'),
+  fairValue:            z.number().nullable().describe('Lynch fair value: normalised EPS × (growth + dividend yield) in percent — a P/E equal to growth plus yield; growth capped at 25 %, and the rule abstains below 5 %'),
+  growthRate:           z.number().nullable().describe('Growth rate used (decimal): next-year consensus EPS growth, else the three-year EPS CAGR, capped at 25 %'),
+  growthSource:         z.enum(['consensus', '3y CAGR']).nullable().describe('Where the growth rate came from'),
   isUndervalued:        z.boolean().nullable().describe('True when fairValue exceeds the current price'),
   marginOfSafety:       z.number().nullable().describe('(fairValue − price) / price'),
 });
@@ -571,9 +601,10 @@ export const AltmanZResultSchema = z.object({
 export type AltmanZResult = z.infer<typeof AltmanZResultSchema>;
 
 export const DDMResultSchema = z.object({
-  fairValue:           z.number().nullable().describe('Gordon Growth Model fair value: D1 / (r − g); null when g ≥ r − 2% (model unstable) or no dividend'),
+  fairValue:           z.number().nullable().describe('Two-stage dividend discount value per share: five years at the dividend\'s own growth, five fading to stable growth, Gordon\'s formula after; null without a dividend'),
   dividendPerShare:    z.number().nullable().describe('Annual dividend per share: price × dividendYield'),
-  dividendGrowthRate:  z.number().nullable().describe('Perpetual dividend growth used (decimal): 5y dividend CAGR, else earnings or revenue growth, floored at 0 and capped at the risk-free rate like any stable growth'),
+  dividendGrowthRate:  z.number().nullable().describe('Dividend growth for the first five years (decimal): 5y dividend CAGR, else consensus EPS growth, else stable growth; bounded to 0–15 %. Fades to terminal growth over the next five'),
+  terminalGrowthRate:  z.number().describe('Stable dividend growth after year ten (decimal), capped at the risk-free rate'),
   requiredReturn:      z.number().nullable().describe("CAPM required return: riskFreeRate + beta × Damodaran's implied equity risk premium (decimal)"),
   isApplicable:        z.boolean().describe('False when the stock pays no dividend'),
 });
@@ -605,17 +636,20 @@ export type BeneishResult = z.infer<typeof BeneishResultSchema>;
 
 export const EPVResultSchema = z.object({
   fairValue:       z.number().nullable().describe('Earnings Power Value per share (Greenwald method): NOPAT / discountRate, plus cash − debt bridge; null for banks, insurers and brokers'),
-  normalizedEbit:  z.number().nullable().describe('Sustainable EBIT used as input (= reported EBIT; no D&A boost — true Greenwald uses cycle-averaged EBIT which we approximate with latest annual)'),
-  taxRate:         z.number().describe('Effective tax rate applied (decimal); uses computed taxRate or defaults to 21%'),
+  normalizedEbit:  z.number().nullable().describe('Sustainable operating income: the average operating margin of the last five fiscal years × trailing revenue'),
+  normalizedMargin: z.number().nullable().describe('That average operating margin (decimal)'),
+  taxRate:         z.number().describe('Tax rate applied (decimal): the higher of the effective and the marginal rate — a no-growth steady state pays the statutory rate'),
   wacc:            z.number().describe('WACC used to capitalise NOPAT (decimal): E/V·CAPM-ke + D/V·kd·(1−tax), kd from the synthetic rating'),
   marginOfSafety:  z.number().nullable().describe('(fairValue − price) / price'),
 });
 export type EPVResult = z.infer<typeof EPVResultSchema>;
 
 export const RIMResultSchema = z.object({
-  fairValue:      z.number().nullable().describe('Residual Income Model value per share: BV₀ + Σ PV(excess returns over cost of equity), 5-year horizon with terminal RI = 0'),
+  fairValue:      z.number().nullable().describe('Excess return value per share: book value + the present value of returns above the cost of equity, ROE fading over ten years to the cost of equity plus half of today\'s excess, then a perpetuity'),
   costOfEquity:   z.number().describe('CAPM cost of equity used as required return (decimal)'),
-  excessReturn:   z.number().nullable().describe('Current ROE minus cost of equity (decimal); positive = value-creating'),
+  sustainableRoe: z.number().nullable().describe('Return on equity the model starts from: normalised earnings over common equity, averaged with the last three fiscal years (decimal)'),
+  terminalRoe:    z.number().nullable().describe('Return on equity it settles at (decimal)'),
+  excessReturn:   z.number().nullable().describe('Sustainable ROE minus cost of equity (decimal); positive = value-creating'),
   bookValuePerShare: z.number().nullable().describe('Starting book value per share (BV₀)'),
   marginOfSafety: z.number().nullable().describe('(fairValue − price) / price'),
   isApplicable:   z.boolean().describe('False when bookValue ≤ 0 or ROE ≤ 0 (model not meaningful)'),
@@ -643,13 +677,15 @@ export const PeerMultiplesResultSchema = z.object({
   medianFairPrice: z.number().nullable().describe('Median fair price with one vote per fundamental priced (earnings, EBITDA, revenue, cash flow, book value); EV/Revenue and P/S share the revenue vote'),
   meanFairPrice:   z.number().nullable().describe('Mean of the same per-fundamental votes'),
   count:           z.number().describe('Number of multiples that produced a valid fair price'),
+  peerCount:       z.number().optional().describe('Peers the medians came from; below five the model counts half in the composite'),
   marginOfSafety:  z.number().nullable().describe('(medianFairPrice − price) / price'),
 });
 export type PeerMultiplesResult = z.infer<typeof PeerMultiplesResultSchema>;
 
 export const CompositeContributorSchema = z.object({
-  name:      z.string().describe('Model name (e.g. "DCF (2-Stage)", "Graham Revised", "Peer Multiples")'),
+  name:      z.string().describe('Model name (e.g. "DCF (Revenue-Driven)", "Graham Revised V*", "Peer Multiples")'),
   fairValue: z.number().describe('Fair value contributed by this model'),
+  weight:    z.number().optional().describe('How much this model counts in its tier\'s median: 1, or 0.5 for a known weakness (a DCF resting on its terminal value, a thin peer group, a rule of thumb)'),
 });
 export type CompositeContributor = z.infer<typeof CompositeContributorSchema>;
 
@@ -660,7 +696,7 @@ export const CompositeExclusionSchema = z.object({
 export type CompositeExclusion = z.infer<typeof CompositeExclusionSchema>;
 
 export const CompositeTierSchema = z.object({
-  median:         z.number().nullable().describe('Median fair value across this tier'),
+  median:         z.number().nullable().describe('Weighted median of the models\' log values across this tier — the geometric middle, where half and twice the price balance'),
   mean:           z.number().nullable().describe('Mean fair value across this tier'),
   p25:            z.number().nullable().describe('25th percentile of fair values in this tier'),
   p75:            z.number().nullable().describe('75th percentile'),
@@ -674,12 +710,13 @@ export type CompositeTier = z.infer<typeof CompositeTierSchema>;
 export const CompositeFairValueResultSchema = z.object({
   /**
    * Headline tier — market-aligned, growth-aware models. This is "the" fair value.
-   * Includes: DCF (2-Stage), Peer Multiples median, Peter Lynch, Analyst Consensus.
+   * Includes: DCF (Revenue-Driven) — or the excess return model for a lender — Peer Multiples median,
+   * Peter Lynch, Analyst Consensus.
    */
   primary:      CompositeTierSchema,
   /**
    * Conservative tier — value-investor lens (no-growth or asset-based assumptions).
-   * Includes: Graham Number, Graham Revised V*, EPV, RIM, DDM. Shown as a
+   * Includes: Graham Number, Graham Revised V*, EPV, the excess return model, the two-stage DDM. Shown as a
    * separate "value lens" — typically prints lower than primary for growth firms.
    */
   conservative: CompositeTierSchema,
@@ -725,6 +762,7 @@ export const SectorMediansSchema = z.object({
   revenueGrowthYoY: z.number().nullable().describe('Median YoY revenue growth of the peer group TTM (decimal)'),
   peerCount: z.number().describe('Number of peers whose data was successfully fetched'),
   peers:     z.array(z.string()).describe('List of peer ticker symbols used to compute medians'),
+  emptyGroup: z.boolean().optional().describe('True when Finnhub answered but no peer survived the filters (the company itself, shells a fiftieth of its size) — no peer group, as opposed to a failed fetch, and the current state until the next reading'),
 });
 export type SectorMedians = z.infer<typeof SectorMediansSchema>;
 

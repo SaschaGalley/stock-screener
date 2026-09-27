@@ -13,10 +13,12 @@ import { getSectorMedians } from '../src/data/finnhub.js';
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
 
-function serve(peers: string[], metrics: Record<string, Record<string, number>>) {
+function serve(peers: string[] | Record<string, string[]>, metrics: Record<string, Record<string, number>>) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
-    if (url.pathname.endsWith('/stock/peers')) return Response.json(peers);
+    if (url.pathname.endsWith('/stock/peers')) {
+      return Response.json(Array.isArray(peers) ? peers : peers[url.searchParams.get('grouping')!] ?? []);
+    }
     return Response.json({ metric: metrics[url.searchParams.get('symbol')!] ?? {} });
   }) as typeof fetch;
 }
@@ -41,5 +43,21 @@ describe('peer group', () => {
       P1: { peTTM: 12 }, P2: { peTTM: 18 }, P3: { peTTM: 22 }, P4: { peTTM: 25 }, P5: { peTTM: 30 },
     });
     assert.equal((await getSectorMedians('SELF', 'key'))?.pe, 22);
+  });
+
+  it('prefers the sub-industry and drops shells a fiftieth of the company\'s size', async () => {
+    serve({ subIndustry: ['BRK.A', 'CODI', 'CNNE'], industry: ['V', 'MA', 'PYPL'] }, {
+      'BRK-B': { marketCapitalization: 1_000_000 },
+      CODI: { marketCapitalization: 900, peTTM: 8 }, CNNE: { marketCapitalization: 400, peTTM: 30 },
+      V: { marketCapitalization: 600_000, peTTM: 30 }, MA: { marketCapitalization: 550_000, peTTM: 35 },
+      PYPL: { marketCapitalization: 70_000, peTTM: 15 },
+    });
+    // An insurer does not fall back to the payment networks: no group is the answer.
+    const insurer = await getSectorMedians('BRK-B', 'key', { industryFallback: false });
+    assert.equal(insurer?.emptyGroup, true);
+    assert.equal(insurer?.peerCount, 0);
+    // Anyone else may widen to the industry when the sub-industry is empty.
+    const other = await getSectorMedians('BRK-B', 'key');
+    assert.deepEqual(other?.peers, ['V', 'MA', 'PYPL']);
   });
 });

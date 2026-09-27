@@ -113,20 +113,21 @@ export function formatMarkdown(r: AnalysisResult): string {
     '',
     `| Model                       | Fair Value          | vs. Price            |`,
     `|-----------------------------|---------------------|----------------------|`,
-    fvRow(`DCF (2-Stage, g=${(dcf.stage1Growth * 100).toFixed(1)}%)`, dcf.fairValue, f.price, cur),
+    fvRow(`DCF (Revenue-Driven${dcf.growthYear2 !== null ? `, g=${(dcf.growthYear2 * 100).toFixed(1)}%` : ''})`, dcf.fairValue, f.price, cur),
     fvRow('Graham Number',          gn.grahamNumber,     f.price, cur),
     fvRow('Graham Revised (V*)',    gr.fairValue,        f.price, cur),
     fvRow('Peter Lynch',            pl.fairValue,        f.price, cur),
     fvRow('EPV (Greenwald)',        epv.fairValue,       f.price, cur),
-    fvRow('DDM (Gordon Growth)',    ddm.isApplicable ? ddm.fairValue ?? null : null, f.price, cur, ddm.isApplicable ? undefined : 'no dividend'),
-    fvRow('Residual Income (RIM)',  rim.isApplicable ? rim.fairValue : null, f.price, cur, rim.isApplicable ? undefined : 'no positive book/ROE'),
+    fvRow('DDM (Two-Stage)',    ddm.isApplicable ? ddm.fairValue ?? null : null, f.price, cur, ddm.isApplicable ? undefined : 'no dividend'),
+    fvRow('Excess Return (RIM)',    rim.isApplicable ? rim.fairValue : null, f.price, cur, rim.isApplicable ? undefined : 'no positive book/ROE'),
     fvRow('NCAV (Graham floor)',    ncav.isApplicable ? ncav.ncavPerShare : null, f.price, cur, ncav.isApplicable ? undefined : 'CA ≤ liabilities'),
     '',
     dcf.fairValue !== null
       ? chalk.gray(`  DCF assumptions: ${dcf.assumptions}`)
       : chalk.gray(`  DCF: ${dcf.assumptions}`),
-    dcf.fairValueBear !== null && dcf.fairValueBull !== null
-      ? chalk.gray(`  DCF bear/base/bull: ${P(dcf.fairValueBear)} / ${P(dcf.fairValue)} / ${P(dcf.fairValueBull)}`)
+    dcf.distribution !== null
+      ? chalk.gray(`  DCF simulation (${dcf.distribution.draws} draws): p10 ${P(dcf.distribution.p10)} · median ${P(dcf.distribution.p50)} · p90 ${P(dcf.distribution.p90)} · `
+          + `${(dcf.distribution.probabilityAbovePrice * 100).toFixed(0)} % of draws above the price`)
       : '',
     '',
 
@@ -136,14 +137,13 @@ export function formatMarkdown(r: AnalysisResult): string {
     '',
     rdcf.isPossible && rdcf.impliedGrowthRate !== null
       ? [
-          `  Implied FCF Growth: ${chalk.bold((rdcf.impliedGrowthRate * 100).toFixed(1) + '%/yr')}`,
+          `  Implied revenue growth: ${chalk.bold((rdcf.impliedGrowthRate * 100).toFixed(1) + '%/yr')} for two years, fading`,
           `  ${rdcf.interpretation}`,
         ].join('\n')
       : `  ${rdcf.interpretation}`,
     ...(rdcf.impliedMargin ? [
-      `  Implied Margin (Reverse SVR): ${chalk.bold(fmtPct(rdcf.impliedMargin.fcfMargin))} — ${rdcf.impliedMargin.interpretation}`,
-      chalk.gray('  free cash flow through the forecast; in steady state the same margin also funds the reinvestment growth needs'),
-      chalk.gray(`  on ${B(rdcf.impliedMargin.revenueBase)} run-rate revenue · g=${fmtPct(rdcf.impliedMargin.revenueGrowth)} (${rdcf.impliedMargin.growthSource}) fading to terminal · WACC ${fmtPct(rdcf.impliedMargin.discountRate)} · today: after-tax operating margin ${fmtPct(rdcf.impliedMargin.currentNopatMargin)}, FCF margin ${fmtPct(rdcf.impliedMargin.currentFcfMargin)}`),
+      `  Required operating margin: ${chalk.bold(fmtPct(rdcf.impliedMargin.requiredMargin))} — ${rdcf.impliedMargin.interpretation}`,
+      chalk.gray(`  on ${B(rdcf.impliedMargin.revenueBase)} trailing revenue · g=${fmtPct(rdcf.impliedMargin.revenueGrowth)} (${rdcf.impliedMargin.growthSource}) fading to terminal · WACC ${fmtPct(rdcf.impliedMargin.discountRate)} · best margin shown ${fmtPct(rdcf.impliedMargin.achievableMargin)} (${rdcf.impliedMargin.achievableBasis ?? '—'})`),
     ] : []),
     '',
 

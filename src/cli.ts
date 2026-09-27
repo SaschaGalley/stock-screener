@@ -350,7 +350,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
       : Promise.resolve(null),
     getMarketRates(cfg.fredApiKey),
     cfg.finnhubApiKey
-      ? getSectorMediansCached(symbol, cfg.finnhubApiKey)
+      ? getSectorMediansCached(symbol, cfg.finnhubApiKey, financials)
       : Promise.resolve(null),
     // Deliberately not bypassed by `force`: a re-run asks for a new verdict,
     // not new research, and the cache window exists so re-runs stop paying

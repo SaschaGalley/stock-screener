@@ -11,10 +11,11 @@
  * turn a fast page into a slow one. Everything reads through here now.
  */
 
-import { SectorMedians } from './types.js';
+import { SectorMedians, StockFinancials } from './types.js';
 import { logger } from './utils/logger.js';
 import { readSectorMedians, snapshotHistory, writeSectorMedians } from './db/store.js';
 import { getSectorMedians } from './data/finnhub.js';
+import { borrowsToLend } from './analysis/dcf.js';
 
 /**
  * Whether a stored peer-median payload is one.
@@ -28,11 +29,21 @@ export function hasPeers(m: SectorMedians | null | undefined): m is SectorMedian
   return !!m && (m.peerCount ?? 0) > 0;
 }
 
-/** The newest stored medians that actually came from peers, however old. */
+/**
+ * Whether a stored payload is a reading of the peer group at all: medians from
+ * peers, or an answer that there is no group (`emptyGroup`). Only a failed fetch
+ * is neither, and only a failed fetch may be stood in for by an older reading.
+ */
+export function isPeerReading(m: SectorMedians | null | undefined): m is SectorMedians {
+  return !!m && ((m.peerCount ?? 0) > 0 || m.emptyGroup === true);
+}
+
+/** The medians in force from the newest reading, however old; null when that reading found no group. */
 export async function lastGoodSectorMedians(symbol: string): Promise<SectorMedians | null> {
   const history = await snapshotHistory<SectorMedians>(symbol, 'sector_medians');
   for (let i = history.length - 1; i >= 0; i--) {
-    if (hasPeers(history[i].data)) return history[i].data;
+    const m = history[i].data;
+    if (isPeerReading(m)) return hasPeers(m) ? m : null;
   }
   return null;
 }
@@ -54,21 +65,26 @@ const inFlight = new Map<string, Promise<SectorMedians | null>>();
 export async function getSectorMediansCached(
   symbol: string,
   apiKey: string | undefined,
+  financials?: StockFinancials | null,
 ): Promise<SectorMedians | null> {
   if (!apiKey) return null;
 
   const stored = await readSectorMedians(symbol);
-  if (hasPeers(stored)) return stored;
+  if (isPeerReading(stored)) return hasPeers(stored) ? stored : null;
 
   const pending = inFlight.get(symbol);
   if (pending) return pending;
 
   const request = (async () => {
     try {
-      const medians = await getSectorMedians(symbol, apiKey);
+      // A lender's sub-industry is its peer group or it has none: the wider
+      // Finnhub industry files Berkshire with the payment networks.
+      const medians = await getSectorMedians(symbol, apiKey, {
+        industryFallback: financials ? !borrowsToLend(financials) : true,
+      });
       if (medians) {
         await writeSectorMedians(symbol, medians);
-        return medians;
+        return hasPeers(medians) ? medians : null;
       }
       return await lastGoodSectorMedians(symbol);
     } catch (e) {

@@ -38,18 +38,22 @@ export function computeAllMetrics(
   sectorMedians: SectorMedians | null,
 ): ComputedMetrics {
   // Discount in the currency the cash flows are in. Statements arrive converted
-  // into the trading currency, so that is the currency whose yield applies.
-  const rates = ratesForCurrency(marketRates ?? FALLBACK_RATES, financials.tradingCurrency);
+  // into the trading currency, so that is the currency whose yield applies —
+  // net of the default spread its government carries over the US.
+  const base = marketRates ?? FALLBACK_RATES;
+  const rates = ratesForCurrency(base, financials.tradingCurrency, financials.currencyDefaultSpread ?? 0);
+  // Graham's Y is a corporate AAA yield: the dollar AAA spread over Treasuries,
+  // on top of this currency's own government rate.
+  const aaaYield = rates.riskFreeRate + (base.aaaBondYield - base.riskFreeRate);
 
-  const sectorRoic       = sectorMedians?.roic ?? null;
-  const dcf              = calculateDCF(financials, rates, { sectorRoic });
+  const dcf              = calculateDCF(financials, rates, sectorMedians);
   const grahamNumber     = calculateGraham(financials);
   const ratios           = calculateRatios(financials);
-  const reverseDCF       = calculateReverseDCF(financials, rates, { sectorRoic });
+  const reverseDCF       = calculateReverseDCF(financials, rates, sectorMedians);
   const peterLynch       = calculatePeterLynch(financials);
   const evMultiples      = calculateEVMultiples(financials);
   const ruleOf40         = calculateRuleOf40(financials);
-  const grahamRevised    = calculateGrahamRevised(financials, rates.aaaBondYield);
+  const grahamRevised    = calculateGrahamRevised(financials, aaaYield);
   const piotroski        = calculatePiotroski(financials);
   const altmanZ          = calculateAltmanZ(financials);
   const ddm              = calculateDDM(financials, rates);

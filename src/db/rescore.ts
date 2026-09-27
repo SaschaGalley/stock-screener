@@ -47,11 +47,11 @@ import { readAppConfig } from '../app-config.js';
 import { FALLBACK_RATES, RATE_CURRENCIES, type MarketRates } from '../data/fred.js';
 import { RATING_BUCKETS } from '../data/ratings.js';
 import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { dirname, extname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { closePool, waitForDatabase } from './client.js';
-import { hasPeers } from '../sector-medians.js';
+import { hasPeers, isPeerReading } from '../sector-medians.js';
 import { readAppState, writeAppState } from './admin.js';
 import { migrate } from './migrate.js';
 import { syncCatalog } from './catalog.js';
@@ -166,8 +166,8 @@ export async function rescoreHistory(opts: {
     }
 
     const signals = await snapshotHistory<MarketSignals>(symbol, 'market_signals');
-    // Only payloads that came from peers — see `hasPeers`.
-    const peers   = (await snapshotHistory<SectorMedians>(symbol, 'sector_medians')).filter((r) => hasPeers(r.data));
+    // Only readings of the peer group — failed fetches skipped, see `isPeerReading`.
+    const peers   = (await snapshotHistory<SectorMedians>(symbol, 'sector_medians')).filter((r) => isPeerReading(r.data));
     const techSig = await snapshotHistory<TechnicalSignals>(symbol, 'technical_signals');
     const cards   = await scoreCardHistory(symbol);
 
@@ -200,7 +200,8 @@ export async function rescoreHistory(opts: {
         continue;
       }
 
-      const sectorMedians = asOf(peers, at);
+      const inForce = asOf(peers, at);
+      const sectorMedians = hasPeers(inForce) ? inForce : null;
       const marketSignals = asOf(signals, at);
 
       // Prefer the stored aggregate; derive it where the snapshot predates the
@@ -277,7 +278,11 @@ export async function storedInputs(symbol: string, now: number = Date.now()): Pr
   return {
     financials:       f,
     marketSignals,
-    sectorMedians:    asOf(peers.filter((r) => hasPeers(r.data)), now),
+    sectorMedians:    (() => {
+      // The reading in force, even when it found no group; failed fetches skipped.
+      const m = asOf(peers.filter((r) => isPeerReading(r.data)), now);
+      return hasPeers(m) ? m : null;
+    })(),
     technicalSignals: asOf(techSig, now)
       ?? (marketSignals?.technicals ? deriveTechnicalSignals(marketSignals.technicals, f.price) : null),
     rates:            ratesAt(rates, now),
@@ -308,9 +313,17 @@ export async function currentScoreCard(
  * The modules whose code decides a score card. A change to any of them changes
  * what the stored series would be if it were computed today.
  */
+/**
+ * Every module in these directories decides a score card — read from the
+ * directory rather than listed, because the list missed the first module added
+ * after it was written. A file here that does not score (the evaluation) only
+ * costs a background re-score when it changes.
+ */
+const SCORING_DIRS = ['analysis'];
+
+/** And these, outside them: the blend, the bands, the re-score itself, the peer and rate policy. */
 const SCORING_MODULES = [
-  'analysis/score', 'analysis/metrics', 'analysis/computeMetrics', 'analysis/data-quality',
-  'analysis/run-rate', 'analysis/signals', 'score-service', 'verdict', 'db/rescore', 'sector-medians',
+  'score-service', 'verdict', 'db/rescore', 'sector-medians', 'currencies', 'data/fred', 'data/ratings',
 ];
 
 /**
@@ -326,7 +339,16 @@ export function scoringFingerprint(): string {
   const root = dirname(dirname(here));
   const ext = extname(here);
   const hash = createHash('sha256');
-  for (const m of SCORING_MODULES) {
+  const inDirs = SCORING_DIRS.flatMap((dir) => {
+    try {
+      return readdirSync(join(root, dir))
+        .filter((file) => file.endsWith(ext) && !file.endsWith(`.d${ext}`))
+        .map((file) => `${dir}/${file.slice(0, -ext.length)}`);
+    } catch {
+      return [`${dir}:missing`];
+    }
+  });
+  for (const m of [...inDirs.sort(), ...SCORING_MODULES]) {
     try {
       hash.update(m).update(readFileSync(join(root, `${m}${ext}`)));
     } catch {

@@ -195,39 +195,39 @@ Pass `--search` without a value to auto-select the native search for the active 
 
 | # | Model | Method |
 |---|-------|--------|
-| 1 | **2-Stage DCF (FCFF)** | FCFF (FCF + after-tax interest where interest sits in operating cash flow) → stage-1 growth (analyst-forward, capped) → linear fade → terminal growth capped at the risk-free rate, paying for itself: TV = NOPAT × (1 − g ÷ ROIC) / (WACC − g), terminal ROIC = own ROIC capped at the peer median, never below WACC. WACC from live β, Damodaran's implied ERP, the local-currency risk-free rate and a cost of debt from the synthetic rating (interest coverage → live ICE BofA spread). Equity bridge (− debt + cash). Not applied to banks, insurers and brokers. |
-| 2 | **Reverse DCF + Reverse SVR** | Binary search for FCF growth implied by the current price, on the forward DCF's own WACC, FCFF and terminal value. Reverse SVR inverts the same path on revenue instead: the steady margin at which today's EV is fair (free cash flow through the forecast, and in steady state also funding the reinvestment growth needs), on run-rate revenue growing at consensus (else latest-quarter YoY, else TTM) growth, and judged as a multiple of today's after-tax operating margin rather than against fixed bands. Works for pre-profit firms, where the FCF solve has no answer. |
-| 3 | **Graham Number** | `√(22.5 × EPS × Book Value)` |
-| 4 | **Graham Revised (V\*)** | `EPS × (8.5 + 2g) × 4.4 / AAA_yield` — live FRED rate |
-| 5 | **Peter Lynch** | `EPS × growth_rate_pct`, prefers analyst-forward growth |
-| 6 | **EPV (Greenwald)** | Normalised EBIT × (1 − tax) / WACC + cash − debt; not applied to banks, insurers and brokers |
-| 7 | **DDM** | Gordon Growth with CAPM required return; perpetual dividend growth capped at the risk-free rate |
-| 8 | **RIM (Residual Income / EBO)** | Book value + Σ excess returns over cost of equity |
+| 1 | **DCF (revenue-driven, simulated)** | Revenue grows along the consensus path (current and next fiscal year) and fades to stable growth by year ten with a half-life of ~2.5 years; the operating margin moves over five years from today's to a target (the consensus-implied margin, else the recent years' average, else halfway to the peer median); tax converges to the country's marginal rate; growth is paid for with reinvestment at the firm's sales-to-capital ratio (revenue over tangible operating capital). Ten years of FCFF, mid-year discounting, terminal value NOPAT × (1 − g ÷ ROIC) / (WACC − g). 512 deterministic draws over growth, target margin, sales-to-capital, discount rate and terminal growth give a distribution and the probability that the value exceeds the price. Not applied to banks, insurers, brokers and lenders. |
+| 2 | **Reverse DCF + margin the price requires** | The same model run backwards: the revenue growth (years 1–2) at which it equals today's price, beside the consensus; and the target operating margin the price requires, held against the best margin already shown (today's, the recent years', or the peer median). Works for pre-profit firms. |
+| 3 | **Graham Number** | `√(22.5 × EPS × Book Value)` on normalised earnings per diluted share |
+| 4 | **Graham Revised (V\*)** | `EPS × (8.5 + 2g) × 4.4 / Y` — Y the AAA spread over Treasuries on top of the stock's own currency's government yield; g the 3-year EPS CAGR, capped at 15 % |
+| 5 | **Peter Lynch** | `EPS × (g + dividend yield)` in percent, g the next-year consensus EPS growth (else the 3-year CAGR), capped at 25 %, abstaining below 5 % or on a falling consensus |
+| 6 | **EPV (Greenwald)** | Average operating margin of the last five fiscal years × trailing revenue, after the marginal tax rate, capitalised at WACC, plus the equity bridge; not applied to lenders |
+| 7 | **DDM (two-stage)** | Dividend grows at its own five-year rate (≤ 15 %) for five years, fades to stable growth over five, Gordon after; CAPM required return |
+| 8 | **Excess Return (RIM)** | Book value + PV of returns above the cost of equity, ROE fading over ten years to the cost of equity plus half of today's excess, then a perpetuity. The headline model for banks, insurers and lenders |
 | 9 | **NCAV (Graham Net-Net)** | Current assets − total liabilities, ⅔ × NCAV buy threshold |
-| 10 | **Peer Multiples** | P/E, EV/EBITDA, EV/Revenue, P/FCF, P/B, P/S vs Finnhub sector medians — implied fair price per multiple; the median gives each fundamental one vote, so EV/Revenue and P/S share revenue's |
-| 11 | **Composite Fair Value** | Median + IQR over all *applicable* models, split into Primary (market-aligned) and Conservative (value-investor) tiers. Sanity-bounded 0.02× – 30× of price. |
+| 10 | **Peer Multiples** | P/E, EV/EBITDA, EV/Revenue, P/FCF, P/B, P/S vs Finnhub sub-industry medians (industry where the sub-industry is thin, except for financials); peers a fiftieth of the company's size, its own other share classes and negative multiples are left out; lenders are priced on P/E and P/B only. The median gives each fundamental one vote |
+| 11 | **Composite Fair Value** | Primary (market-aligned) and Conservative (value-investor) tiers, each the weighted median of the models' log values — a DCF resting on its terminal value, a peer group under five and Lynch's rule of thumb count half. The valuation pillar aggregates the same models held to 0.4–2.5× of the price, as a weighted mean of logs |
 | 12 | **EV Multiples** | EV/EBITDA, EV/Revenue, EV/FCF, P/FCF, P/S TTM, forward P/S |
 | 13 | **Simple Valuation Ratio (P/S Run-Rate)** | `marketCap / (latest_quarter_revenue × 4)` — reacts to growth inflections faster than TTM P/S. A seasonally adjusted twin (last four quarters grown at the latest quarter's YoY rate) flags quarters that are seasonal highs or lows. Benchmarked against a peer run-rate P/S: each peer's P/S TTM converted with its latest-quarter growth |
-| 14 | **Rule of 40** | Revenue growth % + operating margin % |
-| 15 | **Piotroski F-Score** | 9-signal fundamental quality screen (F1–F9); F7 compares weighted-average share counts year over year |
-| 16 | **Altman Z-Score** | Original (manufacturing) or Modified Z′ (services/tech) |
-| 17 | **Interest Coverage** | EBIT / interest expense |
+| 14 | **Rule of 40** | Trailing revenue growth % + operating margin % |
+| 15 | **Piotroski F-Score** | 9-signal fundamental quality screen (F1–F9); F5 passes a firm with no debt in either year, F7 compares weighted-average share counts year over year |
+| 16 | **Altman Z-Score** | Original Z (manufacturing) or Z″ (everything else) |
+| 17 | **Interest Coverage** | Trailing operating income / interest; unknown — not excellent — where there is debt but no interest reported |
 | 18 | **Sortino Ratio** | Risk-adjusted return using downside deviation, live risk-free rate |
-| 19 | **Beneish M-Score** | 8-variable earnings-manipulation detector, gated on min variable coverage |
+| 19 | **Beneish M-Score** | 8-variable earnings-manipulation detector on the newest fiscal year against the one before, gated on min variable coverage; one reading (`beneishReading`) for every consumer |
 
 **The conservative tier only counts models that fit the company.** Measured
 over the watchlist, its median sat below 0.3× the price for 20 of 31 stocks —
 less a value lens than a price-to-book ratio in disguise, because three of its
 five models were being run outside the firms they describe:
 
-- **Graham Number and RIM abstain above 40 % ROE** (`BOOK_ANCHOR_MAX_ROE`). Both
-  start from book value, which stops being the capital base once a company has
-  handed it back through buybacks or never needed much. The Graham Number is
-  √(22.5 · EPS · BVPS), i.e. a function of P/E × P/B alone; RIM capped ROE at
-  30 % *and* kept the shrunken book, and valued Mastercard (ROE 241 %) at 3 % of
-  its price.
-- **DDM abstains below a 40 % payout ratio** (`DDM_MIN_PAYOUT`). Gordon's model
-  values the dividend stream and nothing else — the business itself for a firm
+- **Graham Number and the excess return model abstain above 40 % ROE**
+  (`BOOK_ANCHOR_MAX_ROE`) outside the financials. Both start from book value,
+  which stops being the capital base once a company has handed it back through
+  buybacks or never needed much. The Graham Number is √(22.5 · EPS · BVPS),
+  i.e. a function of P/E × P/B alone; the old RIM capped ROE at 30 % *and* kept
+  the shrunken book, and valued Mastercard (ROE 241 %) at 3 % of its price.
+- **DDM abstains below a 40 % payout ratio** (`DDM_MIN_PAYOUT`). A dividend
+  model values the dividend stream and nothing else — the business itself for a firm
   paying out most of its earnings, a rounding error for NVIDIA (1 %) or
   Alphabet (4 %), which it priced at 4 % of the share price.
 - **The value-lens criterion needs two surviving models**
@@ -239,6 +239,83 @@ Graham's V* and EPV stay for everyone: they value earnings, not the balance
 sheet, and a no-growth value that sits far below the price is exactly what the
 lens is for. Where book value is the right anchor and the price is simply far
 above it — Tesla, AMD, ServiceNow at 0.05–0.13× — the reading is unchanged.
+
+### The DCF is built from revenue
+
+The first DCF grew this year's free cash flow at next year's consensus *EPS*
+growth for five years. On the watchlist that produced three kinds of error:
+
+- **EPS growth is not cash-flow growth.** It carries buybacks, tax changes and
+  margin recoveries. Honeywell's consensus EPS grew 20 % on revenue up 2 %, and
+  five years of that priced it at 3.2× its share price.
+- **A forecast the code disliked was replaced by the past.** A negative
+  consensus was discarded and the three-year history took its place. Novo
+  Nordisk, with analysts expecting earnings to fall 3 %, was compounded at 24 %
+  a year and valued at 4.4× its price; Alphabet, at 3.3×, the same way.
+- **It jumped.** Today's reinvestment rate was assumed for ten years and then
+  replaced overnight by the steady-state one in the terminal value.
+
+So `src/analysis/dcf.ts` builds the forecast the way Damodaran does. Revenue
+follows the consensus for two years and then fades towards stable growth with
+a half-life of about two and a half years — revenue growth is far less
+persistent than it looks (Chan, Karceski and Lakonishok, 2003). The operating
+margin moves in five years from today's to a target. Where the consensus
+expects a different margin — earnings growing faster or slower than revenue —
+that is the target. The target is derived from growth rates only, because
+Yahoo quotes a foreign listing's EPS estimates in whatever unit the analysts use
+(Alibaba's in yuan per ADS, Sanofi's in euros per ordinary share). Otherwise the
+target is the firm's recent average, or halfway to the peer median. Tax moves
+to the country's marginal rate. Every dollar of growth is paid for at the
+firm's sales-to-capital ratio: revenue over tangible operating capital, so
+AMD's Xilinx goodwill does not make its organic growth look three times as
+expensive as it is.
+
+Free cash flow is what is left. The model never reads this year's free cash
+flow at all, so a capex spike or a working-capital release cannot become a
+valuation. Stock compensation is a cost, because the operating margin is after
+it.
+
+The rest of the discounting follows from the same review:
+
+| Input | Now | Why |
+|---|---|---|
+| Beta | Blume-adjusted (0.67 × raw + 0.33), within 0.8–2.0 | A five-year regression beta drifts a third of the way to 1 in the next window. A European ADR against the S&P 500 read 0.28 and discounted Sanofi at 7 % |
+| Equity premium | Damodaran's implied ERP + the headquarters country's premium over the US | The implied ERP is measured on the S&P 500. Nu and MercadoLibre were being discounted as if they operated in Ohio |
+| Local risk-free rate | The currency's ten-year yield less its government's default spread over the US | A Mexican or Indian yield prices that government's credit risk too |
+| Cost of debt | Risk-free + rating spread + the country's default spread | — |
+| Terminal WACC | Beta 1, debt capped at 30 % of capital (`MATURE_MAX_DEBT_SHARE`) | Fresenius Medical's 50 % debt put its terminal WACC at 6.8 % against 5.2 % growth, a perpetuity worth 60 years of profit |
+| Stable growth | The second-year growth rate, held between half and all of the risk-free rate, and two points under the terminal WACC | No firm outgrows the economy for ever, and one the consensus has growing at 3 % does not accelerate into perpetuity |
+
+The model answers with a distribution. Five inputs are uncertain: growth
+(±25 % of the rate + 3 points), the target margin (±20 %), sales-to-capital
+(±30 %), the discount rate (±1 point) and terminal growth (up to 1.5 points
+below the risk-free rate). 512 draws from a Halton sequence give the same
+answer every run and every re-score (`sampling.ts`). The share of draws above
+the price is kept as `distribution.probabilityAbovePrice`, and p10/p90 replace
+the old fixed ±50 % bear and bull cases.
+
+Only an implausibly *high* value counts as a data anomaly now that shares and
+currencies are reconciled upstream. A value near nothing is an answer — Intel's
+foundry build-out consumes every dollar the forecast earns — and discarding it
+had left a peer multiple to speak for the whole valuation.
+
+**Banks, insurers and lenders** get the excess return model instead: book value
+plus the return earned above the cost of equity, fading over ten years to the
+cost of equity plus the durable half of today's excess. A lender is anything
+filed as a bank, insurer or broker, or a financial company paying at least 15 %
+of revenue in interest. The old residual-income model stopped excess returns
+dead after year five and so priced every good bank at little above its book.
+Finnhub's sub-industry for Berkshire holds only shell companies, dropped by the
+size filter, and an insurer does not fall back to the industry grouping of
+payment networks. No peer group is the honest answer there.
+
+**Aggregating the models.** Each tier's published median is the weighted
+median of the models' logs, where a model at half the price and one at twice it
+balance. The valuation pillar holds every model to 0.4–2.5× of the price first
+and then takes the weighted *mean* of the logs. A median over two models is
+whichever one weighs more, so Intel's half-weight DCF next to a full-weight peer
+multiple had come out as the peer multiple alone. The bounded mean lets both
+speak and neither shout.
 
 ## Score and verdict
 
@@ -295,30 +372,29 @@ Three properties the code is built to keep:
 
 Four of the five valuation criteria ask *what is it worth* from our own
 assumptions. The fifth (`market-implied`, 20 % of the pillar) inverts the
-question the way a growth investor would: take the consensus revenue path as
-given and solve for the steady margin at which today's enterprise value is fair
-— the reverse SVR — then hold that against the best margin the business has
-**already shown**: after-tax operating margin or free-cash-flow margin, whichever
-is higher, or the peer median after tax when there are at least five peers.
+question the way a growth investor would: hold the DCF's revenue path,
+reinvestment and discount rate, solve for the operating margin the business has
+to settle at for today's price to be fair, and hold that against the best
+margin it has **already shown** — today's, the average of its recent fiscal
+years, or the peer median when there are at least five peers.
 
 The reading is log-symmetric around 1: priced for exactly the achievable margin
-reads 5, twice it reads 0, half of it reads 10. Measured over the watchlist:
-GOOGL requires 12 % against 30 % shown (10/10), NVIDIA 31 % against 48 %, Tesla
-82 % against 5 % (0/10). Rank correlation with the other four criteria 0.54 —
-related, as it should be, but mostly information they did not carry.
+reads 5, twice it reads 0, half of it reads 10. On the watchlist's stored
+payloads: Alphabet requires 38 % against 31 % shown, NVIDIA 42 % against 59 %,
+Tesla 64 % against 7 %.
 
 Two choices worth knowing:
 
-- **Margin, not the reverse DCF's implied growth.** The reverse DCF solves for
-  *free-cash-flow* growth, and the only forward number to hold that against is
-  *revenue* growth; the two agree only while margins are stable. Intel
-  "required 64 % growth against 13 % consensus" because its free cash flow was
-  depressed, not because its price was absurd. Solving for the margin on the
-  consensus revenue path compares like with like.
-- **The best shown margin, not the operating one.** Operating margin alone
-  punished the very firms the lens is for: UiPath earns 3 % GAAP and 31 % free
-  cash flow, and the requirement is itself a free-cash-flow margin. Peer medians
-  only from five peers up — thin groups produced medians from −53 % to 1.5 % for
+- **Margin, not the implied growth.** The growth the price requires is solved
+  and shown beside the consensus, but it is not scored: growth is worth nothing
+  without the margin it is earned at, and at a low one more of it lowers the
+  value. The margin compares like with like.
+- **Operating margin, after stock compensation.** The requirement is the
+  forward model's own margin, which is after stock compensation, so the
+  yardstick is too. The first version compared a free-cash-flow requirement
+  with a free-cash-flow margin, and free cash flow adds stock compensation back:
+  UiPath "earned" 31 % against 3 % GAAP. Peer medians still count only from
+  five peers up — thin groups produced medians from −53 % to 1.5 % for
   companies nobody would call loss-making.
 
 ### A liability that is not a debt
@@ -485,15 +561,17 @@ same week it placed $1.5 B of notes. `ALTMAN_EXCLUDED_SECTORS` makes the
 criterion abstain there; interest coverage and leverage carry the pillar.
 
 **An uncorroborated model that lands far from the price is not a valuation.**
-With two or three models a wild one is medianed down by its neighbours; with one
-there is nothing to correct it, and the valuation ramp tops out at +60 % margin
-of safety — so a model claiming a stock is worth five times its price scored
-exactly what a solidly cheap one does. Rubrik's lone DCF put fair value at
-$522.81 against $102.23 and took the top of the ranking with it; Fresenius
-Medical's lone Peter Lynch said $101.04 against $23.84. A single model is
-weighed between 0.4× and 2.5× of the price and abstains outside that, which
-costs coverage and therefore confidence — Rubrik went from a 10/10 valuation to
-no valuation at all, which is the honest reading.
+The valuation ramp tops out at +60 % margin of safety, so a model claiming a
+stock is worth five times its price scored exactly what a solidly cheap one
+does. Rubrik's lone DCF put fair value at $522.81 against $102.23 and took the
+top of the ranking with it; Fresenius Medical's lone Peter Lynch said $101.04
+against $23.84. A single model is weighed between 0.4× and 2.5× of the price
+(`FAIR_VALUE_BOUNDS`) and abstains outside that, which costs coverage and
+therefore confidence. With two or more models, each is held to the same bounds
+before the weighted mean of their logs is taken. The old code's claim that a
+wild model is "medianed down by its neighbours" was false for two: their median
+is their mean, and Berkshire's pair of a mis-grouped peer multiple and an
+uncapped Lynch value came to +442 %.
 
 The M-Score also stands down entirely for a lender, where receivables are the
 product rather than a by-product of selling something: DSRI asks whether

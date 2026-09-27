@@ -43,7 +43,10 @@ import {
   NarrativeDimensions,
 } from '../types.js';
 import { ComputedMetrics } from './computeMetrics.js';
-import { ANALYST_CONSENSUS_MODEL, borrowsToLend, reliableMargin } from './metrics.js';
+import {
+  ANALYST_CONSENSUS_MODEL, BeneishReading, FAIR_VALUE_BOUNDS, aggregateFairValue, beneishReading, reliableMargin,
+} from './metrics.js';
+import { valuationBasis } from './basis.js';
 import { worstSeverity } from './data-quality.js';
 import { fmt, fmtBig, fmtPct, fmtPrice, fmtSignedPct } from '../format.js';
 import { toFiniteNumber } from '../utils/num.js';
@@ -231,19 +234,18 @@ function relativeMultiple(own: number | null | undefined, median: number | null 
 /**
  * How far a *lone* model may sit from the price and still be a valuation.
  *
- * With two or three models a wild one is medianed down by its neighbours. With
- * one there is nothing to correct it, and the ramp tops out at +60 % margin of
- * safety — so a model saying a stock is worth five times its price scores
- * exactly what a solidly cheap one does. Rubrik's lone DCF put fair value at
- * $522.81 against a $102.23 price and took the top of the ranking with it;
- * Fresenius Medical's lone Peter Lynch said $101.04 against $23.84.
+ * With two or three models a wild one is held to the bounds and medianed with
+ * its neighbours. With one there is nothing to correct it, and the ramp tops
+ * out at +60 % margin of safety — so a model saying a stock is worth five times
+ * its price scored exactly what a solidly cheap one does. Rubrik's lone DCF put
+ * fair value at $522.81 against a $102.23 price and took the top of the ranking
+ * with it; Fresenius Medical's lone Peter Lynch said $101.04 against $23.84.
  *
- * Between 0.4× and 2.5× of the price an uncorroborated model is making a claim
- * worth weighing. Outside it, it is extrapolating, and the criterion abstains
- * rather than awarding full marks for an arithmetic accident.
+ * Inside the bounds an uncorroborated model is making a claim worth weighing.
+ * Outside them it is extrapolating, and the criterion abstains rather than
+ * awarding full marks for an arithmetic accident. The bounds are the ones every
+ * model is held to before aggregation (`FAIR_VALUE_BOUNDS`).
  */
-const LONE_MODEL_BOUNDS = { low: 0.4, high: 2.5 } as const;
-
 export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResult): {
   models: CompositeFairValueResult['primary']['models'];
   fair:   number | null;
@@ -254,14 +256,16 @@ export function intrinsicValue(f: StockFinancials, comp: CompositeFairValueResul
   if (models.length === 0 || !(f.price > 0)) {
     return { models, fair: null, mos: null, pct: null };
   }
-  const fair = median(models.map((m) => m.fairValue));
-  if (fair === null) return { models, fair: null, mos: null, pct: null };
-
   // Corroboration is what makes an outlier survivable; one model has none.
-  const ratio = fair / f.price;
-  if (models.length === 1 && (ratio < LONE_MODEL_BOUNDS.low || ratio > LONE_MODEL_BOUNDS.high)) {
-    return { models, fair: null, mos: null, pct: null };
+  if (models.length === 1) {
+    const ratio = models[0].fairValue / f.price;
+    if (ratio < FAIR_VALUE_BOUNDS.low || ratio > FAIR_VALUE_BOUNDS.high) return { models, fair: null, mos: null, pct: null };
   }
+  // Each model held to the bounds, then the weighted median of their logs: a
+  // median over two numbers is their mean, and Berkshire's pair of a broken
+  // peer multiple and an uncapped Lynch value came to +442 %.
+  const fair = aggregateFairValue(f.price, models, FAIR_VALUE_BOUNDS);
+  if (fair === null) return { models, fair: null, mos: null, pct: null };
 
   return {
     models,
@@ -403,101 +407,49 @@ export function readAltman(
 
 // ── Reading the M-Score ──────────────────────────────────────────────────────
 
-/**
- * Sales growth beyond what the M-Score was fitted on.
- *
- * Beneish estimated the model on Compustat filers whose manipulator sample
- * averaged an SGI near 1.6; the coefficient on SGI is +0.892 and the function is
- * linear, so a company growing revenue thirteenfold contributes +21 to its own
- * score on the growth term alone. Ondas prints 16.97 against a threshold of
- * −1.78. That is not a measurement, it is a linear model evaluated two orders of
- * magnitude outside its estimation range, and it should not be allowed to cap a
- * verdict.
- */
-const BENEISH_SGI_OUT_OF_SAMPLE = 3.0;
+export type { BeneishReading } from './metrics.js';
 
-/** Growth at which the SGI term starts to dominate the score. */
-const BENEISH_SGI_GROWTH = 1.3;
-
-export type BeneishReading =
-  | 'not-applicable'    // a lender: receivables are the product, not a by-product
-  | 'unavailable'       // too few variables to compute
-  | 'clean'
-  | 'grey'
-  | 'flagged'           // elevated, and the accruals back it up
-  | 'growth-explained'  // elevated, but earnings are cash-backed and sales grew
-  | 'extrapolated';     // elevated, but the model was evaluated out of sample
-
-/**
- * What the M-Score is actually saying about this company.
- *
- * One reading, consumed by both the balance-sheet criterion and the conviction
- * cap, because the two must not disagree about whether the same number is
- * evidence. Before this, a hypergrowth company scored 0/10 on accounting
- * quality *and* had its verdict held at HOLD, twice for the same reason, and
- * that reason was mostly its revenue growth.
- *
- * The variable that separates the two cases is TATA — total accruals over total
- * assets, `(net income − operating cash flow) / assets`. It is the one term in
- * the model that is about earnings being cash-backed rather than about growth.
- * Ondas and CoreWeave print −0.08 and −0.09: cash *exceeds* earnings, which is
- * the opposite of the pattern the score exists to find. Nvidia prints +0.08,
- * and that is a real observation about earnings quality, so its cap stays.
- */
 export function readBeneish(
   f: StockFinancials, b: ComputedMetrics['beneish'],
 ): { reading: BeneishReading; note: string } {
-  // For a lender the model's own inputs are the business. DSRI asks whether
-  // receivables grew faster than sales; at a credit company that is the loan
-  // book growing, which is what the company is for. SoFi came out "likely
-  // manipulator" on it and had its verdict capped for running its business.
-  if (borrowsToLend(f)) {
-    return {
-      reading: 'not-applicable',
-      note: 'Beneish ist auf Kreditgeber nicht anwendbar — Forderungen sind hier das Produkt, '
-        + 'nicht ein Nebenprodukt des Verkaufs, und der M-Score misst damit das Geschäftsmodell statt einer Auffälligkeit',
-    };
-  }
-  if (b.variablesComputed < 4) {
-    return {
-      reading: 'unavailable',
-      note: `Beneish nur aus ${b.variablesComputed}/8 Variablen — nicht belastbar`,
-    };
-  }
-  if (b.probability === 'unlikely manipulator') {
-    return { reading: 'clean', note: `Beneish M ${fmt(b.score)} — ${b.probability}` };
-  }
-  if (b.probability !== 'likely manipulator') {
-    return { reading: 'grey', note: `Beneish M ${fmt(b.score)} — ${b.probability}` };
-  }
-
+  const reading = beneishReading(f, b);
   const sgi  = toFiniteNumber(b.sgi);
   const tata = toFiniteNumber(b.tata);
-
-  if (sgi !== null && sgi > BENEISH_SGI_OUT_OF_SAMPLE) {
-    return {
-      reading: 'extrapolated',
-      note: `Beneish M ${fmt(b.score)}, aber der Umsatzindex SGI steht bei ${sgi.toFixed(1)} — `
-        + 'weit außerhalb des Bereichs, auf dem das Modell geschätzt wurde. Das Ergebnis ist '
-        + 'Extrapolation eines linearen Modells, kein Befund.',
-    };
+  switch (reading) {
+    // For a lender the model's own inputs are the business. DSRI asks whether
+    // receivables grew faster than sales; at a credit company that is the loan
+    // book growing, which is what the company is for.
+    case 'not-applicable':
+      return {
+        reading,
+        note: 'Beneish ist auf Kreditgeber nicht anwendbar — Forderungen sind hier das Produkt, '
+          + 'nicht ein Nebenprodukt des Verkaufs, und der M-Score misst damit das Geschäftsmodell statt einer Auffälligkeit',
+      };
+    case 'unavailable':
+      return { reading, note: `Beneish nur aus ${b.variablesComputed}/8 Variablen — nicht belastbar` };
+    case 'clean':
+    case 'grey':
+      return { reading, note: `Beneish M ${fmt(b.score)} — ${b.probability}` };
+    case 'extrapolated':
+      return {
+        reading,
+        note: `Beneish M ${fmt(b.score)}, aber der Umsatzindex SGI steht bei ${sgi?.toFixed(1)} — `
+          + 'weit außerhalb des Bereichs, auf dem das Modell geschätzt wurde. Das Ergebnis ist '
+          + 'Extrapolation eines linearen Modells, kein Befund.',
+      };
+    case 'growth-explained':
+      return {
+        reading,
+        note: `Beneish M ${fmt(b.score)}, getragen vom Umsatzwachstum (SGI ${sgi?.toFixed(2)}). `
+          + `Die Accruals widersprechen: TATA ${tata?.toFixed(2)} — der operative Cashflow deckt den Gewinn.`,
+      };
+    case 'flagged':
+      return {
+        reading,
+        note: `Beneish M ${fmt(b.score)} — ${b.probability}`
+          + (tata !== null ? `, Accruals TATA ${tata.toFixed(2)} stützen das` : ''),
+      };
   }
-
-  // Cash at or above earnings is the opposite of the accrual pattern the score
-  // is looking for; with sales growing fast, what is left is the growth term.
-  if (sgi !== null && sgi > BENEISH_SGI_GROWTH && tata !== null && tata <= 0) {
-    return {
-      reading: 'growth-explained',
-      note: `Beneish M ${fmt(b.score)}, getragen vom Umsatzwachstum (SGI ${sgi.toFixed(2)}). `
-        + `Die Accruals widersprechen: TATA ${tata.toFixed(2)} — der operative Cashflow deckt den Gewinn.`,
-    };
-  }
-
-  return {
-    reading: 'flagged',
-    note: `Beneish M ${fmt(b.score)} — ${b.probability}`
-      + (tata !== null ? `, Accruals TATA ${tata.toFixed(2)} stützen das` : ''),
-  };
 }
 
 // ── Analyst consensus, as a number ───────────────────────────────────────────
@@ -604,40 +556,30 @@ export interface MarketImplied {
   benchmark: number;
   /** required ÷ benchmark: 1 is priced for exactly the achievable margin. */
   ratio:     number;
-  basis:     'operating' | 'fcf' | 'peers';
+  basis:     'current' | 'history' | 'peers';
 }
 
 const IMPLIED_BASIS_LABEL: Record<MarketImplied['basis'], string> = {
-  operating: 'eigene operative Marge nach Steuern',
-  fcf:       'eigene Free-Cash-Flow-Marge',
-  peers:     'Peer-Median nach Steuern',
+  current: 'heutige operative Marge',
+  history: 'Durchschnitt der letzten Geschäftsjahre',
+  peers:   'Peer-Median',
 };
 
 /** Ratio at which the criterion reads 0 (and its inverse, 10) — log-symmetric around 1. */
 export const IMPLIED_MARGIN_RATIO_LIMIT = 2;
 
-/** Fewest peers whose median margin is a credible yardstick. */
-export const IMPLIED_MARGIN_MIN_PEERS = 5;
-
 export function marketImplied(
-  f: StockFinancials, m: ComputedMetrics, peers: SectorMedians | null,
+  _f: StockFinancials, m: ComputedMetrics, _peers: SectorMedians | null,
 ): MarketImplied | null {
   const im = m.reverseDCF.impliedMargin;
-  const required = toFiniteNumber(im?.fcfMargin);
-  if (!im || required === null) return null;
-  const tax = Math.min(0.35, Math.max(0.10, toFiniteNumber(f.taxRate) ?? 0.21));
-  const peerOp = (peers?.peerCount ?? 0) >= IMPLIED_MARGIN_MIN_PEERS ? toFiniteNumber(peers?.operatingMargin) : null;
-  const candidates: [MarketImplied['basis'], number | null][] = [
-    ['operating', toFiniteNumber(im.currentNopatMargin)],
-    ['fcf',       toFiniteNumber(im.currentFcfMargin)],
-    ['peers',     peerOp !== null ? peerOp * (1 - tax) : null],
-  ];
-  let best: [MarketImplied['basis'], number] | null = null;
-  for (const [basis, v] of candidates) {
-    if (v !== null && v > 0 && (best === null || v > best[1])) best = [basis, v];
-  }
-  if (best === null) return null;
-  return { required, benchmark: best[1], ratio: Math.max(required, 0) / best[1], basis: best[0] };
+  const benchmark = toFiniteNumber(im?.achievableMargin);
+  if (!im || benchmark === null || benchmark <= 0 || im.achievableBasis === null) return null;
+  return {
+    required:  im.requiredMargin,
+    benchmark,
+    ratio:     Math.max(im.requiredMargin, 0) / benchmark,
+    basis:     im.achievableBasis,
+  };
 }
 
 /** Fewest conservative models whose median counts as the value lens. */
@@ -718,8 +660,8 @@ function valuationPillar(
     criterion('market-implied', 'Was der Kurs verlangt', 0.20,
       implied ? ramp(Math.log(Math.max(implied.ratio, 1e-6)), lim, -lim) : null,
       implied
-        ? `Der Kurs ist fair bei dauerhaft ${fmtPct(implied.required)} Marge auf dem Konsens-Umsatzpfad `
-          + `(${fmtPct(impliedGrowth ?? null)} Wachstum, auslaufend) — erreichbar erscheinen ${fmtPct(implied.benchmark)} `
+        ? `Der Kurs ist fair bei einer operativen Zielmarge von ${fmtPct(implied.required)} auf dem Umsatzpfad `
+          + `(${fmtPct(impliedGrowth ?? null)} Wachstum, auslaufend) — gezeigt wurden ${fmtPct(implied.benchmark)} `
           + `(${IMPLIED_BASIS_LABEL[implied.basis]}), `
           + `verlangt also das ${implied.ratio.toFixed(1)}-fache`
         : 'Keine positive Marge, an der sich die vom Kurs verlangte messen ließe'),
@@ -756,7 +698,7 @@ function qualityPillar(
     ? ramp(margin - peerMargin, -0.10, 0.10)
     : ramp(margin, -0.05, 0.25);
 
-  const growth = toFiniteNumber(f.revenueGrowth);
+  const growth = valuationBasis(f).revenueGrowth;
   const peerGrowth = peers?.revenueGrowthYoY ?? null;
 
   return [

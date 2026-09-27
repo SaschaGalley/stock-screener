@@ -769,38 +769,32 @@ describe('narrative reads', () => {
 describe('what the price requires', () => {
   const base = financials();
   const metrics = computeAllMetrics(base, FALLBACK_RATES, null);
-  const withMargin = (over: Record<string, number | null>) => ({
+  const withMargin = (over: Record<string, unknown>) => ({
     ...metrics,
     reverseDCF: {
       ...metrics.reverseDCF,
       impliedMargin: {
-        fcfMargin: 0.20, revenueBase: 1, revenueGrowth: 0.1, growthSource: 'analyst consensus' as const,
-        discountRate: 0.09, currentFcfMargin: 0.10, currentNopatMargin: 0.10, interpretation: '',
+        requiredMargin: 0.20, achievableMargin: 0.10, achievableBasis: 'current' as const, ratio: 2,
+        revenueBase: 1, revenueGrowth: 0.1, growthSource: 'analyst consensus' as const,
+        discountRate: 0.09, interpretation: '',
         ...over,
       },
     },
-  });
+  }) as typeof metrics;
 
   it('holds the requirement against the best margin already shown', () => {
-    const r = marketImplied(base, withMargin({ currentNopatMargin: 0.03, currentFcfMargin: 0.30 }), null)!;
-    assert.equal(r.basis, 'fcf');
+    const r = marketImplied(base, withMargin({ achievableMargin: 0.30, achievableBasis: 'peers' }), null)!;
+    assert.equal(r.basis, 'peers');
     assert.ok(Math.abs(r.ratio - 0.2 / 0.3) < 1e-9);
   });
 
   it('abstains where no positive margin exists to compare with', () => {
-    assert.equal(marketImplied(base, withMargin({ currentNopatMargin: -0.1, currentFcfMargin: -0.5 }), null), null);
-  });
-
-  it('ignores the median of a thin peer group', () => {
-    const thin = { operatingMargin: 0.9, peerCount: 2 } as SectorMedians;
-    assert.notEqual(marketImplied(base, withMargin({}), thin)!.basis, 'peers');
-    const real = { operatingMargin: 0.9, peerCount: 8 } as SectorMedians;
-    assert.equal(marketImplied(base, withMargin({}), real)!.basis, 'peers');
+    assert.equal(marketImplied(base, withMargin({ achievableMargin: null, achievableBasis: null }), null), null);
   });
 
   it('reads 5 at exactly the achievable margin, and 0 / 10 at twice / half of it', () => {
     const pts = (req: number) => computeFactorScore({
-      financials: base, metrics: withMargin({ fcfMargin: req }), sectorMedians: null,
+      financials: base, metrics: withMargin({ requiredMargin: req }), sectorMedians: null,
       marketSignals: null, technicalSignals: null,
     }).pillars.find((p) => p.key === 'valuation')!.criteria.find((c) => c.key === 'market-implied')!.points!;
     assert.ok(Math.abs(pts(0.10) - 0.5) < 1e-9);
@@ -832,14 +826,14 @@ describe('conservative models outside their population', () => {
 
   it('does not anchor on a book the firm has handed back', () => {
     const r = names({ roe: 1.5 });
-    assert.ok(!r.used.includes('Graham Number') && !r.used.includes('Residual Income (RIM)'));
+    assert.ok(!r.used.includes('Graham Number') && !r.used.includes('Excess Return (RIM)'));
     assert.ok(r.excluded.some((e) => /Graham Number: ROE 150/.test(e)));
   });
 
   it('does not value a token dividend as the business', () => {
     const r = names({ dividendYield: 0.01, payoutRatio: 0.1 });
-    assert.ok(!r.used.includes('DDM (Gordon)'));
-    assert.ok(r.excluded.some((e) => /DDM \(Gordon\): Payout 10/.test(e)));
+    assert.ok(!r.used.includes('DDM (Two-Stage)'));
+    assert.ok(r.excluded.some((e) => /DDM \(Two-Stage\): Payout 10/.test(e)));
   });
 
   it('reads an ordinary balance sheet with every model', () => {

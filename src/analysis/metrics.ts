@@ -11,7 +11,6 @@ import {
   EVMultiplesResult,
   GrahamResult,
   GrahamRevisedResult,
-  ImpliedMargin,
   InterestCoverageResult,
   NCAVResult,
   PeerMultiplesEntry,
@@ -20,7 +19,6 @@ import {
   PiotroskiResult,
   PiotroskiSignals,
   RatioResult,
-  ReverseDCFResult,
   RIMResult,
   RuleOf40Result,
   SectorMedians,
@@ -28,8 +26,12 @@ import {
   StockFinancials,
 } from '../types.js';
 import { FALLBACK_RATES, MarketRates } from '../data/fred.js';
-import { Rating, ratingForCoverage, UNRATED } from '../data/ratings.js';
 import { seasonallyAdjustedRunRate } from './run-rate.js';
+import { consecutiveQuarters, latestValue, YearPoint } from './trailing.js';
+import { ValuationBasis, equityPerShare, valuationBasis } from './basis.js';
+import { costOfEquity, terminalGrowth, wacc } from './cost-of-capital.js';
+import { borrowsToLend, isPlausibleFairValue, LENDER_NOTE } from './dcf.js';
+import { quantileSorted } from './sampling.js';
 import { toFiniteNumber } from '../utils/num.js';
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -38,127 +40,11 @@ import { toFiniteNumber } from '../utils/num.js';
 // so the report writers keep importing it from where they always have.
 export { fmt, fmtPct, fmtBig } from '../format.js';
 
-// ─── Shared constants & helpers ──────────────────────────────────────────────
+// The DCF, its reverse, and the question of whether a company lends for a
+// living live in `dcf.ts`; re-exported so the models keep one import surface.
+export { calculateDCF, calculateReverseDCF, borrowsToLend, isBalanceSheetFinancial } from './dcf.js';
 
-// Rates to discount with when the caller has none — a stored-financials
-// overview row, a run without a FRED key. `FALLBACK_RATES` lives with the feeds
-// in `data/fred.ts`, so there is one definition of what we assume when we
-// cannot look a rate up.
-
-/**
- * CAPM cost of equity with SWS-style β floor 0.8 / cap 2.0 to neutralise
- * stale-data outliers and volatility spikes.
- *
- * The premium is Damodaran's implied ERP as of the latest month, not a
- * constant: it is what the market is *currently* paying for equity risk, and it
- * is quoted against the same T-bond rate we use as the risk-free leg.
- */
-function costOfEquity(beta: number | null, rates: MarketRates): number {
-  const b = Math.max(0.8, Math.min(beta ?? 1.0, 2.0));
-  return rates.riskFreeRate + b * rates.equityRiskPremium;
-}
-
-/**
- * Stable growth, as an invariant rather than a constant.
- *
- * A firm growing forever faster than the economy eventually *becomes* the
- * economy, so terminal growth is capped at the risk-free rate — the market's
- * own estimate of long-run nominal growth, and the standard Damodaran ceiling.
- * The old fixed 3% was two mistakes at once: too generous when the 10Y sat at
- * 1%, too stingy at 5%, and in both cases moving independently of the discount
- * rate built from that same rate.
- *
- * The cap doubles as the default, which is what makes it cheaper than a
- * constant — nothing left to keep in sync, and a caller-supplied rate is
- * clamped rather than trusted.
- */
-function terminalGrowth(rates: MarketRates, requested?: number): number {
-  return Math.min(requested ?? rates.riskFreeRate, rates.riskFreeRate);
-}
-
-/**
- * Weighted-average cost of capital, for discounting UNLEVERED (firm-level)
- * cash flows — FCFF in the DCF and NOPAT in EPV — before the EV→equity net-debt
- * bridge. Discounting unlevered flows at cost of equity (while also subtracting
- * net debt) double-counts leverage and understates value for indebted firms.
- *
- *   WACC = E/V·costOfEquity + D/V·costOfDebt·(1−tax)
- *
- * E = market value of equity, D = total debt (both already in trading currency),
- * costOfDebt from `costOfDebt` below. Debt-free firms (D=0) collapse to cost of
- * equity. taxRate defaults to 21% when unavailable.
- */
-function wacc(f: StockFinancials, rates: MarketRates): number {
-  const ke = costOfEquity(f.beta, rates);
-  const E = f.marketCap > 0
-    ? f.marketCap
-    : (f.price > 0 && f.sharesOutstanding ? f.price * f.sharesOutstanding : 0);
-  const D = f.totalDebt && f.totalDebt > 0 ? f.totalDebt : 0;
-  if (D === 0 || E <= 0) return ke;
-  const V = E + D;
-  const tax = f.taxRate ?? 0.21;
-  return (E / V) * ke + (D / V) * costOfDebt(f, rates).rate * (1 - tax);
-}
-
-/**
- * Pre-tax cost of debt: what the firm would pay to borrow today. Interest
- * coverage (EBIT ÷ interest expense) gives the rating it would earn, and the
- * live spread for that rating sits on top of the risk-free rate — see
- * `data/ratings.ts`. Interest ÷ debt used to stand in for this, and measured
- * the coupon on debt issued years ago instead: it sat on the risk-free floor for
- * most of the watchlist. `rating` is null when there is nothing to rate on and
- * the firm was priced as `UNRATED`.
- */
-function costOfDebt(f: StockFinancials, rates: MarketRates): { rate: number; rating: Rating | null } {
-  const interest = f.interestExpense ? Math.abs(f.interestExpense) : null;
-  const rating = interest !== null && f.ebit != null ? ratingForCoverage(f.ebit / interest) : null;
-  return { rate: rates.riskFreeRate + rates.creditSpreads[rating ?? UNRATED], rating };
-}
-
-/**
- * Banks, insurers and brokers borrow as their business, not to finance it: debt
- * is their raw material, interest their cost of goods. Free cash flow to the
- * firm and a WACC mean nothing for them, and FCFF models return numbers anyway —
- * NU at 6× its price and BRK-B at 16× in September 2026. Payment networks
- * ("Credit Services") are fee businesses and stay in.
- */
-const DEBT_AS_RAW_MATERIAL = [/^Banks\b/, /^Insurance - /, /^Capital Markets$/, /^Mortgage Finance$/];
-
-function isBalanceSheetFinancial(f: StockFinancials): boolean {
-  return f.industry != null && DEBT_AS_RAW_MATERIAL.some((re) => re.test(f.industry!));
-}
-
-const BALANCE_SHEET_FINANCIAL =
-  'banks, insurers and brokers borrow as their business, so free cash flow to the firm and WACC do not describe them';
-
-/**
- * Interest expense at or above this share of revenue is a cost of revenue.
- *
- * The industry list above catches banks, insurers and brokers by name, but not
- * a lender filed under a label it shares with something else entirely: SoFi and
- * Mastercard are both "Credit Services", and one of them funds a loan book
- * while the other runs a payment network. Debt does not separate them —
- * 0.80× revenue against 0.70×. Interest does, by a factor of thirteen: SoFi
- * pays 27 % of revenue in interest, Mastercard 2 %, Berkshire 1 %, Nu 54 %.
- */
-const LENDER_INTEREST_SHARE = 0.15;
-
-/**
- * Does this company borrow in order to lend?
- *
- * The question matters wherever a model assumes receivables are a by-product of
- * selling something. For a lender they *are* the product, so the Beneish
- * M-Score's receivables and accrual terms describe the business rather than
- * detect anything about it — the same reason FCFF and WACC do not describe one.
- */
-export function borrowsToLend(f: StockFinancials): boolean {
-  if (isBalanceSheetFinancial(f)) return true;
-  if (f.sector !== 'Financial Services') return false;
-  const revenue = toFiniteNumber(f.revenue);
-  const interest = toFiniteNumber(f.interestExpense);
-  return revenue !== null && revenue > 0 && interest !== null
-    && interest / revenue >= LENDER_INTEREST_SHARE;
-}
+// ─── Shared helpers ──────────────────────────────────────────────────────────
 
 function median(xs: number[]): number | null {
   if (xs.length === 0) return null;
@@ -167,88 +53,70 @@ function median(xs: number[]): number | null {
   return n % 2 === 0 ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2 : sorted[Math.floor(n / 2)];
 }
 
-function percentile(xs: number[], p: number): number | null {
-  if (xs.length === 0) return null;
-  const sorted = [...xs].sort((a, b) => a - b);
-  const n = sorted.length;
-  if (n === 1) return sorted[0];
-  // Linear interpolation (Excel PERCENTILE.INC). The old floor(n*p) index
-  // collapsed p75 onto the max for the typical n=2..4 primary tier, inflating
-  // the IQR and skewing the confidence score.
-  const rank = p * (n - 1);
-  const lo = Math.floor(rank);
-  const hi = Math.ceil(rank);
-  return lo === hi ? sorted[lo] : sorted[lo] + (rank - lo) * (sorted[hi] - sorted[lo]);
+function mean(xs: number[]): number | null {
+  return xs.length > 0 ? xs.reduce((s, x) => s + x, 0) / xs.length : null;
+}
+
+const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+
+/**
+ * Normalised "earnings power" for a trailing flow. Valuation models that anchor
+ * on a single trailing figure are distorted when that figure is hit by
+ * one-offs — Honeywell's trailing FCF was $2.9B against a steady ~$5B history,
+ * dragging its old DCF to $68 (−70% MoS) versus a $246 analyst target.
+ *
+ * Correction is intentionally ONE-DIRECTIONAL: only lift a *depressed* trailing
+ * figure (sharply below the recent annual average) up to that average. A
+ * trailing figure ABOVE trend is left alone — for a compounder that is genuine
+ * growth and the trailing value is the better base.
+ *
+ * Guards (return trailing unchanged when any fails): ≥2 recent annual points,
+ * and trailing and every recent point share a sign — never average across a
+ * loss→profit regime change.
+ */
+function normalizedFlow(trailing: number | null, history: YearPoint[]): number | null {
+  const recent = history.slice(-3).map((p) => p.value);
+  if (recent.length < 2) return trailing;
+  const avg = recent.reduce((s, v) => s + v, 0) / recent.length;
+  if (trailing === null) {
+    return recent.every((v) => v > 0) || recent.every((v) => v < 0) ? avg : null;
+  }
+  const sameSign = recent.every((v) => Math.sign(v) === Math.sign(trailing));
+  if (!sameSign || avg === 0) return trailing;
+  if (trailing >= avg) return trailing;
+  const shortfall = (avg - trailing) / Math.abs(avg);
+  return shortfall > 0.25 ? avg : trailing;
 }
 
 /**
- * Stage-1 growth for DCF. Priority:
- *   1. Next-FY analyst EPS growth (forwardEpsGrowth, sign-guarded) — most
- *      market-aligned; cap at 60% (Damodaran's "extreme growth" boundary)
- *   2. 3Y EPS CAGR — historical proxy for growth firms with sparse coverage;
- *      cap at 30% (tighter — historical can be noisy / regression-prone)
- *   3. Earnings / revenue growth — last resort, cap at 30%
- *
- * Higher cap for forward analyst is intentional: analysts have visibility into
- * pipeline, contracts, and capacity. Historical CAGR is rear-view-only and
- * deserves more skepticism.
+ * Earnings per diluted share, normalised: net income excluding unusual items
+ * over the trailing four quarters, lifted to the recent average when a one-off
+ * has depressed it, divided by every share including dilution. Not Yahoo's
+ * per-share figure, which is per ordinary share for an ADR and per class for a
+ * multi-class company — Sanofi's ADR carries half an ordinary share's EPS.
  */
-/**
- * Sanity check: a model's fair value is plausible only if it sits in
- * [price × 0.02, price × 30]. Outside that range almost always signals a
- * data-quality issue rather than a real valuation insight — most commonly
- * dual-class share unit mismatches (e.g., Yahoo reports BRK-A book value
- * for BRK-B shares, making BV-based models explode by 100×–1000×).
- *
- * The bounds are deliberately wide: a legitimately pessimistic model output
- * (e.g., RIM saying a buyback-heavy firm with tiny book value is worth $13
- * when it trades at $287) should pass through — that's signal, not noise.
- * Only filter clear unit/data anomalies.
- */
-function isPlausibleFairValue(fv: number | null | undefined, price: number): boolean {
-  if (fv === null || fv === undefined || !Number.isFinite(fv) || fv <= 0) return false;
-  if (!Number.isFinite(price) || price <= 0) return false;
-  const r = fv / price;
-  return r >= 0.02 && r <= 30;
-}
-
-function deriveStage1Growth(f: StockFinancials): number {
-  const fwd = forwardEpsGrowth(f);
-  if (fwd !== null) return Math.max(0, Math.min(fwd, 0.60));
-  const raw = f.epsGrowth3Y ?? f.earningsGrowth ?? f.revenueGrowth ?? 0.08;
-  return Math.max(0, Math.min(raw, 0.30));
+function normalizedEps(b: ValuationBasis): number | null {
+  const earnings = normalizedFlow(b.earnings, b.earningsHistory);
+  return earnings !== null && b.dilutedShares !== null && b.dilutedShares > 0 ? earnings / b.dilutedShares : null;
 }
 
 /**
- * Next-FY analyst EPS-growth rate — but ONLY when EPS is positive in both the
- * current and next fiscal year. Returns null otherwise so callers fall back to
- * a sign-stable proxy (revenue growth / historical CAGR).
+ * Next-FY analyst EPS growth — or null when the rate is not a rate.
  *
- * Why the positivity guard: the rate is next-FY EPS measured against current-FY
- * EPS. When the current-FY base is a loss, that ratio is a sign-change
- * artifact, not a real rate — AMS.SW FY EPS −1.05 → +0.96 is reported by Yahoo
- * as +191% growth, which (capped at 60%) inflated the DCF ~14× ($18 → $257) and
- * dragged the composite to a +640% margin of safety. A usable rate needs a
- * positive base AND a positive forward value.
- *
- * Only the next-FY ("+1y") rate is used. The current-FY ("0y") rate is measured
- * against the prior *trailing* year — an uncontrolled, frequently low/loss base
- * that produces its own low-base explosions (e.g. VST +344%, ENR.DE, Rubrik
- * +1600%). Yahoo labels current FY "0y" (not "+0y"); the old filter looked for
- * "+0y" and so never matched it — this keeps that exclusion intentional.
+ * Measured against the current fiscal year, so a loss in that base makes the
+ * ratio a sign-change artefact: AMS.SW's −1.05 → +0.96 was reported as +191 %.
+ * Both years must be positive. A *negative* rate on positive earnings is a real
+ * forecast and is returned as one — it used to be discarded, and the models
+ * reached for the past instead: Novo Nordisk, with the consensus expecting
+ * earnings to fall, was grown at its 24 % three-year history.
  */
-function forwardEpsGrowth(f: StockFinancials): number | null {
+export function forwardEpsGrowth(f: StockFinancials): number | null {
   const ests = f.earningsEstimates ?? [];
-  const ey0 = ests.find((e) => e.period === '0y');   // current FY — the growth base
-  const ey1 = ests.find((e) => e.period === '+1y');  // next FY
+  const ey0 = ests.find((e) => e.period === '0y');
+  const ey1 = ests.find((e) => e.period === '+1y');
   if (ey0?.epsEstimate == null || ey0.epsEstimate <= 0) return null;
   if (ey1?.epsEstimate == null || ey1.epsEstimate <= 0) return null;
-  if (ey1.epsGrowth == null || ey1.epsGrowth <= 0) return null;
-  return ey1.epsGrowth;
-}
-
-function getShares(f: StockFinancials): number {
-  return f.sharesOutstanding ?? (f.marketCap / f.price);
+  return toFiniteNumber(ey1.epsGrowth);
 }
 
 /** What the quarterly revenue series says about the current revenue level. */
@@ -260,22 +128,12 @@ interface RevenueRunRate {
   /**
    * The last four quarters grown to where the latest one stands. Equals the
    * latest quarter × 4 when revenue grows steadily; for a seasonal business it
-   * is that figure with the pattern divided out, because a quarter compared to
-   * the same quarter a year earlier carries no seasonality.
+   * is that figure with the pattern divided out.
    */
   seasonallyAdjustedRunRate: number | null;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function daysBetween(from: string, to: string): number | null {
-  const d = (Date.parse(to) - Date.parse(from)) / DAY_MS;
-  return Number.isFinite(d) ? d : null;
-}
-
 function revenueRunRate(f: StockFinancials): RevenueRunRate {
-  // Defensive: stale caches from before FINANCIALS_VERSION 14 won't have this
-  // field at all, and the StaleBanner pipeline still serves them.
   const quarters = Array.isArray(f.quarterlyRevenues) ? f.quarterlyRevenues : [];
   const latest = quarters.length > 0 ? quarters[quarters.length - 1] : null;
   const level: RevenueRunRate = {
@@ -284,589 +142,122 @@ function revenueRunRate(f: StockFinancials): RevenueRunRate {
     latestQuarterYoYGrowth: null,
     seasonallyAdjustedRunRate: null,
   };
-  if (!latest || quarters.length < 5) return level;
-
-  // Both comparisons assume consecutive quarters. Yahoo drops one now and
-  // then, and a gap silently turns "a year ago" into five quarters ago. The
-  // windows allow for 52/53-week fiscal calendars.
-  const yearAgo = quarters[quarters.length - 5];
-  const lastFour = quarters.slice(-4);
-  const yearSpan = daysBetween(yearAgo.endDate, latest.endDate);
-  const windowSpan = daysBetween(lastFour[0].endDate, latest.endDate);
-  if (yearSpan === null || yearSpan < 350 || yearSpan > 380) return level;
-  if (windowSpan === null || windowSpan < 260 || windowSpan > 290) return level;
-  if (yearAgo.revenue <= 0 || lastFour.some((q) => q.revenue <= 0)) return level;
-
-  const yoy = latest.revenue / yearAgo.revenue - 1;
+  // A year-ago comparison across a dropped quarter compares five quarters' time.
+  const five = consecutiveQuarters(quarters.map((q) => ({ endDate: q.endDate, value: q.revenue })), 5);
+  if (!latest || !five || five.some((q) => q.value <= 0)) return level;
+  const yoy = five[4].value / five[0].value - 1;
   return {
     ...level,
     latestQuarterYoYGrowth: yoy,
-    seasonallyAdjustedRunRate: seasonallyAdjustedRunRate(lastFour.map((q) => q.revenue), yoy),
+    seasonallyAdjustedRunRate: seasonallyAdjustedRunRate(five.slice(1).map((q) => q.value), yoy),
   };
 }
 
-/**
- * Normalized "earnings power" base for a trailing flow metric (FCF, EPS, EBIT).
- * Valuation models that anchor on a single trailing-twelve-month figure are
- * distorted when that TTM point is hit by one-offs — Honeywell's trailing FCF
- * was $2.9B against a steady ~$5B history, dragging its DCF to $68 (−70% MoS)
- * versus a $246 analyst target.
- *
- * Correction is intentionally ONE-DIRECTIONAL: only lift a *depressed* trailing
- * figure (sharply below the recent annual average) up to that average. A
- * trailing figure ABOVE trend is left alone — for a compounder that is genuine
- * growth and the trailing value is the better base; pulling it down to a
- * lagging 3y mean would penalise exactly the best businesses (e.g. AAPL's
- * trailing EPS sits ~25% above its 3y average purely because earnings grew).
- * The asymmetric risk we're guarding is the downside: one-off troughs that
- * produce absurd lows. A rare one-off *gain* that inflates trailing is left to
- * the composite's other models, conservative tier, and analyst-consensus anchor
- * to balance.
- *
- * Guards (return trailing unchanged when any fails):
- *  - need ≥2 recent annual points,
- *  - trailing and every recent annual point must share the same sign — never
- *    average across a loss→profit regime change (that's a real shift, and
- *    currency mismatches that used to fake such gaps are now reconciled
- *    upstream in getFinancials).
- */
-function normalizedFlow(
-  trailing: number | null,
-  history: { year: number; value: number }[],
-): number | null {
-  const recent = history.slice(-3).map((p) => p.value);
-  if (recent.length < 2) return trailing;
-  const avg = recent.reduce((s, v) => s + v, 0) / recent.length;
-  if (trailing === null) {
-    // No trailing figure: use the average only if the window is sign-consistent.
-    return recent.every((v) => v > 0) || recent.every((v) => v < 0) ? avg : null;
-  }
-  const sameSign = recent.every((v) => Math.sign(v) === Math.sign(trailing));
-  if (!sameSign || avg === 0) return trailing;
-  if (trailing >= avg) return trailing;                 // above trend — keep it
-  const shortfall = (avg - trailing) / Math.abs(avg);
-  return shortfall > 0.25 ? avg : trailing;             // depressed — lift to avg
-}
-
-// ─── 1. Two-Stage DCF (replaces single-stage) ────────────────────────────────
-
-export interface DCFOptions {
-  stage1Years?: number;       // default 5
-  fadeYears?: number;         // default 5
-  growthRate?: number;        // stage-1 growth (decimal); auto-derived if absent
-  terminalGrowthRate?: number;
-  sectorRoic?: number | null; // peer-median ROIC — caps the excess return kept forever
-}
-
-/** Project FCFs over (stage1 + fade) years with linear growth fade. */
-function projectFCFs(
-  baseFCF: number,
-  stage1G: number,
-  terminalG: number,
-  stage1Years: number,
-  fadeYears: number,
-): number[] {
-  const fcfs: number[] = [];
-  let prev = baseFCF;
-  for (let i = 1; i <= stage1Years; i++) {
-    prev = prev * (1 + stage1G);
-    fcfs.push(prev);
-  }
-  for (let j = 1; j <= fadeYears; j++) {
-    const g = stage1G - (stage1G - terminalG) * (j / fadeYears);
-    prev = prev * (1 + g);
-    fcfs.push(prev);
-  }
-  return fcfs;
-}
-
-/**
- * What the terminal value is built from besides the last projected cash flow.
- *
- * Stable growth is not free. A firm growing at g on new capital that earns ROIC
- * has to reinvest g ÷ ROIC of its operating profit to do it, so
- *
- *   TV = NOPAT(n+1) × (1 − g / ROIC) / (r − g)
- *
- * Capping g at the risk-free rate without this charged nothing for the growth
- * and let terminal multiples run to 46×. With ROIC equal to the discount rate
- * the formula collapses to NOPAT(n+1) / r — growth that earns only its cost of
- * capital adds no value — which is also the floor: a firm earning less on new
- * capital would stop investing rather than destroy value forever.
- */
-interface TerminalBasis {
-  /** NOPAT ÷ FCFF at t = 0, scaling the last projected cash flow to the operating profit behind it; 1 without a positive NOPAT. */
-  nopatPerCashFlow: number;
-  /** Return on new capital kept in perpetuity before the floor at the discount rate; null for none beyond it. */
-  roic: number | null;
-}
-
-/**
- * Terminal ROIC: the firm's own, but no more than its industry earns — excess
- * returns are competed away, and a firm keeps forever at most what its peers
- * keep. No NOPAT or no ROIC means no evidence of excess returns at all.
- */
-function terminalBasis(f: StockFinancials, cashFlow: number, sectorRoic: number | null | undefined): TerminalBasis {
-  const ebit = normalizedFlow(f.ebit ?? null, f.fundamentalsHistory.operatingIncome ?? []);
-  if (ebit === null || ebit <= 0 || cashFlow <= 0) return { nopatPerCashFlow: 1, roic: null };
-  const own = f.roic ?? null;
-  const roic = own === null ? null : Math.min(own, sectorRoic ?? own);
-  return { nopatPerCashFlow: (ebit * (1 - (f.taxRate ?? 0.21))) / cashFlow, roic };
-}
-
-/** Terminal ROIC after the floor at the discount rate. */
-function terminalRoicAt(basis: TerminalBasis, discountRate: number): number {
-  return Math.max(discountRate, basis.roic ?? discountRate);
-}
-
-/** Sum of PV(FCFs) + PV(terminal). Equity bridge applied separately by caller. */
-function discountToEV(
-  fcfs: number[],
-  terminalG: number,
-  discountRate: number,
-  basis: TerminalBasis,
-): { enterpriseValue: number; terminalValue: number } {
-  let pv = 0;
-  for (let t = 0; t < fcfs.length; t++) {
-    pv += fcfs[t] / Math.pow(1 + discountRate, t + 1);
-  }
-  const nopatNext = fcfs[fcfs.length - 1] * basis.nopatPerCashFlow * (1 + terminalG);
-  // Terminal must satisfy r > g_terminal; caller must validate.
-  const tv = nopatNext * (1 - terminalG / terminalRoicAt(basis, discountRate)) / (discountRate - terminalG);
-  const pvTV = tv / Math.pow(1 + discountRate, fcfs.length);
-  return { enterpriseValue: pv + pvTV, terminalValue: tv };
-}
-
-/**
- * Free cash flow to the firm at t = 0, normalised like every trailing flow.
- * Yahoo's free cash flow is operating cash flow less capex, and operating cash
- * flow is after interest wherever interest paid is classified there — always
- * under US GAAP, by choice under IFRS. Adding back the after-tax interest turns
- * it into the unlevered flow WACC and the net-debt bridge assume; where interest
- * sits under financing it was never subtracted. Unknown classification follows
- * the reporting currency: dollar statements are GAAP, the rest mostly IFRS.
- */
-function baseFCFF(f: StockFinancials): number | null {
-  const fcf = normalizedFlow(f.freeCashFlow, f.fundamentalsHistory.freeCashFlow);
-  if (fcf === null) return null;
-  const interest = f.interestExpense ? Math.abs(f.interestExpense) : 0;
-  const inOperating = f.interestInOperatingCashFlow
-    ?? (f.financialCurrency ?? f.tradingCurrency ?? 'USD') === 'USD';
-  return inOperating ? fcf + interest * (1 - (f.taxRate ?? 0.21)) : fcf;
-}
-
-/**
- * Everything the forward and the reverse DCF share, computed in one place so
- * the two can never again disagree about what they discount, at what rate, or
- * into what terminal value — the reverse DCF used to solve at cost of equity on
- * raw FCF while the forward one priced WACC on normalised FCF.
- */
-interface FirmDCFInputs {
-  rates:     MarketRates;
-  r:         number;
-  terminalG: number;
-  fcff:      number | null;
-  basis:     TerminalBasis;
-  netDebt:   number;
-  shares:    number;
-}
-
-function firmDCFInputs(f: StockFinancials, marketRates: MarketRates | undefined, opts: DCFOptions): FirmDCFInputs {
-  const rates = marketRates ?? FALLBACK_RATES;
-  const fcff  = baseFCFF(f);
-  return {
-    rates,
-    r:         wacc(f, rates),
-    terminalG: terminalGrowth(rates, opts.terminalGrowthRate),
-    fcff,
-    basis:     terminalBasis(f, fcff ?? 0, opts.sectorRoic),
-    netDebt:   (f.totalDebt ?? 0) - (f.totalCash ?? 0),
-    shares:    getShares(f),
-  };
-}
-
-export function calculateDCF(
-  financials: StockFinancials,
-  marketRates?: MarketRates,
-  opts: DCFOptions = {},
-): DCFResult {
-  const stage1Years = opts.stage1Years ?? 5;
-  const fadeYears   = opts.fadeYears ?? 5;
-  const baseG       = opts.growthRate ?? deriveStage1Growth(financials);
-  // FCFF is an unlevered (firm-level) cash flow → discount at WACC, then bridge
-  // EV→equity via −netDebt. (Discounting at cost of equity AND subtracting net
-  // debt would double-count leverage.)
-  const { rates, r, terminalG, fcff, basis, netDebt, shares } = firmDCFInputs(financials, marketRates, opts);
-  const rfr         = rates.riskFreeRate;
-  const hasDebt     = (financials.totalDebt ?? 0) > 0;
-  const debt        = hasDebt ? costOfDebt(financials, rates) : null;
-  const roicT       = terminalRoicAt(basis, r);
-
-  const empty = (note: string): DCFResult => ({
-    fairValue: null, fairValueBear: null, fairValueBull: null,
-    discountRate: r, beta: financials.beta, riskFreeRate: rfr,
-    equityRiskPremium: rates.equityRiskPremium,
-    costOfDebt: debt?.rate ?? null, syntheticRating: debt?.rating ?? null,
-    stage1Growth: baseG, terminalGrowthRate: terminalG,
-    terminalRoic: roicT, terminalReinvestmentRate: terminalG / roicT,
-    stage1Years, fadeYears,
-    projectedFCFs: [], terminalValue: null, enterpriseValue: null, netDebt,
-    assumptions: note,
-  });
-
-  if (isBalanceSheetFinancial(financials)) {
-    return empty(`DCF not applicable — ${BALANCE_SHEET_FINANCIAL}.`);
-  }
-  if (!fcff || fcff <= 0) {
-    return empty('DCF not applicable — requires positive free cash flow.');
-  }
-  if (r <= terminalG) {
-    return empty(`DCF not stable — discount rate ${(r * 100).toFixed(1)}% ≤ terminal growth ${(terminalG * 100).toFixed(1)}%.`);
-  }
-
-  const baseFCFs   = projectFCFs(fcff, baseG, terminalG, stage1Years, fadeYears);
-  const baseValue  = discountToEV(baseFCFs, terminalG, r, basis);
-  const baseEquity = baseValue.enterpriseValue - netDebt;
-  const baseFV     = baseEquity / shares;
-
-  // Bear: stage-1 growth × 0.5 (floored at terminal+1pp), discount rate +2pp
-  const bearG  = Math.max(terminalG + 0.01, baseG * 0.5);
-  const bearR  = r + 0.02;
-  const bearFCFs = projectFCFs(fcff, bearG, terminalG, stage1Years, fadeYears);
-  const bearVal  = discountToEV(bearFCFs, terminalG, bearR, basis);
-  const bearFV   = (bearVal.enterpriseValue - netDebt) / shares;
-
-  // Bull: stage-1 growth × 1.5 (capped at 75% absolute), discount rate −2pp (clamp r > g_t + 1pp)
-  const bullG  = Math.min(0.75, baseG * 1.5);
-  const bullR  = Math.max(terminalG + 0.01, r - 0.02);
-  const bullFCFs = projectFCFs(fcff, bullG, terminalG, stage1Years, fadeYears);
-  const bullVal  = discountToEV(bullFCFs, terminalG, bullR, basis);
-  const bullFV   = (bullVal.enterpriseValue - netDebt) / shares;
-
-  const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
-  const debtNote = debt ? `, kd ${pct(debt.rate)} ${debt.rating ?? `unrated → ${UNRATED}`}, debt-weighted` : '';
-  const assumptions = `Stage-1 ${pct(baseG)} × ${stage1Years}y → fade × ${fadeYears}y → terminal ${pct(terminalG)}, reinvesting ${pct(terminalG / roicT)} at ROIC ${pct(roicT)} · WACC ${pct(r)} (CAPM β ${financials.beta?.toFixed(2) ?? '1.0'} capped, rfr ${pct(rfr)}, implied ERP ${pct(rates.equityRiskPremium)}${debtNote}) · FCFF base`;
-
-  if (!isPlausibleFairValue(baseFV, financials.price)) {
-    return empty(`DCF base value implausible vs price — likely a per-share data anomaly.`);
-  }
-
-  return {
-    fairValue: baseFV,
-    fairValueBear: isPlausibleFairValue(bearFV, financials.price) ? bearFV : null,
-    fairValueBull: isPlausibleFairValue(bullFV, financials.price) ? bullFV : null,
-    discountRate: r,
-    beta: financials.beta,
-    riskFreeRate: rfr,
-    equityRiskPremium: rates.equityRiskPremium,
-    costOfDebt: debt?.rate ?? null,
-    syntheticRating: debt?.rating ?? null,
-    stage1Growth: baseG,
-    terminalGrowthRate: terminalG,
-    terminalRoic: roicT,
-    terminalReinvestmentRate: terminalG / roicT,
-    stage1Years, fadeYears,
-    projectedFCFs: baseFCFs,
-    terminalValue: baseValue.terminalValue,
-    enterpriseValue: baseValue.enterpriseValue,
-    netDebt,
-    assumptions,
-  };
-}
-
-// ─── 2. Graham Number ────────────────────────────────────────────────────────
+// ─── Graham Number ───────────────────────────────────────────────────────────
 
 export function calculateGraham(financials: StockFinancials): GrahamResult {
-  const { bookValue, price } = financials;
-  const eps = normalizedFlow(financials.eps, financials.fundamentalsHistory.eps);
-  if (!eps || eps <= 0 || !bookValue || bookValue <= 0) {
+  const b = valuationBasis(financials);
+  const eps = normalizedEps(b);
+  const bv = b.bookValuePerShare;
+  if (eps === null || eps <= 0 || bv === null || bv <= 0) {
     return { grahamNumber: null, marginOfSafety: null, isUndervalued: false };
   }
-  const grahamNumber = Math.sqrt(22.5 * eps * bookValue);
-  if (!isPlausibleFairValue(grahamNumber, price)) {
-    // Outlier — usually a per-share unit mismatch (e.g., dual-class shares).
+  const grahamNumber = Math.sqrt(22.5 * eps * bv);
+  if (!isPlausibleFairValue(grahamNumber, b.price)) {
     return { grahamNumber: null, marginOfSafety: null, isUndervalued: false };
   }
-  const marginOfSafety = (grahamNumber - price) / price;
-  return { grahamNumber, marginOfSafety, isUndervalued: grahamNumber > price };
+  const marginOfSafety = (grahamNumber - b.price) / b.price;
+  return { grahamNumber, marginOfSafety, isUndervalued: grahamNumber > b.price };
 }
 
-// ─── 3. Key Ratios (incl. Owner Earnings Yield) ──────────────────────────────
+// ─── Key ratios (incl. owner earnings yield) ─────────────────────────────────
 
 export function calculateRatios(financials: StockFinancials): RatioResult {
-  const pb =
-    financials.bookValue && financials.bookValue > 0
-      ? financials.price / financials.bookValue
-      : null;
+  const b = valuationBasis(financials);
+  const pb = b.bookValuePerShare !== null && b.bookValuePerShare > 0 ? b.price / b.bookValuePerShare : null;
 
   // Owner Earnings (Buffett): NI + D&A − maintenance CapEx (≈ CapEx as proxy)
   const ni    = financials.netIncome;
   const dep   = financials.depreciation;
   const capex = financials.capex;
   const mc    = financials.marketCap;
-  const oe = (ni !== null && dep !== null && capex !== null)
-    ? ni + dep - Math.abs(capex)
-    : null;
+  const oe = (ni !== null && dep !== null && capex !== null) ? ni + dep - Math.abs(capex) : null;
   const ownerEarningsYield = oe !== null && mc > 0 ? oe / mc : null;
 
   return {
     pe: financials.peRatio, forwardPE: financials.forwardPE, peg: financials.pegRatio, pb,
     roe: financials.roe, roa: financials.roa, debtToEquity: financials.debtToEquity,
     currentRatio: financials.currentRatio, operatingMargin: financials.operatingMargin,
-    netMargin: financials.netMargin, revenueGrowth: financials.revenueGrowth,
+    netMargin: financials.netMargin, revenueGrowth: b.revenueGrowth,
     dividendYield: financials.dividendYield,
     ownerEarningsYield,
   };
 }
 
-// ─── 4. Reverse DCF (uses 2-stage projection) ────────────────────────────────
-
-export function calculateReverseDCF(
-  financials: StockFinancials,
-  marketRates?: MarketRates,
-  opts: Pick<DCFOptions, 'sectorRoic'> = {},
-): ReverseDCFResult {
-  const stage1Years = 5;
-  const fadeYears = 5;
-  // The forward DCF's own inputs — WACC, normalised FCFF, terminal basis — so
-  // the growth solved for is the growth the forward model would need.
-  const inputs = firmDCFInputs(financials, marketRates, opts);
-  const { r, terminalG, fcff, basis, netDebt, shares } = inputs;
-  const price  = financials.price;
-  const inapplicable = isBalanceSheetFinancial(financials);
-  const impliedMargin = inapplicable ? null : calculateImpliedMargin(financials, inputs, stage1Years, fadeYears);
-
-  if (inapplicable || !fcff || fcff <= 0 || !shares || shares <= 0 || r <= terminalG) {
-    return {
-      impliedGrowthRate: null, discountRate: r, terminalGrowthRate: terminalG,
-      stage1Years, fadeYears, isPossible: false,
-      interpretation: inapplicable
-        ? `Not calculable — ${BALANCE_SHEET_FINANCIAL}.`
-        : 'Not calculable — requires positive free cash flow and r > terminal g.',
-      impliedMargin,
-    };
-  }
-
-  // Solve for stage-1 g such that EV(g) = market EV (= price × shares + net debt)
-  const targetEV = price * shares + netDebt;
-
-  const evAt = (g: number): number => {
-    const fcfs = projectFCFs(fcff, g, terminalG, stage1Years, fadeYears);
-    return discountToEV(fcfs, terminalG, r, basis).enterpriseValue;
-  };
-
-  const lo0 = -0.50, hi0 = 1.50;
-  if (evAt(lo0) > targetEV) {
-    return {
-      impliedGrowthRate: lo0, discountRate: r, terminalGrowthRate: terminalG,
-      stage1Years, fadeYears, isPossible: true,
-      interpretation: `Market implies FCF decline beyond ${(lo0 * 100).toFixed(0)}%/yr — extreme distress pricing.`,
-      impliedMargin,
-    };
-  }
-  if (evAt(hi0) < targetEV) {
-    return {
-      impliedGrowthRate: hi0, discountRate: r, terminalGrowthRate: terminalG,
-      stage1Years, fadeYears, isPossible: true,
-      interpretation: `Market implies >${(hi0 * 100).toFixed(0)}%/yr stage-1 FCF growth — extreme growth pricing.`,
-      impliedMargin,
-    };
-  }
-
-  let lo = lo0, hi = hi0;
-  for (let iter = 0; iter < 80; iter++) {
-    const mid = (lo + hi) / 2;
-    if (evAt(mid) < targetEV) lo = mid; else hi = mid;
-    if (hi - lo < 1e-5) break;
-  }
-  const g = (lo + hi) / 2;
-  const gPct = g * 100;
-  const interpretation =
-    gPct < 0   ? `Market prices in stage-1 FCF decline of ${Math.abs(gPct).toFixed(1)}%/yr — bearish.` :
-    gPct < 5   ? `Market prices in ${gPct.toFixed(1)}%/yr stage-1 FCF growth — conservative.` :
-    gPct < 15  ? `Market prices in ${gPct.toFixed(1)}%/yr stage-1 FCF growth — moderate.` :
-    gPct < 30  ? `Market prices in ${gPct.toFixed(1)}%/yr stage-1 FCF growth — high growth priced in.` :
-                 `Market prices in ${gPct.toFixed(1)}%/yr stage-1 FCF growth — extreme growth required.`;
-
-  return {
-    impliedGrowthRate: g,
-    discountRate: r,
-    terminalGrowthRate: terminalG,
-    stage1Years, fadeYears,
-    isPossible: true,
-    interpretation,
-    impliedMargin,
-  };
-}
+// ─── Peter Lynch ─────────────────────────────────────────────────────────────
 
 /**
- * Stage-1 revenue growth for the implied-margin solve — the DCF's preference
- * for the forward view and its caps, applied to revenue:
- *   1. Next-FY consensus revenue growth, capped at 60%. Revenue has no loss
- *      base, so this needs none of the sign guards EPS growth does.
- *   2. Latest quarter YoY — the rate SVR itself reacts to; capped at 30%.
- *   3. Trailing revenue growth, capped at 30%.
+ * Growth beyond which Lynch's rule stops meaning anything. His fair P/E equal to
+ * the growth rate was for stalwarts and fast growers, and he distrusted rates
+ * above about 25 %: nobody compounds 40 % for long, and a rule that pays a P/E
+ * of 105 for Advanced Micro Devices' 105 % consensus is a rule taken beyond its
+ * range. Uncapped it valued Amazon at 11.7× its price on a quarterly earnings
+ * jump.
  */
-function deriveRevenueGrowth(
-  f: StockFinancials,
-  runRate: RevenueRunRate,
-): { growth: number; source: ImpliedMargin['growthSource'] } | null {
-  const clamp = (g: number, cap: number) => Math.max(0, Math.min(g, cap));
-  const consensus = (f.earningsEstimates ?? []).find((e) => e.period === '+1y')?.revenueGrowth;
-  if (consensus != null && Number.isFinite(consensus)) {
-    return { growth: clamp(consensus, 0.60), source: 'analyst consensus' };
-  }
-  if (runRate.latestQuarterYoYGrowth !== null) {
-    return { growth: clamp(runRate.latestQuarterYoYGrowth, 0.30), source: 'latest quarter YoY' };
-  }
-  if (f.revenueGrowth !== null && Number.isFinite(f.revenueGrowth)) {
-    return { growth: clamp(f.revenueGrowth, 0.30), source: 'trailing 12 months' };
-  }
-  return null;
-}
+export const LYNCH_MAX_GROWTH = 0.25;
+
+/** Below this the rule prices a slow grower at a P/E of five — not what it is for. */
+export const LYNCH_MIN_GROWTH = 0.05;
 
 /**
- * Reverse SVR: the steady margin on revenue at which today's enterprise value
- * is fair — free cash flow through the forecast, and in the terminal value the
- * operating margin that also pays for stable-growth reinvestment.
- *
- * SVR says what the market pays per unit of revenue, but a revenue multiple is
- * margin and growth folded into one number. Holding growth at the DCF's own
- * path unfolds it: FCF at margin m is m × revenue, and enterprise value is
- * linear in the cash flows, so m is today's EV over the EV of the revenue
- * stream itself. No FCF enters the calculation — which is the point, because
- * the FCF-based reverse DCF has no answer exactly for the pre-profit firms
- * where a revenue multiple is all there is to go on.
- *
- * The margin applies from year one, so for a company still ramping up it is a
- * floor under the mature margin the price requires, not an estimate of it.
- *
- * It is judged against the firm's own after-tax operating margin rather than
- * fixed bands. What counts as a demanding margin depends on the business — 30%
- * is a stretch for a retailer and a step back for a payments network — and the
- * terminal value, where most of the value sits, reads the margin as exactly that
- * operating profit. A ratio rather than a spread, because going from 5% to 10%
- * doubles profitability while 40% to 45% barely moves it.
+ * Lynch's fair value: a P/E equal to growth plus dividend yield, in percent, on
+ * normalised earnings. Growth is the next-year consensus where analysts publish
+ * one — a negative one means no growth to price, and the rule abstains — else
+ * the three-year EPS CAGR. Never a single quarter's jump.
  */
-function calculateImpliedMargin(
-  f: StockFinancials,
-  inputs: FirmDCFInputs,
-  stage1Years: number,
-  fadeYears: number,
-): ImpliedMargin | null {
-  const runRate = revenueRunRate(f);
-  const revenueBase = runRate.seasonallyAdjustedRunRate
-    ?? (runRate.latestQuarterRevenue !== null && runRate.latestQuarterRevenue > 0 ? runRate.latestQuarterRevenue * 4 : null)
-    ?? (f.revenue !== null && f.revenue > 0 ? f.revenue : null);
-  const growth = deriveRevenueGrowth(f, runRate);
-  const shares = getShares(f);
-  if (revenueBase === null || growth === null) return null;
-  if (!Number.isFinite(shares) || shares <= 0 || !(f.price > 0)) return null;
-
-  const { r, terminalG, netDebt } = inputs;
-  if (r <= terminalG) return null;
-
-  // The margin is uniform along the path, so the terminal leg scales revenue
-  // itself (NOPAT per unit of cash flow = 1) but keeps the firm's terminal ROIC:
-  // in steady state the margin also funds the reinvestment growth needs, exactly
-  // as the forward DCF charges it.
-  const revenuePath = projectFCFs(revenueBase, growth.growth, terminalG, stage1Years, fadeYears);
-  const revenueEV = discountToEV(revenuePath, terminalG, r, { ...inputs.basis, nopatPerCashFlow: 1 }).enterpriseValue;
-  const fcfMargin = (f.price * shares + netDebt) / revenueEV;
-
-  const currentFcfMargin = f.freeCashFlow !== null && f.revenue !== null && f.revenue > 0
-    ? f.freeCashFlow / f.revenue
-    : null;
-
-  // The same normalised operating profit the forward DCF's terminal value uses.
-  const ebit = normalizedFlow(f.ebit ?? null, f.fundamentalsHistory.operatingIncome ?? []);
-  const currentNopatMargin = ebit !== null && f.revenue !== null && f.revenue > 0
-    ? (ebit * (1 - (f.taxRate ?? 0.21))) / f.revenue
-    : null;
-
-  const ratio = currentNopatMargin !== null && currentNopatMargin > 0 ? fcfMargin / currentNopatMargin : null;
-  const times = ratio !== null ? `${ratio.toFixed(1)}× today's after-tax operating margin` : '';
-  const interpretation =
-    fcfMargin <= 0   ? 'Enterprise value at or below zero — the market assigns no value to the operating business.' :
-    ratio === null   ? 'No operating profit today, so there is no margin to hold it against — the price assumes the business gets there.' :
-    ratio <= 1       ? `${times} — the price holds even if margins slip.` :
-    ratio <= 1.25    ? `${times} — the price needs the business to keep what it earns.` :
-    ratio <= 1.75    ? `${times} — the price needs clear margin expansion.` :
-                       `${times} — the price needs a step change in profitability.`;
-
-  return {
-    fcfMargin,
-    revenueBase,
-    revenueGrowth: growth.growth,
-    growthSource: growth.source,
-    discountRate: r,
-    currentFcfMargin,
-    currentNopatMargin,
-    interpretation,
-  };
-}
-
-// ─── 5. Peter Lynch Fair Value ────────────────────────────────────────────────
-
 export function calculatePeterLynch(financials: StockFinancials): PeterLynchResult {
-  const eps = normalizedFlow(financials.eps, financials.fundamentalsHistory.eps);
-  // Lynch fair value = EPS × growth%. Prefer forward analyst (Lynch's own examples
-  // explicitly used analyst forecasts for "tenbaggers"); fall back to historical CAGR.
-  const g   = forwardEpsGrowth(financials)
-              ?? financials.epsGrowth3Y
-              ?? financials.earningsGrowth
-              ?? financials.revenueGrowth;
-  const dy  = financials.dividendYield ?? 0;
-  const price = financials.price;
+  const b = valuationBasis(financials);
+  const eps = normalizedEps(b);
+  const fwd = forwardEpsGrowth(financials);
+  const g = fwd ?? toFiniteNumber(financials.epsGrowth3Y);
+  const dy = toFiniteNumber(financials.dividendYield) ?? 0;
+  const none = (growthRate: number | null): PeterLynchResult => ({
+    fairValue: null, growthRate, growthSource: fwd !== null ? 'consensus' : g !== null ? '3y CAGR' : null,
+    isUndervalued: null, marginOfSafety: null,
+  });
 
-  if (!eps || eps <= 0 || !g) {
-    return { fairValue: null, fairValueWithDividend: null, growthRate: null,
-             isUndervalued: null, marginOfSafety: null };
-  }
-
-  const gPct = g * 100;
-  if (gPct <= 0) {
-    return { fairValue: null, fairValueWithDividend: null, growthRate: g,
-             isUndervalued: null, marginOfSafety: null };
-  }
-
-  const fairValue = eps * gPct;
-  const fairValueWithDividend = eps * (gPct + dy * 100);
-  if (!isPlausibleFairValue(fairValue, price)) {
-    return { fairValue: null, fairValueWithDividend: null, growthRate: g,
-             isUndervalued: null, marginOfSafety: null };
-  }
-  const marginOfSafety = (fairValue - price) / price;
-
+  if (eps === null || eps <= 0 || g === null || g < LYNCH_MIN_GROWTH) return none(g);
+  const growth = Math.min(g, LYNCH_MAX_GROWTH);
+  const fairValue = eps * (growth + dy) * 100;
+  if (!isPlausibleFairValue(fairValue, b.price)) return none(growth);
   return {
     fairValue,
-    fairValueWithDividend,
-    growthRate: g,
-    isUndervalued: fairValue > price,
-    marginOfSafety,
+    growthRate: growth,
+    growthSource: fwd !== null ? 'consensus' : '3y CAGR',
+    isUndervalued: fairValue > b.price,
+    marginOfSafety: (fairValue - b.price) / b.price,
   };
 }
 
-// ─── 6. EV Multiples ─────────────────────────────────────────────────────────
+// ─── EV multiples ────────────────────────────────────────────────────────────
 
 export function calculateEVMultiples(financials: StockFinancials): EVMultiplesResult {
+  const b = valuationBasis(financials);
   const ev  = financials.enterpriseValue;
   const ebitda = financials.ebitda;
   const rev = financials.revenue;
-  const fcf = financials.freeCashFlow;
+  const fcf = b.freeCashFlow;
   const mc  = financials.marketCap;
 
   // Forward revenue: prefer +1y (next FY), fall back to 0y (current FY).
-  // Yahoo labels the current FY "0y", not "+0y" — the old "+0y" key never matched.
   const fwdRev1y = financials.earningsEstimates.find((e) => e.period === '+1y')?.revenueEstimate ?? null;
   const fwdRev0y = financials.earningsEstimates.find((e) => e.period === '0y')?.revenueEstimate ?? null;
   const fwdRev   = fwdRev1y && fwdRev1y > 0 ? fwdRev1y : (fwdRev0y && fwdRev0y > 0 ? fwdRev0y : null);
 
   // Simple Valuation Ratio (run-rate P/S): drops the older 3 quarters from the
   // TTM denominator and annualizes the latest one. Reacts immediately to growth
-  // inflections — TTM lags by 6+ months for fast movers. Distorted for highly
-  // seasonal businesses (retail Q4, etc.), which is what the adjusted variant
-  // next to it corrects: the two agree unless the latest quarter is unusual.
+  // inflections; the seasonally adjusted variant next to it corrects for a
+  // latest quarter that is a seasonal high or low.
   const runRate = revenueRunRate(financials);
   const { latestQuarterRevenue, latestQuarterEndDate, latestQuarterYoYGrowth } = runRate;
   const simpleValuationRatio = mc && latestQuarterRevenue && latestQuarterRevenue > 0
@@ -895,22 +286,18 @@ export function calculateEVMultiples(financials: StockFinancials): EVMultiplesRe
   };
 }
 
-// ─── 7. Rule of 40 ───────────────────────────────────────────────────────────
+// ─── Rule of 40 ──────────────────────────────────────────────────────────────
 
 /**
  * A margin, taken from the source the data-quality audit trusts.
  *
  * The audit flags a trailing margin that contradicts the fiscal year, and its
- * finding says to prefer the statements — but until now every consumer went on
- * reading the flagged figure anyway, and the warning only lowered a confidence
- * somewhere downstream. ServiceNow reported a trailing operating margin of
+ * finding says to prefer the statements — but every consumer went on reading the
+ * flagged figure anyway. ServiceNow reported a trailing operating margin of
  * 4.1 % beside a trailing *net* margin of 11.3 %, interest covered 99 times and
- * a free-cash-flow margin of 35 %; the fiscal year says 13.7 %. The 4.1 % was
- * the single largest drag on its score and it failed Rule of 40 on it.
+ * a free-cash-flow margin of 35 %; the fiscal year says 13.7 %.
  *
  * When the audit named the field, the newest full fiscal year answers instead.
- * That is a different period, and the source says so — but a figure the audit
- * has already contradicted is not a better guess for being more recent.
  */
 export function reliableMargin(
   f: StockFinancials, field: 'operatingMargin' | 'netMargin',
@@ -923,65 +310,60 @@ export function reliableMargin(
   const series = field === 'operatingMargin'
     ? f.fundamentalsHistory?.operatingIncome
     : f.fundamentalsHistory?.netIncome;
-  const numerator = toFiniteNumber(series?.[series.length - 1]?.value);
-  const revenue = toFiniteNumber(f.fundamentalsHistory?.revenue?.at(-1)?.value);
+  const numerator = latestValue(series);
+  const revenue = latestValue(f.fundamentalsHistory?.revenue);
   return numerator !== null && revenue !== null && revenue > 0
     ? { value: numerator / revenue, source: 'statement' }
     : { value: reported, source: 'reported' };
 }
 
 export function calculateRuleOf40(financials: StockFinancials): RuleOf40Result {
-  const rg = financials.revenueGrowth;
+  const rg = valuationBasis(financials).revenueGrowth;
   const pm = reliableMargin(financials, 'operatingMargin').value
     ?? reliableMargin(financials, 'netMargin').value;
 
   if (rg === null || pm === null) {
     return { score: null, revenueGrowthPct: null, profitMarginPct: null, passes: null };
   }
-
   const rgPct = rg * 100;
   const pmPct = pm * 100;
   const score = rgPct + pmPct;
-
   return { score, revenueGrowthPct: rgPct, profitMarginPct: pmPct, passes: score >= 40 };
 }
 
-// ─── 8. Revised Graham Formula ───────────────────────────────────────────────
+// ─── Revised Graham formula ──────────────────────────────────────────────────
 
-// V* = EPS × (8.5 + 2g) × 4.4 / Y
-// g = annual EPS growth rate (%), Y = AAA bond yield (%)
+/**
+ * V* = EPS × (8.5 + 2g) × 4.4 / Y — g the annual EPS growth in percent, capped at
+ * Graham's own 15, Y the AAA yield in percent. Growth is the three-year EPS CAGR,
+ * else the statements' earnings growth; never a quarter's.
+ *
+ * Y is a *dollar* AAA yield, and discounting a Swiss or Japanese company with it
+ * charged a 4 % Treasury market's rate to cash flows priced off a 1 % one — V*
+ * came out 2.5× too low in yen. The caller passes the AAA spread over Treasuries
+ * on top of the stock's own currency's government rate.
+ */
 export function calculateGrahamRevised(
   financials: StockFinancials,
-  bondYield = FALLBACK_RATES.aaaBondYield, // decimal
+  bondYield = FALLBACK_RATES.aaaBondYield,
 ): GrahamRevisedResult {
-  const eps = normalizedFlow(financials.eps, financials.fundamentalsHistory.eps);
-  const price = financials.price;
-
-  // Use 3Y EPS CAGR when available; cap at 15% per Graham's own rule
-  const rawG = financials.epsGrowth3Y
-    ?? (financials.earningsGrowth !== null && financials.revenueGrowth !== null
-        ? Math.min(financials.earningsGrowth, financials.revenueGrowth)
-        : financials.earningsGrowth ?? financials.revenueGrowth);
+  const b = valuationBasis(financials);
+  const eps = normalizedEps(b);
+  const rawG = toFiniteNumber(financials.epsGrowth3Y) ?? b.earningsGrowth;
   const g = rawG !== null ? Math.max(0, Math.min(rawG, 0.15)) : null;
 
-  if (!eps || eps <= 0 || g === null) {
-    return { fairValue: null, bondYield, growthRate: null,
-             marginOfSafety: null, isUndervalued: null };
-  }
-
-  // V* = EPS × (8.5 + 2G) × 4.4 / Y  — G and Y both expressed in percent
-  const gPct     = g * 100;
-  const yieldPct = bondYield * 100;
-  const fairValue = (eps * (8.5 + 2 * gPct) * 4.4) / yieldPct;
-  if (!isPlausibleFairValue(fairValue, price)) {
+  if (eps === null || eps <= 0 || g === null || !(bondYield > 0)) {
     return { fairValue: null, bondYield, growthRate: g, marginOfSafety: null, isUndervalued: null };
   }
-  const marginOfSafety = (fairValue - price) / price;
-
-  return { fairValue, bondYield, growthRate: g, marginOfSafety, isUndervalued: fairValue > price };
+  const fairValue = (eps * (8.5 + 2 * g * 100) * 4.4) / (bondYield * 100);
+  if (!isPlausibleFairValue(fairValue, b.price)) {
+    return { fairValue: null, bondYield, growthRate: g, marginOfSafety: null, isUndervalued: null };
+  }
+  const marginOfSafety = (fairValue - b.price) / b.price;
+  return { fairValue, bondYield, growthRate: g, marginOfSafety, isUndervalued: fairValue > b.price };
 }
 
-// ─── 9. Piotroski F-Score ────────────────────────────────────────────────────
+// ─── Piotroski F-Score ───────────────────────────────────────────────────────
 
 export function calculatePiotroski(financials: StockFinancials): PiotroskiResult {
   const f = financials;
@@ -989,7 +371,7 @@ export function calculatePiotroski(financials: StockFinancials): PiotroskiResult
 
   // Use annual statement figures (not Yahoo's TTM/average-asset ROA) so both
   // sides of the YoY comparisons are on a consistent end-of-period annual basis.
-  const latest = (s: { year: number; value: number }[]): number | null => s.length ? s[s.length - 1].value : null;
+  const latest = (s: YearPoint[]): number | null => s.length ? s[s.length - 1].value : null;
   const niAnnual  = latest(f.fundamentalsHistory.netIncome) ?? f.netIncome;
   const revAnnual = latest(f.fundamentalsHistory.revenue) ?? f.revenue;
   const gpAnnual  = latest(f.fundamentalsHistory.grossProfit) ?? f.grossProfit;
@@ -1011,12 +393,16 @@ export function calculatePiotroski(financials: StockFinancials): PiotroskiResult
     ? ocfAnnual / f.totalAssets : null;
   const f4 = cfRoa !== null && roaCur !== null ? cfRoa > roaCur : null;
 
-  // Leverage / Liquidity
+  // F5: leverage did not rise. Piotroski scores a *fall*, and read literally
+  // that fails every firm without debt in both years — the one balance sheet
+  // that cannot have become more leveraged. No debt then and now passes.
   const currLeverage = f.longTermDebt !== null && f.totalAssets && f.totalAssets > 0
     ? f.longTermDebt / f.totalAssets : null;
-  const prevLeverage = py?.longTermDebt !== null && py?.totalAssets && py?.totalAssets && py.totalAssets > 0
+  const prevLeverage = py?.longTermDebt !== null && py?.totalAssets && py.totalAssets > 0
     ? py.longTermDebt! / py.totalAssets : null;
-  const f5 = currLeverage !== null && prevLeverage !== null ? currLeverage < prevLeverage : null;
+  const f5 = currLeverage !== null && prevLeverage !== null
+    ? currLeverage < prevLeverage || (currLeverage === 0 && prevLeverage === 0)
+    : null;
 
   // Current ratio from annual balance-sheet figures (matches the annual prior
   // year); fall back to Yahoo's current-ratio field only if annual is missing.
@@ -1027,14 +413,12 @@ export function calculatePiotroski(financials: StockFinancials): PiotroskiResult
   const f6 = currCR !== null && prevCR !== null ? currCR > prevCR : null;
 
   // F7: no new shares — the latest fiscal year's weighted-average count against
-  // the prior year's, one measure for both. Payloads from before
-  // FINANCIALS_VERSION 19 carry neither side.
+  // the prior year's, one measure for both.
   const sharesNow  = f.sharesOutstandingAnnual ?? null;
   const sharesPrev = py?.sharesOutstanding ?? null;
   const f7 = sharesNow !== null && sharesPrev !== null ? sharesNow <= sharesPrev : null;
 
   // Efficiency — current side on the annual basis to match the annual prior year
-  // ( !=null guards so a legitimate 0 isn't treated as missing ).
   const currGM = gpAnnual != null && revAnnual != null && revAnnual > 0 ? gpAnnual / revAnnual : null;
   const prevGM = py?.grossProfit != null && py?.revenue != null && py.revenue > 0 ? py.grossProfit / py.revenue : null;
   const f8 = currGM !== null && prevGM !== null ? currGM > prevGM : null;
@@ -1067,15 +451,15 @@ export function calculatePiotroski(financials: StockFinancials): PiotroskiResult
   return { score, maxScore, signals, interpretation };
 }
 
-// ─── 10. Altman Z-Score ──────────────────────────────────────────────────────
+// ─── Altman Z-Score ──────────────────────────────────────────────────────────
 
 export function calculateAltmanZ(financials: StockFinancials): AltmanZResult {
   const f = financials;
 
-  // Original 5-variable Z (with asset-turnover X5) was calibrated on public
-  // manufacturers. Consumer Cyclical is a mixed bucket (autos are industrial,
-  // but most names are retail/restaurants/services), so it uses the modified
-  // industry-agnostic Z'' rather than being forced onto the manufacturer model.
+  // The original five-variable Z (with asset-turnover X5) was calibrated on
+  // public manufacturers. Everything else is read with Altman's Z″, the
+  // four-variable model he estimated without the turnover term so it would
+  // travel to non-manufacturers and emerging markets.
   const manufacturingSectors = ['Basic Materials', 'Industrials', 'Energy', 'Utilities'];
   const isManufacturing = f.sector && manufacturingSectors.includes(f.sector);
   const model: AltmanZResult['model'] = isManufacturing ? 'original' : 'modified';
@@ -1083,7 +467,7 @@ export function calculateAltmanZ(financials: StockFinancials): AltmanZResult {
   const ta = f.totalAssets;
   const wc = f.workingCapital;
   const re = f.retainedEarnings;
-  const ebit = f.ebit;
+  const ebit = valuationBasis(f).operatingIncome;
   const tl = f.totalLiabilities;
   const rev = f.revenue;
   const mc = f.marketCap;
@@ -1096,10 +480,8 @@ export function calculateAltmanZ(financials: StockFinancials): AltmanZResult {
   const x1 = wc !== null ? wc / ta : null;
   const x2 = re !== null ? re / ta : null;
   const x3 = ebit !== null ? ebit / ta : null;
-  // X4: original Z uses MARKET value of equity; the modified Z'' (emerging-
-  // market / non-manufacturer) uses BOOK value of equity. Both over total
-  // liabilities. Source book equity from the latest FX-converted statement
-  // (fallback bookValue × shares).
+  // X4: original Z uses MARKET value of equity; Z″ uses BOOK value of equity.
+  // Both over total liabilities.
   const eqHist = f.fundamentalsHistory.stockholdersEquity;
   const bookEquity = eqHist.length ? eqHist[eqHist.length - 1].value
     : (f.bookValue !== null && f.sharesOutstanding !== null ? f.bookValue * f.sharesOutstanding : null);
@@ -1130,159 +512,213 @@ export function calculateAltmanZ(financials: StockFinancials): AltmanZResult {
   return { score, zone, x1, x2, x3, x4, x5, model, thresholds };
 }
 
-// ─── 11. Dividend Discount Model ─────────────────────────────────────────────
+// ─── Dividend discount model (two-stage) ─────────────────────────────────────
 
+/** Years the dividend grows at its own rate before fading to stable growth. */
+const DDM_HIGH_GROWTH_YEARS = 5;
+/** Years the fade to stable growth takes. */
+const DDM_FADE_YEARS = 5;
+/** No dividend compounds faster than this for five years on a mature payer. */
+const DDM_MAX_GROWTH = 0.15;
+
+/**
+ * Two-stage dividend discount model: the dividend grows at its own five-year
+ * rate (else the consensus EPS growth, else stable growth) for five years, fades
+ * to stable growth over the next five, and is capitalised there with Gordon's
+ * formula. A single-stage Gordon model capped every payer at the risk-free rate
+ * from year one, which priced a company raising its dividend 10 % a year as if
+ * it were a bond.
+ */
 export function calculateDDM(financials: StockFinancials, marketRates?: MarketRates): DDMResult {
-  const dy   = financials.dividendYield;
-  const price = financials.price;
-
-  if (!dy || dy <= 0 || dy > 0.15) {
-    return { fairValue: null, dividendPerShare: null, dividendGrowthRate: null,
-             requiredReturn: null, isApplicable: false };
-  }
-
-  const dividendPerShare = price * dy;
-  const requiredReturn = costOfEquity(financials.beta, marketRates ?? FALLBACK_RATES);
-
-
-  // Gordon growth runs forever, so it is a terminal growth rate and obeys the
-  // same cap: no dividend outgrows the economy. Without a growth figure the cap
-  // is also the estimate, as it is for the DCF.
   const rates = marketRates ?? FALLBACK_RATES;
-  const rawGrowth = financials.dividendGrowthRate5Y ?? financials.earningsGrowth ?? financials.revenueGrowth;
-  const dividendGrowthRate = Math.max(0, terminalGrowth(rates, rawGrowth ?? undefined));
+  const dy = toFiniteNumber(financials.dividendYield);
+  const price = financials.price;
+  const requiredReturn = costOfEquity(financials, rates);
+  const gT = Math.max(0, terminalGrowth(rates));
+  const none = (isApplicable: boolean, dps: number | null = null, g: number | null = null): DDMResult => ({
+    fairValue: null, dividendPerShare: dps, dividendGrowthRate: g, terminalGrowthRate: gT, requiredReturn, isApplicable,
+  });
 
-  if (dividendGrowthRate >= requiredReturn - 0.02) {
-    return { fairValue: null, dividendPerShare, dividendGrowthRate, requiredReturn, isApplicable: true };
+  if (dy === null || dy <= 0 || dy > 0.15) return none(false);
+  const dps = price * dy;
+  const own = toFiniteNumber(financials.dividendGrowthRate5Y) ?? forwardEpsGrowth(financials) ?? gT;
+  const g = clamp(own, 0, DDM_MAX_GROWTH);
+  if (requiredReturn <= gT + 0.01) return none(true, dps, g);
+
+  let d = dps;
+  let pv = 0;
+  const years = DDM_HIGH_GROWTH_YEARS + DDM_FADE_YEARS;
+  for (let t = 1; t <= years; t++) {
+    const growth = t <= DDM_HIGH_GROWTH_YEARS ? g
+      : g + (gT - g) * ((t - DDM_HIGH_GROWTH_YEARS) / DDM_FADE_YEARS);
+    d *= 1 + growth;
+    pv += d / Math.pow(1 + requiredReturn, t);
   }
+  const terminal = (d * (1 + gT)) / (requiredReturn - gT);
+  const fairValue = pv + terminal / Math.pow(1 + requiredReturn, years);
 
-  const d1 = dividendPerShare * (1 + dividendGrowthRate);
-  const fairValue = d1 / (requiredReturn - dividendGrowthRate);
-
-  if (fairValue > price * 15 || fairValue < 0) {
-    return { fairValue: null, dividendPerShare, dividendGrowthRate, requiredReturn, isApplicable: true };
-  }
-
-  return { fairValue, dividendPerShare, dividendGrowthRate, requiredReturn, isApplicable: true };
+  if (!isPlausibleFairValue(fairValue, price)) return none(true, dps, g);
+  return { fairValue, dividendPerShare: dps, dividendGrowthRate: g, terminalGrowthRate: gT, requiredReturn, isApplicable: true };
 }
 
-// ─── 12. Earnings Power Value (Greenwald) — simplified ───────────────────────
+// ─── Earnings Power Value (Greenwald) ────────────────────────────────────────
 
+/** Fiscal years the sustainable margin is averaged over. */
+const EPV_MARGIN_YEARS = 5;
+
+/**
+ * Greenwald's earnings power value: what today's business is worth with no
+ * growth at all — sustainable operating profit after tax, capitalised at the
+ * cost of capital, plus the balance sheet's net cash and investments.
+ *
+ * "Sustainable" is the average operating margin of the last five fiscal years
+ * applied to today's revenue, in both directions. The old version only ever
+ * lifted a depressed year, so a cyclical at its peak had its peak capitalised
+ * for ever; averaging over a cycle is what Greenwald's normalisation is for.
+ * Tax is the marginal rate a mature firm pays, not the year's effective one.
+ */
 export function calculateEPV(financials: StockFinancials, marketRates?: MarketRates): EPVResult {
-  // NOPAT is an unlevered (firm-level) flow capitalised into enterprise value
-  // before the equity bridge (epv + cash − debt), so discount at WACC, not cost
-  // of equity — otherwise leverage is double-counted.
-  const r = wacc(financials, marketRates ?? FALLBACK_RATES);
-  // Greenwald EPV capitalises *sustainable* earnings power, so normalize EBIT
-  // against the operating-income history rather than trusting a single trailing
-  // figure that may be hit by one-offs.
-  const ebit = normalizedFlow(financials.ebit, financials.fundamentalsHistory.operatingIncome);
-  const taxRate = financials.taxRate ?? 0.21;
-  const price = financials.price;
-  const shares = getShares(financials);
+  const rates = marketRates ?? FALLBACK_RATES;
+  const b = valuationBasis(financials);
+  const r = wacc(financials, b, rates);
+  const taxRate = Math.max(b.taxRate, b.marginalTaxRate);
+  const margins = b.operatingMargins.slice(-EPV_MARGIN_YEARS);
+  const current = b.operatingIncome !== null && b.revenue !== null && b.revenue > 0 ? b.operatingIncome / b.revenue : null;
+  const normalizedMargin = margins.length >= 2 ? mean(margins) : current;
+  const none: EPVResult = {
+    fairValue: null, normalizedEbit: null, normalizedMargin, taxRate, wacc: r, marginOfSafety: null,
+  };
 
-  if (isBalanceSheetFinancial(financials) || !ebit || ebit <= 0 || !shares || shares <= 0) {
-    return { fairValue: null, normalizedEbit: null, taxRate, wacc: r, marginOfSafety: null };
+  if (borrowsToLend(financials) || b.revenue === null || b.revenue <= 0 || normalizedMargin === null || normalizedMargin <= 0) {
+    return none;
   }
-
-  // Capitalise sustainable NOPAT at cost of capital, no growth.
-  const normalizedEbit = ebit;
-  const nopat = normalizedEbit * (1 - taxRate);
-  const epv = nopat / r;
-
-  const cash = financials.totalCash ?? 0;
-  const debt = financials.totalDebt ?? 0;
-  const equityValue = epv + cash - debt;
-  const fairValue = equityValue / shares;
-
-  if (!isPlausibleFairValue(fairValue, price)) {
-    return { fairValue: null, normalizedEbit, taxRate, wacc: r, marginOfSafety: null };
-  }
-  const marginOfSafety = (fairValue - price) / price;
-
-  return { fairValue, normalizedEbit, taxRate, wacc: r, marginOfSafety };
-}
-
-// ─── 13. Residual Income Model (Edwards–Bell–Ohlson) ─────────────────────────
-
-export function calculateRIM(financials: StockFinancials, marketRates?: MarketRates): RIMResult {
-  const r = costOfEquity(financials.beta, marketRates ?? FALLBACK_RATES);
-  const bv0 = financials.bookValue;
-  const roeRaw = financials.roe;
-  const price = financials.price;
-
-  if (!bv0 || bv0 <= 0 || !roeRaw || roeRaw <= 0) {
-    return {
-      fairValue: null, costOfEquity: r, excessReturn: null,
-      bookValuePerShare: bv0 ?? null, marginOfSafety: null, isApplicable: false,
-    };
-  }
-
-  // Cap ROE to avoid extreme implied compounding (e.g., book-value-near-zero firms with ROE > 100%)
-  const roe = Math.min(roeRaw, 0.30);
-  const payout = financials.payoutRatio !== null
-    ? Math.max(0, Math.min(financials.payoutRatio, 0.95))
-    : 0.30; // default reinvestment assumption when no dividend
-  const retention = 1 - payout;
-
-  const horizon = 5;
-  let bvPrev = bv0;
-  let pvExcess = 0;
-  for (let t = 1; t <= horizon; t++) {
-    const excessReturn = (roe - r) * bvPrev;
-    pvExcess += excessReturn / Math.pow(1 + r, t);
-    bvPrev = bvPrev * (1 + roe * retention);
-  }
-
-  // Terminal residual income assumed = 0 (excess returns fade to zero in the long run).
-  const fairValue = bv0 + pvExcess;
-  if (!isPlausibleFairValue(fairValue, price)) {
-    // Outlier — typically per-share book-value unit mismatch (dual-class shares).
-    return {
-      fairValue: null, costOfEquity: r, excessReturn: roe - r,
-      bookValuePerShare: bv0, marginOfSafety: null, isApplicable: false,
-    };
-  }
-  const marginOfSafety = (fairValue - price) / price;
-
+  const normalizedEbit = normalizedMargin * b.revenue;
+  const epv = (normalizedEbit * (1 - taxRate)) / r;
+  const fairValue = equityPerShare(epv, b);
+  if (fairValue === null || !isPlausibleFairValue(fairValue, b.price)) return { ...none, normalizedEbit };
   return {
-    fairValue,
-    costOfEquity: r,
-    excessReturn: roe - r,
-    bookValuePerShare: bv0,
-    marginOfSafety,
-    isApplicable: true,
+    fairValue, normalizedEbit, normalizedMargin, taxRate, wacc: r,
+    marginOfSafety: (fairValue - b.price) / b.price,
   };
 }
 
-// ─── 14. Net Current Asset Value (Graham Net-Net) ────────────────────────────
+// ─── Residual income / excess return model ───────────────────────────────────
+
+/** Years the return on equity takes to settle at its terminal level. */
+const RIM_FADE_YEARS = 10;
+
+/**
+ * Share of today's excess return on equity a franchise keeps for good. Excess
+ * returns are competed away, but not all of them: a bank's deposit franchise or
+ * an insurer's underwriting discipline is why it trades above book in the first
+ * place. Half is the base case — Dechow, Hutton and Sloan (1999) measured
+ * abnormal earnings persisting at about 0.6 a year, and a franchise that kept
+ * nothing would make every bank worth its book.
+ */
+const RIM_DURABLE_EXCESS = 0.5;
+
+/** Returns on equity above this are a balance sheet run down by buybacks, not a return. */
+const RIM_MAX_ROE = 0.40;
+
+/**
+ * Sustainable return on equity: normalised earnings over common equity, averaged
+ * with the fiscal years the statements show, so one good or bad year does not
+ * set a perpetuity.
+ */
+function sustainableRoe(f: StockFinancials, b: ValuationBasis): number | null {
+  const equity = new Map((f.fundamentalsHistory.stockholdersEquity ?? []).map((p) => [p.year, p.value]));
+  const years = b.earningsHistory
+    .filter((p) => (equity.get(p.year) ?? 0) > 0)
+    .slice(-3)
+    .map((p) => p.value / (equity.get(p.year) as number));
+  const now = b.earnings !== null && b.equity !== null && b.equity > 0 ? b.earnings / b.equity : null;
+  const all = now !== null ? [...years, now] : years;
+  const roe = mean(all);
+  return roe === null ? null : clamp(roe, -0.2, RIM_MAX_ROE);
+}
+
+/**
+ * The excess return model: book value plus the present value of the returns
+ * earned above the cost of equity on it.
+ *
+ *   value = BV₀ + Σ (ROEₜ − kₑ) · BVₜ₋₁ / (1 + kₑ)ᵗ + terminal
+ *
+ * ROE moves in a straight line from its sustainable level to kₑ plus the
+ * durable half of today's excess over ten years, book grows by the retained
+ * share of earnings, and the residual income left in year eleven is capitalised
+ * as a perpetuity at stable growth. A firm earning less than its cost of equity
+ * converges to exactly it — it either improves or shrinks.
+ *
+ * This is how banks and insurers are valued: book value is their operating
+ * capital, and free cash flow to the firm describes nothing about them. The old
+ * version stopped excess returns dead after year five with nothing after, and
+ * so priced every good bank at little above its book.
+ */
+export function calculateRIM(financials: StockFinancials, marketRates?: MarketRates): RIMResult {
+  const rates = marketRates ?? FALLBACK_RATES;
+  const b = valuationBasis(financials);
+  const ke = costOfEquity(financials, rates);
+  const gT = Math.max(0, terminalGrowth(rates));
+  const bv0 = b.equity !== null && b.dilutedShares !== null && b.dilutedShares > 0 ? b.equity / b.dilutedShares : null;
+  const roe0 = sustainableRoe(financials, b);
+  const none = (isApplicable = false): RIMResult => ({
+    fairValue: null, costOfEquity: ke, sustainableRoe: roe0, terminalRoe: null,
+    excessReturn: roe0 !== null ? roe0 - ke : null, bookValuePerShare: bv0, marginOfSafety: null, isApplicable,
+  });
+  if (bv0 === null || bv0 <= 0 || roe0 === null || ke <= gT + 0.01) return none();
+
+  const roeT = ke + RIM_DURABLE_EXCESS * Math.max(0, roe0 - ke);
+  const payout = clamp(toFiniteNumber(financials.payoutRatio) ?? 0.3, 0, 1);
+  let bv = bv0;
+  let pv = 0;
+  for (let t = 1; t <= RIM_FADE_YEARS; t++) {
+    const roe = roe0 + (roeT - roe0) * (t / RIM_FADE_YEARS);
+    pv += ((roe - ke) * bv) / Math.pow(1 + ke, t);
+    bv *= 1 + roe * (1 - payout);
+  }
+  const residual = (roeT - ke) * bv;
+  const terminal = residual / (ke - gT);
+  const fairValue = bv0 + pv + terminal / Math.pow(1 + ke, RIM_FADE_YEARS);
+
+  if (!isPlausibleFairValue(fairValue, b.price)) return { ...none(), terminalRoe: roeT };
+  return {
+    fairValue, costOfEquity: ke, sustainableRoe: roe0, terminalRoe: roeT, excessReturn: roe0 - ke,
+    bookValuePerShare: bv0, marginOfSafety: (fairValue - b.price) / b.price, isApplicable: true,
+  };
+}
+
+// ─── Net current asset value (Graham net-net) ────────────────────────────────
 
 export function calculateNCAV(financials: StockFinancials): NCAVResult {
   const ca = financials.totalCurrentAssets;
   const tl = financials.totalLiabilities;
-  const shares = getShares(financials);
-  const price = financials.price;
+  const b = valuationBasis(financials);
+  const shares = b.shares;
 
   if (ca === null || tl === null || !shares || shares <= 0 || ca <= tl) {
     return { ncavPerShare: null, buyThreshold: null, marginOfSafety: null, isApplicable: false };
   }
-
   const ncavPerShare = (ca - tl) / shares;
   const buyThreshold = (2 / 3) * ncavPerShare;
-  if (!isPlausibleFairValue(ncavPerShare, price)) {
+  if (!isPlausibleFairValue(ncavPerShare, b.price)) {
     return { ncavPerShare: null, buyThreshold: null, marginOfSafety: null, isApplicable: false };
   }
-  const marginOfSafety = (ncavPerShare - price) / price;
-
-  return { ncavPerShare, buyThreshold, marginOfSafety, isApplicable: true };
+  return { ncavPerShare, buyThreshold, marginOfSafety: (ncavPerShare - b.price) / b.price, isApplicable: true };
 }
 
-// ─── 15. Peer-Multiples Fair Value ───────────────────────────────────────────
+// ─── Peer-multiples fair value ───────────────────────────────────────────────
 
 /** The fundamental each peer multiple prices — the unit a multiple gets its vote in. */
 const FUNDAMENTAL_PRICED: Record<PeerMultiplesEntry['metric'], string> = {
   pe: 'earnings', evEbitda: 'ebitda', evRevenue: 'revenue', priceSales: 'revenue', priceFCF: 'cash flow', pb: 'book value',
 };
+
+/**
+ * The multiples that describe a lender. Enterprise value, EBITDA, sales and
+ * free cash flow all treat debt as financing, which for a bank it is not — its
+ * peers are priced on earnings and on book.
+ */
+const LENDER_MULTIPLES = new Set<PeerMultiplesEntry['metric']>(['pe', 'pb']);
 
 export function calculatePeerMultiples(
   financials: StockFinancials,
@@ -1290,80 +726,37 @@ export function calculatePeerMultiples(
 ): PeerMultiplesResult {
   const empty = (): PeerMultiplesResult => ({
     byMultiple: [], medianFairPrice: null, meanFairPrice: null,
-    count: 0, marginOfSafety: null,
+    count: 0, peerCount: sectorMedians?.peerCount ?? 0, marginOfSafety: null,
   });
-
   if (!sectorMedians) return empty();
 
-  const shares = getShares(financials);
-  const cash   = financials.totalCash ?? 0;
-  const debt   = financials.totalDebt ?? 0;
-  const netDebt = debt - cash;
-  const price = financials.price;
+  const b = valuationBasis(financials);
+  const shares = b.shares;
+  if (shares === null || shares <= 0) return empty();
+  // Peers' enterprise values are market cap plus debt less cash, so ours is too.
+  const netDebt = (financials.totalDebt ?? 0) - (financials.totalCash ?? 0);
+  const price = b.price;
+  const lender = borrowsToLend(financials);
 
   const entries: PeerMultiplesEntry[] = [];
+  const push = (metric: PeerMultiplesEntry['metric'], own: number | null, peer: number | null, fairPrice: (own: number, peer: number) => number) => {
+    if (lender && !LENDER_MULTIPLES.has(metric)) return;
+    if (own !== null && own > 0 && peer !== null && peer > 0) {
+      entries.push({ metric, ownMetric: own, sectorMedian: peer, fairPrice: fairPrice(own, peer) });
+    }
+  };
 
-  // P/E
-  const eps = financials.eps;
-  const pePeer = sectorMedians.pe;
-  if (eps !== null && eps > 0 && pePeer !== null && pePeer > 0) {
-    entries.push({ metric: 'pe', ownMetric: eps, sectorMedian: pePeer, fairPrice: pePeer * eps });
-  }
+  push('pe', financials.eps, sectorMedians.pe, (eps, pe) => pe * eps);
+  push('evEbitda', financials.ebitda, sectorMedians.evToEbitda, (e, m) => (m * e - netDebt) / shares);
+  push('evRevenue', financials.revenue, sectorMedians.evToRevenue, (rev, m) => (m * rev - netDebt) / shares);
+  push('priceFCF', b.freeCashFlow, sectorMedians.priceToFCF, (fcf, m) => (m * fcf) / shares);
+  push('priceSales', financials.revenue, sectorMedians.priceToSales, (rev, m) => (m * rev) / shares);
+  push('pb', b.bookValuePerShare, sectorMedians.pb, (bv, m) => m * bv);
 
-  // EV/EBITDA → equity bridge
-  const ebitda = financials.ebitda;
-  const evEbitdaPeer = sectorMedians.evToEbitda;
-  if (ebitda !== null && ebitda > 0 && evEbitdaPeer !== null && evEbitdaPeer > 0) {
-    const fairEV = evEbitdaPeer * ebitda;
-    entries.push({
-      metric: 'evEbitda', ownMetric: ebitda, sectorMedian: evEbitdaPeer,
-      fairPrice: (fairEV - netDebt) / shares,
-    });
-  }
-
-  // EV/Revenue → equity bridge
-  const rev = financials.revenue;
-  const evRevPeer = sectorMedians.evToRevenue;
-  if (rev !== null && rev > 0 && evRevPeer !== null && evRevPeer > 0) {
-    const fairEV = evRevPeer * rev;
-    entries.push({
-      metric: 'evRevenue', ownMetric: rev, sectorMedian: evRevPeer,
-      fairPrice: (fairEV - netDebt) / shares,
-    });
-  }
-
-  // P/FCF
-  const fcf = financials.freeCashFlow;
-  const pFcfPeer = sectorMedians.priceToFCF;
-  if (fcf !== null && fcf > 0 && pFcfPeer !== null && pFcfPeer > 0) {
-    entries.push({
-      metric: 'priceFCF', ownMetric: fcf, sectorMedian: pFcfPeer,
-      fairPrice: (pFcfPeer * fcf) / shares,
-    });
-  }
-
-  // P/S — equity-side analogue of EV/Revenue (no equity bridge applied since P/S is already a market-cap-based multiple)
-  const psPeer = sectorMedians.priceToSales;
-  if (rev !== null && rev > 0 && psPeer !== null && psPeer > 0) {
-    entries.push({
-      metric: 'priceSales', ownMetric: rev, sectorMedian: psPeer,
-      fairPrice: (psPeer * rev) / shares,
-    });
-  }
-
-  // P/B
-  const bv = financials.bookValue;
-  const pbPeer = sectorMedians.pb;
-  if (bv !== null && bv > 0 && pbPeer !== null && pbPeer > 0) {
-    entries.push({ metric: 'pb', ownMetric: bv, sectorMedian: pbPeer, fairPrice: pbPeer * bv });
-  }
-
-  // Drop per-multiple outliers (e.g., P/B based fair value when book value is in
-  // wrong share-class units).
+  // Drop per-multiple outliers (a unit mismatch in one input, not a valuation).
   for (const e of entries) {
     if (!isPlausibleFairValue(e.fairPrice, price)) e.fairPrice = null;
   }
-
   if (entries.length === 0) return empty();
 
   const fairs = entries.map((e) => e.fairPrice).filter((x): x is number => x !== null && Number.isFinite(x));
@@ -1378,19 +771,19 @@ export function calculatePeerMultiples(
   }
   const votes = [...byFundamental.values()].map((prices) => median(prices)!);
   const medianFP = median(votes);
-  const meanFP = votes.length > 0 ? votes.reduce((s, v) => s + v, 0) / votes.length : null;
-  const marginOfSafety = medianFP !== null ? (medianFP - price) / price : null;
+  const meanFP = mean(votes);
 
   return {
     byMultiple: entries,
     medianFairPrice: medianFP,
     meanFairPrice: meanFP,
     count: fairs.length,
-    marginOfSafety,
+    peerCount: sectorMedians.peerCount ?? 0,
+    marginOfSafety: medianFP !== null ? (medianFP - price) / price : null,
   };
 }
 
-// ─── 16. Sortino Ratio ───────────────────────────────────────────────────────
+// ─── Sortino ratio ───────────────────────────────────────────────────────────
 
 export function calculateSortino(financials: StockFinancials, riskFreeRate = FALLBACK_RATES.riskFreeRate): SortinoResult {
   const returns = financials.monthlyReturns ?? [];
@@ -1398,7 +791,6 @@ export function calculateSortino(financials: StockFinancials, riskFreeRate = FAL
     ratio: null, annualReturn: null, downsideDeviation: null,
     riskFreeRate, interpretation: 'unknown',
   };
-
   if (returns.length < 6) return unknown;
 
   // Annualise compound return: (∏(1+r))^(12/n) − 1 — handles n < 12 correctly.
@@ -1412,31 +804,32 @@ export function calculateSortino(financials: StockFinancials, riskFreeRate = FAL
   const meanSquared = negativeExcess.reduce((s, r) => s + r * r, 0) / negativeExcess.length;
   const downsideDeviation = Math.sqrt(meanSquared) * Math.sqrt(12);
 
-  // No month fell below the target: there is no downside risk to divide by.
-  // That is an exceptional outcome, not missing data — report it rather than
-  // collapsing to 'unknown'. Ratio is undefined (→ null); interpretation
-  // reflects whether the downside-free return still beat the risk-free rate.
   if (downsideDeviation === 0) {
     return {
       ratio: null, annualReturn, downsideDeviation: 0, riskFreeRate,
       interpretation: annualReturn >= riskFreeRate ? 'excellent' : 'acceptable',
     };
   }
-
   const ratio = (annualReturn - riskFreeRate) / downsideDeviation;
-
   const interpretation: SortinoResult['interpretation'] =
     ratio >= 2   ? 'excellent'   :
     ratio >= 1   ? 'good'        :
     ratio >= 0.5 ? 'acceptable'  :
     ratio >= 0   ? 'poor'        :
                    'very poor';
-
   return { ratio, annualReturn, downsideDeviation, riskFreeRate, interpretation };
 }
 
-// ─── 17. Beneish M-Score ─────────────────────────────────────────────────────
+// ─── Beneish M-Score ─────────────────────────────────────────────────────────
 
+/**
+ * Beneish's eight indices, each this year against last on the same basis: the
+ * newest fiscal year against the one before. The current side used to read the
+ * trailing twelve months, so for a company nine months into a new year the
+ * sales index measured close to two years of growth against one — Ondas'
+ * 24.2 was 7.05 on a like-for-like basis, and three companies sat in the grey
+ * zone that were clean.
+ */
 export function calculateBeneish(financials: StockFinancials): BeneishResult {
   const f  = financials;
   const py = f.prevYear;
@@ -1447,25 +840,22 @@ export function calculateBeneish(financials: StockFinancials): BeneishResult {
     depi: null, sgai: null, tata: null, lvgi: null,
     variablesComputed: 0,
   };
-
   if (!py || !f.totalAssets || f.totalAssets <= 0) return unknown;
 
+  const revenue = latestValue(f.fundamentalsHistory.revenue) ?? f.revenue;
+  const grossProfit = latestValue(f.fundamentalsHistory.grossProfit) ?? f.grossProfit;
+
   const gm0 = py.revenue && py.revenue > 0 && py.grossProfit !== null ? py.grossProfit / py.revenue : null;
-  const gm1 = f.revenue && f.revenue > 0 && f.grossProfit !== null ? f.grossProfit / f.revenue : null;
+  const gm1 = revenue && revenue > 0 && grossProfit !== null ? grossProfit / revenue : null;
   const gmi = gm0 !== null && gm1 !== null && gm1 > 0 ? gm0 / gm1 : null;
 
-  const sgi = py.revenue && py.revenue > 0 && f.revenue ? f.revenue / py.revenue : null;
+  const sgi = py.revenue && py.revenue > 0 && revenue ? revenue / py.revenue : null;
 
-  // TATA = (net income − cash from operations) / total assets, on an ANNUAL
-  // basis (Beneish is a year-over-year accrual model). Prefer the annual
-  // statement figures over the TTM fields so the numerator is period-consistent
-  // with the rest of the indices; fall back to TTM only when history is absent.
+  // TATA = (net income − cash from operations) / total assets, annual.
   const niSeries  = f.fundamentalsHistory.netIncome;
   const niAnnual  = niSeries.length ? niSeries[niSeries.length - 1].value : f.netIncome;
   const ocfAnnual = f.operatingCashFlowAnnual ?? f.operatingCashFlow;
-  const tata = niAnnual !== null && ocfAnnual !== null
-    ? (niAnnual - ocfAnnual) / f.totalAssets
-    : null;
+  const tata = niAnnual !== null && ocfAnnual !== null ? (niAnnual - ocfAnnual) / f.totalAssets : null;
 
   const lev1 = f.longTermDebt !== null && f.totalCurrentLiabilities !== null
     ? (f.longTermDebt + f.totalCurrentLiabilities) / f.totalAssets : null;
@@ -1473,7 +863,7 @@ export function calculateBeneish(financials: StockFinancials): BeneishResult {
     ? (py.longTermDebt + py.currentLiabilities) / py.totalAssets : null;
   const lvgi = lev1 !== null && lev0 !== null && lev0 > 0 ? lev1 / lev0 : null;
 
-  const dsr1 = f.receivables !== null && f.revenue && f.revenue > 0 ? f.receivables / f.revenue : null;
+  const dsr1 = f.receivables !== null && revenue && revenue > 0 ? f.receivables / revenue : null;
   const dsr0 = py.receivables !== null && py.revenue && py.revenue > 0 ? py.receivables / py.revenue : null;
   const dsri = dsr1 !== null && dsr0 !== null && dsr0 > 0 ? dsr1 / dsr0 : null;
 
@@ -1490,23 +880,17 @@ export function calculateBeneish(financials: StockFinancials): BeneishResult {
     ? (dep0 / (py.ppe + dep0)) / (dep1 / (f.ppe + dep1))
     : null;
 
-  const sgai1 = f.sga !== null && f.revenue && f.revenue > 0 ? f.sga / f.revenue : null;
+  const sgai1 = f.sga !== null && revenue && revenue > 0 ? f.sga / revenue : null;
   const sgai0 = py.sga !== null && py.revenue && py.revenue > 0 ? py.sga / py.revenue : null;
   const sgai = sgai1 !== null && sgai0 !== null && sgai0 > 0 ? sgai1 / sgai0 : null;
 
   const indices = [dsri, gmi, aqi, sgi, depi, sgai, tata, lvgi];
   const computed = indices.filter((x) => x !== null).length;
 
-  // Require at least 5 of 8 indices — Beneish's coefficients are calibrated assuming
-  // all 8 are present. Substituting 1.0 for too many missing values systematically
-  // pushes the score toward "manipulator" (substituting 1.0 for all 8 indices
-  // gives M ≈ +2.20, well above the −1.78 manipulation threshold).
+  // Require at least 5 of 8 indices — the coefficients assume all eight, and
+  // substituting 1.0 for too many pushes the score toward "manipulator".
   if (computed < 5) {
-    return {
-      score: null, probability: 'unknown',
-      dsri, gmi, aqi, sgi, depi, sgai, tata, lvgi,
-      variablesComputed: computed,
-    };
+    return { score: null, probability: 'unknown', dsri, gmi, aqi, sgi, depi, sgai, tata, lvgi, variablesComputed: computed };
   }
 
   const v = (x: number | null) => x ?? 1.0;
@@ -1529,39 +913,82 @@ export function calculateBeneish(financials: StockFinancials): BeneishResult {
   return { score, probability, dsri, gmi, aqi, sgi, depi, sgai, tata, lvgi, variablesComputed: computed };
 }
 
-// ─── 18. Interest Coverage ───────────────────────────────────────────────────
+/**
+ * Sales growth beyond what the M-Score was fitted on. Beneish estimated the
+ * model on filers whose manipulator sample averaged an SGI near 1.6; the
+ * coefficient on SGI is +0.892 and the function is linear, so far enough out
+ * the growth term alone decides the score. That is extrapolation, not a
+ * measurement, and it should not cap a verdict.
+ */
+export const BENEISH_SGI_OUT_OF_SAMPLE = 3.0;
 
+/** Growth at which the SGI term starts to dominate the score. */
+export const BENEISH_SGI_GROWTH = 1.3;
+
+export type BeneishReading =
+  | 'not-applicable'    // a lender: receivables are the product, not a by-product
+  | 'unavailable'       // too few variables to compute
+  | 'clean'
+  | 'grey'
+  | 'flagged'           // elevated, and the accruals back it up
+  | 'growth-explained'  // elevated, but earnings are cash-backed and sales grew
+  | 'extrapolated';     // elevated, but the model was evaluated out of sample
+
+/**
+ * What the M-Score is actually saying about this company — the one reading the
+ * composite's confidence, the balance-sheet criterion and the conviction cap all
+ * consume, so no two of them can disagree about whether the same number is
+ * evidence. The composite used to halve its confidence on the raw flag while
+ * the scorer had already explained it as growth.
+ *
+ * The variable that separates growth from manipulation is TATA — total
+ * accruals over assets. Cash at or above earnings is the opposite of the
+ * pattern the score exists to find.
+ */
+export function beneishReading(f: StockFinancials, b: BeneishResult): BeneishReading {
+  if (borrowsToLend(f)) return 'not-applicable';
+  if (b.variablesComputed < 4) return 'unavailable';
+  if (b.probability === 'unlikely manipulator') return 'clean';
+  if (b.probability !== 'likely manipulator') return 'grey';
+  const sgi = toFiniteNumber(b.sgi);
+  const tata = toFiniteNumber(b.tata);
+  if (sgi !== null && sgi > BENEISH_SGI_OUT_OF_SAMPLE) return 'extrapolated';
+  if (sgi !== null && sgi > BENEISH_SGI_GROWTH && tata !== null && tata <= 0) return 'growth-explained';
+  return 'flagged';
+}
+
+// ─── Interest coverage ───────────────────────────────────────────────────────
+
+/**
+ * Operating income over interest. Without debt there is nothing to cover and a
+ * profitable firm is `excellent`; with debt but no interest reported — Apple
+ * stopped breaking it out — there is no ratio to read, and the answer is
+ * `unknown`, not the best score on the scale.
+ */
 export function calculateInterestCoverage(financials: StockFinancials): InterestCoverageResult {
-  const ebit = financials.ebit;
-  const interest = financials.interestExpense;
+  const ebit = valuationBasis(financials).operatingIncome;
+  const interest = toFiniteNumber(financials.interestExpense);
+  const debt = toFiniteNumber(financials.totalDebt) ?? 0;
 
-  if (!ebit || !interest || interest === 0) {
-    // Debt-free shortcut is only "excellent" if operating income is actually
-    // positive — a loss-making firm with no interest is not well-covered.
-    // (A negative EBIT is truthy in JS, so guard explicitly on > 0.)
-    if (ebit !== null && ebit > 0 && (!interest || interest === 0)) {
-      return { ratio: null, interpretation: 'excellent' };
-    }
-    if (ebit !== null && ebit < 0 && (!interest || interest === 0)) {
-      return { ratio: null, interpretation: 'critical' };
-    }
+  if (interest === null || interest === 0) {
+    if (debt > 0) return { ratio: null, interpretation: 'unknown' };
+    if (ebit !== null && ebit > 0) return { ratio: null, interpretation: 'excellent' };
+    if (ebit !== null && ebit < 0) return { ratio: null, interpretation: 'critical' };
     return { ratio: null, interpretation: 'unknown' };
   }
+  if (ebit === null) return { ratio: null, interpretation: 'unknown' };
 
-  const absInterest = Math.abs(interest);
-  const ratio = ebit / absInterest;
-
+  const ratio = ebit / Math.abs(interest);
   const interpretation: InterestCoverageResult['interpretation'] =
     ratio >= 8   ? 'excellent' :
     ratio >= 4   ? 'good'      :
     ratio >= 2   ? 'fair'      :
     ratio >= 1   ? 'poor'      :
                    'critical';
-
   return { ratio, interpretation };
 }
 
-// ─── 19. Composite Fair Value ────────────────────────────────────────────────
+// ─── Composite fair value ────────────────────────────────────────────────────
 
 export interface CompositeInputs {
   dcf: DCFResult;
@@ -1576,127 +1003,172 @@ export interface CompositeInputs {
 }
 
 /**
- * The composite contributor that is not one of our models.
- *
- * The sell-side target rides in the primary tier as one more triangulation
- * point, which is right for a fair value but wrong for a scorer that also reads
- * the consensus as a pillar of its own: measured on a real watchlist it sat in
- * the tier for every single stock and made up 46 % of it, so a consensus
- * weighted at 15 % actually carried 21 %. Named here so the scorer can take it
- * back out without matching on a string literal that could be renamed.
+ * The composite contributor that is not one of our models. Named here so the
+ * scorer can take it back out without matching on a string literal.
  */
 export const ANALYST_CONSENSUS_MODEL = 'Analyst Consensus';
 
+/** Return on equity above which book value is no longer the capital that earns the profits. */
+export const BOOK_ANCHOR_MAX_ROE = 0.40;
+
+/** Payout ratio below which the dividend is not how the firm distributes value. */
+export const DDM_MIN_PAYOUT = 0.40;
+
 /**
- * Tiered composite fair value:
- *
- *   PRIMARY (headline):
- *     Market-aligned, growth-aware models. The median of this tier is THE fair
- *     value shown in the UI hero.
- *       • DCF (2-Stage FCFF)         — analyst-forward growth, terminal fade
- *       • Peer Multiples (median)    — implied price across 5–6 sector medians
- *       • Peter Lynch                — EPS × growth%
- *       • Analyst Consensus          — mean of analyst price targets
- *
- *   CONSERVATIVE (value lens):
- *     Backward-looking / no-growth perspective. Useful as a sanity floor and
- *     for mature firms, but systematically pessimistic for growers.
- *       • Graham Number              — sqrt(22.5 · EPS · BV)
- *       • Graham Revised V*          — capped at 15% growth (Graham's own rule)
- *       • EPV (Greenwald)            — NOPAT capitalised at WACC, no growth
- *       • RIM (Residual Income)      — book value + excess returns
- *       • DDM (Gordon Growth)        — dividend-based
- *
- * NCAV is excluded entirely — it's a liquidation floor in a different unit.
- *
- * The tier split is the right answer to "Graham/EPV always drag the median
- * down for growth firms" — they're now a separate lens, not part of the
- * headline. The user sees both in the UI.
+ * How far from the price one model may pull the fair value. A model saying five
+ * times the price is not five times as informative as one saying twice, and a
+ * median over two numbers is their mean — so a single wild DCF next to a sober
+ * peer multiple used to carry the pair to +200 %. Values are capped at these
+ * multiples of the price before they are aggregated, and the aggregation is in
+ * logs, where 0.5× and 2× are equally far from the price.
  */
-function tierStats(price: number, models: CompositeContributor[]): CompositeTier {
-  const fvs = models.map((m) => m.fairValue);
-  if (fvs.length === 0) {
-    return { median: null, mean: null, p25: null, p75: null, min: null, max: null, marginOfSafety: null, models };
-  }
-  const med = median(fvs);
-  const p25 = percentile(fvs, 0.25);
-  const p75 = percentile(fvs, 0.75);
-  const minV = Math.min(...fvs);
-  const maxV = Math.max(...fvs);
-  const meanV = fvs.reduce((s, v) => s + v, 0) / fvs.length;
-  const mos = med !== null && Number.isFinite(price) && price > 0 ? (med - price) / price : null;
-  return { median: med, mean: meanV, p25, p75, min: minV, max: maxV, marginOfSafety: mos, models };
+export const FAIR_VALUE_BOUNDS = { low: 0.4, high: 2.5 } as const;
+
+/**
+ * How much a model's voice counts. Not taste: each discount is a known weakness.
+ *   - a DCF whose value sits over 85 % in the terminal value, or whose growth
+ *     path is not a forecast anyone published, rests on one assumption;
+ *   - peer medians from fewer than five peers are a handful of anecdotes;
+ *   - Lynch's rule is a rule of thumb, applied to one year of growth.
+ */
+export const MODEL_WEIGHT = { full: 1, discounted: 0.5 } as const;
+
+function dcfWeight(dcf: DCFResult): number {
+  const fragile = (dcf.terminalShare ?? 0) > 0.85 || dcf.growthSource !== 'analyst consensus';
+  return fragile ? MODEL_WEIGHT.discounted : MODEL_WEIGHT.full;
 }
 
 /**
- * Return on equity above which book value is no longer the capital that earns
- * the profits.
- *
- * Graham's Number and the residual-income model both start from book value.
- * That is the right anchor for the firms they were built on — asset-heavy,
- * retaining their earnings — and the wrong one for a company that has handed
- * its capital back through buybacks or never needed much: Mastercard earns
- * 241 % on its book, Apple 149 %. The Graham Number then reduces to a function
- * of P/E × P/B (it is √(22.5 · EPS · BVPS)) and priced both at a tenth of the
- * share price; RIM caps ROE at 30 % *and* keeps the shrunken book, and priced
- * Mastercard at 3 %. Above 40 % the book is under two and a half years of
- * earnings, and the models abstain instead of reporting the buyback history as
- * a valuation.
+ * Weighted median of log fair values. The median of the logs is the geometric
+ * middle of the models, where a model at half the price and one at twice it
+ * balance; weights let a fragile model count half without dropping it.
  */
-export const BOOK_ANCHOR_MAX_ROE = 0.40;
+function weightedLogMedian(points: { x: number; w: number }[]): number | null {
+  const pts = points.filter((p) => Number.isFinite(p.x) && p.w > 0).sort((a, b) => a.x - b.x);
+  if (pts.length === 0) return null;
+  const total = pts.reduce((s, p) => s + p.w, 0);
+  let acc = 0;
+  for (let i = 0; i < pts.length; i++) {
+    acc += pts[i].w;
+    if (Math.abs(acc - total / 2) < 1e-12 && i + 1 < pts.length) return (pts[i].x + pts[i + 1].x) / 2;
+    if (acc > total / 2) return pts[i].x;
+  }
+  return pts[pts.length - 1].x;
+}
 
 /**
- * Payout ratio below which the dividend is not how the firm distributes value.
+ * The fair value a set of models agrees on, in logs, where half and twice the
+ * price are equally far from it.
  *
- * Gordon's model values the dividend stream and nothing else. For a company
- * paying out most of its earnings that is the business; for NVIDIA (1 %) or
- * Alphabet (4 %) it is a rounding error, and the model priced both at 4 % of
- * the share price. Below 40 % the dividend is a token beside retention and
- * buybacks, and the model abstains.
+ * Published (no `bounds`): the weighted median of what the models said — a
+ * reader's middle, which one wild model cannot move.
+ *
+ * Scored (`bounds` given): each model first held within the bounds of the price,
+ * then the weighted *mean* of the logs. A median over two models is whichever
+ * weighs more — Intel's half-weight DCF at 0.06× next to a full-weight peer
+ * multiple at 1.93× came out as the peer multiple alone — while the bounded
+ * mean lets both speak and neither shout: no single model can move the result
+ * by more than the bounds allow.
  */
-export const DDM_MIN_PAYOUT = 0.40;
+export function aggregateFairValue(
+  price: number, models: CompositeContributor[], bounds: { low: number; high: number } | null = null,
+): number | null {
+  if (!(price > 0) || models.length === 0) return null;
+  const points = models.map((m) => ({ x: Math.log(m.fairValue / price), w: m.weight ?? MODEL_WEIGHT.full }));
+  if (!bounds) {
+    const x = weightedLogMedian(points);
+    return x === null ? null : price * Math.exp(x);
+  }
+  const lo = Math.log(bounds.low), hi = Math.log(bounds.high);
+  const total = points.reduce((s, p) => s + p.w, 0);
+  if (!(total > 0)) return null;
+  const x = points.reduce((s, p) => s + p.w * clamp(p.x, lo, hi), 0) / total;
+  return price * Math.exp(x);
+}
 
+function tierStats(price: number, models: CompositeContributor[]): CompositeTier {
+  const fvs = models.map((m) => m.fairValue).sort((a, b) => a - b);
+  if (fvs.length === 0) {
+    return { median: null, mean: null, p25: null, p75: null, min: null, max: null, marginOfSafety: null, models };
+  }
+  const med = aggregateFairValue(price, models);
+  const mos = med !== null && Number.isFinite(price) && price > 0 ? (med - price) / price : null;
+  return {
+    median: med,
+    mean: mean(fvs),
+    p25: quantileSorted(fvs, 0.25),
+    p75: quantileSorted(fvs, 0.75),
+    min: fvs[0],
+    max: fvs[fvs.length - 1],
+    marginOfSafety: mos,
+    models,
+  };
+}
+
+/**
+ * Tiered composite fair value.
+ *
+ *   PRIMARY (headline): market-aligned, growth-aware — the DCF, peer multiples,
+ *   Peter Lynch and the analyst consensus; for a bank, insurer or lender the
+ *   excess return model takes the DCF's place, because book value is its
+ *   operating capital.
+ *
+ *   CONSERVATIVE (value lens): no-growth or asset-based — Graham's number and
+ *   V*, EPV, the excess return model and the dividend model — each only where
+ *   it describes the company.
+ *
+ * Each tier's median is a weighted median of log values, so a model at half the
+ * price and one at twice it balance, and a fragile model counts half.
+ */
 export function calculateCompositeFairValue(financials: StockFinancials, inputs: CompositeInputs): CompositeFairValueResult {
   const price = financials.price;
+  const lender = borrowsToLend(financials);
   const roe = financials.roe;
-  const bookNotAnchor = roe !== null && Number.isFinite(roe) && roe > BOOK_ANCHOR_MAX_ROE
+  const bookNotAnchor = !lender && roe !== null && Number.isFinite(roe) && roe > BOOK_ANCHOR_MAX_ROE
     ? `ROE ${(roe * 100).toFixed(0)} % — book value is not the capital base (buybacks or a capital-light model), so a book-anchored value measures the balance sheet, not the business`
     : undefined;
   const payout = financials.payoutRatio;
   const tokenDividend = inputs.ddm.isApplicable && payout !== null && Number.isFinite(payout) && payout < DDM_MIN_PAYOUT
     ? `Payout ${(payout * 100).toFixed(0)} % — the dividend is not how this firm distributes value, so a dividend-only value understates it`
     : undefined;
-  const rimExcessTooNegative = inputs.rim.excessReturn !== null && inputs.rim.excessReturn < -0.03;
+  const rimExcessTooNegative = !lender && inputs.rim.excessReturn !== null && inputs.rim.excessReturn < -0.03;
+  const fcffInapplicable = lender ? `Not applicable — ${LENDER_NOTE}` : undefined;
 
   const primary: CompositeContributor[]      = [];
   const conservative: CompositeContributor[] = [];
   const excluded: CompositeExclusion[]       = [];
   let primaryModels = 0;
-  const fcffInapplicable = isBalanceSheetFinancial(financials)
-    ? `Not applicable — ${BALANCE_SHEET_FINANCIAL}`
-    : undefined;
 
-  function add(tier: 'primary' | 'conservative', name: string, value: number | null, missingReason: string, skipReason?: string) {
+  function add(
+    tier: 'primary' | 'conservative', name: string, value: number | null, missingReason: string,
+    skipReason?: string, weight: number = MODEL_WEIGHT.full,
+  ) {
     if (tier === 'primary') primaryModels++;
     if (skipReason) {
       excluded.push({ name, reason: skipReason });
       return;
     }
     if (value !== null && Number.isFinite(value) && value > 0) {
-      (tier === 'primary' ? primary : conservative).push({ name, fairValue: value });
+      (tier === 'primary' ? primary : conservative).push({ name, fairValue: value, weight });
     } else {
       excluded.push({ name, reason: missingReason });
     }
   }
 
   // ── PRIMARY tier ──
-  add('primary', 'DCF (2-Stage FCFF)', inputs.dcf.fairValue, 'Negative FCF or unstable r vs g', fcffInapplicable);
-  add('primary', 'Peer Multiples',     inputs.peerMultiples.medianFairPrice, 'No peer-group data');
-  add('primary', 'Peter Lynch',        inputs.peterLynch.fairValue,         'Requires positive EPS and growth');
+  if (lender) {
+    add('primary', 'Excess Return (RIM)', inputs.rim.fairValue, 'Requires positive book value and a return on equity');
+  } else {
+    add('primary', 'DCF (Revenue-Driven)', inputs.dcf.fairValue, inputs.dcf.assumptions, undefined, dcfWeight(inputs.dcf));
+  }
+  add('primary', 'Peer Multiples', inputs.peerMultiples.medianFairPrice, 'No peer-group data', undefined,
+    (inputs.peerMultiples.peerCount ?? 0) >= 5 ? MODEL_WEIGHT.full : MODEL_WEIGHT.discounted);
+  add('primary', 'Peter Lynch', inputs.peterLynch.fairValue,
+    'Requires positive earnings and 5–25 % consensus or three-year growth', undefined, MODEL_WEIGHT.discounted);
   // Analyst target = market consensus, treated as one more "model" for triangulation.
   primaryModels++;
   if (financials.targetMeanPrice !== null && Number.isFinite(financials.targetMeanPrice) && financials.targetMeanPrice > 0) {
-    primary.push({ name: ANALYST_CONSENSUS_MODEL, fairValue: financials.targetMeanPrice });
+    primary.push({ name: ANALYST_CONSENSUS_MODEL, fairValue: financials.targetMeanPrice, weight: MODEL_WEIGHT.full });
   } else {
     excluded.push({ name: ANALYST_CONSENSUS_MODEL, reason: 'No analyst coverage' });
   }
@@ -1704,20 +1176,22 @@ export function calculateCompositeFairValue(financials: StockFinancials, inputs:
   // ── CONSERVATIVE tier ──
   add('conservative', 'Graham Number',     inputs.graham.grahamNumber,     'Requires positive EPS and book value', bookNotAnchor);
   add('conservative', 'Graham Revised V*', inputs.grahamRevised.fairValue, 'Requires positive EPS and growth');
-  add('conservative', 'EPV (Greenwald)',   inputs.epv.fairValue,           'Requires positive EBIT', fcffInapplicable);
-  add('conservative', 'Residual Income (RIM)', inputs.rim.fairValue, 'Requires positive book value and ROE',
-    bookNotAnchor ?? (rimExcessTooNegative
-      ? `Trailing ROE far below cost of equity (excess ${(inputs.rim.excessReturn! * 100).toFixed(1)}pp) — RIM understates future earning power for firms in heavy investment phase`
-      : undefined));
-  add('conservative', 'DDM (Gordon)',
+  add('conservative', 'EPV (Greenwald)',   inputs.epv.fairValue,           'Requires a positive normalised operating margin', fcffInapplicable);
+  if (!lender) {
+    add('conservative', 'Excess Return (RIM)', inputs.rim.fairValue, 'Requires positive book value and a return on equity',
+      bookNotAnchor ?? (rimExcessTooNegative
+        ? `Sustainable ROE far below cost of equity (excess ${(inputs.rim.excessReturn! * 100).toFixed(1)}pp) — a book-anchored value understates a firm in a heavy investment phase`
+        : undefined));
+  }
+  add('conservative', 'DDM (Two-Stage)',
     inputs.ddm.isApplicable ? inputs.ddm.fairValue : null,
-    inputs.ddm.isApplicable ? 'g approaches r — model unstable' : 'No dividend',
+    inputs.ddm.isApplicable ? 'Cost of equity barely above stable growth — model unstable' : 'No dividend',
     tokenDividend);
 
   const primaryTier      = tierStats(price, primary);
   const conservativeTier = tierStats(price, conservative);
 
-  // Confidence (0-10) based on primary tier coverage + IQR tightness + Beneish.
+  // Confidence (0-10) based on primary tier coverage + dispersion + Beneish.
   const coverageScore = (primary.length / primaryModels) * 5;
   const iqrRel = primaryTier.median && primaryTier.median > 0 && primaryTier.p25 !== null && primaryTier.p75 !== null
     ? (primaryTier.p75 - primaryTier.p25) / primaryTier.median
@@ -1728,8 +1202,8 @@ export function calculateCompositeFairValue(financials: StockFinancials, inputs:
     iqrRel < 0.50 ? 3 :
     iqrRel < 0.80 ? 2 : 1;
   let confidence = coverageScore + tightnessBonus;
-  // A lender's M-Score is not a reading about a lender — see `borrowsToLend`.
-  if (inputs.beneish.probability === 'likely manipulator' && !borrowsToLend(financials)) confidence /= 2;
+  // Only a flag the accruals support halves it — see `beneishReading`.
+  if (beneishReading(financials, inputs.beneish) === 'flagged') confidence /= 2;
   if (primary.length < 2) confidence = 0;
   confidence = Math.max(0, Math.min(10, Math.round(confidence * 10) / 10));
 

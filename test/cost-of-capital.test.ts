@@ -1,40 +1,50 @@
 /**
  * What the models discount with, and what they let a firm grow to.
  *
- * The premium is the market's own number, terminal growth is capped at the
- * risk-free rate and has to pay for itself, and debt costs what the firm's
- * rating would cost today. These tests pin those properties, plus the one that
- * keeps them honest: the forward and the reverse DCF price the same firm the
- * same way.
+ * The premium is the market's own number plus the country's, betas regress
+ * towards one, debt costs what the firm's rating would cost today, stable
+ * growth never outruns either the economy or the firm, and the forward and the
+ * reverse DCF price the same firm the same way.
  */
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { calculateDCF, calculateReverseDCF } from '../src/analysis/metrics.js';
+import { adjustedBeta, costOfEquity, MATURE_MAX_DEBT_SHARE, wacc } from '../src/analysis/cost-of-capital.js';
+import { valuationBasis } from '../src/analysis/basis.js';
+import { dcfInputs, MIN_TERMINAL_SPREAD } from '../src/analysis/dcf.js';
 import { FALLBACK_RATES, MarketRates } from '../src/data/fred.js';
 import type { StockFinancials } from '../src/types.js';
 
 const rates = (riskFreeRate: number, equityRiskPremium = 0.041): MarketRates =>
   ({ ...FALLBACK_RATES, riskFreeRate, equityRiskPremium });
 
-/** A debt-free, β=1 firm — so cost of equity, WACC and CAPM all coincide. */
+/** A debt-free firm with a 20 % operating margin and consensus growth of 10 % then 8 %. */
 function financials(over: Partial<StockFinancials> = {}): StockFinancials {
   return {
     price: 100,
     marketCap: 1_000_000_000,
     sharesOutstanding: 10_000_000,
     beta: 1,
-    freeCashFlow: 50_000_000,
+    revenue: 500_000_000,
+    ebit: 100_000_000,
+    netIncome: 80_000_000,
+    freeCashFlow: 60_000_000,
     totalCash: 0,
     totalDebt: 0,
     interestExpense: null,
     taxRate: 0.21,
-    forwardEpsGrowth: null,
-    epsGrowth3Y: null,
-    earningsGrowth: 0.08,
-    revenueGrowth: 0.08,
-    fundamentalsHistory: { freeCashFlow: [] },
+    bookValue: 30,
+    trailingSource: 'quarters',
+    earningsEstimates: [
+      { period: '0y', revenueGrowth: 0.10, epsGrowth: null, epsEstimate: null },
+      { period: '+1y', revenueGrowth: 0.08, epsGrowth: null, epsEstimate: null },
+    ],
+    fundamentalsHistory: {
+      revenue: [], grossProfit: [], operatingIncome: [], netIncome: [], eps: [],
+      freeCashFlow: [], operatingCashFlow: [], totalAssets: [], stockholdersEquity: [],
+    },
     ...over,
   } as unknown as StockFinancials;
 }
@@ -42,30 +52,43 @@ function financials(over: Partial<StockFinancials> = {}): StockFinancials {
 const close = (a: number | null | undefined, b: number, eps = 1e-9) =>
   assert.ok(a != null && Math.abs(a - b) < eps, `expected ${a} ≈ ${b}`);
 
-describe('cost of capital', () => {
-  it('discounts at the risk-free rate plus the fetched premium', () => {
+describe('cost of equity', () => {
+  it('discounts at the risk-free rate plus beta times the fetched premium', () => {
     const dcf = calculateDCF(financials(), rates(0.0475, 0.0409));
-
     assert.equal(dcf.equityRiskPremium, 0.0409);
     close(dcf.discountRate, 0.0475 + 0.0409, 1e-12);
-    assert.match(dcf.assumptions, /implied ERP 4\.1%/);
+  });
+
+  it('pulls a regression beta a third of the way towards one', () => {
+    close(adjustedBeta(2.2), 0.67 * 2.2 + 0.33, 1e-12);
+    close(adjustedBeta(1), 1, 1e-12);
+  });
+
+  it('does not believe a listing that barely moves with the index', () => {
+    // A European ADR against the S&P 500 read 0.28.
+    assert.equal(adjustedBeta(0.28), 0.8);
+  });
+
+  it('adds the headquarters country\'s premium over the United States', () => {
+    const us = costOfEquity(financials(), rates(0.0475, 0.041));
+    const br = costOfEquity(financials({ countryRiskPremium: 0.03 }), rates(0.0475, 0.041));
+    close(br - us, 0.03, 1e-12);
   });
 
   it('falls back to the shared constants when no rates were fetched', () => {
-    const dcf = calculateDCF(financials());
-
+    const dcf = calculateDCF(financials(), FALLBACK_RATES);
     assert.equal(dcf.equityRiskPremium, FALLBACK_RATES.equityRiskPremium);
     assert.equal(dcf.riskFreeRate, FALLBACK_RATES.riskFreeRate);
   });
+});
 
+describe('cost of debt', () => {
   it('prices debt at the spread its interest coverage earns, not at its old coupon', () => {
-    // Coverage 110 / 40 = 2.75 → BBB. Interest ÷ debt would say 8% here — or,
-    // for most real firms in 2026, less than the Treasury.
+    // Coverage 110 / 40 = 2.75 → BBB.
     const dcf = calculateDCF(
       financials({ totalDebt: 500_000_000, interestExpense: 40_000_000, ebit: 110_000_000 }),
       rates(0.0475, 0.0409),
     );
-
     assert.equal(dcf.syntheticRating, 'BBB');
     close(dcf.costOfDebt, 0.0475 + FALLBACK_RATES.creditSpreads.BBB, 1e-12);
     assert.match(dcf.assumptions, /kd 5\.9% BBB/);
@@ -73,112 +96,123 @@ describe('cost of capital', () => {
 
   it('prices debt without reported interest as BBB, and says it did', () => {
     const dcf = calculateDCF(financials({ totalDebt: 500_000_000 }), rates(0.0475, 0.0409));
-
     assert.equal(dcf.syntheticRating, null);
     close(dcf.costOfDebt, 0.0475 + FALLBACK_RATES.creditSpreads.BBB, 1e-12);
     assert.match(dcf.assumptions, /unrated → BBB/);
   });
 
-  it('adds back after-tax interest only where operating cash flow paid it', () => {
-    const at = (interestInOperatingCashFlow: boolean) => calculateDCF(
-      financials({ interestExpense: 10_000_000, taxRate: 0.2, interestInOperatingCashFlow }),
-      rates(0.0475),
-      { growthRate: 0.1 },
-    ).projectedFCFs[0];
+  it('charges a borrower in a riskier country its government\'s default spread', () => {
+    const f = financials({ totalDebt: 500_000_000, countryDefaultSpread: 0.02 });
+    const dcf = calculateDCF(f, rates(0.0475, 0.0409));
+    close(dcf.costOfDebt, 0.0475 + FALLBACK_RATES.creditSpreads.BBB + 0.02, 1e-12);
+  });
 
-    close(at(true), (50_000_000 + 8_000_000) * 1.1, 1e-3);
-    close(at(false), 50_000_000 * 1.1, 1e-3);
+  it('does not count US-GAAP operating leases as debt the cash flows are before', () => {
+    const f = financials({ totalDebt: 300_000_000, leaseObligations: 100_000_000, operatingLeaseLiabilities: 120_000_000 });
+    assert.equal(valuationBasis(f).debt, 200_000_000, 'only the leases that were in total debt come out');
   });
 });
 
-describe('terminal growth', () => {
-  it('defaults to the risk-free rate', () => {
-    assert.equal(calculateDCF(financials(), rates(0.0475)).terminalGrowthRate, 0.0475);
-    assert.equal(calculateReverseDCF(financials(), rates(0.0475)).terminalGrowthRate, 0.0475);
+describe('terminal rate and growth', () => {
+  it('holds a mature firm to a market-like capital structure', () => {
+    // Half debt at a cheap after-tax rate pulled Fresenius Medical's terminal WACC
+    // to 6.8 % against 5.2 % growth.
+    const f = financials({ totalDebt: 1_000_000_000, interestExpense: 20_000_000 });
+    const b = valuationBasis(f);
+    const levered = wacc(f, b, rates(0.05), 1);
+    const mature = wacc(f, b, rates(0.05), 1, MATURE_MAX_DEBT_SHARE);
+    assert.ok(mature > levered, `${mature} > ${levered}`);
   });
 
-  it('moves with the rate rather than sitting at a constant', () => {
-    assert.equal(calculateDCF(financials(), rates(0.008)).terminalGrowthRate, 0.008);
+  it('never grows faster than the economy, nor faster than the firm itself', () => {
+    const fast = dcfInputs(financials(), rates(0.04), null);
+    const slow = dcfInputs(financials({
+      earningsEstimates: [
+        { period: '0y', revenueGrowth: 0.03, epsGrowth: null, epsEstimate: null },
+        { period: '+1y', revenueGrowth: 0.025, epsGrowth: null, epsEstimate: null },
+      ] as StockFinancials['earningsEstimates'],
+    }), rates(0.04), null);
+    assert.ok('inputs' in fast && 'inputs' in slow);
+    close(fast.inputs.assumptions.terminalGrowth, 0.04, 1e-12);
+    close(slow.inputs.assumptions.terminalGrowth, 0.025, 1e-12);
   });
 
-  it('clamps a caller who asks to grow faster than the economy', () => {
-    const dcf = calculateDCF(financials(), rates(0.0475), { terminalGrowthRate: 0.06 });
-    assert.equal(dcf.terminalGrowthRate, 0.0475);
+  it('does not let a shrinking year set a shrinking perpetuity', () => {
+    const shrinking = dcfInputs(financials({
+      earningsEstimates: [
+        { period: '0y', revenueGrowth: -0.05, epsGrowth: null, epsEstimate: null },
+        { period: '+1y', revenueGrowth: -0.02, epsGrowth: null, epsEstimate: null },
+      ] as StockFinancials['earningsEstimates'],
+    }), rates(0.04), null);
+    assert.ok('inputs' in shrinking);
+    close(shrinking.inputs.assumptions.terminalGrowth, 0.02, 1e-12);
+    assert.equal(shrinking.inputs.assumptions.growth2, -0.02, 'the negative consensus is kept, not replaced by the past');
   });
 
-  it('leaves a more conservative request alone', () => {
-    const dcf = calculateDCF(financials(), rates(0.0475), { terminalGrowthRate: 0.02 });
-    assert.equal(dcf.terminalGrowthRate, 0.02);
+  it('keeps stable growth two points below the terminal discount rate', () => {
+    const built = dcfInputs(financials({ beta: 0.1 }), rates(0.06, 0.02), null);
+    assert.ok('inputs' in built);
+    const a = built.inputs.assumptions;
+    assert.ok(a.terminalDiscountRate - a.terminalGrowth >= MIN_TERMINAL_SPREAD - 1e-12);
   });
 
-  it('charges growth the reinvestment it needs', () => {
-    // NOPAT 60 × 0.79 = 47.4 on FCFF 50; growth at 4.75% on a 20% ROIC costs
-    // 23.75% of each year's operating profit.
-    const f = financials({ ebit: 60_000_000, roic: 0.20 });
-    const dcf = calculateDCF(f, rates(0.0475, 0.0409));
-    const r = dcf.discountRate, g = dcf.terminalGrowthRate;
-    const last = dcf.projectedFCFs[dcf.projectedFCFs.length - 1];
+  it('keeps no more excess return forever than the peers keep, and never less than the cost of capital', () => {
+    const capped = calculateDCF(financials({ roic: 0.40 }), rates(0.0475), { roic: 0.15 } as never);
+    close(capped.terminalRoic, 0.15, 1e-12);
+    const floored = calculateDCF(financials({ roic: 0.03 }), rates(0.0475), null);
+    close(floored.terminalRoic, floored.terminalDiscountRate!, 1e-12);
+  });
+});
 
-    close(dcf.terminalRoic, 0.20, 1e-12);
-    close(dcf.terminalReinvestmentRate, g / 0.20, 1e-12);
-    close(dcf.terminalValue, last * (47.4 / 50) * (1 + g) * (1 - g / 0.20) / (r - g), 1e-3);
+describe('the revenue-driven DCF', () => {
+  it('never reads this year\'s free cash flow', () => {
+    // Microsoft's trailing "free cash flow" was 16.5 bn one day and 67 bn the next,
+    // depending on which Yahoo field was read. The model builds its own.
+    const a = calculateDCF(financials({ freeCashFlow: 10_000_000 }), rates(0.0475));
+    const b = calculateDCF(financials({ freeCashFlow: 90_000_000 }), rates(0.0475));
+    assert.equal(a.fairValue, b.fairValue);
   });
 
-  it('keeps no more excess return forever than the peers keep', () => {
-    const dcf = calculateDCF(financials({ ebit: 60_000_000, roic: 0.40 }), rates(0.0475), { sectorRoic: 0.15 });
-    close(dcf.terminalRoic, 0.15, 1e-12);
+  it('answers with the same distribution every time', () => {
+    const a = calculateDCF(financials(), rates(0.0475));
+    const b = calculateDCF(financials(), rates(0.0475));
+    assert.deepEqual(a.distribution, b.distribution);
+    const d = a.distribution!;
+    assert.ok(d.p10 <= d.p25 && d.p25 <= d.p50 && d.p50 <= d.p75 && d.p75 <= d.p90);
   });
 
-  it('never lets growth destroy value: terminal ROIC is floored at the discount rate', () => {
-    const low = calculateDCF(financials({ ebit: 60_000_000, roic: 0.03 }), rates(0.0475, 0.0409));
-    const none = calculateDCF(financials({ ebit: 60_000_000 }), rates(0.0475, 0.0409));
-
-    close(low.terminalRoic, low.discountRate, 1e-12);
-    close(none.terminalRoic, none.discountRate, 1e-12);
+  it('reads a higher price as less likely to be covered', () => {
+    const cheap = calculateDCF(financials({ price: 50, marketCap: 500_000_000 }), rates(0.0475));
+    const dear = calculateDCF(financials({ price: 400, marketCap: 4_000_000_000 }), rates(0.0475));
+    assert.ok(cheap.distribution!.probabilityAbovePrice > dear.distribution!.probabilityAbovePrice);
   });
 
-  it('declines to value a firm whose discount rate has fallen to its growth rate', () => {
-    // 95% debt that still rates AAA on coverage, at a 35% tax rate: the after-tax
-    // cost of debt sits below the Treasury, and so does WACC. r ≤ g is not a low
-    // valuation but a negative denominator, so the DCF drops out.
-    const dcf = calculateDCF(
-      financials({
-        price: 10,
-        marketCap: 100_000_000,
-        totalDebt: 2_000_000_000,
-        interestExpense: 1_000_000,
-        ebit: 100_000_000,
-        taxRate: 0.35,
-      }),
-      rates(0.0475, 0.0409),
-    );
-
-    assert.ok(dcf.discountRate < 0.0475, `WACC ${dcf.discountRate}`);
+  it('abstains for a lender, whose debt is its inventory', () => {
+    const dcf = calculateDCF(financials({ industry: 'Banks - Regional' }), rates(0.0475));
     assert.equal(dcf.fairValue, null);
-    assert.match(dcf.assumptions, /not stable/);
+    assert.match(dcf.assumptions, /lenders borrow as their business/);
   });
 });
 
 describe('reverse DCF', () => {
-  it('recovers the stage-1 growth the forward DCF priced', () => {
-    // A depressed trailing FCF the forward model lifts to its average, interest
-    // it adds back, and a ROIC for the terminal value: the reverse solve used to
-    // skip all three and discount at cost of equity instead of WACC.
-    const f = financials({
-      freeCashFlow: 30_000_000,
-      fundamentalsHistory: { freeCashFlow: [{ year: 2023, value: 60e6 }, { year: 2024, value: 62e6 }, { year: 2025, value: 64e6 }] } as StockFinancials['fundamentalsHistory'],
-      interestExpense: 8_000_000,
-      ebit: 90_000_000,
-      roic: 0.18,
-    });
-    const priced = calculateDCF(f, rates(0.0475, 0.0409), { growthRate: 0.12 });
-    const reverse = calculateReverseDCF(
-      { ...f, price: priced.fairValue!, marketCap: priced.fairValue! * 10_000_000 },
-      rates(0.0475, 0.0409),
-    );
+  it('recovers the growth and the margin the forward DCF priced', () => {
+    const f = financials();
+    const priced = calculateDCF(f, rates(0.0475, 0.0409));
+    const atFair = { ...f, price: priced.fairValue!, marketCap: priced.fairValue! * 10_000_000 };
+    const reverse = calculateReverseDCF(atFair, rates(0.0475, 0.0409));
 
     assert.ok(reverse.isPossible);
-    close(reverse.impliedGrowthRate, 0.12, 1e-4);
-    close(reverse.discountRate, priced.discountRate, 1e-12);
+    // Growth held flat for two years reproduces the price somewhere between the
+    // two consensus rates.
+    assert.ok(reverse.impliedGrowthRate! > 0.07 && reverse.impliedGrowthRate! < 0.11, `${reverse.impliedGrowthRate}`);
+    close(reverse.impliedMargin?.requiredMargin, priced.targetMargin!, 1e-4);
+    close(reverse.discountRate, priced.discountRate!, 1e-12);
+  });
+
+  it('solves the margin the price requires even before there is a profit', () => {
+    const f = financials({ ebit: -50_000_000 });
+    const reverse = calculateReverseDCF(f, rates(0.0475));
+    assert.equal(calculateDCF(f, rates(0.0475)).fairValue, null, 'no margin to converge to, no forward value');
+    assert.ok(reverse.impliedMargin !== null && reverse.impliedMargin.requiredMargin > 0);
   });
 });

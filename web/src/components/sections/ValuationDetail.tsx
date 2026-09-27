@@ -19,27 +19,27 @@ export default function ValuationDetail({ metrics, price }: Props) {
 
   // Build inline notes defensively — every property might be null/undefined
   // depending on whether a stock has the input data the model needs.
-  const stage1Pct = Number.isFinite(dcf.stage1Growth) ? (dcf.stage1Growth * 100).toFixed(1) : '—';
-  const dcfBearBullNote = dcf.fairValue !== null
-    ? `bear ${fmtPrice(dcf.fairValueBear)} · bull ${fmtPrice(dcf.fairValueBull)}`
+  const pctOf = (x: number | null | undefined) => (x !== null && x !== undefined && Number.isFinite(x) ? `${(x * 100).toFixed(1)}%` : '—');
+  const dist = dcf.distribution;
+  const dcfNote = dcf.fairValue !== null && dist
+    ? `p10 ${fmtPrice(dist.p10)} · p90 ${fmtPrice(dist.p90)} · ${(dist.probabilityAbovePrice * 100).toFixed(0)}% of ${dist.draws} draws above price`
     : dcf.assumptions;
   const grNote     = grahamRevised.bondYield ? `AAA yield ${(grahamRevised.bondYield * 100).toFixed(1)}%` : null;
-  const lynchNote  = peterLynch.growthRate ? `g=${(peterLynch.growthRate * 100).toFixed(1)}%` : null;
-  const epvNote    = epv.wacc ? `r=${(epv.wacc * 100).toFixed(1)}%` : null;
+  const lynchNote  = peterLynch.growthRate !== null ? `g=${pctOf(peterLynch.growthRate)}${peterLynch.growthSource ? ` (${peterLynch.growthSource})` : ''}` : null;
+  const epvNote    = epv.normalizedMargin !== null ? `margin ${pctOf(epv.normalizedMargin)} · r=${pctOf(epv.wacc)}` : null;
   const rimNote    = rim.isApplicable
-    ? (rim.excessReturn !== null && rim.excessReturn !== undefined
-        ? `excess ${(rim.excessReturn * 100).toFixed(1)}pp`
-        : null)
+    ? `ROE ${pctOf(rim.sustainableRoe)} → ${pctOf(rim.terminalRoe)} vs ke ${pctOf(rim.costOfEquity)}`
     : 'no positive book/ROE';
+  const ddmNote    = ddm.isApplicable ? `g=${pctOf(ddm.dividendGrowthRate)} → ${pctOf(ddm.terminalGrowthRate)}` : 'no dividend';
 
   const rows = [
-    { label: `DCF (2-Stage, g=${stage1Pct}%)`, value: dcf.fairValue, note: dcfBearBullNote },
+    { label: `DCF (revenue-driven, g=${pctOf(dcf.growthYear2)})`, value: dcf.fairValue, note: dcfNote },
     { label: 'Graham Number',         value: grahamNumber.grahamNumber, note: grahamNumber.grahamNumber === null ? 'requires +EPS & book value' : null },
     { label: 'Graham Revised V*',     value: grahamRevised.fairValue,   note: grNote },
     { label: 'Peter Lynch',           value: peterLynch.fairValue,      note: lynchNote },
     { label: 'EPV (Greenwald)',       value: epv.fairValue,             note: epvNote },
-    { label: 'DDM (Gordon)',          value: ddm.isApplicable ? ddm.fairValue : null, note: ddm.isApplicable ? null : 'no dividend' },
-    { label: 'Residual Income (RIM)', value: rim.isApplicable ? rim.fairValue : null, note: rimNote },
+    { label: 'DDM (two-stage)',       value: ddm.isApplicable ? ddm.fairValue : null, note: ddmNote },
+    { label: 'Excess Return (RIM)',   value: rim.isApplicable ? rim.fairValue : null, note: rimNote },
     { label: 'NCAV (Graham floor)',   value: ncav.isApplicable ? ncav.ncavPerShare : null, note: ncav.isApplicable ? null : 'CA ≤ liabilities' },
   ];
 
@@ -143,7 +143,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
           {reverseDCF.isPossible && reverseDCF.impliedGrowthRate !== null ? (
             <div className="rounded border border-ink-800 bg-ink-950 p-3">
               <div className="flex items-baseline justify-between">
-                <span className="text-xs text-ink-400">Market implies stage-1 FCF growth of</span>
+                <span className="text-xs text-ink-400">Market implies revenue growth (years 1–2) of</span>
                 <span className="font-mono text-lg font-semibold text-ink-50 tabular">
                   {(reverseDCF.impliedGrowthRate * 100).toFixed(1)}%/yr
                 </span>
@@ -157,29 +157,30 @@ export default function ValuationDetail({ metrics, price }: Props) {
 
         <div>
           <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-            Reverse SVR
+            Margin the price requires
           </h3>
           {impliedMargin ? (
             <div className="rounded border border-ink-800 bg-ink-950 p-3">
               <div className="flex items-baseline justify-between">
-                <span className="text-xs text-ink-400">Market implies a steady margin of</span>
+                <span className="text-xs text-ink-400">Market implies a target operating margin of</span>
                 <span className="font-mono text-lg font-semibold text-ink-50 tabular">
-                  {fmtPct(impliedMargin.fcfMargin)}
+                  {fmtPct(impliedMargin.requiredMargin)}
                 </span>
               </div>
               <p className="mt-1.5 text-[11px] text-ink-400">
-                {impliedMargin.interpretation} Today: after-tax operating margin{' '}
-                {fmtPct(impliedMargin.currentNopatMargin)}, FCF margin {fmtPct(impliedMargin.currentFcfMargin)}.
+                {impliedMargin.interpretation}
+                {impliedMargin.achievableMargin !== null && (
+                  <> Best margin shown: {fmtPct(impliedMargin.achievableMargin)} ({impliedMargin.achievableBasis}).</>
+                )}
               </p>
               <p className="mt-1 text-[10px] text-ink-500">
-                On {fmtBig(impliedMargin.revenueBase)} run-rate revenue growing {fmtPct(impliedMargin.revenueGrowth)}/yr
-                ({impliedMargin.growthSource}), fading to terminal, at WACC {fmtPct(impliedMargin.discountRate)}.
-                Free cash flow through the forecast; in steady state the same margin also funds the reinvestment
-                growth needs. It applies from year one — a firm still ramping up needs more than this at maturity.
+                On {fmtBig(impliedMargin.revenueBase)} trailing revenue growing {fmtPct(impliedMargin.revenueGrowth)}/yr
+                ({impliedMargin.growthSource}), fading to terminal, at WACC {fmtPct(impliedMargin.discountRate)} —
+                the forward DCF's own path, reinvestment and taxes, solved for the margin it settles at by year five.
               </p>
             </div>
           ) : (
-            <p className="text-xs text-ink-500">Not calculable — requires revenue and a revenue growth rate.</p>
+            <p className="text-xs text-ink-500">Not calculable — requires revenue and a share count.</p>
           )}
         </div>
       </div>
