@@ -1136,6 +1136,18 @@ export async function scoreInstants(symbol: string): Promise<Date[]> {
   return res.rows.map((r) => r.observed_at);
 }
 
+/** Newest recorded value of every global macro metric under a prefix. */
+export async function latestMacro(prefix: string): Promise<Map<string, number>> {
+  const res = await query<{ key: string; value: number }>(
+    `SELECT DISTINCT ON (m.key) m.key, o.value
+       FROM macro_observations o JOIN metrics m ON m.id = o.metric_id
+      WHERE m.key LIKE $1 AND o.value IS NOT NULL
+      ORDER BY m.key, o.observed_at DESC`,
+    [`${prefix}%`],
+  );
+  return new Map(res.rows.map((r) => [r.key, r.value]));
+}
+
 /**
  * The global macro series under one key prefix, oldest first per key.
  *

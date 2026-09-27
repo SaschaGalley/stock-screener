@@ -137,6 +137,68 @@ const RETRY_AFTER_MS = 5 * 60 * 1000;
 
 /** Newest live value of every rate this process has read — a failed series falls back to it before the constants. */
 let lastObserved: ObservedRates = { creditSpreads: {}, localRiskFreeRates: {} };
+let seeded: Promise<void> | null = null;
+
+/**
+ * Seed `lastObserved` from the rates the refresh recorded, once per process.
+ *
+ * The memo only knows what *this* process has read, and a CLI run or a fresh
+ * server start has read nothing: one timeout on Damodaran's spreadsheet and the
+ * models discounted with the 5.5 % constant instead of the 4.1 % measured the
+ * day before — Apple's WACC came out at 11.0 % where it was 9.5 %, and the
+ * synthesis quoted it. A reading a day or a month old is far closer to today
+ * than a long-run average, so the chain is now: read now → read earlier in
+ * this process → recorded in the database → constant. A seeded value is never
+ * reported as `observed`, so it is not recorded again as today's.
+ *
+ * Imported lazily: the data layer stays usable without a database, and a store
+ * that cannot be reached simply leaves the constants as the last resort.
+ */
+type RecordedRatesLoader = () => Promise<Map<string, number>>;
+
+let loadRecorded: RecordedRatesLoader | null = async () => {
+  const { latestMacro } = await import('../db/store.js');
+  return latestMacro('macro.');
+};
+
+/**
+ * Replace where recorded rates come from — `null` for none. For tests, which
+ * must not read whatever database the developer's `.env` points at.
+ */
+export function useRecordedRates(loader: RecordedRatesLoader | null): void {
+  loadRecorded = loader;
+  seeded = null;
+}
+
+function seedFromStore(): Promise<void> {
+  seeded ??= (async () => {
+    if (!loadRecorded) return;
+    try {
+      const stored = await loadRecorded();
+      const get = (key: string) => stored.get(`macro.${key}`);
+      const fromDb: ObservedRates = { creditSpreads: {}, localRiskFreeRates: {} };
+      const rfr = get('riskFreeRate');       if (rfr !== undefined) fromDb.riskFreeRate = rfr;
+      const aaa = get('aaaBondYield');       if (aaa !== undefined) fromDb.aaaBondYield = aaa;
+      const erp = get('equityRiskPremium');  if (erp !== undefined) fromDb.equityRiskPremium = erp;
+      for (const b of RATING_BUCKETS) {
+        const v = get(`creditSpreads.${b.rating}`); if (v !== undefined) fromDb.creditSpreads[b.rating] = v;
+      }
+      for (const c of RATE_CURRENCIES) {
+        const v = get(`localRiskFreeRates.${c}`); if (v !== undefined) fromDb.localRiskFreeRates[c] = v;
+      }
+      // Whatever this process already read live wins over the stored reading.
+      lastObserved = {
+        ...fromDb,
+        ...lastObserved,
+        creditSpreads:      { ...fromDb.creditSpreads, ...lastObserved.creditSpreads },
+        localRiskFreeRates: { ...fromDb.localRiskFreeRates, ...lastObserved.localRiskFreeRates },
+      };
+    } catch (e) {
+      logger.debug(`Recorded rates unavailable — constants remain the last fallback (${(e as Error).message})`);
+    }
+  })();
+  return seeded;
+}
 let ratesCache: { at: number; complete: boolean; rates: FetchedRates } | null = null;
 let ratesInFlight: Promise<FetchedRates> | null = null;
 
@@ -153,7 +215,8 @@ export async function getMarketRates(apiKey?: string | null): Promise<FetchedRat
 
   ratesInFlight = (async () => {
     const fred = (seriesId: string) => (apiKey ? fetchLatestDecimal(seriesId, apiKey) : Promise.resolve(null));
-    const [rfr, aaa, erp, spreads, locals] = await Promise.all([
+    const [, rfr, aaa, erp, spreads, locals] = await Promise.all([
+      seedFromStore(),
       fred('DGS10'),
       fred('DAAA'),
       getImpliedERP(),
@@ -193,6 +256,14 @@ export async function getMarketRates(apiKey?: string | null): Promise<FetchedRat
       `Market rates — ${read}/${expected} read: 10Y Treasury ${pct(rates.riskFreeRate)}, AAA ${pct(rates.aaaBondYield)}, `
       + `implied ERP ${pct(rates.equityRiskPremium)}${erp?.asOf ? ` (${erp.asOf})` : ''}, BBB spread ${pct(rates.creditSpreads.BBB)}`,
     );
+
+    if (erp === null) {
+      logger.warn(
+        `Implied ERP not read — discounting with ${lastObserved.equityRiskPremium !== undefined
+          ? `the last recorded ${pct(rates.equityRiskPremium)}`
+          : `the ${pct(rates.equityRiskPremium)} constant (nothing recorded yet)`}`,
+      );
+    }
 
     ratesCache = { at: Date.now(), complete: read === expected, rates };
     return rates;

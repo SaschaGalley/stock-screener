@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it, mock } from 'node:test';
 
-import { FALLBACK_RATES, getMarketRates, ratesForCurrency } from '../src/data/fred.js';
+import { FALLBACK_RATES, getMarketRates, ratesForCurrency, useRecordedRates } from '../src/data/fred.js';
 import { ratingForCoverage } from '../src/data/ratings.js';
 import { erpWorkbook } from './support/xlsx.js';
 
@@ -25,6 +25,8 @@ const asked: string[] = [];
 const realFetch = globalThis.fetch;
 
 before(() => {
+  // Nothing recorded, unless a test says otherwise — see the last one.
+  useRecordedRates(null);
   mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 8, 15) });
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
