@@ -1078,7 +1078,11 @@ someone adds or analyses joins the watchlist with the history it already has
   for half an hour instead of being fetched once per stock.
 
 Under Hatchet the universe runs as its own task, `reference`, after the
-watchlist's chains have settled, on the same rate-limit keys as the data step.
+watchlist's chains have settled, on the same rate-limit keys as the data step
+and four at a time (`REFERENCE_CONCURRENCY`). A hundred queued at once would
+burst Yahoo and fill the general worker's slots. And since a stop from the
+admin page can only cancel what is queued, the parent checks the run before
+starting each one.
 
 ## Technical signals gauge
 
@@ -1223,6 +1227,7 @@ src/
 │   └── report.ts          PDF/HTML report (Puppeteer)
 └── utils/
     ├── logger.ts          Chalk-based structured logging
+    ├── pool.ts            At most n tasks in flight, stoppable between items
     └── rate-window.ts     At most n calls per rolling window, waiting rather than failing
 
 web/

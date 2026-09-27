@@ -21,7 +21,9 @@
  */
 
 import { readAppConfig } from '../../app-config.js';
-import { finishRun, JobStepResult, pruneRuns, recordRunSteps, setRunSymbol, startRun } from '../../db/admin.js';
+import {
+  finishRun, isRunActive, JobStepResult, pruneRuns, recordRunSteps, setRunSymbol, startRun,
+} from '../../db/admin.js';
 import {
   isVerdictStale, newestAnalysisAges, runAnalysisStep, runDataStep, runDistillStep, runReferenceStep,
   scheduledSymbols,
@@ -29,10 +31,11 @@ import {
 import { syncWatchlistDossiers } from '../../distill-dossiers.js';
 import { referenceBatch } from '../../universe.js';
 import { logger } from '../../utils/logger.js';
+import { settledPool } from '../../utils/pool.js';
 import { getHatchet } from '../client.js';
 import {
   analysisGate, distillGate,
-  FINNHUB_UNITS_PER_REFERENCE, FINNHUB_UNITS_PER_SYMBOL, YAHOO_UNITS_PER_SYMBOL,
+  FINNHUB_UNITS_PER_REFERENCE, FINNHUB_UNITS_PER_SYMBOL, REFERENCE_CONCURRENCY, YAHOO_UNITS_PER_SYMBOL,
 } from '../limits.js';
 
 const hatchet = getHatchet();
@@ -314,12 +317,14 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
 
       // The universe after the watchlist has settled, never beside it: the
       // watchlist is what someone reads in the morning, and the two draw on
-      // the same Yahoo and Finnhub budgets. Its failures do not make the run
-      // partial — the rotation comes round to a failed symbol again.
-      const refs = await Promise.allSettled(reference.map((symbol) => referenceTask.run(
+      // the same Yahoo and Finnhub budgets. A few at a time rather than all at
+      // once, and each batch asks whether the run was stopped, since a stop
+      // can only cancel what is already queued. Its failures do not make the
+      // run partial — the rotation comes round to a failed symbol again.
+      const refs = await settledPool(reference, REFERENCE_CONCURRENCY, (symbol) => referenceTask.run(
         { symbol, runId, ageDays: null },
         { additionalMetadata: { symbol, runId: String(runId), trigger: input.trigger } },
-      )));
+      ), () => isRunActive(runId));
       const refFailed = refs.filter((r) => r.status === 'rejected' || r.value?.status === 'failed').length;
       if (refFailed > 0) logger.warn(`Run ${runId}: ${refFailed} of ${reference.length} reference refreshes failed`);
 

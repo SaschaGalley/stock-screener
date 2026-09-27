@@ -10,6 +10,7 @@ import { describe, it } from 'node:test';
 
 import { csvRecord, parseConstituents, yahooTicker } from '../src/data/universe.js';
 import { RateWindow } from '../src/utils/rate-window.js';
+import { settledPool } from '../src/utils/pool.js';
 
 describe('constituents', () => {
   const csv = [
@@ -71,5 +72,30 @@ describe('pacing', () => {
     await Promise.all([1, 2, 3].map((i) => w.take().then(() => order.push(i))));
     assert.deepEqual(order, [1, 2, 3]);
     assert.equal(c.now(), 200);
+  });
+});
+
+describe('the reference pool', () => {
+  it('never has more than its size in flight, and keeps every outcome', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const out = await settledPool([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      if (n === 4) throw new Error('delisted');
+      return n * 10;
+    });
+    assert.equal(peak, 3);
+    assert.equal(out.length, 7);
+    assert.equal(out.filter((o) => o.status === 'rejected').length, 1);
+  });
+
+  it('starts nothing new once the run is stopped', async () => {
+    const started: number[] = [];
+    let checks = 0;
+    await settledPool([1, 2, 3, 4, 5], 1, async (n) => { started.push(n); }, async () => ++checks <= 2);
+    assert.deepEqual(started, [1, 2]);
   });
 });

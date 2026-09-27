@@ -87,8 +87,10 @@ export default function EvaluationPage({ onClose }: Props) {
   const headlineKey = universe ? 'score.factor.score' : 'score.final.score';
   const headlineTitle = data?.signals.find((s) => s.key === headlineKey)?.title ?? headlineKey;
   const headline = rowOf.get(headlineKey);
-  // One day's rank IC over n stocks, under no relationship: about 1/√(n−1).
-  const dailyNoise = ev && ev.symbols > 1 ? 1 / Math.sqrt(ev.symbols - 1) : null;
+  // One day's rank IC over n stocks, under no relationship: about 1/√(n−1),
+  // with n the stocks a day actually ranked rather than all that ever scored.
+  const perDay = Math.round(headline?.meanCrossSection ?? ev?.symbols ?? 0);
+  const dailyNoise = perDay > 1 ? 1 / Math.sqrt(perDay - 1) : null;
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -124,7 +126,7 @@ export default function EvaluationPage({ onClose }: Props) {
           ihrer Rendite gegenüber dem S&amp;P 500 in den folgenden Handelstagen — in Dollar, damit eine
           Euro-Aktie nicht mit dem Wechselkurs punktet — und misst, wie gut die beiden Reihenfolgen
           übereinstimmen (Rang-IC: +1 perfekt, 0 kein Zusammenhang, −1 umgekehrt). Ein brauchbarer Faktor
-          liegt bei 0,03–0,08.{dailyNoise !== null && ` Mit ${ev!.symbols} Aktien schwankt ein einzelner Tag um etwa ±${dailyNoise.toFixed(2).replace('.', ',')}`}
+          liegt bei 0,03–0,08.{dailyNoise !== null && ` Mit ${perDay} Aktien je Tag schwankt ein einzelner Tag um etwa ±${dailyNoise.toFixed(2).replace('.', ',')}`}
           {' '}— belastbar wird das erst nach vielen unabhängigen Zeitfenstern, also nach Monaten.
           „Im Sektor“ vergleicht jede Aktie nur mit ihrem eigenen Sektor: was dort bleibt, ist Aktienauswahl
           statt einer Wette auf die Branche.

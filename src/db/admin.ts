@@ -190,6 +190,16 @@ function assemble(runs: RunRow[], steps: StepRow[]): JobRun[] {
 
 const MAX_KEPT_RUNS = 20;
 
+/**
+ * Whether a run is still going. The admin page's stop closes the row, and a
+ * parent that hands out work in batches reads this before each one — a stop
+ * can only cancel what has already been queued.
+ */
+export async function isRunActive(runId: number): Promise<boolean> {
+  const row = await queryOne<{ status: JobRunStatus }>('SELECT status FROM runs WHERE id = $1', [runId]);
+  return row?.status === 'running';
+}
+
 /** The recent runs, newest first, with their steps. */
 export async function listRuns(limit = MAX_KEPT_RUNS): Promise<JobRun[]> {
   const runs = (await query<RunRow>(

@@ -42,6 +42,13 @@ export const YAHOO_UNITS_PER_SYMBOL   = 1;
 /** How many symbols may sit in each stage at once. */
 export const DISTILL_CONCURRENCY  = 1;
 export const ANALYSIS_CONCURRENCY = 3;
+/**
+ * Reference refreshes in flight at once. The universe is background work: a
+ * hundred of them queued together would burst Yahoo far past what the
+ * watchlist ever did, and fill the general worker's slots against a refresh
+ * someone clicks.
+ */
+export const REFERENCE_CONCURRENCY = 4;
 
 /**
  * The live gates, shared by everything that runs in a worker.
