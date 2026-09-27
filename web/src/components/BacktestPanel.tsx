@@ -2,19 +2,13 @@ import { useState } from 'react';
 import type { BacktestResponse } from '../types';
 import { recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
-import { IcTable, SignedBar, WeightsTable, evidence, pct } from './evaluationParts';
+import { IcTable, SignedBar, evidence, pct } from './evaluationParts';
+import WeightFit from './WeightFit';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
 
 /** How the backtest names a criterion's own signal (`backtest/run.ts`). */
 const CRITERION_PREFIX = 'criterion.';
-
-/** Pillar titles for the weight table, from the signal list the server sends. */
-function withTitles(weights: Backtest['weights'], signals: BacktestResponse['signals']) {
-  return weights.map((w) => ({
-    ...w, title: signals.find((s) => s.key === `score.factor.pillars.${w.key}.score`)?.title ?? w.key,
-  }));
-}
 
 /**
  * The factor score rebuilt at every month-end since 2013 from the SEC's filings
@@ -147,16 +141,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         )}
       </div>
 
-      <section className="rounded-lg border border-ink-700 bg-ink-900">
-        <header className="border-b border-ink-800 px-4 py-2.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Säulengewichte laut Backtest</h3>
-          <p className="mt-0.5 text-[11px] text-ink-500">
-            IC über {monthName(bt.weightHorizon)}, um seinen Standardfehler geschrumpft. Konsens und Erwartungen sind im Backtest
-            nicht messbar und behalten ihr Gewicht. Nur ein Vorschlag — geändert wird im Code.
-          </p>
-        </header>
-        <WeightsTable weights={withTitles(bt.weights, data.signals)} />
-      </section>
+      {bt.fit && <WeightFit v={bt.fit} inForce={data.inForce} />}
 
       <ul className="list-disc space-y-1 pl-5 text-[11px] leading-relaxed text-ink-500">
         {bt.caveats.map((c) => <li key={c}>{c}</li>)}

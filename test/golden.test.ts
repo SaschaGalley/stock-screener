@@ -10,8 +10,9 @@
  *   pnpm run golden:capture -- SYMBOL   # a new fixture from the database
  *   UPDATE_GOLDEN=1 pnpm test           # after an intended change
  *
- * Scored on the explicit ramps: a recalibration is data and is tested as
- * such; it should not rewrite six files of expectations.
+ * Scored on the explicit ramps and the judgment weights: a recalibration or a
+ * weight fit is data and is tested as such; it should not rewrite six files of
+ * expectations.
  */
 
 import assert from 'node:assert/strict';
@@ -21,7 +22,7 @@ import { describe, it } from 'node:test';
 
 import { useCalibrationTable } from '../src/analysis/calibration.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
-import { computeFactorScore } from '../src/analysis/score.js';
+import { computeFactorScore, JUDGMENT_WEIGHTS } from '../src/analysis/score.js';
 import type { StoredInputs } from '../src/db/rescore.js';
 
 useCalibrationTable({});
@@ -37,7 +38,7 @@ const r = (v: number | null | undefined): number | null =>
 function summary(inputs: StoredInputs) {
   const { financials: f, sectorMedians, marketSignals, technicalSignals, rates } = inputs;
   const m = computeAllMetrics(f, rates, sectorMedians);
-  const factor = computeFactorScore({ financials: f, metrics: m, sectorMedians, marketSignals, technicalSignals });
+  const factor = computeFactorScore({ financials: f, metrics: m, sectorMedians, marketSignals, technicalSignals, weights: JUDGMENT_WEIGHTS });
   const tier = (t: typeof m.composite.primary) => ({
     median: r(t.median),
     models: Object.fromEntries(t.models.map((x) => [x.name, { value: r(x.fairValue), weight: x.weight ?? 1 }])),

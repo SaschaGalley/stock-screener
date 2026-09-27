@@ -38,11 +38,12 @@
 
 import {
   AnalystRatingDelta, CompositeFairValueResult, EarningsRevisions, FactorScore,
-  FinalScore, MarketSignals, PillarKey, Recommendation, ScoreCap, ScoreCriterion,
+  FinalScore, MarketSignals, PILLAR_KEYS, PillarKey, Recommendation, ScoreCap, ScoreCriterion,
   ScoreFinding, ScorePillar, SectorMedians, StockFinancials, TechnicalSignals,
   NarrativeDimensions,
 } from '../types.js';
 import { ComputedMetrics } from './computeMetrics.js';
+import { FITTED_WEIGHTS } from './weight-table.js';
 import {
   ANALYST_CONSENSUS_MODEL, BeneishReading, FAIR_VALUE_BOUNDS, PEER_MULTIPLES_MODEL, aggregateFairValue, beneishReading,
   reliableMargin,
@@ -65,21 +66,106 @@ import { SCORE_BANDS, verdictForScore } from '../verdict.js';
 // bottom rather than here — they belong to the sentence that explains them.
 
 /**
- * What each pillar is worth. Sums to 1.
+ * Weight the target keeps after the part of it that is really a drawdown.
+ *
+ * Measured across the watchlist, the gap between price and mean target
+ * correlates −0.66 with the drawdown from the one-year high: analysts cut
+ * targets far more slowly than prices fall, so "upside" is mostly a record of
+ * how far a stock has dropped. The five largest upsides belonged to stocks down
+ * 24 % to 75 % from their highs; the five smallest to stocks sitting within
+ * three percent of theirs.
+ *
+ * That makes it a momentum term with the wrong sign, inside the pillar that is
+ * supposed to be the one opinion independent of our own arithmetic — and it was
+ * carrying 45 % of it, which is what drove the consensus pillar to a −0.43
+ * correlation against momentum.
+ *
+ * The retained share is derived rather than picked: r² = 0.44 of the
+ * criterion's variance is explained by drawdown, so it keeps the 0.56 that is
+ * not. 0.45 × 0.56 ≈ 0.25. The analyst *rating* — a judgement, not a price
+ * subtraction — takes the rest.
+ */
+const TARGET_UPSIDE_WEIGHT = 0.25;
+
+/** Everything the arithmetic weighs: the pillars, and the criteria inside each. */
+export interface ScoreWeights {
+  /** What each pillar is worth. Sums to 1. */
+  pillars:  Readonly<Record<PillarKey, number>>;
+  /** What each criterion is worth inside its pillar, by its `key`; renormalised over the ones that scored. */
+  criteria: Readonly<Record<PillarKey, Readonly<Record<string, number>>>>;
+}
+
+/** Weights the backtest fitted, for the pillars and criteria it could measure (`weight-table.ts`). */
+export interface FittedWeights {
+  pillars:  Partial<Record<PillarKey, number>>;
+  criteria: Partial<Record<PillarKey, Record<string, number>>>;
+}
+
+/** Where a committed fit came from: when, and over which month-ends. */
+export interface WeightFitMeta {
+  generatedAt: string;
+  from:        string;
+  to:          string;
+  months:      number;
+  companies:   number;
+}
+
+/**
+ * The weights as judgment set them.
  *
  * Valuation leads because the question the tool answers is "is this worth its
  * price", and consensus is weighted like a real second opinion rather than a
  * tiebreaker — it is the only input here not derived from our own arithmetic,
  * which is exactly what made an uncovered stock dangerous before.
+ *
+ * These are the prior, not necessarily the weights in force. The backtest
+ * measures how well each criterion ranked the month that followed, tilts these
+ * weights by it, and checks the tilt on years the fit did not see
+ * (`backtest/weights.ts`); a fit that held up is generated into
+ * `weight-table.ts` and takes their place below. The fit always starts from
+ * here, so running it again over the same months gives the same weights rather
+ * than tilting them further.
  */
-export const PILLAR_WEIGHTS: Record<PillarKey, number> = {
-  valuation: 0.30,
-  quality:   0.20,
-  health:    0.15,
-  consensus: 0.15,
-  momentum:  0.10,
-  revisions: 0.10,
+export const JUDGMENT_WEIGHTS: ScoreWeights = {
+  pillars: {
+    valuation: 0.30,
+    quality:   0.20,
+    health:    0.15,
+    consensus: 0.15,
+    momentum:  0.10,
+    revisions: 0.10,
+  },
+  criteria: {
+    valuation: { 'intrinsic': 0.35, 'peer-multiples': 0.20, 'market-implied': 0.25, 'value-lens': 0.20 },
+    quality: {
+      'piotroski': 0.20, 'roic-spread': 0.20, 'gross-profitability': 0.15, 'margin': 0.15,
+      'growth': 0.10, 'accruals': 0.10, 'net-issuance': 0.05, 'rule-of-40': 0.05,
+    },
+    health:    { 'altman': 0.30, 'interest-cover': 0.25, 'leverage': 0.25, 'liquidity': 0.10, 'beneish': 0.10 },
+    consensus: { 'rating': 1 - TARGET_UPSIDE_WEIGHT, 'target-upside': TARGET_UPSIDE_WEIGHT },
+    momentum:  { 'momentum-12-1': 0.50, '52w-high': 0.30, 'rs-sector': 0.20 },
+    revisions: { 'eps-drift': 0.35, 'revision-breadth': 0.30, 'surprises': 0.20, 'rating-drift': 0.15 },
+  },
 };
+
+/** The judgment with a fit laid over it, pillar by pillar and criterion by criterion. */
+export function withFitted(base: ScoreWeights, fitted: FittedWeights | null): ScoreWeights {
+  if (!fitted) return base;
+  return {
+    pillars:  { ...base.pillars, ...fitted.pillars },
+    criteria: Object.fromEntries(PILLAR_KEYS.map((p) => [p, { ...base.criteria[p], ...fitted.criteria[p] }])) as ScoreWeights['criteria'],
+  };
+}
+
+/**
+ * The weights in force: the judgment, with what the backtest fitted in its
+ * place. Consensus and revisions keep theirs — analyst data was never
+ * archived, so the backtest has nothing to measure them by.
+ */
+export const WEIGHTS: ScoreWeights = withFitted(JUDGMENT_WEIGHTS, FITTED_WEIGHTS);
+
+/** What each pillar is worth, as in force. Sums to 1. */
+export const PILLAR_WEIGHTS = WEIGHTS.pillars;
 
 export const PILLAR_LABELS: Record<PillarKey, string> = {
   valuation: 'Bewertung',
@@ -530,11 +616,14 @@ function netRatingDelta(d: AnalystRatingDelta | null | undefined): number | null
 
 // ── Pillars ──────────────────────────────────────────────────────────────────
 
+/** A criterion as its pillar reads it; what it is worth comes from the weights (`assembleScore`). */
+type Draft = Omit<ScoreCriterion, 'weight' | 'impact'>;
+
 /** Local builder so each pillar reads as a list of criteria and nothing else. */
 function criterion(
-  key: string, label: string, weight: number, points: number | null, note: string, value: number | null = null,
-): ScoreCriterion {
-  return { key, label, weight, points, note, impact: null, value: value !== null && Number.isFinite(value) ? value : null };
+  key: string, label: string, points: number | null, note: string, value: number | null = null,
+): Draft {
+  return { key, label, points, note, value: value !== null && Number.isFinite(value) ? value : null };
 }
 
 /**
@@ -601,7 +690,7 @@ export const CONSERVATIVE_MIN_MODELS = 2;
 
 function valuationPillar(
   f: StockFinancials, m: ComputedMetrics, peers: SectorMedians | null,
-): ScoreCriterion[] {
+): Draft[] {
   const c = f.tradingCurrency;
   const P = (x: number | null | undefined) => fmtPrice(x ?? null, c);
   const comp: CompositeFairValueResult = m.composite;
@@ -670,9 +759,9 @@ function valuationPillar(
   const consLog = consMedian !== null && consMedian > 0 ? Math.log(consMedian / f.price) : null;
 
   return [
-    criterion('intrinsic', 'Innerer Wert (DCF-Szenarien)', 0.35, intrinsic.points, intrinsic.note, intrinsic.value),
+    criterion('intrinsic', 'Innerer Wert (DCF-Szenarien)', intrinsic.points, intrinsic.note, intrinsic.value),
 
-    criterion('peer-multiples', 'Multiples gegen Peer-Median', 0.20,
+    criterion('peer-multiples', 'Multiples gegen Peer-Median',
       rel,
       rel !== null
         ? `${relCount} Multiples gegen ${peers?.peerCount ?? 0} Peers: P/E ${fmt(m.ratios.pe, 'x')} vs. ${fmt(peers?.pe, 'x')}, `
@@ -680,7 +769,7 @@ function valuationPillar(
         : 'Keine Peer-Mediane verfügbar — relative Bewertung nicht prüfbar',
       rel),
 
-    criterion('market-implied', 'Was der Kurs verlangt', 0.25,
+    criterion('market-implied', 'Was der Kurs verlangt',
       implied
         ? calibrated('valuation.market-implied', Math.log(Math.max(implied.ratio, 1e-6)), -1, (v) => ramp(v, lim, -lim))
         : null,
@@ -691,7 +780,7 @@ function valuationPillar(
         : 'Keine positive Marge, an der sich die vom Kurs verlangte messen ließe',
       implied ? Math.log(Math.max(implied.ratio, 1e-6)) : null),
 
-    criterion('value-lens', 'Value-Lens (konservative Modelle)', 0.20,
+    criterion('value-lens', 'Value-Lens (konservative Modelle)',
       calibrated('valuation.value-lens', consLog, 1, (v) => ramp(v, Math.log(0.5), Math.log(1.3))),
       comp.conservative.median !== null
         ? consMedian !== null
@@ -705,7 +794,7 @@ function valuationPillar(
 
 function qualityPillar(
   f: StockFinancials, m: ComputedMetrics, peers: SectorMedians | null,
-): ScoreCriterion[] {
+): Draft[] {
   const pio = m.piotroski;
   // Piotroski scores only the signals the data supports, so a company with no
   // prior-year statements can come back 0/1 — which is not a weak F-Score, it
@@ -763,14 +852,14 @@ function qualityPillar(
   const issuance = sharesNow !== null && sharesBefore !== null && sharesBefore > 0 ? sharesNow / sharesBefore - 1 : null;
 
   return [
-    criterion('piotroski', 'Piotroski F-Score', 0.20,
+    criterion('piotroski', 'Piotroski F-Score',
       calibrated('quality.piotroski', pioRatio, 1, (v) => ramp(v, 0.35, 0.90)),
       pio.maxScore >= PIOTROSKI_MIN_SIGNALS
         ? `F-Score ${pio.score}/${pio.maxScore} (${pio.interpretation})`
         : `F-Score nur aus ${pio.maxScore}/9 berechenbaren Signalen — nicht belastbar`,
       pioRatio),
 
-    criterion('roic-spread', 'ROIC über Kapitalkosten', 0.20,
+    criterion('roic-spread', 'ROIC über Kapitalkosten',
       calibrated('quality.roic-spread', excess, 1, (v) => ramp(v, -0.05, 0.15), inSector),
       excess !== null
         ? `ROIC ${fmtPct(roic)} gegen WACC ${fmtPct(wacc)} — Spread ${fmtSignedPct(excess)}`
@@ -780,14 +869,14 @@ function qualityPillar(
     // Novy-Marx (2013): gross profit over assets ranks future returns about as
     // well as book-to-market does, and in the opposite stocks. It is measured
     // before the lines a business can shape — marketing, research, one-offs.
-    criterion('gross-profitability', 'Bruttogewinn / Bilanzsumme', 0.15,
+    criterion('gross-profitability', 'Bruttogewinn / Bilanzsumme',
       calibrated('quality.gross-profitability', grossProfitability, 1, (v) => ramp(v, 0, 0.6), inSector),
       grossProfitability !== null
         ? `Bruttogewinn ${fmtPct(grossProfitability)} der Bilanzsumme (vier Quartale)`
         : lender ? 'Für Kreditgeber nicht aussagekräftig' : 'Kein Bruttogewinn ausgewiesen',
       grossProfitability),
 
-    criterion('margin', 'Marge', 0.15,
+    criterion('margin', 'Marge',
       marginGap !== null ? calibrated('quality.margin-vs-peers', marginGap, 1, (v) => ramp(v, -0.10, 0.10))
         : calibrated('quality.margin', margin, 1, (v) => ramp(v, -0.05, 0.25), inSector),
       margin === null ? 'Keine Margendaten'
@@ -796,7 +885,7 @@ function qualityPillar(
           : `${pair.kind}marge ${fmtPct(margin)}${fromStatement} (kein Peer-Vergleich verfügbar)`,
       marginGap ?? margin),
 
-    criterion('growth', 'Umsatzwachstum', 0.10,
+    criterion('growth', 'Umsatzwachstum',
       growthGap !== null ? calibrated('quality.growth-vs-peers', growthGap, 1, (v) => ramp(v, -0.125, 0.125))
         : calibrated('quality.growth', growth, 1, (v) => ramp(v, -0.05, 0.25), inSector),
       growth === null ? 'Kein Umsatzwachstum ausgewiesen'
@@ -807,7 +896,7 @@ function qualityPillar(
 
     // Sloan (1996): earnings well ahead of the cash behind them tend not to
     // last, and the market is slow to notice. Less is better.
-    criterion('accruals', 'Accruals (Gewinn über Cashflow)', 0.10,
+    criterion('accruals', 'Accruals (Gewinn über Cashflow)',
       calibrated('quality.accruals', accruals, -1, (v) => ramp(v, 0.08, -0.08), inSector),
       accruals !== null
         ? `Gewinn minus operativer Cashflow ${fmtSignedPct(accruals)} der Bilanzsumme (vier Quartale)`
@@ -817,14 +906,14 @@ function qualityPillar(
     // Pontiff and Woodgate (2008): companies that issue shares go on to trail,
     // companies that buy them back to lead. Split-adjusted, diluted where both
     // years report it — the same count Piotroski's F7 reads.
-    criterion('net-issuance', 'Netto-Aktienausgabe', 0.05,
+    criterion('net-issuance', 'Netto-Aktienausgabe',
       calibrated('quality.net-issuance', issuance, -1, (v) => ramp(v, 0.05, -0.03), inSector),
       issuance !== null
         ? `Aktienzahl ${fmtSignedPct(issuance)} gegenüber dem Vorjahr (${issuance > 0 ? 'Verwässerung' : issuance < 0 ? 'Rückkäufe' : 'unverändert'})`
         : 'Keine Aktienzahlen für zwei Geschäftsjahre',
       issuance),
 
-    criterion('rule-of-40', 'Rule of 40', 0.05,
+    criterion('rule-of-40', 'Rule of 40',
       calibrated('quality.rule-of-40', m.ruleOf40.score, 1, (v) => ramp(v, 20, 60), inSector),
       m.ruleOf40.score !== null
         ? `Rule of 40: ${m.ruleOf40.score.toFixed(1)} (${m.ruleOf40.passes ? 'bestanden' : 'verfehlt'})`
@@ -870,7 +959,7 @@ export function adjustedCurrentRatio(f: StockFinancials): { ratio: number | null
  */
 const DEBT_FREE_COVERAGE = 1000;
 
-function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] {
+function healthPillar(f: StockFinancials, m: ComputedMetrics): Draft[] {
   const z = m.altmanZ;
   const liquidity = adjustedCurrentRatio(f);
   const beneish = readBeneish(f, m.beneish);
@@ -909,11 +998,11 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
   const inSector = { sector: f.sector };
 
   return [
-    criterion('altman', 'Altman Z-Score', 0.30,
+    criterion('altman', 'Altman Z-Score',
       calibrated('health.altman', zPosition, 1, (v) => ramp(v, 0, 1), inSector),
       altman.note, zPosition),
 
-    criterion('interest-cover', 'Zinsdeckung', 0.25,
+    criterion('interest-cover', 'Zinsdeckung',
       calibrated('health.interest-cover', coverage, 1, (v) => ramp(v, 1, 8), inSector),
       ic.ratio !== null
         ? `Operatives Ergebnis deckt Zinsen ${ic.ratio.toFixed(1)}x (${ic.interpretation})`
@@ -922,7 +1011,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
           : `Zinsdeckung: ${ic.interpretation}`,
       coverage),
 
-    criterion('leverage', 'Nettoverschuldung / EBITDA', 0.25,
+    criterion('leverage', 'Nettoverschuldung / EBITDA',
       calibrated('health.leverage', leverage, -1, (v) => (v <= 0 ? 1 : ramp(v, 4, 1)), inSector),
       netDebt === null ? 'Keine Verschuldungsdaten'
         : netDebt <= 0 ? `Nettoliquidität ${fmtBig(-netDebt, f.tradingCurrency)} — keine Nettoverschuldung`
@@ -931,7 +1020,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
           : 'EBITDA nicht positiv — Verschuldungsgrad nicht aussagekräftig',
       leverage),
 
-    criterion('liquidity', 'Current Ratio', 0.10,
+    criterion('liquidity', 'Current Ratio',
       calibrated('health.liquidity', liquidity.ratio, 1, (v) => ramp(v, 0.8, 2.0), inSector),
       liquidity.ratio === null ? 'Keine Liquiditätskennzahl'
         : liquidity.deferredShare === null ? `Current Ratio ${fmt(f.currentRatio, 'x')}`
@@ -939,7 +1028,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
           + `(${fmtPct(liquidity.deferredShare, 0)} der kurzfristigen Verbindlichkeiten) ${fmt(liquidity.ratio, 'x')}`,
       liquidity.ratio),
 
-    criterion('beneish', 'Bilanzqualität (Beneish)', 0.10,
+    criterion('beneish', 'Bilanzqualität (Beneish)',
       // A reading the model cannot support scores nothing rather than zero.
       calibrated('health.beneish', beneishValue, 1, (v) => v),
       beneish.note, beneishValue),
@@ -957,7 +1046,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): ScoreCriterion[] 
  * short-term reversal lives), and how close the price is to its 52-week high
  * (George and Hwang, 2004). The gauge stays on the page; it no longer votes.
  */
-function momentumPillar(signals: MarketSignals | null): ScoreCriterion[] {
+function momentumPillar(signals: MarketSignals | null): Draft[] {
   const t = signals?.technicals ?? null;
   const y1 = toFiniteNumber(t?.returns?.y1);
   const m1 = toFiniteNumber(t?.returns?.m1);
@@ -967,21 +1056,21 @@ function momentumPillar(signals: MarketSignals | null): ScoreCriterion[] {
   const rsSector = toFiniteNumber(t?.rsVsSector3M);
 
   return [
-    criterion('momentum-12-1', 'Momentum 12–1 Monate', 0.50,
+    criterion('momentum-12-1', 'Momentum 12–1 Monate',
       calibrated('momentum.12-1', mom, 1, (v) => ramp(v, -0.30, 0.50)),
       mom !== null
         ? `Rendite der letzten zwölf Monate ohne den jüngsten: ${fmtSignedPct(mom)} (1M ${fmtSignedPct(m1)})`
         : 'Keine zwölfmonatige Kurshistorie',
       mom),
 
-    criterion('52w-high', 'Nähe zum 52-Wochen-Hoch', 0.30,
+    criterion('52w-high', 'Nähe zum 52-Wochen-Hoch',
       calibrated('momentum.52w-high', nearHigh, 1, (v) => ramp(v, 0.60, 1.0)),
       nearHigh !== null
         ? `Kurs bei ${(nearHigh * 100).toFixed(0)} % des 52-Wochen-Hochs`
         : 'Keine 52-Wochen-Spanne',
       nearHigh),
 
-    criterion('rs-sector', 'Relative Stärke vs. Sektor (3M)', 0.20,
+    criterion('rs-sector', 'Relative Stärke vs. Sektor (3M)',
       calibrated('momentum.rs-sector', rsSector, 1, (v) => ramp(v, -0.15, 0.15)),
       rsSector !== null ? `3M gegen Sektor-ETF ${fmtSignedPct(rsSector)}` : 'Kein Sektor-ETF zugeordnet',
       rsSector),
@@ -999,7 +1088,7 @@ function momentumPillar(signals: MarketSignals | null): ScoreCriterion[] {
  * typical stock sits: in an upgrade cycle most stocks are revised up, and the
  * median S&P 500 member had net upward revisions from a sixth of its analysts.
  */
-function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons: AnalystConsensus): ScoreCriterion[] {
+function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons: AnalystConsensus): Draft[] {
   const r: EarningsRevisions | null = signals?.revisions ?? null;
   const periods = r?.perPeriod ?? [];
   const year = periods.find((p) => p.period === '0y') ?? periods.find((p) => p.period === '+1y');
@@ -1025,14 +1114,14 @@ function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons
   const ratingDrift = delta !== null && cons.total > 0 ? delta / cons.total : null;
 
   return [
-    criterion('eps-drift', 'EPS-Schätzungsdrift (30 Tage)', 0.35,
+    criterion('eps-drift', 'EPS-Schätzungsdrift (30 Tage)',
       calibrated('revisions.eps-drift', toFiniteNumber(year?.epsChange30dPct), 1, (v) => ramp(v, -0.03, 0.03)),
       year?.epsChange30dPct != null
         ? `Konsens-EPS ${year.period === '0y' ? 'laufendes Jahr' : 'Folgejahr'} ${fmtSignedPct(year.epsChange30dPct)} in 30 Tagen (${fmt(year.epsTrend?.ago30d)} → ${fmt(year.epsTrend?.current)})`
         : 'Keine Schätzungsdrift verfügbar',
       toFiniteNumber(year?.epsChange30dPct)),
 
-    criterion('revision-breadth', 'Revisionsbreite (30 Tage)', 0.30,
+    criterion('revision-breadth', 'Revisionsbreite (30 Tage)',
       calibrated('revisions.breadth', breadth, 1, (v) => ramp(v, -0.30, 0.30)),
       breadth !== null
         ? `Netto ${net >= 0 ? '+' : ''}${net} Revisionen bei ${analysts} Schätzungen (lfd. und nächstes Jahr) — ${fmtSignedPct(breadth)}`
@@ -1041,14 +1130,14 @@ function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons
 
     // Three quarters of all quarters beat the consensus; beating it is the norm,
     // and only its frequency against that norm is information.
-    criterion('surprises', 'Ergebnisüberraschungen', 0.20,
+    criterion('surprises', 'Ergebnisüberraschungen',
       calibrated('revisions.surprises', beatShare, 1, (v) => ramp(v, 0.5, 1.0)),
       beatShare !== null
         ? `${beats} von ${scored.length} Quartalen über Konsens`
         : 'Keine Überraschungshistorie',
       beatShare),
 
-    criterion('rating-drift', 'Rating-Veränderung (MoM)', 0.15,
+    criterion('rating-drift', 'Rating-Veränderung (MoM)',
       calibrated('revisions.rating-drift', ratingDrift, 1, (v) => ramp(v, -0.10, 0.10)),
       delta !== null
         ? `Analystenratings netto ${delta >= 0 ? '+' : ''}${delta} gegenüber Vormonat bei ${cons.total} Analysten`
@@ -1057,31 +1146,9 @@ function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons
   ];
 }
 
-/**
- * Weight the target keeps after the part of it that is really a drawdown.
- *
- * Measured across the watchlist, the gap between price and mean target
- * correlates −0.66 with the drawdown from the one-year high: analysts cut
- * targets far more slowly than prices fall, so "upside" is mostly a record of
- * how far a stock has dropped. The five largest upsides belonged to stocks down
- * 24 % to 75 % from their highs; the five smallest to stocks sitting within
- * three percent of theirs.
- *
- * That makes it a momentum term with the wrong sign, inside the pillar that is
- * supposed to be the one opinion independent of our own arithmetic — and it was
- * carrying 45 % of it, which is what drove the consensus pillar to a −0.43
- * correlation against momentum.
- *
- * The retained share is derived rather than picked: r² = 0.44 of the
- * criterion's variance is explained by drawdown, so it keeps the 0.56 that is
- * not. 0.45 × 0.56 ≈ 0.25. The analyst *rating* — a judgement, not a price
- * subtraction — takes the rest.
- */
-const TARGET_UPSIDE_WEIGHT = 0.25;
-
 function consensusPillar(
   f: StockFinancials, cons: AnalystConsensus, signals: MarketSignals | null,
-): ScoreCriterion[] {
+): Draft[] {
   const c = f.tradingCurrency;
   const drawdown = toFiniteNumber(signals?.technicals?.drawdownFromHighPct);
   // Said out loud where it is large, because a reader looking at "+80 % to the
@@ -1094,14 +1161,14 @@ function consensusPillar(
   // Sell-side ratings lean buy — the watchlist averaged +0.43 on −1…+1 — so the
   // neutral point is the typical rating, not an even split of buys and sells.
   return [
-    criterion('rating', 'Gewichtetes Analystenrating', 0.75,
+    criterion('rating', 'Gewichtetes Analystenrating',
       calibrated('consensus.rating', cons.score, 1, (v) => (v + 1) / 2),
       cons.score !== null
         ? `${cons.label} — ${cons.total} Analysten, ${cons.buySharePct?.toFixed(0)} % Kauf, gewichteter Score ${cons.score >= 0 ? '+' : ''}${cons.score.toFixed(2)}`
         : 'Keine Analystenabdeckung für dieses Listing',
       cons.score),
 
-    criterion('target-upside', 'Kursziel-Potenzial', TARGET_UPSIDE_WEIGHT,
+    criterion('target-upside', 'Kursziel-Potenzial',
       calibrated('consensus.target-upside', cons.upside, 1, (v) => ramp(v, -0.10, 0.35)),
       cons.upside !== null
         ? `Mittleres Kursziel ${fmtPrice(f.targetMeanPrice, c)} — ${fmtSignedPct(cons.upside)} zum Kurs ${fmtPrice(f.price, c)}${stale}`
@@ -1121,7 +1188,7 @@ function consensusPillar(
  * Exported because it is the part of the score most worth arguing with, and an
  * argument needs something it can call with numbers it chose.
  */
-export function convictionFor(pillars: ScorePillar[]): { agreement: number; conviction: number } {
+export function convictionFor(pillars: readonly Pick<ScorePillar, 'score' | 'effectiveWeight'>[]): { agreement: number; conviction: number } {
   const scored = pillars.filter((p) => p.score !== null);
   const net = scored.reduce((s, p) => s + p.effectiveWeight * ((p.score as number) - 5), 0);
   const gross = scored.reduce((s, p) => s + p.effectiveWeight * Math.abs((p.score as number) - 5), 0);
@@ -1194,9 +1261,29 @@ function published(score: number): number {
   return Math.round(Math.max(0, Math.min(10, score)) * 10) / 10;
 }
 
-function reducePillar(
-  key: PillarKey, criteria: ScoreCriterion[],
-): Omit<ScorePillar, 'effectiveWeight'> {
+/** What the arithmetic needs of a criterion: which one it is, and what it scored. */
+export interface CriterionPoints {
+  key:    string;
+  points: number | null;
+}
+
+/** A criterion once weighed: its own fields, the weight it was given and its signed contribution. */
+type Weighed<C extends CriterionPoints> = C & { weight: number; impact: number | null };
+
+/** A pillar as assembled from its criteria. */
+export type AssembledPillar<C extends CriterionPoints> = Omit<ScorePillar, 'criteria'> & { criteria: Weighed<C>[] };
+
+function reducePillar<C extends CriterionPoints>(
+  key: PillarKey, drafts: readonly C[], weights: ScoreWeights,
+): Omit<AssembledPillar<C>, 'effectiveWeight'> {
+  const table = weights.criteria[key];
+  const criteria = drafts.map((d): Weighed<C> => {
+    const weight = table[d.key];
+    // A criterion without a weight is a criterion added to a pillar and not to
+    // the table — scoring it at some default would hide exactly that.
+    if (weight === undefined) throw new Error(`No weight for criterion ${key}.${d.key}`);
+    return { ...d, weight, impact: null };
+  });
   const totalWeight = criteria.reduce((s, c) => s + c.weight, 0);
   const scored = criteria.filter((c) => c.points !== null);
   const scoredWeight = scored.reduce((s, c) => s + c.weight, 0);
@@ -1212,7 +1299,7 @@ function reducePillar(
     // Unrounded, for the same reason `raw` is: the pillar scores are what the
     // criterion impacts are measured against. Rounding is the renderer's job.
     score,
-    weight:   PILLAR_WEIGHTS[key],
+    weight:   weights.pillars[key],
     coverage: Math.round(coverage * 1000) / 1000,
     criteria,
   };
@@ -1241,34 +1328,60 @@ export interface FactorScoreInput {
   sectorMedians:    SectorMedians | null;
   marketSignals:    MarketSignals | null;
   technicalSignals: TechnicalSignals | null;
+  /**
+   * The weights to score with; the ones in force when left out. Tests pin the
+   * judgment's, as they pin the explicit ramps: a refit is data, and must not
+   * rewrite their expectations.
+   */
+  weights?:         ScoreWeights;
 }
 
 /**
- * The whole score, from inputs this repo already has in hand.
- *
- * Pure and synchronous: no IO, no clock, no randomness. The same payload scores
- * the same today and in the backfill that re-scores three months of stored
- * snapshots — which is the entire point of calling it deterministic.
+ * How far the payload can be trusted before counting how much of it scored:
+ * the composite's own confidence, the data-quality audit and freshness.
+ * Coverage multiplies in later (`assembleScore`), because coverage depends on
+ * the weights and this does not.
  */
-export function computeFactorScore(input: FactorScoreInput): FactorScore {
-  const { financials: f, metrics: m, sectorMedians, marketSignals } = input;
-  const cons = analystConsensus(f);
+export function trustOf(f: StockFinancials, m: ComputedMetrics): number {
+  const severity = worstSeverity(f.dataQualityWarnings ?? []);
+  const qualityFactor = severity === 'error' ? 0.35 : severity === 'warn' ? 0.75 : 1;
+  const freshnessFactor = f.fundamentalsStale ? 0.6 : 1;
+  const compositeFactor = 0.55 + 0.45 * (m.composite.confidence / 10);
+  return compositeFactor * qualityFactor * freshnessFactor;
+}
 
-  const built: Omit<ScorePillar, 'effectiveWeight'>[] = [
-    reducePillar('valuation', valuationPillar(f, m, sectorMedians)),
-    reducePillar('quality',   qualityPillar(f, m, sectorMedians)),
-    reducePillar('health',    healthPillar(f, m)),
-    reducePillar('consensus', consensusPillar(f, cons, marketSignals)),
-    reducePillar('momentum',  momentumPillar(marketSignals)),
-    reducePillar('revisions', revisionsPillar(f, marketSignals, cons)),
-  ];
+export interface Assembly<C extends CriterionPoints> {
+  pillars:    AssembledPillar<C>[];
+  /** The weighted mean of the pillars, unrounded. */
+  raw:        number;
+  coverage:   number;
+  confidence: number;
+  shrink:     number;
+  agreement:  number;
+  conviction: number;
+  /** Published: rounded to the tenth everything bands on. */
+  score:      number;
+}
+
+/**
+ * Criteria to a score: the pillars, their mean, the trust and conviction
+ * multipliers, and the published figure.
+ *
+ * Apart from `computeFactorScore` so that the backtest can weigh the same
+ * criteria more than once — as judgment set the weights and as a fit would
+ * set them — without reading every payload again.
+ */
+export function assembleScore<C extends CriterionPoints>(
+  criteria: Readonly<Record<PillarKey, readonly C[]>>, trust: number, weights: ScoreWeights = WEIGHTS,
+): Assembly<C> {
+  const built = PILLAR_KEYS.map((key) => reducePillar(key, criteria[key], weights));
 
   // A pillar with nothing to say is dropped rather than scored 5/10, and the
   // rest renormalise over what is left. Coverage records what that cost.
   const scoredWeight = built.filter((p) => p.score !== null).reduce((s, p) => s + p.weight, 0);
   const coverage = scoredWeight;   // weights sum to 1, so this is already a share
 
-  const pillars: ScorePillar[] = built.map((p) => ({
+  const pillars: AssembledPillar<C>[] = built.map((p) => ({
     ...p,
     effectiveWeight: p.score === null || scoredWeight === 0 ? 0 : p.weight / scoredWeight,
   }));
@@ -1295,14 +1408,7 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
     }
   }
 
-  // ── Confidence ────────────────────────────────────────────────────────────
-  const severity = worstSeverity(f.dataQualityWarnings ?? []);
-  const qualityFactor = severity === 'error' ? 0.35 : severity === 'warn' ? 0.75 : 1;
-  const freshnessFactor = f.fundamentalsStale ? 0.6 : 1;
-  const compositeFactor = 0.55 + 0.45 * (m.composite.confidence / 10);
-  const confidence = Math.max(0, Math.min(1,
-    coverage * compositeFactor * qualityFactor * freshnessFactor));
-
+  const confidence = Math.max(0, Math.min(1, coverage * trust));
   const { agreement, conviction } = convictionFor(pillars);
 
   // Two multipliers on the same deviation, answering two different questions:
@@ -1312,7 +1418,31 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
   const shrink = 0.4 + 0.6 * confidence;
   const score = published(5 + saturate((raw - 5) * shrink * conviction));
 
+  return { pillars, raw, coverage, confidence, shrink, agreement, conviction, score };
+}
+
+/**
+ * The whole score, from inputs this repo already has in hand.
+ *
+ * Pure and synchronous: no IO, no clock, no randomness. The same payload scores
+ * the same today and in the backfill that re-scores three months of stored
+ * snapshots — which is the entire point of calling it deterministic.
+ */
+export function computeFactorScore(input: FactorScoreInput): FactorScore {
+  const { financials: f, metrics: m, sectorMedians, marketSignals } = input;
+  const cons = analystConsensus(f);
+
+  const { pillars, raw, coverage, confidence, shrink, agreement, conviction, score } = assembleScore({
+    valuation: valuationPillar(f, m, sectorMedians),
+    quality:   qualityPillar(f, m, sectorMedians),
+    health:    healthPillar(f, m),
+    consensus: consensusPillar(f, cons, marketSignals),
+    momentum:  momentumPillar(marketSignals),
+    revisions: revisionsPillar(f, marketSignals, cons),
+  }, trustOf(f, m), input.weights);
+
   // ── Caps ──────────────────────────────────────────────────────────────────
+  const severity = worstSeverity(f.dataQualityWarnings ?? []);
   const caps: ScoreCap[] = [];
   if (severity === 'error') {
     caps.push({ limit: 'no-strong', reason: 'Datenqualität: mindestens ein Feld ist nachweislich widersprüchlich' });

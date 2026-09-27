@@ -26,7 +26,8 @@ import { storedMembers } from './universe.js';
 import { syncCatalog } from './db/catalog.js';
 import { closePool, waitForDatabase } from './db/client.js';
 import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials } from './types.js';
-import { PILLAR_LABELS } from './analysis/score.js';
+import { PILLAR_LABELS, WEIGHTS } from './analysis/score.js';
+import { FITTED_WEIGHTS_META } from './analysis/weight-table.js';
 import type {
   AnalysisListEntry, BacktestResponse, ConsensusBand, EvaluationResponse, OverviewRow, StockSummary,
 } from './api-types.js';
@@ -835,6 +836,7 @@ export function createApp(): express.Express {
       const body: BacktestResponse = {
         backtest: await storedBacktest(),
         signals:  EVALUATED_SIGNALS.filter((s) => s.factor).map(({ key, title, pillar }) => ({ key, title, pillar: pillar ?? false })),
+        inForce:  { weights: WEIGHTS, fit: FITTED_WEIGHTS_META },
       };
       res.json(body);
     } catch (e) {

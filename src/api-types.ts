@@ -218,6 +218,11 @@ export interface BacktestResponse {
   backtest: import('./backtest/result.js').BacktestResult | null;
   /** Titles of the evaluated signals, keyed as the result keys them. */
   signals:  { key: string; title: string; pillar: boolean }[];
+  /** The weights scoring now, and the committed fit they came from — null while the judgment's are in force. */
+  inForce:  {
+    weights: import('./analysis/score.js').ScoreWeights;
+    fit:     import('./analysis/score.js').WeightFitMeta | null;
+  };
 }
 
 /** `GET /api/verdict-changes` */

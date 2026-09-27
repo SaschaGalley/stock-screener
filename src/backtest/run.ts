@@ -5,6 +5,7 @@
  *   pnpm run backtest                     # S&P 500, month-ends since 2013
  *   pnpm run backtest -- --from 2016-01   # a later start
  *   pnpm run backtest -- --limit 60       # the first 60 companies, to try it out
+ *   pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
  *
  * The live evaluation needs months of stored scores before it says anything.
  * This one rebuilds them. At every month-end since 2013 it reconstructs each
@@ -24,10 +25,14 @@
  *     Companies that left before today are missing: survivors only.
  *   - Peer groups are the index's own GICS sub-industries, not Finnhub's.
  *
+ * It also fits the weights to what it measured and checks the fit on the half
+ * of the months it did not see (`weights.ts`).
+ *
  * The result is stored in `app_state` (`backtest.result`) for the page.
  */
 
-import { join } from 'path';
+import { writeFileSync } from 'fs';
+import { join, resolve } from 'path';
 
 import { getConfig } from '../config.js';
 import { logger } from '../utils/logger.js';
@@ -41,23 +46,23 @@ import {
   type CriterionDistribution,
 } from '../analysis/calibration.js';
 import { computeAllMetrics, impliedPremiumShift } from '../analysis/computeMetrics.js';
-import { computeFactorScore, PILLAR_WEIGHTS } from '../analysis/score.js';
-import {
-  evaluate, suggestWeights, type Close, type SignalPoint,
-} from '../analysis/evaluate.js';
+import { computeFactorScore, trustOf } from '../analysis/score.js';
+import { FITTED_WEIGHTS_META } from '../analysis/weight-table.js';
+import { evaluate, type Close, type SignalPoint } from '../analysis/evaluate.js';
 import { PILLAR_KEYS } from '../types.js';
 import { Company, payloadAt, yahooSector } from './payload.js';
 import { BACKTEST_CAVEATS, BacktestResult, RESULT_KEY } from './result.js';
 import { crossSectionPeers } from './peers.js';
 import { indexAtOrBefore, priceHistory, PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
+import { renderWeightTable, scoredRow, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
 
 const BENCHMARK = '^GSPC';
 /** Prices from a year before the first month-end: momentum reads twelve months back. */
 const PRICE_LEAD_YEARS = 2;
 /** Months ahead the scores are judged over. */
 export const BACKTEST_HORIZONS = [1, 3];
-/** The horizon the weight suggestion reads: one month, as factor research measures. */
+/** The horizon the weight fit reads: one month, as factor research measures. */
 export const BACKTEST_WEIGHT_HORIZON = 1;
 
 const pillarKey = (p: string) => `score.factor.pillars.${p}.score`;
@@ -144,6 +149,9 @@ export async function runBacktest(opts: { from?: string; to?: string; limit?: nu
   };
   const scored = new Set<string>();
   const premiums: number[] = [];
+  // Every company-month's criteria, for weighing them again (`weights.ts`).
+  const rows: ScoredRow[] = [];
+  const labels = new Map<string, string>();
 
   try {
     for (const [m, day] of days.entries()) {
@@ -201,6 +209,8 @@ export async function runBacktest(opts: { from?: string; to?: string; limit?: nu
           push(`${CRITERION_PREFIX}${key}`, e.c.symbol, { at, value: value * (direction ?? 1) });
         }, () => score(k));
         scored.add(e.c.symbol);
+        rows.push(scoredRow(at, e.c.symbol, trustOf(e.financials, metrics[k]), f));
+        for (const p of f.pillars) for (const c of p.criteria) labels.set(`${p.key}.${c.key}`, c.label);
         push('score.factor.score', e.c.symbol, { at, value: f.score });
         push('score.factor.raw', e.c.symbol, { at, value: f.raw });
         for (const p of f.pillars) push(pillarKey(p.key), e.c.symbol, { at, value: p.score });
@@ -243,6 +253,10 @@ export async function runBacktest(opts: { from?: string; to?: string; limit?: nu
   // The daily series served their purpose; the stored result keeps the aggregates.
   for (const r of evaluation.ics) delete r.daily;
 
+  const fit = weightLab(rows, { prices: priceMap, sectors }, {
+    fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_HORIZONS, labels,
+  }).validate(calendar);
+
   const sortedPremiums = [...premiums].sort((a, b) => a - b);
   const result: BacktestResult = {
     generatedAt: new Date().toISOString(),
@@ -258,9 +272,12 @@ export async function runBacktest(opts: { from?: string; to?: string; limit?: nu
     byYear: [...years.entries()].sort(([a], [b]) => a - b).map(([year, v]) => ({
       year, months: v.ics.length, ic: mean(v.ics), neutralIc: mean(v.neutral),
     })),
-    weights: suggestWeights(PILLAR_WEIGHTS, evaluation.ics, BACKTEST_WEIGHT_HORIZON, pillarKey),
-    weightHorizon: BACKTEST_WEIGHT_HORIZON,
-    caveats: BACKTEST_CAVEATS,
+    fit,
+    caveats: FITTED_WEIGHTS_META
+      ? [...BACKTEST_CAVEATS, `Die Gewichte in Kraft sind auf die Monatsenden ${FITTED_WEIGHTS_META.from} bis ${FITTED_WEIGHTS_META.to} `
+        + 'angepasst: Für sie sind die Zahlen oben zum Teil in-sample. Was die Anpassung auf Jahren leistet, die sie nicht gesehen hat, '
+        + 'steht unter „Gewichte“.']
+      : BACKTEST_CAVEATS,
   };
   await writeAppState(RESULT_KEY, JSON.stringify(result));
   return result;
@@ -291,12 +308,34 @@ export function renderBacktest(r: BacktestResult): string {
   }
   lines.push('', 'Factor score IC at one month, by year:');
   for (const y of r.byYear) lines.push(`  ${y.year}  IC ${fmt(y.ic)}  sector ${fmt(y.neutralIc)}  (${y.months} months)`);
-  lines.push('', `Pillar weights at ${r.weightHorizon} month (a suggestion, never applied):`);
-  for (const w of r.weights) {
-    lines.push(`  ${w.key.padEnd(12)} ${w.current.toFixed(2)} → ${w.suggested.toFixed(2)}   IC ${fmt(w.ic)} over ${w.independent} windows`);
-  }
-  lines.push('', ...r.caveats.map((c) => `· ${c}`));
+  lines.push('', ...renderFit(r.fit), '', ...r.caveats.map((c) => `· ${c}`));
   return lines.join('\n');
+}
+
+function renderFit(v: WeightValidation): string[] {
+  const lines = [`Weights: fitted at ${v.horizon} month, checked on the half each fit did not see (split ${v.split})`];
+  for (const [name, f] of [['forward', v.forward], ['reverse', v.reverse]] as const) {
+    lines.push(`  ${name}: fitted ${f.fit.from} → ${f.fit.to}, scored ${f.tested.from} → ${f.tested.to}`
+      + ` (prior width ${fmt(f.fit.priorSd.criteria, 4)} criteria, ${fmt(f.fit.priorSd.pillars, 4)} pillars)`);
+    if (!f.fit.moved) {
+      lines.push('    the rule moved nothing on these months: scored as the judgment is');
+      continue;
+    }
+    for (const c of f.comparisons) {
+      lines.push(`    ${c.horizon}M  IC ${fmt(c.judgment.ic)} → ${fmt(c.fitted.ic)}   gain ${fmt(c.gain.mean, 4)} (t ${fmt(c.gain.tStat, 1)}, `
+        + `ahead in ${c.gain.ahead === null ? '—' : Math.round(c.gain.ahead * 100)}% of ${c.independent} windows)`);
+    }
+  }
+  const joint = (f: WeightValidation['full']) => `Σt² ${f.joint.criteria.sumT2.toFixed(1)} over ${f.joint.criteria.k} criteria, `
+    + `${f.joint.pillars.sumT2.toFixed(1)} over ${f.joint.pillars.k} pillars`;
+  lines.push(`  joint tests: ${joint(v.forward.fit)} (first half) · ${joint(v.reverse.fit)} (second half) · ${joint(v.full)} (all)`);
+  lines.push(`  ${v.held ? 'HELD' : v.full.moved ? 'DID NOT HOLD' : 'NOTHING TO FIT'} — the rule on every month `
+    + `(prior width ${fmt(v.full.priorSd.criteria, 4)} criteria, ${fmt(v.full.priorSd.pillars, 4)} pillars):`);
+  for (const w of v.full.rows.filter((x) => x.ic !== null)) {
+    lines.push(`    ${(w.key === null ? w.pillar.toUpperCase() : `  ${w.key}`).padEnd(24)} ${w.judgment.toFixed(3)} → ${w.fitted.toFixed(3)}`
+      + `   IC ${fmt(w.ic)} ± ${fmt(w.se)}`);
+  }
+  return lines;
 }
 
 const isMain = process.argv[1]?.endsWith('backtest/run.ts') || process.argv[1]?.endsWith('backtest/run.js');
@@ -315,6 +354,17 @@ if (isMain) {
       from: flag('--from'), to: flag('--to'), limit: flag('--limit') ? Number(flag('--limit')) : undefined,
     });
     console.log(renderBacktest(result));
+    if (args.includes('--write-weights')) {
+      if (!result.fit.held) {
+        logger.warn('Weights not written: the fit did not hold up on the months it had not seen');
+      } else {
+        const out = resolve('src/analysis/weight-table.ts');
+        writeFileSync(out, renderWeightTable(result.fit, {
+          generatedAt: result.generatedAt, from: result.from, to: result.to, months: result.months, companies: result.companies,
+        }));
+        logger.success(`Weights written → ${out}`);
+      }
+    }
     logger.success(`Backtest finished in ${((Date.now() - started) / 60_000).toFixed(1)} min`);
     await closePool();
   })().catch(async (e) => {

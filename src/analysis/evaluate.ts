@@ -166,7 +166,7 @@ function mean(xs: number[]): number | null {
 }
 
 /** Mean, standard error and t of a sample of independent ICs; null below `MIN_INDEPENDENT`. */
-function meanTest(xs: number[]): { se: number | null; t: number | null } {
+export function meanTest(xs: number[]): { se: number | null; t: number | null } {
   const m = mean(xs);
   if (m === null || xs.length < MIN_INDEPENDENT) return { se: null, t: null };
   const sd = Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1));
@@ -233,12 +233,19 @@ export function inCommonCurrency(closes: Close[], fx: Close[]): Close[] {
  */
 export const MAX_SIGNAL_AGE_DAYS = 10;
 
-/** Newest point dated strictly before `day`, unless the series ended long before. */
+/**
+ * Newest point dated strictly before `day`, unless the series ended long before.
+ *
+ * A point is dated by its UTC calendar day, so "before `day`" is "before that
+ * day's UTC midnight"; the points are oldest first, so it is a binary search.
+ */
 function valueBefore(points: SignalPoint[], day: string): SignalPoint | null {
-  let index = -1;
-  for (let i = 0; i < points.length; i++) {
-    if (isoDate(points[i].at) >= day) break;
-    index = i;
+  const midnight = Date.parse(`${day}T00:00:00.000Z`);
+  let lo = 0, hi = points.length - 1, index = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].at.getTime() < midnight) { index = mid; lo = mid + 1; }
+    else hi = mid - 1;
   }
   if (index < 0) return null;
   const found = points[index];
@@ -417,30 +424,75 @@ export interface WeightSuggestion {
 }
 
 /**
+ * What a weight is multiplied by for an IC measured at `ic ± se`.
+ *
+ * The IC is shrunk towards zero by how uncertain it is — `ic × τ² / (τ² + se²)`,
+ * the posterior mean under a normal prior of width τ on the true IC — and the
+ * weight tilts by `1 + shrunk / τ`. A signal measured at one prior width of
+ * skill doubles, one at minus that width drops out, and one measured over a
+ * handful of windows barely moves. With no prior width at all (τ = 0) the ICs
+ * are indistinguishable from their noise and nothing moves.
+ */
+export function tiltFor(ic: number, se: number, tau: number): number {
+  if (!(tau > 0)) return 1;
+  return Math.max(0, 1 + (ic * tau ** 2 / (tau ** 2 + se ** 2)) / tau);
+}
+
+/**
+ * Whether a set of signals ranks anything at all, taken together: the sum of
+ * their squared t-statistics. With no skill anywhere each t is noise and the
+ * sum averages `k`, the number of signals; well above `k` says some of them
+ * rank, near or below it says the lot is indistinguishable from chance.
+ */
+export function jointTest(measured: { ic: number; se: number }[]): { sumT2: number; k: number } {
+  const usable = measured.filter((m) => m.se > 0);
+  return { sumT2: usable.reduce((a, m) => a + (m.ic / m.se) ** 2, 0), k: usable.length };
+}
+
+/**
+ * How far apart the true ICs of a set of signals are, from their measured ones.
+ *
+ * Measured ICs scatter by the true spread and by their own noise. Weighting
+ * each by its precision, the squared t-statistics sum to `k` plus the true
+ * variance times the total precision (`jointTest`), so the variance is what
+ * that sum leaves above `k` — the DerSimonian–Laird estimate, centred on no
+ * skill. Unweighted, the noisiest signals would decide: a momentum IC that
+ * swings twice as wide as the others drowns them. Zero when the sum does not
+ * exceed `k`: the differences between the signals are then the size noise
+ * makes, and a tilt read off them would be noise. Fewer than three estimate
+ * nothing.
+ */
+export function priorSdFrom(measured: { ic: number; se: number }[]): number {
+  const usable = measured.filter((m) => m.se > 0);
+  if (usable.length < 3) return 0;
+  const { sumT2, k } = jointTest(usable);
+  const precision = usable.reduce((a, m) => a + 1 / m.se ** 2, 0);
+  const variance = (sumT2 - k) / precision;
+  return variance > 0 ? Math.sqrt(variance) : 0;
+}
+
+/**
  * Pillar weights the evidence argues for, starting from the ones set by judgment.
  *
- * Each pillar's measured IC is shrunk towards zero by how uncertain it is —
- * `ic × τ² / (τ² + se²)`, the posterior mean under a normal prior of width τ —
- * and tilts its weight by `1 + shrunk / τ`. A pillar measured at one prior
- * width of skill doubles, one measured at minus that width drops out, and one
- * measured over a handful of windows barely moves. The result is renormalised
- * to the total the weights had before.
+ * Each pillar's weight is tilted by its measured IC (`tiltFor`, with the
+ * generic prior width `IC_PRIOR_SD`) and the result renormalised to the total
+ * the weights had before.
  *
  * A suggestion, never applied: the weights are the scoring model, and a model
- * refitted to its own recent returns stops being a test of anything. Someone
- * reads it, and a change to `PILLAR_WEIGHTS` is a commit.
+ * refitted to its own recent returns stops being a test of anything. The live
+ * evaluation has months, not years; the backtest fits and checks its own
+ * (`backtest/weights.ts`), and a change to the weights is a commit.
  */
 export function suggestWeights(
   current: Record<string, number>, ics: IcSummary[], horizon: number, keyOf: (name: string) => string,
 ): WeightSuggestion[] {
   const rows = Object.entries(current).map(([key, w]) => {
     const r = ics.find((x) => x.key === keyOf(key) && x.horizon === horizon);
-    const shrunkIc = r?.meanIc != null && r.se != null
-      ? r.meanIc * IC_PRIOR_SD ** 2 / (IC_PRIOR_SD ** 2 + r.se ** 2)
-      : 0;
+    const measured = r?.meanIc != null && r.se != null;
+    const shrunkIc = measured ? r.meanIc! * IC_PRIOR_SD ** 2 / (IC_PRIOR_SD ** 2 + r.se! ** 2) : 0;
     return {
       key, current: w, ic: r?.meanIc ?? null, shrunkIc, independent: r?.independent ?? 0,
-      tilted: w * Math.max(0, 1 + shrunkIc / IC_PRIOR_SD),
+      tilted: w * (measured ? tiltFor(r.meanIc!, r.se!, IC_PRIOR_SD) : 1),
     };
   });
   const total = rows.reduce((a, r) => a + r.current, 0);

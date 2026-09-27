@@ -6,7 +6,8 @@
  */
 
 import { readAppState } from '../db/admin.js';
-import type { Evaluation, WeightSuggestion } from '../analysis/evaluate.js';
+import type { Evaluation } from '../analysis/evaluate.js';
+import type { WeightValidation } from './weights.js';
 
 export const RESULT_KEY = 'backtest.result';
 
@@ -23,8 +24,8 @@ export interface BacktestResult {
   evaluation:  Evaluation;
   /** The factor score's IC by calendar year, at one month. */
   byYear:      { year: number; months: number; ic: number | null; neutralIc: number | null }[];
-  weights:     WeightSuggestion[];
-  weightHorizon: number;
+  /** The weights fitted to it, and how the fit did on the months it had not seen. */
+  fit:         WeightValidation;
   caveats:     string[];
 }
 

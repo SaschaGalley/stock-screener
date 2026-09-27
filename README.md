@@ -1120,7 +1120,9 @@ and one measured over a handful of windows barely moves: evidence moves weights
 away from judgment in proportion to how much of it there is. It is printed and
 shown under **Auswertung**, never applied. The weights are the scoring model, a
 change to them is a commit, and a model refitted to its own recent returns is no
-longer tested by them.
+longer tested by them. Refitting them is the backtest's job, which has thirteen
+years to fit on and checks the fit on the half it did not see (see *Fitting the
+weights, and checking the fit* below).
 
 How to read it, and how not to:
 
@@ -1145,8 +1147,9 @@ How to read it, and how not to:
 
 Nothing is stored: the score series accumulates with every nightly refresh and
 prices are fetched fresh from Yahoo, so each run is a recomputation that knows a
-little more than the last. The pillar weights (`PILLAR_WEIGHTS`) are set by
-judgment today; the suggestion above is how the evidence gets to argue with them.
+little more than the last. The weights are set by judgment (`JUDGMENT_WEIGHTS`
+in `score.ts`); the suggestion above and the backtest's fit are how the evidence
+gets to argue with them.
 
 ### The reference universe
 
@@ -1270,7 +1273,7 @@ What it cannot do, and the page says so beside the numbers:
 
 - **No analyst data.** Estimates, ratings, targets and surprises were never
   archived. The consensus and revisions pillars are silent, the DCF starts from
-  trailing growth, and those two pillars keep their weights in the suggestion.
+  trailing growth, and those two pillars keep their weights in the fit.
 - **Survivors only.** The universe is today's index members, each from the day
   it joined. Companies that left before today are missing.
 - **US only.** The SEC does not hold European filings.
@@ -1278,13 +1281,15 @@ What it cannot do, and the page says so beside the numbers:
 The result is stored (`app_state`, `backtest.result`) and shown under
 **Auswertung** as a third view, *Backtest*. It has the same table of signals,
 the factor score's IC by year, the excess return by factor verdict, and the
-pillar weights the backtest argues for. A first run downloads about 500 filings
-and price histories and takes a few minutes; later ones read the cache.
+weights fitted to it with their check on unseen years. A first run downloads
+about 500 filings and price histories and takes a few minutes; later ones read
+the cache and take under two.
 
 ```bash
 pnpm run backtest                     # S&P 500, month-ends since 2013
 pnpm run backtest -- --from 2016-01   # a later start
 pnpm run backtest -- --limit 60       # the first 60 companies, to try it out
+pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
 ```
 
 Every criterion's own figure is evaluated too, turned so that more is better.
@@ -1309,10 +1314,76 @@ This is how an efficient large-cap market over a decade that was poor for
 value and quality usually looks, and the evaluation is not blind: it finds
 the issuance effect where the literature does. It is also a result about the
 number half alone. The consensus and revisions pillars, which carry a quarter
-of the weight, could not be tested. The shrunk pillar suggestion moves little:
-valuation 30 → 35 %, health 15 → 12 %, momentum 10 → 8 %. No weight has been
-changed on this evidence. It was measured on the same years any change would
-be tested on.
+of the weight, could not be tested. Whether the weights should move is the
+next question, and it is asked on years the answer has not seen.
+
+**Fitting the weights, and checking the fit.** Reading weights off thirteen
+years of ICs is how a model gets fitted to its own past: some criterion always
+did well, and a weight raised on it describes those years, not the next. So
+the backtest fits them with a fixed rule and checks the rule the way a forecast
+is checked (`src/backtest/weights.ts`):
+
+1. **Criteria.** Each criterion's one-month IC — of its points, as the score
+   reads it — tilts its judgment weight by `tiltFor`: shrunk towards zero by
+   its standard error under a prior as wide as the criteria's true ICs are
+   apart, and the weight multiplied by `1 + shrunk / width`. The width is read
+   from the data (`priorSdFrom`, DerSimonian–Laird centred on no skill): the
+   squared t-statistics of the criteria sum to their count plus the true
+   variance times their total precision, so what the sum leaves above the count
+   is the variance. Criteria that differ by no more than their noise give a
+   width of zero, and nothing moves. Inside each pillar the weights keep their
+   total.
+2. **Pillars.** The same one level up, for the four pillars the backtest can
+   score, each read with its tilted criteria. Consensus and revisions keep
+   their 25 %.
+3. **The check.** Fitted on 2013–2019 and scored on 2020–2026 against the
+   judgment weights on the same stocks and months, then the other way round;
+   December 2019, whose month ahead is January 2020, belongs to neither half.
+   The fit has held up when the published score's IC improves at one month in
+   both directions and does not fall at three months in the forward one.
+   Only then does `--write-weights` commit the rule applied to every month into
+   `src/analysis/weight-table.ts`, generated like the calibration table, which
+   `score.ts` lays over the judgment. The fit always starts from the judgment,
+   so running it again on the same months gives the same weights instead of
+   tilting them further.
+
+The rule was fixed before either half was looked at. One thing changed after
+the first run: the width was read unweighted then, which let the momentum
+criteria decide, whose IC swings twice as wide as the others'. It is now
+precision-weighted, as the estimator is meant to be. Neither version moves a
+weight on all months. The twenty criteria's squared t-statistics sum to 17.9
+over all months, 20.4 over 2013–2019 and 11.8 over 2020–2026, and without a
+trace of skill anywhere they would average twenty. Together the criteria rank
+the next month no better than chance does, and the differences between them
+are the size noise makes:
+
+| Criterion | IC 2013–2019 | IC 2020–2026 | Weight |
+|---|---|---|---|
+| Intrinsic value (DCF scenarios) | +0.018 | +0.015 | 35 % of valuation |
+| Net share issuance | +0.010 | +0.015 | 5 % of quality |
+| Margin against peers | −0.017 | −0.005 | 15 % of quality |
+| Balance sheet & risk, the pillar | −0.014 | +0.002 | 15 % |
+| Closeness to the 52-week high | −0.030 | −0.008 | 30 % of momentum |
+
+Some signs repeat in both halves: every valuation criterion is positive, and
+margin, the Rule of 40 and the 52-week high are negative. But of the forty
+readings only one reaches two standard errors: margin in the first half, at
+t −2.0 and −0.6 in the second. Forty readings of nothing produce one that
+large five times in six.
+
+On the first half alone the rule did tilt, slightly: valuation 30 → 36 %,
+quality 20 → 25 %, margin inside quality 15 → 10 %, and the balance sheet
+15 → 5 %. The balance sheet then turned positive in the second half, and on
+2020–2026 the whole tilt added 0.0006 to the IC (t 0.2). On the second half
+and on all months the rule moved nothing. The judgment weights stay, and
+`weight-table.ts` holds no fit.
+
+Raising net share issuance, the one criterion that stood out in the raw
+figures, would have been exactly the fit the check exists to catch. Read as
+the score reads it, within the sector, its t is 1.1 and 1.9 in the two halves.
+It is the right sign twice, and not yet evidence. Every backtest run asks
+again, and every month the live evaluation adds from October 2026 on is one no
+rule here has seen.
 
 ## Technical signals gauge
 
@@ -1420,6 +1491,7 @@ src/
 │   ├── peers.ts           Peer medians from the month's own cross-section
 │   ├── rates.ts           FRED and Damodaran by month
 │   ├── result.ts          The stored result the page reads
+│   ├── weights.ts         The weight fit, checked on the half of the months it did not see
 │   └── run.ts             Month by month: rebuild, calibrate, score, evaluate
 ├── currencies.ts          Yahoo's quote currencies and the unit behind each (GBp → GBP)
 ├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
@@ -1452,10 +1524,11 @@ src/
 │   ├── trailing.ts        Trailing twelve months rebuilt from the quarters
 │   ├── sampling.ts        Halton points and the normal quantile for the simulation
 │   ├── computeMetrics.ts  Orchestrates the bundle of models for the web GET
-│   ├── score.ts           The deterministic score: six pillars, caps, the blend
+│   ├── score.ts           The deterministic score: six pillars, their weights, caps, the blend
+│   ├── weight-table.ts    Generated weight fit, empty until one holds up (`pnpm run backtest -- --write-weights`)
 │   ├── calibration.ts     Percentile reading of a criterion against its reference distribution
 │   ├── calibration-table.ts  Generated reference distributions (`pnpm run calibrate`)
-│   ├── evaluate.ts        Rank IC, sector-neutral IC and the weight suggestion
+│   ├── evaluate.ts        Rank IC, sector-neutral IC, the weight tilt and the joint test
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
@@ -1840,7 +1913,7 @@ pnpm run typecheck    # type-check src and test without emitting
 pnpm test             # node:test via tsx — no database or network needed
 pnpm run calibrate    # recompute the reference distributions → src/analysis/calibration-table.ts
 pnpm run evaluate     # rank IC of the stored scores, watchlist and universe
-pnpm run backtest     # the factor score rebuilt monthly since 2013 from SEC filings
+pnpm run backtest     # the factor score rebuilt monthly since 2013 from SEC filings, and the weight fit checked
 ```
 
 **Golden tests.** `test/golden/` holds the stored inputs of six real stocks: a

@@ -3,7 +3,7 @@ import { api } from '../api';
 import type { BacktestResponse, EvaluationResponse } from '../types';
 import { CloseIcon } from '../components/icons';
 import BacktestPanel from '../components/BacktestPanel';
-import { SignedBar, evidence, pct } from '../components/evaluationParts';
+import { SignedBar, WeightsTable, evidence, pct } from '../components/evaluationParts';
 import { recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 
@@ -264,43 +264,17 @@ export default function EvaluationPage({ onClose }: Props) {
                     geändert werden die Gewichte im Code, nicht hier.
                   </p>
                 </header>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[520px] text-sm">
-                    <thead className="text-[11px] text-ink-400">
-                      <tr className="border-b border-ink-800">
-                        <th className="px-4 py-2 text-left font-normal">Säule</th>
-                        <th className="px-2 py-2 text-right font-normal">Heute</th>
-                        <th className="px-2 py-2 text-right font-normal">Vorschlag</th>
-                        <th className="px-2 py-2 text-right font-normal">IC</th>
-                        <th className="px-2 py-2 text-right font-normal">geschrumpft</th>
-                        <th className="px-4 py-2 text-right font-normal">unabh. Fenster</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.weights.map((w) => {
-                        const delta = w.suggested - w.current;
-                        return (
-                          <tr key={w.key} className="border-b border-ink-800/60 last:border-0">
-                            <td className="px-4 py-1.5 text-ink-200">{w.title}</td>
-                            <td className="px-2 py-1.5 text-right font-mono text-ink-300">{(w.current * 100).toFixed(0)} %</td>
-                            <td className={`px-2 py-1.5 text-right font-mono ${Math.abs(delta) < 0.005 ? 'text-ink-400' : delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {(w.suggested * 100).toFixed(0)} %
-                            </td>
-                            <td className="px-2 py-1.5 text-right font-mono text-ink-300">{w.ic?.toFixed(2) ?? '—'}</td>
-                            <td className="px-2 py-1.5 text-right font-mono text-ink-400">{w.shrunkIc.toFixed(3)}</td>
-                            <td className="px-4 py-1.5 text-right font-mono text-ink-500">{w.independent}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <WeightsTable weights={data.weights} />
               </section>
             )}
 
             <p className="text-[11px] leading-relaxed text-ink-500">
               Die Scores vor dem Einbau des aktuellen Modells sind mit den heutigen Regeln nachgerechnet: die Daten sind
-              die damaligen, die Regeln aber nicht an Renditen angepasst — sobald sie das werden, ist dies kein Test mehr.
+              die damaligen.{' '}
+              {bt?.inForce.fit
+                ? `Die Gewichte sind an den Renditen des Backtests bis ${new Date(bt.inForce.fit.to).toLocaleDateString('de-DE')} `
+                  + 'angepasst — für die Monate davor ist dies kein unabhängiger Test, erst die danach sind es.'
+                : 'Die Regeln sind nicht an Renditen angepasst — sobald sie das werden, ist dies kein Test mehr.'}{' '}
               Eine Reihe, die endet (z. B. der alte LLM-Score), zählt nur zehn Tage über ihren letzten Wert hinaus.
             </p>
           </>
