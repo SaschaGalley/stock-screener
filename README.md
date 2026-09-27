@@ -337,6 +337,14 @@ below 1.5 %. The DCF's assumptions line shows both parts. A fair value now says
 which stocks are cheap for this model, and the market as a whole sits near its
 price, as the implied premium says it should.
 
+Measured on 27 September over 527 DCFs, the adjustment is −1.75 points. The
+median DCF moved from 0.72 of the price to 1.04, and the median probability of
+a value above the price from 13 % to 43 %. The monthly backtest measures the
+same thing for every month since 2013 and finds between −2.2 and +1.3 points.
+The model is harsher than the market in expensive years and gentler in cheap
+ones, which is what a fixed set of cash-flow assumptions against a moving
+market does.
+
 ## Score and verdict
 
 Score and recommendation used to come out of one LLM call: the models, the
@@ -441,7 +449,9 @@ with both near 3.5 on quality. A utility carries four times EBITDA in net debt
 because regulated returns let it, so it was being punished for being a utility.
 Those criteria now take their percentile within the stock's own sector, where
 the sector holds at least twelve stocks (`MIN_SECTOR_CALIBRATION_SYMBOLS`), and
-against the market where it does not. The table keeps each sector's
+against the market where it does not. The median balance-sheet pillar of
+utilities went from 1.9 to 4.8, of real estate from 1.7 to 4.7, and of
+technology from 6.1 to 4.9. The table keeps each sector's
 distribution beside the market's (`health.leverage@Utilities`). Two stay against
 the market on purpose. Beneish reads manipulation, which is no sector's habit.
 Piotroski reads a company's change on its own last year, so it is already
@@ -488,9 +498,12 @@ watchlist is what stands out instead: its median health pillar is 5.9, its
 consensus 6.4 and its valuation 3.5. That is information about the watchlist,
 which is what a score is for.
 
-The table was generated on 27 September from mostly one observation per
-reference stock. Regenerate it (`pnpm run calibrate`) once the nightly rotation
-has given the universe a few weeks of history.
+The committed table was generated on 27 September from all 595 stored stocks,
+the watchlist and the full universe, with mostly one observation per reference
+stock. Regenerate it (`pnpm run calibrate`) once the nightly rotation has given
+the universe a few weeks of history; the admin page says when it is due. On
+those 595 stocks the six pillar medians sit between 4.8 and 5.2, 293 lean
+bullish and 302 bearish, and conviction is 1.25 either way.
 
 **The bands are symmetric.** HOLD used to run from 4.5 to 6.5 — set where the
 old LLM verdicts sat — so a BUY needed 1.5 points above neutral and a SELL half
