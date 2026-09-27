@@ -52,16 +52,78 @@ async function getText(url: string): Promise<string | null> {
   }
 }
 
+/**
+ * The SEC's ticker → CIK table, once per process and day. It is a megabyte, and
+ * the nightly refresh asks it once per symbol.
+ */
+const TICKER_TABLE_TTL_MS = 24 * 60 * 60 * 1000;
+let tickerTable: { at: number; byTicker: Map<string, { cik: string; name: string }> } | null = null;
+
 async function lookupCIK(symbol: string): Promise<{ cik: string; name: string } | null> {
-  const data = await getJson<Record<string, TickerEntry>>(`${SEC_BASE}/files/company_tickers.json`);
-  if (!data) return null;
-  const sym = symbol.toUpperCase();
-  for (const entry of Object.values(data)) {
-    if (entry.ticker.toUpperCase() === sym) {
-      return { cik: String(entry.cik_str).padStart(10, '0'), name: entry.title };
-    }
+  if (!tickerTable || Date.now() - tickerTable.at > TICKER_TABLE_TTL_MS) {
+    const data = await getJson<Record<string, TickerEntry>>(`${SEC_BASE}/files/company_tickers.json`);
+    if (!data) return null;
+    tickerTable = {
+      at: Date.now(),
+      byTicker: new Map(Object.values(data).map((e) => [
+        e.ticker.toUpperCase(), { cik: String(e.cik_str).padStart(10, '0'), name: e.title },
+      ])),
+    };
   }
-  return null;
+  return tickerTable.byTicker.get(symbol.toUpperCase()) ?? null;
+}
+
+interface XbrlConcept {
+  units?: Record<string, Array<{ end?: string; val?: number; form?: string }>>;
+}
+
+/** The newest reported value of one us-gaap concept, by period end. */
+async function latestConcept(cik: string, concept: string): Promise<{ end: string; val: number } | null> {
+  const data = await getJson<XbrlConcept>(`${EDGAR_BASE}/api/xbrl/companyconcept/CIK${cik}/us-gaap/${concept}.json`);
+  let newest: { end: string; val: number } | null = null;
+  for (const f of data?.units?.USD ?? []) {
+    if (typeof f.end !== 'string' || typeof f.val !== 'number' || !Number.isFinite(f.val)) continue;
+    if (!newest || f.end > newest.end) newest = { end: f.end, val: f.val };
+  }
+  return newest;
+}
+
+/** A balance older than this belongs to a filer that stopped reporting the concept. */
+const LEASE_MAX_AGE_DAYS = 460;
+
+/**
+ * Operating lease liabilities as last reported to the SEC.
+ *
+ * Under US GAAP an operating lease costs rent inside operating income and
+ * operating cash flow, while Yahoo's total debt carries the lease liability
+ * too — so a cash-flow DCF that subtracts total debt charges the lease twice.
+ * Starbucks carries 9.2 bn of them. The liability is only on the balance sheet
+ * in total, or as its current and non-current halves; either answers. Null for
+ * a filer that does not report the concept (IFRS filers, whose leases are debt
+ * the cash flows are before, as they should be).
+ */
+export async function getOperatingLeaseLiabilities(symbol: string): Promise<number | null> {
+  try {
+    const cik = (await lookupCIK(symbol))?.cik;
+    if (!cik) return null;
+    const total = await latestConcept(cik, 'OperatingLeaseLiability');
+    let found: { end: string; val: number } | null = total;
+    if (!found) {
+      const [current, noncurrent] = await Promise.all([
+        latestConcept(cik, 'OperatingLeaseLiabilityCurrent'),
+        latestConcept(cik, 'OperatingLeaseLiabilityNoncurrent'),
+      ]);
+      if (noncurrent) {
+        found = { end: noncurrent.end, val: noncurrent.val + (current?.end === noncurrent.end ? current.val : 0) };
+      }
+    }
+    if (!found) return null;
+    const ageDays = (Date.now() - Date.parse(found.end)) / 86_400_000;
+    return Number.isFinite(ageDays) && ageDays <= LEASE_MAX_AGE_DAYS && found.val >= 0 ? found.val : null;
+  } catch (e) {
+    logger.debug(`EDGAR operating leases for ${symbol}: ${(e as Error).message}`);
+    return null;
+  }
 }
 
 export async function fetchEdgarFilings(

@@ -25,6 +25,8 @@
 
 import { DataQualityWarning, StockFinancials } from '../types.js';
 import { toFiniteNumber } from '../utils/num.js';
+import { majorCurrency } from '../currencies.js';
+import { RATE_CURRENCIES } from '../data/fred.js';
 
 /**
  * How old the newest reported quarter may be before the market-side modules
@@ -313,6 +315,23 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
       fields: ['analystCount', 'targetMeanPrice', 'earningsEstimates'],
       message: `No valuation-relevant sell-side coverage on this listing: no ratings, no price target, no EPS estimates. `
         + `Often an artefact of a secondary listing rather than a genuinely uncovered company — the primary line may be covered.`,
+    });
+  }
+
+  // ── 9. A currency no government yield is fetched for ──────────────────────
+  // Cost of equity and of debt, and the terminal-growth cap, are built on the
+  // risk-free rate of the currency the cash flows are in. Without a series for
+  // it the dollar rate stands in, which for a real or a renminbi is a different
+  // inflation regime — worth saying rather than burying in a WACC.
+  const major = majorCurrency(f.tradingCurrency);
+  if (major && major !== 'USD' && !(RATE_CURRENCIES as readonly string[]).includes(major)) {
+    warn({
+      code: 'no-local-rate',
+      severity: 'warn',
+      fields: ['tradingCurrency'],
+      message: `The cash flows are in ${major}, for which no ten-year government yield is fetched — the models discount `
+        + `with the US Treasury yield instead, so every rate-based value (DCF, EPV, DDM, RIM) is off by the difference `
+        + `between the two currencies' rates.`,
     });
   }
 

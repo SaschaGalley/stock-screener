@@ -88,38 +88,39 @@ export const StockFinancialsSchema = z.object({
   avgPE5Y:   z.number().nullable().describe('Simple average of trailing P/E at fiscal year-end for each of the last 3-4 profitable years (loss years excluded)'),
   pegRatio:  z.number().nullable().describe('Price/Earnings-to-Growth ratio: P/E divided by expected earnings growth rate'),
   eps:       z.number().nullable().describe('Trailing 12-month earnings per share (diluted)'),
-  bookValue: z.number().nullable().describe('Book value per share: (total equity) / shares outstanding'),
+  bookValue: z.number().nullable().describe('Book value per share: common equity on the newest balance sheet ÷ sharesOutstanding, in the unit the price is quoted per'),
 
   // ── Profitability ───────────────────────────────────────────────────────────
   roe:              z.number().nullable().describe('Return on equity (decimal): net income / average shareholders equity TTM'),
   roa:              z.number().nullable().describe('Return on assets (decimal): net income / average total assets TTM'),
   operatingMargin:  z.number().nullable().describe('Operating income as a fraction of revenue TTM (decimal, e.g. 0.30 = 30%)'),
   netMargin:        z.number().nullable().describe('Net income as a fraction of revenue TTM (decimal)'),
-  revenueGrowth:    z.number().nullable().describe('Year-over-year revenue growth rate TTM (decimal, from Yahoo financialData)'),
+  revenueGrowth:    z.number().nullable().describe('Revenue growth (decimal): the trailing four quarters against the four before them, else the two newest fiscal years. Before FINANCIALS_VERSION 21 this was Yahoo\'s latest-quarter-vs-year-ago rate'),
   revenueGrowthYoY: z.number().nullable().describe('Alias of revenueGrowth; provided for consistency with SectorMedians field naming'),
-  earningsGrowth:   z.number().nullable().describe('Year-over-year earnings/net-income growth rate TTM (decimal); can be noisy for single-quarter spikes'),
+  earningsGrowth:   z.number().nullable().describe('Net income growth (decimal) on the same basis as revenueGrowth; null when the base is not positive. Before FINANCIALS_VERSION 21 this was Yahoo\'s single-quarter rate, which read 294 % on a revaluation gain'),
 
   // ── Cash & Liquidity ────────────────────────────────────────────────────────
-  freeCashFlow:      z.number().nullable().describe('Free cash flow TTM (operating CF − capex), FX-converted into the trading currency'),
-  operatingCashFlow: z.number().nullable().describe('Operating cash flow TTM from Yahoo financialData'),
+  freeCashFlow:      z.number().nullable().describe('Free cash flow as the statements define it — operating cash flow less capex — summed over the last four quarters, else the newest fiscal year; FX-converted into the trading currency. Before FINANCIALS_VERSION 21 (no trailingSource) this was Yahoo\'s levered free cash flow, a different figure'),
+  operatingCashFlow: z.number().nullable().describe('Operating cash flow over the last four quarters, else Yahoo financialData'),
   totalCash:         z.number().nullable().describe('Total cash, cash equivalents and short-term investments on the balance sheet'),
-  totalDebt:         z.number().nullable().describe('Total interest-bearing debt (short-term + long-term)'),
+  totalDebt:         z.number().nullable().describe('Total debt including lease obligations (short-term + long-term), as Yahoo reports it'),
   longTermDebt:      z.number().nullable().describe('Long-term debt only (excludes current portion), used in Piotroski F5 and Altman Z'),
-  debtToEquity:      z.number().nullable().describe('Total debt divided by shareholders equity (ratio, not percentage)'),
+  debtToEquity:      z.number().nullable().describe('Total debt divided by shareholders equity (ratio; Yahoo supplies percent, divided by 100 from FINANCIALS_VERSION 21)'),
   currentRatio:      z.number().nullable().describe('Current assets / current liabilities; liquidity indicator (Piotroski F6)'),
   quickRatio:        z.number().nullable().describe('(Current assets − inventory) / current liabilities; stricter liquidity measure'),
   deferredRevenueShare: z.number().nullable().describe('Current deferred revenue / current liabilities, latest annual balance sheet (decimal). Prepaid subscriptions sit in current liabilities without being cash owed, so a high share makes the current ratio understate liquidity'),
 
-  // ── Income Statement (annual, latest) ───────────────────────────────────────
-  revenue:          z.number().nullable().describe('Total revenue from the most recent annual income statement'),
-  grossProfit:      z.number().nullable().describe('Revenue minus cost of goods sold from the most recent annual period'),
-  ebit:             z.number().nullable().describe('Earnings before interest and taxes (operating income) from the latest annual period'),
-  netIncome:        z.number().nullable().describe('Net income attributable to common shareholders from the latest annual period'),
-  ebitda:           z.number().nullable().describe('Earnings before interest, taxes, depreciation and amortisation TTM'),
-  interestExpense:  z.number().nullable().describe('Interest expense from the latest annual income statement (used in interest coverage ratio)'),
-  incomeTaxExpense: z.number().nullable().describe('Income tax provision from the latest annual period (used to derive effective tax rate)'),
+  // ── Income Statement (trailing twelve months unless noted) ──────────────────
+  revenue:          z.number().nullable().describe('Total revenue over the trailing twelve months (Yahoo financialData, equal to the last four quarters)'),
+  grossProfit:      z.number().nullable().describe('Gross profit over the trailing twelve months'),
+  ebit:             z.number().nullable().describe('Operating income over the last four quarters, else the newest fiscal year. Never Yahoo\'s EBIT line, which is pretax income plus interest and so carries investment gains (payloads before FINANCIALS_VERSION 21 did read that line, from the newest fiscal year)'),
+  netIncome:        z.number().nullable().describe('Net income attributable to common shareholders over the trailing twelve months'),
+  normalizedNetIncome: z.number().nullable().optional().describe('Net income excluding unusual items (Yahoo normalizedIncome) over the last four quarters, else the newest fiscal year — the earnings the per-share models capitalise'),
+  ebitda:           z.number().nullable().describe('Operating income plus depreciation and amortisation over the last four quarters, else Yahoo financialData'),
+  interestExpense:  z.number().nullable().describe('Interest expense over the last four quarters, else the newest fiscal year (interest coverage, synthetic rating)'),
+  incomeTaxExpense: z.number().nullable().describe('Income tax provision from the latest annual period'),
   incomeBeforeTax:  z.number().nullable().describe('Pre-tax income from the latest annual period'),
-  taxRate:          z.number().nullable().describe('Effective tax rate (decimal): incomeTaxExpense / incomeBeforeTax; used in EPV and DCF'),
+  taxRate:          z.number().nullable().describe('Effective tax rate over the newest three fiscal years together (Σ tax ÷ Σ pretax income), clamped to 0–35 %; used in EPV and DCF'),
 
   // ── Balance Sheet (annual, latest) ──────────────────────────────────────────
   totalAssets:             z.number().nullable().describe('Total assets from the latest annual balance sheet (Altman Z, Beneish)'),
@@ -133,12 +134,24 @@ export const StockFinancialsSchema = z.object({
   operatingCashFlowAnnual: z.number().nullable().describe('Operating cash flow from the latest annual cash flow statement (Beneish TATA)'),
   interestInOperatingCashFlow: z.boolean().nullable().optional().describe('Whether interest paid sits inside operating cash flow — always under US GAAP, by choice under IFRS. Decides whether free cash flow is after interest, and so whether the DCF adds after-tax interest back to reach FCFF. Null when the statement does not say'),
   sharesOutstandingAnnual: z.number().nullable().optional().describe('Weighted-average shares for the latest fiscal year — diluted where both years report it, basic otherwise (Piotroski F7)'),
-  capex:                   z.number().nullable().describe('Capital expenditure (absolute value) from the latest annual cash flow statement'),
+  capex:                   z.number().nullable().describe('Capital expenditure (absolute value) over the last four quarters, else the newest fiscal year'),
   depreciation:            z.number().nullable().describe('Depreciation & amortisation from the latest annual cash flow statement (Beneish DEPI)'),
+  stockBasedCompensation:  z.number().nullable().optional().describe('Stock-based compensation over the last four quarters, else the newest fiscal year — a real cost operating cash flow adds back'),
+  trailingSource:          z.enum(['quarters', 'annual']).optional().describe('Where freeCashFlow and ebit came from: summed quarters, or the newest fiscal year where the quarters are incomplete. Absent before FINANCIALS_VERSION 21, whose freeCashFlow is Yahoo\'s levered figure and whose ebit is the annual EBIT line'),
+
+  // ── Equity bridge (newest balance sheet) ──────────────────────────────────────
+  minorityInterest:   z.number().nullable().optional().describe('Non-controlling interests: equity in consolidated subsidiaries that belongs to others, subtracted on the way from firm value to the common shareholders'),
+  preferredEquity:    z.number().nullable().optional().describe('Preferred stock, a claim senior to the common shareholders'),
+  nonOperatingAssets: z.number().nullable().optional().describe('Investments the operating income does not earn on: non-current marketable securities and stakes carried at cost or by the equity method (Yahoo investmentsAndAdvances)'),
+  leaseObligations:   z.number().nullable().optional().describe('Lease liabilities included in totalDebt (Yahoo capitalLeaseObligations)'),
+  operatingLeaseLiabilities: z.number().nullable().optional().describe('Operating lease liabilities reported to the SEC (us-gaap:OperatingLeaseLiability) — under US GAAP their cost already sits in operating income and operating cash flow, so the part of totalDebt they make up is not debt the cash flows are before'),
+  investedCapital:    z.number().nullable().optional().describe('Invested capital on the newest balance sheet (Yahoo: debt plus equity)'),
+  tangibleBookValue:  z.number().nullable().optional().describe('Tangible book value (common equity less goodwill and intangibles) on the newest balance sheet, total'),
+  dilutedShareRatio:  z.number().nullable().optional().describe('Diluted over basic weighted-average shares for the newest fiscal year (≥ 1): what options, RSUs and convertibles add to the count the price is quoted against'),
 
   // ── EV & Multiples ──────────────────────────────────────────────────────────
   enterpriseValue:   z.number().nullable().describe('Enterprise value: market cap + total debt − cash (from Yahoo defaultKeyStatistics)'),
-  sharesOutstanding: z.number().nullable().describe('Diluted shares outstanding'),
+  sharesOutstanding: z.number().nullable().describe('Shares the market cap is spread over, in the unit the price is quoted per: market cap ÷ price, so every share class and ADR units for an ADR. Before FINANCIALS_VERSION 21 this was Yahoo\'s count of one share class'),
   targetMeanPrice:   z.number().nullable().describe('Consensus analyst mean price target (from Yahoo financialData)'),
 
   // ── Analyst Estimates ────────────────────────────────────────────────────────
@@ -170,6 +183,7 @@ export const StockFinancialsSchema = z.object({
   description:  z.string().nullable().describe('Long business summary from Yahoo assetProfile (up to ~400 chars shown in report)'),
   isin:         z.string().nullable().describe('International Securities Identification Number (12-char, e.g. DE000ENER6Y0); fetched from Yahoo Finance search'),
   wkn:          z.string().nullable().describe('Wertpapierkennnummer — 6-char German identifier; derived from ISIN for DE0 stocks'),
+  country:      z.string().nullable().optional().describe('Country of the headquarters from Yahoo assetProfile — the country risk premium is read for it'),
 
   // ── Finnhub-enriched ─────────────────────────────────────────────────────────
   roic:                z.number().nullable().describe('Return on invested capital for the latest fiscal year (decimal), from Finnhub series.annual.roic; caps the DCF terminal ROIC together with the peer median'),
@@ -193,6 +207,7 @@ export const StockFinancialsSchema = z.object({
     grossProfit:       z.array(z.object({ year: z.number(), value: z.number() })),
     operatingIncome:   z.array(z.object({ year: z.number(), value: z.number() })),
     netIncome:         z.array(z.object({ year: z.number(), value: z.number() })),
+    normalizedIncome:  z.array(z.object({ year: z.number(), value: z.number() })).optional(),
     eps:               z.array(z.object({ year: z.number(), value: z.number() })),
     freeCashFlow:      z.array(z.object({ year: z.number(), value: z.number() })),
     operatingCashFlow: z.array(z.object({ year: z.number(), value: z.number() })),

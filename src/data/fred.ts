@@ -1,5 +1,6 @@
 import { getImpliedERP } from './damodaran.js';
 import { CreditSpreads, FALLBACK_SPREADS, RATING_BUCKETS } from './ratings.js';
+import { majorCurrency } from '../currencies.js';
 import { logger } from '../utils/logger.js';
 
 const BASE = 'https://api.stlouisfed.org/fred/series/observations';
@@ -50,6 +51,15 @@ export const LOCAL_TEN_YEAR = {
   NOK: 'IRLTLT01NOM156N',
   DKK: 'IRLTLT01DKM156N',
   KRW: 'IRLTLT01KRM156N',
+  NZD: 'IRLTLT01NZM156N',
+  PLN: 'IRLTLT01PLM156N',
+  CZK: 'IRLTLT01CZM156N',
+  HUF: 'IRLTLT01HUM156N',
+  ILS: 'IRLTLT01ILM156N',
+  MXN: 'IRLTLT01MXM156N',
+  ZAR: 'IRLTLT01ZAM156N',
+  CLP: 'IRLTLT01CLM156N',
+  INR: 'INDIRLTLT01STM',
 } as const;
 
 export type RateCurrency = keyof typeof LOCAL_TEN_YEAR;
@@ -111,10 +121,11 @@ export const FALLBACK_RATES: MarketRates = {
  * mature-market premium he applies everywhere before country risk, and ICE's
  * dollar indices are the deep market for rating spreads. A currency without a
  * FRED series keeps the dollar rate, as every stock did before. Yahoo quotes
- * London in pence ("GBp"); upper-casing turns that into the pound.
+ * London in pence ("GBp"), which counts in pounds.
  */
 export function ratesForCurrency<R extends MarketRates>(rates: R, currency: string | null | undefined): R {
-  const local = currency ? rates.localRiskFreeRates[currency.toUpperCase() as RateCurrency] : undefined;
+  const major = majorCurrency(currency);
+  const local = major ? rates.localRiskFreeRates[major as RateCurrency] : undefined;
   return local === undefined ? rates : { ...rates, riskFreeRate: local };
 }
 

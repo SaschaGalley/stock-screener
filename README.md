@@ -852,15 +852,55 @@ TradingView-style aggregation on top of that in `src/analysis/signals.ts`:
 
 | Source | Data |
 |--------|------|
-| Yahoo Finance (`yahoo-finance2`) | Price, fundamentals, annual + quarterly income statements, balance sheet, cash flow, daily/monthly price history, analyst targets & ratings, earnings history + estimates, options chain, insider transactions, institutional ownership |
+| Yahoo Finance (`yahoo-finance2`) | Price, fundamentals, annual + quarterly income statements, balance sheets and cash flows, daily/monthly price history, analyst targets & ratings, earnings history + estimates, options chain, insider transactions, institutional ownership |
 | Yahoo Finance search API | Symbol auto-resolution (`FACC` → `0QW9.IL`) |
 | Finnhub `/stock/metric` | ROIC, 3-year EPS CAGR, 5-year dividend growth rate |
-| Finnhub `/stock/peers` + `/stock/metric` | Peer-group median multiples & profitability |
+| Finnhub `/stock/peers` + `/stock/metric` | Peer-group median multiples & profitability — without the company's own other share classes and without negative multiples |
 | Finnhub `/company-news` | Recent news (last 7 days) |
-| FRED | 10Y Treasury, Moody's AAA, VIX, DXY, yield curve, HY spreads, sector ETF prices |
-| SEC EDGAR | Latest 10-K / 10-Q filings (US tickers only) |
+| FRED | 10Y Treasury, Moody's AAA, ten-year government yields for 19 currencies, VIX, DXY, yield curve, HY spreads, sector ETF prices |
+| SEC EDGAR | Latest 10-K / 10-Q filings; operating lease liabilities from XBRL (US filers only) |
 | Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
 | Perplexity Sonar | Optional forensic brief — dated events, contrary evidence, bull claims graded against the evidence; goes to the narrative stage, which never sees the valuation |
+
+### What the trailing figures are, and where they come from
+
+Yahoo hands out ready-made trailing figures in its market-side block
+(`financialData`), and three of them do not mean what their names say:
+
+| Field | What Yahoo's field is | What the models assumed | Example |
+|---|---|---|---|
+| `freeCashflow` | S&P's *levered* free cash flow | operating cash flow − capex | Microsoft 16.5 bn vs 67.0 bn, Netflix 25.4 bn vs 9.5 bn, Intel +4.9 bn vs −4.9 bn |
+| `revenueGrowth`, `earningsGrowth` | latest quarter vs the same quarter a year ago | trailing twelve months | Apple 16.4 % in a year that grew 6.4 %; Alphabet's earnings "grew" 294 % on a revaluation gain |
+| `sharesOutstanding` | one share class | every share of the company | Alphabet 5.87 bn of 12.23 bn, so every per-share value came out 2.08× too high |
+
+So since `FINANCIALS_VERSION` 21 the trailing figures are rebuilt from the
+quarterly statements (`src/analysis/trailing.ts`): free cash flow, operating
+income, interest, capex, stock compensation and D&A summed over the last four
+consecutive quarters, growth as those four against the four before, and the
+newest fiscal year wherever the quarters have a gap. Shares are market cap over
+price — every class, and ADR units for an ADR — and book value per share is the
+newest common equity over that count (Berkshire's B line had carried the A
+share's 522,226). `ebit` is operating income, not Yahoo's EBIT line, which adds
+investment gains back in (Alphabet FY2025: 159.6 bn against 129.0 bn).
+
+Three more corrections at the same layer:
+
+- **London, Johannesburg and Tel Aviv quote in pence, cents and agorot** while
+  market cap, EPS and book value arrive in pounds, rand and shekels. Everything
+  is now in the unit the price is in (`src/currencies.ts`); Barclays had shown a
+  P/B of 95×.
+- **A missing exchange rate is no longer a rate of 1.** The inverse pair is
+  tried, and if neither answers every statement figure is withheld with an
+  `fx-unavailable` error instead of being read as the wrong currency.
+- **The payload carries the rest of the equity bridge:** minority interest and
+  preferred equity (claims ahead of the common shareholders), non-current
+  investments the operating income does not earn on (Apple's 84 bn of long-term
+  securities, Alphabet's 131 bn of stakes), and for US-GAAP filers the operating
+  lease liability from the SEC filing — the part of total debt whose rent is
+  already deducted from operating cash flow.
+
+The payload marks which basis it carries (`trailingSource`); the models rebuild
+what they can for payloads stored before it.
 | Distill | Optional curated multi-source briefings per ticker (RSS, YouTube, web). Weighted **above** Perplexity / raw search because the editorial filter happens upstream |
 | Brave / Tavily / Claude / OpenAI | Optional web search for current events |
 

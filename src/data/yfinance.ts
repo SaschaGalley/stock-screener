@@ -11,6 +11,8 @@ import {
 } from '../types.js';
 import { DailyBar } from '../analysis/technical.js';
 import { auditFinancials, isFundamentalsStale } from '../analysis/data-quality.js';
+import { QuarterPoint, annualGrowth, latestValue, trailingGrowth, trailingSum } from '../analysis/trailing.js';
+import { MINOR_UNIT_CURRENCIES } from '../currencies.js';
 import { logger } from '../utils/logger.js';
 import { toFiniteNumber as num } from '../utils/num.js';
 
@@ -211,25 +213,43 @@ async function safeTimeSeries(symbol: string, module: 'balance-sheet' | 'financi
 }
 
 /**
- * Fetch quarterly income-statement series (last ~2 years of fiscal quarters).
- * Used for the Simple Valuation Ratio = Market Cap / (latest quarter revenue × 4),
- * which is more responsive to growth/decline inflections than the TTM-based
- * priceToSales because it drops the older 3 quarters from the denominator.
+ * Fetch one quarterly statement series, three years deep — eight consecutive
+ * quarters are what a trailing-twelve-month growth rate needs, and Yahoo's
+ * newest rows are not always complete.
+ *
+ * The quarters are where the trailing figures come from: revenue for the
+ * run-rate ratios, and operating income, free cash flow, interest and stock
+ * compensation summed over the last four (`analysis/trailing.ts`), because the
+ * ready-made trailing fields in `financialData` define them differently. The
+ * newest balance sheet row is the one the equity bridge reads.
  */
-async function safeQuarterlyFinancials(symbol: string): Promise<any[]> {
+async function safeQuarterlySeries(symbol: string, module: 'balance-sheet' | 'financials' | 'cash-flow'): Promise<any[]> {
   try {
     const from = new Date();
-    from.setFullYear(from.getFullYear() - 2);
+    from.setFullYear(from.getFullYear() - 3);
     const data = await yf.fundamentalsTimeSeries(symbol, {
       period1: from.toISOString().slice(0, 10),
       type: 'quarterly',
-      module: 'financials',
+      module,
     } as any);
     return Array.isArray(data) ? data : [];
   } catch (e) {
-    logger.warn(`TimeSeries[financials,quarterly]: ${(e as Error).message}`);
+    logger.warn(`TimeSeries[${module},quarterly]: ${(e as Error).message}`);
     return [];
   }
+}
+
+/**
+ * Spot FX with the inverse pair as a second chance. Yahoo does not quote every
+ * direction of every cross, and a missing one used to fall through to a rate of
+ * 1 — Alibaba's yuan statements read as dollars, 7× too large and still inside
+ * every plausibility bound.
+ */
+async function fetchFxRateEitherWay(from: string, to: string): Promise<number | null> {
+  const direct = await fetchFxRate(from, to);
+  if (direct !== null) return direct;
+  const inverse = await fetchFxRate(to, from);
+  return inverse !== null && inverse > 0 ? 1 / inverse : null;
 }
 
 // ─── Symbol resolution ────────────────────────────────────────────────────────
@@ -697,13 +717,15 @@ export interface FinancialsBundle {
 export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   logger.step(`Fetching financials for ${symbol}...`);
 
-  const [quote, summary, bsData, finData, cfData, finQData, historicalData] = await Promise.all([
+  const [quote, summary, bsData, finData, cfData, finQData, cfQData, bsQData, historicalData] = await Promise.all([
     safeQuote(symbol),
     safeSummary(symbol),
     safeTimeSeries(symbol, 'balance-sheet'),
     safeTimeSeries(symbol, 'financials'),
     safeTimeSeries(symbol, 'cash-flow'),
-    safeQuarterlyFinancials(symbol),
+    safeQuarterlySeries(symbol, 'financials'),
+    safeQuarterlySeries(symbol, 'cash-flow'),
+    safeQuarterlySeries(symbol, 'balance-sheet'),
     safeHistoricalData(symbol),
   ]);
 
@@ -730,17 +752,33 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   // netIncome¥ / sharesADS × FX ≈ trailing EPS$ (Yahoo's own quote figure).
   const tradingCurrency   = str(pr.currency) ?? str((quote as any)?.currency) ?? str(sd.currency) ?? null;
   const financialCurrency = str(fd.financialCurrency) ?? null;
-  const fxRate = (tradingCurrency && financialCurrency && tradingCurrency !== financialCurrency)
-    ? (await fetchFxRate(financialCurrency, tradingCurrency)) ?? 1
-    : 1;
+  // A minor-unit listing prices in pence but reports market cap, EPS and book
+  // value in pounds — `quoteScale` lifts those into the unit the price is in.
+  const minorUnit = tradingCurrency ? MINOR_UNIT_CURRENCIES[tradingCurrency] : undefined;
+  const quoteScale = minorUnit?.perMajor ?? 1;
+  const quoteMajor = minorUnit?.major ?? tradingCurrency;
+  // No rate is no conversion — and an unconverted statement is worse than none:
+  // every statement figure is withheld and the audit says why.
+  let fxRate = quoteScale;
+  let fxUnavailable = false;
+  if (quoteMajor && financialCurrency && quoteMajor !== financialCurrency) {
+    const rate = await fetchFxRateEitherWay(financialCurrency, quoteMajor);
+    if (rate === null) fxUnavailable = true;
+    else fxRate = rate * quoteScale;
+  }
   if (fxRate !== 1) {
     logger.info(`Currency: ${financialCurrency}→${tradingCurrency} statements ×${fxRate.toFixed(4)} for ${symbol}`);
   }
+  if (fxUnavailable) {
+    logger.warn(`Currency: no ${financialCurrency}→${quoteMajor} rate for ${symbol} — statement figures withheld`);
+  }
   /** Convert a statement-currency (reporting) amount into the trading currency. */
-  const fxc = (n: number | null): number | null => (n === null ? null : n * fxRate);
+  const fxc = (n: number | null): number | null => (n === null || fxUnavailable ? null : n * fxRate);
   /** Convert a {year,value} history series of statement-currency values. */
   const fxcSeries = (s: { year: number; value: number }[]) =>
-    fxRate === 1 ? s : s.map((p) => ({ year: p.year, value: p.value * fxRate }));
+    fxUnavailable ? [] : fxRate === 1 ? s : s.map((p) => ({ year: p.year, value: p.value * fxRate }));
+  /** A market-side figure Yahoo quotes in the major unit, in the unit the price is in. */
+  const inQuoteUnit = (n: number | null): number | null => (n === null ? null : n * quoteScale);
 
   // ISIN: kicked off as soon as we have the company longName from Yahoo's
   // price module. Wikidata's wbsearchentities works best with the canonical
@@ -779,24 +817,37 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
         ? totalCurrentAssets - totalCurrentLiabilities : null);
 
   // ── Income statement ──────────────────────────────────────────────────────
-  const ebit             = num((inc as any).EBIT) ?? num(inc.operatingIncome);
+  // Operating income, not Yahoo's `EBIT` line: that one is pretax income plus
+  // interest and so carries every investment gain — Alphabet's FY2025 read
+  // 159.6 bn against 129.0 bn of operating income. The history series was
+  // already operating income, so the two now agree on what they measure.
+  const annualOperatingIncome = num(inc.operatingIncome) ?? num((inc as any).EBIT);
   const grossProfit      = num(inc.grossProfit);
-  const interestExpense  = num(inc.interestExpense)
+  const interestExpenseAnnual = num(inc.interestExpense)
     ?? num((inc as any).interestExpenseNonOperating);
   const incomeTaxExpense = num(inc.taxProvision);
   const incomeBeforeTax  = num(inc.pretaxIncome);
-  // Effective tax rate, clamped to a sane band: a genuine 0% rate is kept
-  // (=== 0, not treated as missing), a tax *benefit* (negative provision) maps
-  // to 0, and one-off rates above the statutory ceiling are capped at 35% so
-  // NOPAT-based models (EPV) aren't distorted by a single distorted year.
-  const rawTaxRate = incomeTaxExpense !== null && incomeBeforeTax !== null && incomeBeforeTax > 0
-    ? incomeTaxExpense / incomeBeforeTax : null;
-  const taxRate = rawTaxRate !== null ? Math.max(0, Math.min(rawTaxRate, 0.35)) : null;
+  // Effective tax rate over the newest three fiscal years together, clamped to a
+  // sane band. One year is one audit settlement or one deferred-tax release
+  // away from 0 % or 60 %; three summed years are the rate the business
+  // actually pays. A tax *benefit* maps to 0, and the ceiling is 35 % so the
+  // NOPAT-based models are not distorted by a single distorted year.
+  const taxRate = (() => {
+    const years = finData.slice(-3)
+      .map((r: any) => ({ tax: num(r.taxProvision), pretax: num(r.pretaxIncome) }))
+      .filter((y) => y.tax !== null && y.pretax !== null);
+    const pretax = years.reduce((s, y) => s + (y.pretax as number), 0);
+    const tax = years.reduce((s, y) => s + (y.tax as number), 0);
+    const raw = years.length > 0 && pretax > 0 ? tax / pretax
+      : incomeTaxExpense !== null && incomeBeforeTax !== null && incomeBeforeTax > 0 ? incomeTaxExpense / incomeBeforeTax
+      : null;
+    return raw !== null ? Math.max(0, Math.min(raw, 0.35)) : null;
+  })();
 
   // ── Cash flow ─────────────────────────────────────────────────────────────
   const operatingCashFlowAnnual = num(cf.operatingCashFlow);
   const capexRaw = num(cf.capitalExpenditure);
-  const capex = capexRaw !== null ? Math.abs(capexRaw) : null;
+  const capexAnnual = capexRaw !== null ? Math.abs(capexRaw) : null;
   const depreciation = num((cf as any).depreciationAndAmortization)
     ?? num((cf as any).depreciation);
   // Where interest paid is classified. IFRS lets a filer put it under operating
@@ -813,6 +864,70 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   const shareCounts = (['dilutedAverageShares', 'basicAverageShares'] as const)
     .map((key) => ({ now: num((inc as any)[key]), prev: inc1 ? num((inc1 as any)[key]) : null }))
     .find((c) => c.now !== null && c.prev !== null) ?? null;
+
+  // What options, RSUs and convertibles add to the share count: diluted over
+  // basic weighted-average shares for the newest fiscal year. Per-share values
+  // are on the basic count the price is quoted against, and this lifts them to
+  // the count the equity actually has to be shared between.
+  const dilutedShareRatio = (() => {
+    const diluted = num((inc as any).dilutedAverageShares);
+    const basic = num((inc as any).basicAverageShares);
+    return diluted !== null && basic !== null && basic > 0 && diluted >= basic
+      ? Math.min(diluted / basic, 1.2) : null;
+  })();
+
+  // ── Trailing twelve months, from the quarterly statements ─────────────────
+  const quarterEnd = (row: any): string | null => {
+    const raw = row?.date ?? row?.asOfDate ?? row?.endDate;
+    const d: Date | null = raw instanceof Date ? raw
+      : typeof raw === 'string' ? new Date(raw)
+      : typeof raw === 'number' ? new Date(raw * 1000) : null;
+    return d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : null;
+  };
+  /** One quarterly statement line, oldest first, one point per quarter end. */
+  const quarterly = (rows: any[], pick: (row: any) => number | null): QuarterPoint[] => {
+    const byEnd = new Map<string, number>();
+    for (const row of rows) {
+      const end = quarterEnd(row);
+      const v = pick(row);
+      if (end !== null && v !== null) byEnd.set(end, v);
+    }
+    return [...byEnd.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([endDate, value]) => ({ endDate, value }));
+  };
+  const trailing = (rows: any[], pick: (row: any) => number | null): number | null => trailingSum(quarterly(rows, pick));
+
+  const operatingIncomeTTM = trailing(finQData, (r) => num(r.operatingIncome));
+  const netIncomeQuarters  = quarterly(finQData, (r) => num(r.netIncomeCommonStockholders) ?? num(r.netIncome));
+  const normalizedIncomeTTM = trailing(finQData, (r) => num(r.normalizedIncome));
+  const interestTTM        = trailing(finQData, (r) => num(r.interestExpense) ?? num(r.interestExpenseNonOperating));
+  // Free cash flow as the statements define it — operating cash flow less
+  // capex — never `financialData.freeCashflow`, which is S&P's levered free cash
+  // flow and not this at all.
+  const fcfTTM     = trailing(cfQData, (r) => num(r.freeCashFlow)
+    ?? (num(r.operatingCashFlow) !== null && num(r.capitalExpenditure) !== null
+      ? (num(r.operatingCashFlow) as number) - Math.abs(num(r.capitalExpenditure) as number) : null));
+  const ocfTTM     = trailing(cfQData, (r) => num(r.operatingCashFlow));
+  const capexTTM   = trailing(cfQData, (r) => { const v = num(r.capitalExpenditure); return v === null ? null : Math.abs(v); });
+  const sbcTTM     = trailing(cfQData, (r) => num(r.stockBasedCompensation));
+  const daTTM      = trailing(cfQData, (r) => num(r.depreciationAndAmortization) ?? num(r.depreciation));
+  const revenueQuarters = quarterly(finQData, (r) => num(r.totalRevenue) ?? num(r.revenue));
+
+  // ── Newest balance sheet ──────────────────────────────────────────────────
+  // The quarter-end sheet when there is one at least as new as the annual one.
+  const bsQ = (() => {
+    const q = [...bsQData].sort((a, b) => (quarterEnd(a) ?? '').localeCompare(quarterEnd(b) ?? '')).at(-1);
+    const qEnd = q ? quarterEnd(q) : null;
+    const aEnd = quarterEnd(bs);
+    return q && qEnd !== null && (aEnd === null || qEnd >= aEnd) ? q : bs;
+  })() as any;
+  const commonEquity   = num(bsQ.commonStockEquity) ?? num(bsQ.stockholdersEquity);
+  const minorityInterest = num(bsQ.minorityInterest);
+  const preferredEquity  = num(bsQ.preferredStockEquity) ?? num(bsQ.preferredStock);
+  // Investments the operating income does not earn on: non-current marketable
+  // securities (Apple's 84 bn) and stakes carried outside the business
+  // (Alphabet's 131 bn, whose revaluations Yahoo's EBIT line used to count).
+  const nonOperatingAssets = num(bsQ.investmentsAndAdvances) ?? num(bsQ.longTermEquityInvestment);
+  const leaseObligations = num(bsQ.capitalLeaseObligations);
 
   // ── Earnings surprises ────────────────────────────────────────────────────
   const earningsSurprises = (eh as any[]).slice(0, 4).map((q: any) => ({
@@ -949,6 +1064,7 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     grossProfit:        fxcSeries(series(finData, (r) => num(r.grossProfit))),
     operatingIncome:    fxcSeries(series(finData, (r) => num(r.operatingIncome) ?? num((r as any).EBIT))),
     netIncome:          fxcSeries(series(finData, (r) => num((r as any).netIncome) ?? num((r as any).netIncomeCommonStockholders))),
+    normalizedIncome:   fxcSeries(series(finData, (r) => num((r as any).normalizedIncome))),
     eps:                fxcSeries(series(finData, (r) => num((r as any).dilutedEPS) ?? num((r as any).basicEPS))),
     freeCashFlow:       fxcSeries(series(cfData,  (r) => num((r as any).freeCashFlow))),
     operatingCashFlow:  fxcSeries(series(cfData,  (r) => num((r as any).operatingCashFlow) ?? num((r as any).cashFlowFromContinuingOperatingActivities))),
@@ -1005,25 +1121,6 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     );
   }
 
-  /** Newest value of one of the `fundamentalsHistory` series. */
-  const latestOf = (s: { year: number; value: number }[]): number | null =>
-    s.length > 0 ? num(s[s.length - 1]?.value) : null;
-
-  /**
-   * YoY growth from the last two annual points, as a fraction.
-   *
-   * Null when the base year is not positive: growth off a loss or a zero is not
-   * a percentage, it is an artefact. Yahoo's own `earningsGrowth` for FACC was
-   * 123.2 (i.e. +12,320%) for exactly this reason, and the LLM quoted it as
-   * evidence of momentum.
-   */
-  const statementGrowth = (s: { year: number; value: number }[]): number | null => {
-    if (s.length < 2) return null;
-    const prev = num(s[s.length - 2]?.value);
-    const curr = num(s[s.length - 1]?.value);
-    if (prev === null || curr === null || prev <= 0) return null;
-    return (curr - prev) / prev;
-  };
 
   /**
    * Pick between the market-side (TTM) figure and the statement-derived one.
@@ -1032,10 +1129,35 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   const preferStatement = <T>(ttm: T | null, statement: T | null): T | null =>
     fundamentalsStale && statement !== null ? statement : ttm ?? statement;
 
-  const statementRevenue   = latestOf(fundamentalsHistory.revenue);
-  const statementNetIncome = latestOf(fundamentalsHistory.netIncome);
-  const statementEps       = latestOf(fundamentalsHistory.eps);
-  const statementOcf       = latestOf(fundamentalsHistory.operatingCashFlow);
+  const statementRevenue   = latestValue(fundamentalsHistory.revenue);
+  const statementNetIncome = latestValue(fundamentalsHistory.netIncome);
+  const statementEps       = latestValue(fundamentalsHistory.eps);
+
+  // ── The market side, in the unit the price is quoted in ───────────────────
+  const price     = num(quote?.regularMarketPrice) ?? 0;
+  const marketCap = inQuoteUnit(num(quote?.marketCap)) ?? 0;
+  const quoteEps  = inQuoteUnit(num(quote?.epsTrailingTwelveMonths));
+
+  /**
+   * The shares the market cap is spread over, counted in the unit the price is
+   * quoted per: every share class, and ADR units for an ADR. Yahoo's
+   * `sharesOutstanding` counts one class — Alphabet's class A alone (5.87 bn of
+   * 12.23 bn), Berkshire's B shares without the A shares, Novo's B shares
+   * without the A — and every firm-level value divided by it came out 2.08×
+   * too high for Alphabet. Market cap over price is the count the quote itself
+   * implies, whatever the listing.
+   */
+  const shares = marketCap > 0 && price > 0
+    ? marketCap / price
+    : num(ks.impliedSharesOutstanding) ?? num(ks.sharesOutstanding);
+
+  // ── Trailing flows: four summed quarters, else the newest fiscal year ─────
+  // In statement currency until the payload converts them below.
+  const statementFcfRaw = num((cf as any).freeCashFlow)
+    ?? (operatingCashFlowAnnual !== null ? operatingCashFlowAnnual - (capexAnnual ?? 0) : null);
+  const trailingFcf  = fcfTTM ?? statementFcfRaw;
+  const trailingEbit = operatingIncomeTTM ?? annualOperatingIncome;
+  const trailingSource: 'quarters' | 'annual' = fcfTTM !== null && operatingIncomeTTM !== null ? 'quarters' : 'annual';
 
   // Resolve the parallel ISIN lookup. By the time we get here the parsing
   // above has been doing its work in parallel, so this rarely blocks.
@@ -1044,34 +1166,29 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   const financials: StockFinancials = {
     symbol: symbol.toUpperCase(),
     companyName: str(pr.longName) ?? str(pr.shortName) ?? symbol,
-    price: num(quote?.regularMarketPrice) ?? 0,
-    marketCap: num(quote?.marketCap) ?? 0,
+    price,
+    marketCap,
 
     // A stale quote's trailingPE is built on a stale EPS, so recompute it from
     // whichever EPS we actually end up trusting rather than shipping a ratio
     // whose numerator and denominator come from different years.
     peRatio:     (() => {
-      const e = preferStatement(num(quote?.epsTrailingTwelveMonths), statementEps);
-      const px = num(quote?.regularMarketPrice);
-      if (fundamentalsStale && e !== null && e > 0 && px !== null) return px / e;
+      const e = preferStatement(quoteEps, statementEps);
+      if (fundamentalsStale && e !== null && e > 0 && price > 0) return price / e;
       const v = num(quote?.trailingPE);
       return v !== null && v > 0 ? v : null;
     })(),
     forwardPE:   (() => { const v = num(quote?.forwardPE);  return v !== null && v > 0 ? v : null; })(),
     avgPE5Y,
     pegRatio:    num(ks.pegRatio),
-    eps:         preferStatement(num(quote?.epsTrailingTwelveMonths), statementEps),
-    // ks.bookValue is per-share in the reporting currency on an ambiguous basis
-    // for ADRs; when currencies differ, derive BVPS from the (already FX-
-    // converted) latest equity ÷ shares so it bridges cleanly to the $-price.
+    eps:         preferStatement(quoteEps, statementEps),
+    // Common equity on the newest balance sheet over the shares the price is
+    // quoted per. `ks.bookValue` is per share of whichever class Yahoo counted:
+    // Berkshire's B line carried the A share's 522,226, BP's the ordinary
+    // share's a sixth of an ADS.
     bookValue:   (() => {
-      if (fxRate === 1) return num(ks.bookValue);
-      const eq = fundamentalsHistory.stockholdersEquity;
-      const latestEq = eq.length ? eq[eq.length - 1].value : null;
-      const shares = num(ks.sharesOutstanding);
-      return (latestEq !== null && shares !== null && shares > 0)
-        ? latestEq / shares
-        : fxc(num(ks.bookValue));
+      const equity = fxc(commonEquity) ?? latestValue(fundamentalsHistory.stockholdersEquity);
+      return equity !== null && shares !== null && shares > 0 ? equity / shares : null;
     })(),
 
     // Each of these is a ratio Yahoo computed inside the market-side block. When
@@ -1080,21 +1197,21 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     roe:              preferStatement(
                         num(fd.returnOnEquity),
                         (() => {
-                          const eq = latestOf(fundamentalsHistory.stockholdersEquity);
+                          const eq = latestValue(fundamentalsHistory.stockholdersEquity);
                           return statementNetIncome !== null && eq !== null && eq > 0 ? statementNetIncome / eq : null;
                         })(),
                       ),
     roa:              preferStatement(
                         num(fd.returnOnAssets),
                         (() => {
-                          const ta = latestOf(fundamentalsHistory.totalAssets);
+                          const ta = latestValue(fundamentalsHistory.totalAssets);
                           return statementNetIncome !== null && ta !== null && ta > 0 ? statementNetIncome / ta : null;
                         })(),
                       ),
     operatingMargin:  preferStatement(
                         num(fd.operatingMargins) ?? num(quote?.operatingMargins),
                         (() => {
-                          const oi = latestOf(fundamentalsHistory.operatingIncome);
+                          const oi = latestValue(fundamentalsHistory.operatingIncome);
                           return oi !== null && statementRevenue !== null && statementRevenue > 0 ? oi / statementRevenue : null;
                         })(),
                       ),
@@ -1103,26 +1220,25 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
                         statementNetIncome !== null && statementRevenue !== null && statementRevenue > 0
                           ? statementNetIncome / statementRevenue : null,
                       ),
-    revenueGrowth:    preferStatement(num(fd.revenueGrowth), statementGrowth(fundamentalsHistory.revenue)),
-    revenueGrowthYoY: preferStatement(num(fd.revenueGrowth), statementGrowth(fundamentalsHistory.revenue)),
-    earningsGrowth:   preferStatement(num(fd.earningsGrowth), statementGrowth(fundamentalsHistory.netIncome)),
+    // The trailing twelve months against the twelve before them, from the
+    // quarters; else the two newest fiscal years. Yahoo's own fields compare one
+    // quarter with the same quarter a year earlier — Apple "grew" 16.4 % in a
+    // year that grew 6.4 %.
+    revenueGrowth:    trailingGrowth(revenueQuarters) ?? annualGrowth(fundamentalsHistory.revenue),
+    revenueGrowthYoY: trailingGrowth(revenueQuarters) ?? annualGrowth(fundamentalsHistory.revenue),
+    earningsGrowth:   trailingGrowth(netIncomeQuarters) ?? annualGrowth(fundamentalsHistory.netIncome),
 
-    // A stale negative FCF is the most destructive single field in the payload:
-    // it suppresses the DCF entirely and turns every P/FCF multiple negative.
-    freeCashFlow:      preferStatement(
-                         fxc(num(fd.freeCashflow)),
-                         (() => {
-                           const ocf = statementOcf;
-                           const cx = fxc(capex);
-                           if (ocf === null) return null;
-                           return cx !== null ? ocf - cx : ocf;
-                         })(),
-                       ),
-    operatingCashFlow: preferStatement(fxc(num(fd.operatingCashflow)), statementOcf),
-    totalCash:         fxc(num(fd.totalCash)),
-    totalDebt:         fxc(num(fd.totalDebt) ?? num(bs.totalDebt)),
+    freeCashFlow:      fxc(trailingFcf),
+    operatingCashFlow: fxc(ocfTTM ?? preferStatement(num(fd.operatingCashflow), operatingCashFlowAnnual)),
+    // Yahoo's market-side debt and cash include the current portions the
+    // quarterly sheet sometimes leaves out, so they lead — unless that block is
+    // stale, when the balance sheet is the newer truth.
+    totalCash:         fxc(preferStatement(num(fd.totalCash),
+                         num(bsQ.cashCashEquivalentsAndShortTermInvestments) ?? num((bs as any).cashCashEquivalentsAndShortTermInvestments))),
+    totalDebt:         fxc(preferStatement(num(fd.totalDebt), num(bsQ.totalDebt) ?? num(bs.totalDebt))),
     longTermDebt:      fxc(longTermDebt),
-    debtToEquity:      num(fd.debtToEquity),
+    // Yahoo reports this one in percent (Alphabet's 18.86 is 0.19×).
+    debtToEquity:      (() => { const v = num(fd.debtToEquity); return v === null ? null : v / 100; })(),
     currentRatio:      num(fd.currentRatio),
     quickRatio:        num(fd.quickRatio),
     // A ratio of two statement figures, so no FX conversion.
@@ -1134,16 +1250,20 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
 
     revenue:          preferStatement(fxc(num(fd.totalRevenue)), statementRevenue ?? fxc(num(inc.totalRevenue))),
     grossProfit:      fxc(num(fd.grossProfits) ?? grossProfit),
-    ebit:             fxc(ebit),
+    ebit:             fxc(trailingEbit),
     netIncome:        preferStatement(fxc(num(fd.netIncomeToCommon)), statementNetIncome ?? fxc(num(inc.netIncome))),
-    // EBITDA = EBIT + D&A. Yahoo's figure lives in the market-side block, so
-    // pairing a stale one with a current statement EBIT is what produced an
-    // EBITDA *below* EBIT — arithmetically impossible, and nothing caught it.
-    ebitda:           preferStatement(
-                        fxc(num(fd.ebitda)),
-                        ebit !== null ? fxc(ebit + (depreciation ?? 0)) : null,
-                      ),
-    interestExpense:  fxc(interestExpense),
+    normalizedNetIncome: fxc(normalizedIncomeTTM ?? num((inc as any).normalizedIncome)),
+    // EBITDA = operating income + D&A, both over the same four quarters. Yahoo's
+    // figure lives in the market-side block, so pairing a stale one with a
+    // current statement EBIT is what produced an EBITDA *below* EBIT —
+    // arithmetically impossible, and nothing caught it.
+    ebitda:           operatingIncomeTTM !== null && daTTM !== null
+                        ? fxc(operatingIncomeTTM + daTTM)
+                        : preferStatement(
+                            fxc(num(fd.ebitda)),
+                            annualOperatingIncome !== null ? fxc(annualOperatingIncome + (depreciation ?? 0)) : null,
+                          ),
+    interestExpense:  fxc(interestTTM ?? interestExpenseAnnual),
     incomeTaxExpense: fxc(incomeTaxExpense),
     incomeBeforeTax:  fxc(incomeBeforeTax),
     taxRate,
@@ -1156,8 +1276,19 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     workingCapital:          fxc(workingCapital),
 
     operatingCashFlowAnnual: fxc(operatingCashFlowAnnual),
-    capex:                   fxc(capex),
+    capex:                   fxc(capexTTM ?? capexAnnual),
     depreciation:            fxc(depreciation),
+    stockBasedCompensation:  fxc(sbcTTM ?? num((cf as any).stockBasedCompensation)),
+    trailingSource,
+
+    // The rest of the equity bridge, from the newest balance sheet.
+    minorityInterest:   fxc(minorityInterest),
+    preferredEquity:    fxc(preferredEquity),
+    nonOperatingAssets: fxc(nonOperatingAssets),
+    leaseObligations:   fxc(leaseObligations),
+    investedCapital:    fxc(num(bsQ.investedCapital)),
+    tangibleBookValue:  fxc(num(bsQ.tangibleBookValue)),
+    dilutedShareRatio,
 
     // EV = trading-currency market cap + converted net debt.
     //
@@ -1173,27 +1304,25 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     // figure only when it agrees with it. Same result as before for a healthy
     // same-currency ticker, without trusting the field on faith.
     enterpriseValue:   (() => {
-      // marketCap (and price×shares) are already trading currency; never
-      // FX-scale them. Only the debt and cash legs get converted.
-      const px = num(quote?.regularMarketPrice);
-      const sh = num(ks.sharesOutstanding);
-      const equity = num(quote?.marketCap) ?? (px !== null && sh !== null ? px * sh : null);
+      // marketCap is already in the trading unit; never FX-scale it. Only the
+      // debt and cash legs get converted.
       const reported = num(ks.enterpriseValue);
-      if (equity === null || equity <= 0) return reported;
+      if (!(marketCap > 0)) return reported;
 
-      const debt = fxc(num(fd.totalDebt) ?? num(bs.totalDebt)) ?? 0;
-      const cash = fxc(num(fd.totalCash)) ?? 0;
-      const derived = equity + debt - cash;
+      const debt = fxc(preferStatement(num(fd.totalDebt), num(bsQ.totalDebt) ?? num(bs.totalDebt))) ?? 0;
+      const cash = fxc(preferStatement(num(fd.totalCash),
+        num(bsQ.cashCashEquivalentsAndShortTermInvestments) ?? num((bs as any).cashCashEquivalentsAndShortTermInvestments))) ?? 0;
+      const derived = marketCap + debt - cash;
 
-      // Mismatched currencies: Yahoo's figure double-converts the equity leg
-      // and is unusable regardless of how close it looks.
+      // Mismatched currencies or units: Yahoo's figure mixes bases and is
+      // unusable regardless of how close it looks.
       if (fxRate !== 1) return derived;
       if (reported === null) return derived;
 
       const off = Math.abs(reported - derived) / Math.max(Math.abs(reported), Math.abs(derived));
       return off > EV_IDENTITY_TOLERANCE ? derived : reported;
     })(),
-    sharesOutstanding: num(ks.sharesOutstanding),
+    sharesOutstanding: shares,
     sharesOutstandingAnnual: shareCounts?.now ?? null,
     interestInOperatingCashFlow,
     targetMeanPrice:   num(fd.targetMeanPrice),
@@ -1225,6 +1354,7 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     headquarters: [str((ap as any).city), str((ap as any).state), str((ap as any).country)]
                     .filter(Boolean).join(', ') || null,
     description:  str((ap as any).longBusinessSummary),
+    country:      str((ap as any).country),
     isin,
     wkn: isin?.startsWith('DE0') && isin.length === 12 ? isin.slice(5, 11) : null,
 
@@ -1252,7 +1382,7 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     nextEarningsDate,
     exDividendDate:     toDateStr(sd.exDividendDate) ?? toDateStr(cal.exDividendDate),
     dividendPayDate:    toDateStr(sd.dividendDate)   ?? toDateStr(cal.dividendDate),
-    nextDividendAmount: num(cal.dividendAmount) ?? num(sd.dividendRate),
+    nextDividendAmount: inQuoteUnit(num(cal.dividendAmount) ?? num(sd.dividendRate)),
 
     institutionsPercentHeld: num(mhb.institutionsPercentHeld),
     insidersPercentHeld:     num(mhb.insidersPercentHeld),
@@ -1281,6 +1411,16 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   // Runs on the finished payload, because every check is a comparison between
   // two fields that individually look fine. Findings ride along into the prompt.
   financials.dataQualityWarnings = auditFinancials(financials);
+  if (fxUnavailable) {
+    financials.dataQualityWarnings.unshift({
+      code: 'fx-unavailable',
+      severity: 'error',
+      fields: ['financialCurrency'],
+      message: `No ${financialCurrency}→${quoteMajor} exchange rate could be read, in either direction. The statements `
+        + `report in ${financialCurrency} and the price is quoted in ${tradingCurrency}, so every statement figure has been `
+        + `withheld rather than read in the wrong currency — the models that need them abstain.`,
+    });
+  }
 
   // When the problem is the *listing* rather than the company, name the ticker
   // that fixes it. Costs a search plus a few probes, so it only runs on a

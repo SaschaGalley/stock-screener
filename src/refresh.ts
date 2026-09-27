@@ -2,6 +2,7 @@ import { getConfig } from './config.js';
 import { logger } from './utils/logger.js';
 import { getFinancials, getOptionsSignals, resolveSymbol } from './data/yfinance.js';
 import { getNews, getBasicFinancials } from './data/finnhub.js';
+import { getOperatingLeaseLiabilities } from './data/edgar.js';
 import { getSectorMediansCached } from './sector-medians.js';
 import { getMacroBundle } from './data/macro.js';
 import { getMarketRates } from './data/fred.js';
@@ -69,6 +70,12 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
     bundle.financials.roic                 = finnhubMetrics.roic;
     bundle.financials.epsGrowth3Y          = finnhubMetrics.epsGrowth3Y;
     bundle.financials.dividendGrowthRate5Y = finnhubMetrics.dividendGrowthRate5Y;
+  }
+  // US GAAP puts operating lease costs inside operating cash flow while Yahoo's
+  // total debt also carries the liability; the SEC filing says how much of it
+  // that is. Only asked where there are leases in the debt to separate.
+  if (bundle.financials.financialCurrency === 'USD' && (bundle.financials.leaseObligations ?? 0) > 0) {
+    bundle.financials.operatingLeaseLiabilities = await getOperatingLeaseLiabilities(symbol);
   }
   await writeFinancials(symbol, bundle.financials, runId);
 

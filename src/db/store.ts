@@ -42,13 +42,22 @@ import { coerce, LeafKind, readPath } from './walk.js';
 //     and interestInOperatingCashFlow, which decides the DCF's FCFF add-back.
 // 20: adds deferredRevenueShare, which the health pillar needs to read a
 //     subscription business's current ratio without its prepayments.
-export const FINANCIALS_VERSION     = 20;
+// 21: rebuilds the trailing figures from the quarterly statements — free cash
+//     flow as operating cash flow less capex (it was Yahoo's levered FCF),
+//     operating income instead of the EBIT line, growth over four quarters
+//     instead of one — counts shares across every class, and adds the rest of
+//     the equity bridge (minority interest, preferred, non-operating assets,
+//     leases), stock compensation and the dilution ratio. `trailingSource`
+//     marks a payload built this way; the models rebuild what they can for the
+//     ones before it.
+export const FINANCIALS_VERSION     = 21;
 export const ANALYSIS_VERSION       = 5;
 export const NEWS_VERSION           = 1;
 export const MARKET_SIGNALS_VERSION = 2;
 // Sector medians 2: adds runRatePriceToSales, the benchmark SVR is compared to.
 // Sector medians 3: roic is finally populated (it read a Finnhub key that never existed).
-export const SECTOR_MEDIANS_VERSION = 3;
+// Sector medians 4: negative multiples and the company's own other share classes leave the peer group.
+export const SECTOR_MEDIANS_VERSION = 4;
 
 const FINANCIALS_TTL_MS     = 60 * 60 * 1000;
 const NEWS_TTL_MS           = 30 * 60 * 1000;

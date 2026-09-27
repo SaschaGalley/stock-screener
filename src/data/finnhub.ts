@@ -97,6 +97,33 @@ export async function getBasicFinancials(symbol: string, apiKey: string): Promis
   }
 }
 
+/** The ticker a share class trades under, without its class: `BRK.A` and `BRK-B` are both `BRK`. */
+function issuerRoot(ticker: string): string {
+  return ticker.toUpperCase().replace(/[.\-][A-Z]$/, '');
+}
+
+/**
+ * Whether a peer Finnhub lists is the company itself under another share class.
+ * Berkshire's B shares were benchmarked against its A shares — the same firm at
+ * the same multiple, counted as an independent opinion. The ticker catches the
+ * suffix classes; classes with tickers of their own (`GOOG`/`GOOGL`,
+ * `FOX`/`FOXA`) are caught by the market cap, identical for every class of one
+ * company, once the metrics are in.
+ */
+function sameIssuer(symbol: string, peer: string): boolean {
+  return issuerRoot(symbol) === issuerRoot(peer);
+}
+
+/** Market caps this close are one company quoted twice, not two companies. */
+const SAME_ISSUER_MARKET_CAP = 0.01;
+
+/**
+ * Multiples that are prices of something: a negative one is not a cheap
+ * valuation but a loss, and a median over [−40, −15, −8, 12, 18, 22, 25, 30]
+ * came out at 15 where the profitable peers traded at 22.
+ */
+const PRICED_MULTIPLES = new Set(['pe', 'evToEbitda', 'evToRevenue', 'priceToFCF', 'priceToSales', 'pb']);
+
 export async function getSectorMedians(symbol: string, apiKey: string): Promise<SectorMedians | null> {
   try {
     // 1. Fetch peer tickers
@@ -105,15 +132,23 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
     ) as string[];
     if (!Array.isArray(peersRaw) || peersRaw.length === 0) return null;
 
-    // Exclude the stock itself, cap at 8 peers
-    const peers = peersRaw.filter((p) => p !== symbol).slice(0, 8);
+    // Exclude the stock itself and its other share classes, cap at 8 peers
+    let peers = peersRaw.filter((p) => p !== symbol && !sameIssuer(symbol, p)).slice(0, 8);
 
-    // 2. Fetch metrics for all peers in parallel
-    const metrics = await Promise.allSettled(
-      peers.map((p) =>
-        fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(p)}&metric=all`, apiKey) as Promise<FinnhubMetricResponse>,
-      ),
-    );
+    // 2. Fetch metrics for all peers in parallel, and our own for its market cap
+    const metricFor = (p: string) =>
+      fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(p)}&metric=all`, apiKey) as Promise<FinnhubMetricResponse>;
+    const [own, ...fetched] = await Promise.allSettled([metricFor(symbol), ...peers.map(metricFor)]);
+    const ownCap = own.status === 'fulfilled' ? toFiniteNumber(own.value?.metric?.marketCapitalization) : null;
+    const isTwin = (r: PromiseSettledResult<FinnhubMetricResponse>): boolean => {
+      if (ownCap === null || ownCap <= 0 || r.status !== 'fulfilled') return false;
+      const cap = toFiniteNumber(r.value?.metric?.marketCapitalization);
+      return cap !== null && Math.abs(cap - ownCap) / ownCap < SAME_ISSUER_MARKET_CAP;
+    };
+    const twins = new Set(peers.filter((_, i) => isTwin(fetched[i])));
+    for (const t of twins) logger.debug(`Sector medians: ${t} is ${symbol} under another share class — dropped`);
+    const metrics = fetched.filter((_, i) => !twins.has(peers[i]));
+    peers = peers.filter((p) => !twins.has(p));
 
     // 3. Collect valid values per metric
     const buckets: Record<string, number[]> = {
@@ -148,6 +183,7 @@ export async function getSectorMedians(symbol: string, apiKey: string): Promise<
         if (typeof raw !== 'number' || !isFinite(raw)) continue;
         const v = pctFields.has(key) ? raw / 100 : raw;
         if (v > caps[key] || v < -caps[key]) continue;
+        if (PRICED_MULTIPLES.has(key) && v <= 0) continue;
         buckets[key].push(v);
       }
       const roic = latestAnnualRoic(r.value);
