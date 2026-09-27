@@ -756,7 +756,7 @@ function qualityPillar(
       excess),
 
     criterion('margin', 'Marge', 0.20,
-      marginGap !== null ? ramp(marginGap, -0.10, 0.10)
+      marginGap !== null ? calibrated('quality.margin-vs-peers', marginGap, 1, (v) => ramp(v, -0.10, 0.10))
         : calibrated('quality.margin', margin, 1, (v) => ramp(v, -0.05, 0.25)),
       margin === null ? 'Keine Margendaten'
         : pair.peer !== null
@@ -765,7 +765,7 @@ function qualityPillar(
       marginGap ?? margin),
 
     criterion('growth', 'Umsatzwachstum', 0.15,
-      growthGap !== null ? ramp(growthGap, -0.125, 0.125)
+      growthGap !== null ? calibrated('quality.growth-vs-peers', growthGap, 1, (v) => ramp(v, -0.125, 0.125))
         : calibrated('quality.growth', growth, 1, (v) => ramp(v, -0.05, 0.25)),
       growth === null ? 'Kein Umsatzwachstum ausgewiesen'
         : peerGrowth !== null
@@ -926,7 +926,7 @@ function momentumPillar(signals: MarketSignals | null): ScoreCriterion[] {
       nearHigh),
 
     criterion('rs-sector', 'Relative Stärke vs. Sektor (3M)', 0.20,
-      ramp(rsSector, -0.15, 0.15),
+      calibrated('momentum.rs-sector', rsSector, 1, (v) => ramp(v, -0.15, 0.15)),
       rsSector !== null ? `3M gegen Sektor-ETF ${fmtSignedPct(rsSector)}` : 'Kein Sektor-ETF zugeordnet',
       rsSector),
   ];
@@ -939,7 +939,9 @@ function momentumPillar(signals: MarketSignals | null): ScoreCriterion[] {
  * analyst lowering a quarter and the year counted up to four times — and read
  * on a fixed ±4 scale whether one analyst covered the stock or sixty. Breadth
  * is the net count over the analysts publishing an estimate, for the current
- * and the next fiscal year, and it is neutral at zero without calibration.
+ * and the next fiscal year. Like every criterion it is read against where the
+ * typical stock sits: in an upgrade cycle most stocks are revised up, and the
+ * median S&P 500 member had net upward revisions from a sixth of its analysts.
  */
 function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons: AnalystConsensus): ScoreCriterion[] {
   const r: EarningsRevisions | null = signals?.revisions ?? null;
@@ -968,14 +970,14 @@ function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons
 
   return [
     criterion('eps-drift', 'EPS-Schätzungsdrift (30 Tage)', 0.35,
-      ramp(year?.epsChange30dPct, -0.03, 0.03),
+      calibrated('revisions.eps-drift', toFiniteNumber(year?.epsChange30dPct), 1, (v) => ramp(v, -0.03, 0.03)),
       year?.epsChange30dPct != null
         ? `Konsens-EPS ${year.period === '0y' ? 'laufendes Jahr' : 'Folgejahr'} ${fmtSignedPct(year.epsChange30dPct)} in 30 Tagen (${fmt(year.epsTrend?.ago30d)} → ${fmt(year.epsTrend?.current)})`
         : 'Keine Schätzungsdrift verfügbar',
       toFiniteNumber(year?.epsChange30dPct)),
 
     criterion('revision-breadth', 'Revisionsbreite (30 Tage)', 0.30,
-      ramp(breadth, -0.30, 0.30),
+      calibrated('revisions.breadth', breadth, 1, (v) => ramp(v, -0.30, 0.30)),
       breadth !== null
         ? `Netto ${net >= 0 ? '+' : ''}${net} Revisionen bei ${analysts} Schätzungen (lfd. und nächstes Jahr) — ${fmtSignedPct(breadth)}`
         : 'Keine Revisionszählungen verfügbar',
@@ -991,7 +993,7 @@ function revisionsPillar(f: StockFinancials, signals: MarketSignals | null, cons
       beatShare),
 
     criterion('rating-drift', 'Rating-Veränderung (MoM)', 0.15,
-      ramp(ratingDrift, -0.10, 0.10),
+      calibrated('revisions.rating-drift', ratingDrift, 1, (v) => ramp(v, -0.10, 0.10)),
       delta !== null
         ? `Analystenratings netto ${delta >= 0 ? '+' : ''}${delta} gegenüber Vormonat bei ${cons.total} Analysten`
         : 'Keine Rating-Veränderung gegenüber Vormonat',

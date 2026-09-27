@@ -386,29 +386,61 @@ added half a point to every raw score. Worse, because agreement counts
 directions, bullish cases looked corroborated (conviction 1.33 on average) and
 bearish ones contested (1.20).
 
-So a criterion without a natural neutral point is read as a **percentile**
-(`src/analysis/calibration.ts`): the figure's rank among the same criterion
-measured across the stored stocks — the watchlist and the reference universe
-(below), so "typical" means the market rather than the watchlist. Ties sit at the middle of their run.
-`pnpm run calibrate` scores the history once a week per symbol, collects each
-such figure as the scorer reads it, and writes the 101 percentiles to
+So every criterion is read as a **percentile** (`src/analysis/calibration.ts`):
+the figure's rank among the same criterion measured across the stored stocks —
+the watchlist and the [reference universe](#the-reference-universe), so
+"typical" means the market rather than the watchlist. Ties sit at the middle of
+their run. `pnpm run calibrate` scores the history once a week per symbol,
+collects each figure as the scorer reads it, and writes the 101 percentiles to
 `calibration-table.ts`. That file is committed, so a recalibration is a code
 change that re-scores the history like any other.
 
-Criteria that do have a natural zero keep their explicit ramps: growth and
+The DCF's probability and the margin the price requires are calibrated, although
+they look natural. The model fades growth faster than the market's own implied
+premium assumes, so it finds most large caps dear, and that says something
+about the model, not about any one stock.
+
+At first, criteria with a natural zero kept their explicit ramps: growth and
 margin against the peer median, relative strength against the sector, estimate
-drift, revision breadth and rating drift. The DCF's probability and the margin
-the price requires are calibrated too, although they look natural. The model
-fades growth faster than the market's own implied premium assumes, so it finds
-most large caps dear, and that says something about the model, not about any
-one stock.
+drift, revision breadth and rating drift. Measured over the universe, half of
+them were off-centre too:
 
-On the stored watchlist the effect is:
+- The typical S&P 500 member beats its peer group's margin by 4.7 points,
+  because Finnhub's groups reach down to firms a fiftieth of its size.
+- It trails its cap-weighted sector ETF by 3.6 % over three months, because the
+  largest members led.
+- A sixth of its analysts revised up in the last month.
 
-| | before | after |
-|---|---|---|
-| Median health / consensus pillar | 8.6 / 7.4 | 4.8 / 4.9 |
-| Conviction, bullish vs bearish cases | 1.33 vs 1.20 | 1.29 vs 1.29 |
+Zero is the natural point for one stock, not for the population. So those
+criteria are calibrated as well. The ramps remain as the fallback for a key
+without a distribution, and they are what the tests pin.
+
+The effect, measured over the same 242 stocks (the watchlist and 205 members of
+the S&P 500) under three ways of reading the criteria:
+
+| | Hand-set ramps | Table from the watchlist | Table from the universe |
+|---|---|---|---|
+| Median pillar: valuation | 2.7 | 4.9 | 4.7 |
+| … quality | 5.1 | 5.1 | 5.0 |
+| … health | 8.1 | 3.8 | 5.0 |
+| … consensus | 6.9 | 3.5 | 4.9 |
+| … momentum | 5.4 | 5.4 | 5.3 |
+| … revisions | 6.5 | 6.2 | 5.1 |
+| Stocks leaning bullish / bearish | 137 / 105 | 115 / 127 | 121 / 121 |
+| Conviction, bullish vs bearish | 1.31 vs 1.22 | 1.23 vs 1.30 | 1.25 vs 1.30 |
+| STRONG BUY / BUY / HOLD / SELL / STRONG SELL | 15 / 40 / 163 / 22 / 2 | 1 / 25 / 177 / 35 / 4 | 0 / 31 / 173 / 34 / 4 |
+
+The middle column is why the table has to come from the market rather than the
+watchlist. Watchlist stocks are healthier and better liked by analysts than the
+typical S&P 500 member. Read against them, the market looked indebted and
+unloved, and the error simply flipped direction. Against the universe the
+watchlist is what stands out instead: its median health pillar is 5.9, its
+consensus 6.4 and its valuation 3.5. That is information about the watchlist,
+which is what a score is for.
+
+The table was generated on 27 September from mostly one observation per
+reference stock. Regenerate it (`pnpm run calibrate`) once the nightly rotation
+has given the universe a few weeks of history.
 
 **The bands are symmetric.** HOLD used to run from 4.5 to 6.5 — set where the
 old LLM verdicts sat — so a BUY needed 1.5 points above neutral and a SELL half

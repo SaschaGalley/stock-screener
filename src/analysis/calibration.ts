@@ -16,12 +16,14 @@
  * They added half a point to every raw score and — because agreement counts
  * directions — made bullish cases look corroborated and bearish ones contested.
  *
- * So a criterion without a natural neutral point (a probability, a ratio to
- * peers, a growth rate against zero) is read as a percentile of a reference
- * distribution: the figure's rank among the same criterion measured across
- * the reference stocks. The typical stock scores 5 on every criterion by
- * construction, and a pillar that is high says the stock is unusual, not that
- * the ramp was set generously.
+ * So every criterion is read as a percentile of a reference distribution: the
+ * figure's rank among the same criterion measured across the reference stocks.
+ * That includes the ones with a natural zero. Over the S&P 500 the typical
+ * member beats its peer group's margin by 4.7 points, trails its cap-weighted
+ * sector ETF, and has more analysts revising up than down — zero is the neutral
+ * point for one stock, not for the population. The typical stock scores 5 on
+ * every criterion by construction, and a pillar that is high says the stock is
+ * unusual, not that the ramp was set generously.
  *
  * The distributions are generated (`pnpm run calibrate`, see
  * `db/calibrate.ts`) from the stored history into `calibration-table.ts` and

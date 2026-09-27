@@ -60,9 +60,12 @@ export async function storedMembers(): Promise<string[]> {
   }
 }
 
-/** Tonight's reference symbols, least recently refreshed first; empty when the universe is off. */
+/**
+ * Tonight's reference symbols, least recently refreshed first. Empty when the
+ * universe is off, and when the data step is: a reference refresh is that step.
+ */
 export async function referenceBatch(config: AppConfig): Promise<string[]> {
   const { enabled, batchSize } = config.universe;
-  if (!enabled || batchSize <= 0) return [];
+  if (!enabled || batchSize <= 0 || !config.steps.data.enabled) return [];
   return referenceRotation(await universeMembers(), batchSize);
 }
