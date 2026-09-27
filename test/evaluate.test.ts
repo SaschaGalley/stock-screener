@@ -9,7 +9,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { useCalibrationTable } from '../src/analysis/calibration.js';
 
-import { evaluate, MIN_CROSS_SECTION, ranks, spearman, type Close, type SignalPoint } from '../src/analysis/evaluate.js';
+import {
+  evaluate, IC_PRIOR_SD, inCommonCurrency, MIN_CROSS_SECTION, ranks, sectorNeutralIc, spearman, suggestWeights,
+  type Close, type IcSummary, type SignalPoint,
+} from '../src/analysis/evaluate.js';
 
 // The explicit ramps, not whichever calibration is committed.
 useCalibrationTable({});
@@ -111,5 +114,85 @@ describe('evaluate', () => {
     const sell = ev.labels.find((l) => l.label === 'SELL')!;
     assert.ok(buy.meanExcess! > 0 && sell.meanExcess! < 0);
     assert.ok(!ev.ics.some((r) => r.key === 'label'));
+  });
+});
+
+describe('within sectors', () => {
+  it('takes the industry bet out and keeps the stock picking', () => {
+    // Two sectors. The one the signal likes fell as a whole, so across all
+    // stocks the signal looks wrong — but inside each sector its order is the
+    // order of the returns.
+    const xs = [10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5];
+    const ys = [-0.10, -0.09, -0.08, -0.07, -0.06, -0.05, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10];
+    const sectors = [...Array(6).fill('A'), ...Array(6).fill('B')];
+    assert.ok(spearman(xs, ys)! < 0, 'pooled, the sector bet dominates');
+    // Not exactly 1: the demeaned returns tie across sectors only up to rounding.
+    assert.ok(sectorNeutralIc(xs, ys, sectors)! > 0.98);
+  });
+
+  it('leaves out a sector of one, which has nothing to be ranked against', () => {
+    const xs = Array.from({ length: 11 }, (_, i) => i);
+    const ys = xs.map((x) => x * 0.01);
+    const sectors = [...Array(10).fill('A'), 'lonely'];
+    assert.equal(sectorNeutralIc(xs, ys, sectors), 1);
+    assert.equal(sectorNeutralIc(xs.slice(0, 9), ys.slice(0, 9), sectors.slice(0, 9)), null, 'too few left to rank');
+  });
+
+  it('reports the sector-neutral IC beside the pooled one', () => {
+    // The signal prefers the sector that falls, and within each sector the
+    // stock that does best.
+    const { prices, points } = market(
+      12, (k) => (k % 2 ? 0.002 : -0.002) + k * 0.0001, (k) => (k % 2 ? 0 : 100) + k,
+    );
+    const sectors = new Map([...points.keys()].map((s, k) => [s, k % 2 ? 'up' : 'down']));
+    const ev = evaluate({ signals: new Map([['s', points]]), prices, benchmark: flat, horizons: [5], sectors });
+    assert.ok(ev.ics[0].neutralIc! > 0.98, `within each sector the drift follows k: ${ev.ics[0].neutralIc}`);
+    assert.ok(ev.ics[0].meanIc! < 0, `pooled, the sector bet swamps it: ${ev.ics[0].meanIc}`);
+  });
+});
+
+describe('in one currency', () => {
+  it('credits a listing with its return in the benchmark\'s currency', () => {
+    // Flat in euros while the euro gains 10 %: a dollar investor made 10 %.
+    const eur: Close[] = [{ date: day(0), close: 100 }, { date: day(1), close: 100 }];
+    const eurusd: Close[] = [{ date: day(0), close: 1.0 }, { date: day(1), close: 1.1 }];
+    const usd = inCommonCurrency(eur, eurusd);
+    assert.ok(Math.abs(usd[1].close / usd[0].close - 1.1) < 1e-12);
+  });
+
+  it('uses the last rate at or before a session, and drops sessions before the first', () => {
+    const closes: Close[] = [{ date: day(0), close: 10 }, { date: day(2), close: 10 }, { date: day(5), close: 10 }];
+    const fx: Close[] = [{ date: day(1), close: 2 }, { date: day(4), close: 3 }];
+    assert.deepEqual(inCommonCurrency(closes, fx), [{ date: day(2), close: 20 }, { date: day(5), close: 30 }]);
+  });
+});
+
+describe('weight suggestion', () => {
+  const summary = (key: string, meanIc: number | null, se: number | null, independent = 12): IcSummary => ({
+    key, horizon: 20, days: 100, independent, meanIc, se, tStat: null, neutralIc: null, neutralTStat: null,
+    hitRate: null, spread: null, meanCrossSection: null,
+  });
+  const current = { a: 0.5, b: 0.3, c: 0.2 };
+  const keyOf = (p: string) => p;
+
+  it('keeps the judgment where there is no evidence', () => {
+    const w = suggestWeights(current, [summary('a', 0.2, null), summary('b', null, null)], 20, keyOf);
+    assert.deepEqual(w.map((x) => x.suggested), [0.5, 0.3, 0.2]);
+  });
+
+  it('moves weight towards a pillar that ranked returns, less the less certain it is', () => {
+    const strong = suggestWeights(current, [summary('c', 0.05, 0.005)], 20, keyOf);
+    const noisy = suggestWeights(current, [summary('c', 0.05, 0.05)], 20, keyOf);
+    const c = (w: typeof strong) => w.find((x) => x.key === 'c')!;
+    assert.ok(c(strong).suggested > c(noisy).suggested && c(noisy).suggested > 0.2);
+    assert.ok(Math.abs(c(noisy).shrunkIc - 0.025) < 1e-12, 'se equal to the prior halves the IC');
+    for (const w of [strong, noisy]) {
+      assert.ok(Math.abs(w.reduce((a, x) => a + x.suggested, 0) - 1) < 1e-12, 'the total is kept');
+    }
+  });
+
+  it('drops a pillar measured at minus one prior width with certainty', () => {
+    const w = suggestWeights(current, [summary('b', -IC_PRIOR_SD, 1e-6)], 20, keyOf);
+    assert.ok(w.find((x) => x.key === 'b')!.suggested < 1e-6);
   });
 });

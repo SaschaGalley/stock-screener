@@ -9,10 +9,10 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { getBasicFinancials, getSectorMedians } from '../src/data/finnhub.js';
+import { getBasicFinancials, getSectorMedians, resetFinnhubClient } from '../src/data/finnhub.js';
 
 const realFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => { globalThis.fetch = realFetch; resetFinnhubClient(); });
 
 /** A /stock/metric body whose annual ROIC series is deliberately out of order. */
 const metricBody = (roics: [string, number][]) => ({

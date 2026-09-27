@@ -15,13 +15,15 @@ import {
   latestDocument, listAnalyses, listDocuments, listMetrics, listSymbols,
   readAnalysis, readDistillLax, readFinancialsMeta, readFinancialsLax,
   readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax,
-  readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry,
+  readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry, symbolCounts,
 } from './db/store.js';
 import { migrate } from './db/migrate.js';
+import { storedMembers } from './universe.js';
 import { syncCatalog } from './db/catalog.js';
 import { closePool, waitForDatabase } from './db/client.js';
-import { LLMAnalysis, ScoreCard, StockFinancials } from './types.js';
-import type { AnalysisListEntry, ConsensusBand, OverviewRow, StockSummary } from './api-types.js';
+import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials } from './types.js';
+import { PILLAR_LABELS } from './analysis/score.js';
+import type { AnalysisListEntry, ConsensusBand, EvaluationResponse, OverviewRow, StockSummary } from './api-types.js';
 import { MODELS } from './models.js';
 import {
   DistillUnauthorizedError,
@@ -526,9 +528,11 @@ export function createApp(): express.Express {
   // exist to be watched. Key *values* never leave the server.
   app.get('/api/config', async (_req, res, next) => {
     try {
-      const [config, financials] = await Promise.all([
+      const [config, financials, counts, members] = await Promise.all([
         readAppConfig(),
         latestSnapshotForAll<StockFinancials>('financials'),
+        symbolCounts(),
+        storedMembers(),
       ]);
       res.json({
         config,
@@ -551,6 +555,8 @@ export function createApp(): express.Express {
         },
         dataDir,
         distillApiUrl: cfg.distillApiUrl,
+        referenceSymbols: counts.reference,
+        universeSize:     members.length,
       });
     } catch (e) {
       next(e);
@@ -790,12 +796,18 @@ export function createApp(): express.Express {
         ? req.query.horizons.split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0 && n <= 250)
         : [];
       const { at, value } = cachedEvaluation(horizons.length ? horizons : [5, 20, 60], req.query.fresh === '1');
-      const evaluation = await value;
-      res.json({
+      const report = await value;
+      const body: EvaluationResponse = {
         computedAt: new Date(at).toISOString(),
-        signals:    EVALUATED_SIGNALS.map(({ key, title, pillar }) => ({ key, title, pillar: pillar ?? false })),
-        evaluation,
-      });
+        signals:    EVALUATED_SIGNALS.map(({ key, title, pillar, factor }) => ({
+          key, title, pillar: pillar ?? false, factor: factor ?? false,
+        })),
+        evaluation:    report.watchlist,
+        universe:      report.universe,
+        weights:       report.weights.map((w) => ({ ...w, title: PILLAR_LABELS[w.key as PillarKey] ?? w.key })),
+        weightHorizon: report.weightHorizon,
+      };
+      res.json(body);
     } catch (e) {
       next(e);
     }

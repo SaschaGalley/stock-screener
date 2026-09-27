@@ -48,7 +48,9 @@ export async function writeAppState(key: string, value: string): Promise<void> {
 
 // ── Pipeline runs (was job-runs.json) ────────────────────────────────────────
 
-export type JobStep = 'data' | 'distill' | 'analysis';
+/** What a run does to a symbol; `reference` is the reference universe's slimmed data step. */
+export const JOB_STEPS = ['data', 'distill', 'analysis', 'reference'] as const;
+export type JobStep = (typeof JOB_STEPS)[number];
 export type StepStatus = 'ok' | 'skipped' | 'failed';
 export type JobRunStatus = 'running' | 'ok' | 'partial' | 'failed' | 'stopped';
 export type JobTrigger = 'cron' | 'manual' | 'api' | 'cli' | 'backfill';
@@ -74,8 +76,25 @@ export interface JobRun {
   status:        JobRunStatus;
   currentSymbol: string | null;
   symbols:       JobSymbolResult[];
-  totals:        { symbols: number; data: number; distill: number; analysis: number; failed: number };
+  totals:        JobTotals;
   error?:        string;
+}
+
+/** Symbols touched, successful steps of each kind, and failed steps. */
+export type JobTotals = { symbols: number; failed: number } & Record<JobStep, number>;
+
+/** The counts a run reports — one definition for the live view and the stored one. */
+export function tallySteps(symbols: JobSymbolResult[], planned = symbols.length): JobTotals {
+  const totals = {
+    symbols: planned, failed: 0, ...Object.fromEntries(JOB_STEPS.map((s) => [s, 0])),
+  } as JobTotals;
+  for (const sym of symbols) {
+    for (const step of sym.steps) {
+      if (step.status === 'ok') totals[step.step]++;
+      if (step.status === 'failed') totals.failed++;
+    }
+  }
+  return totals;
 }
 
 /** Open a run and return its id. Every write during the run references it. */
@@ -154,13 +173,7 @@ function assemble(runs: RunRow[], steps: StepRow[]): JobRun[] {
 
   return runs.map((r) => {
     const symbols = [...(bySymbol.get(r.id)?.values() ?? [])];
-    const totals = { symbols: symbols.length, data: 0, distill: 0, analysis: 0, failed: 0 };
-    for (const sym of symbols) {
-      for (const step of sym.steps) {
-        if (step.status === 'ok') totals[step.step]++;
-        if (step.status === 'failed') totals.failed++;
-      }
-    }
+    const totals = tallySteps(symbols);
     return {
       id:            String(r.id),
       trigger:       r.trigger,

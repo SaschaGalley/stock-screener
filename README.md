@@ -388,7 +388,8 @@ bearish ones contested (1.20).
 
 So a criterion without a natural neutral point is read as a **percentile**
 (`src/analysis/calibration.ts`): the figure's rank among the same criterion
-measured across the stored stocks. Ties sit at the middle of their run.
+measured across the stored stocks — the watchlist and the reference universe
+(below), so "typical" means the market rather than the watchlist. Ties sit at the middle of their run.
 `pnpm run calibrate` scores the history once a week per symbol, collects each
 such figure as the scorer reads it, and writes the 101 percentiles to
 `calibration-table.ts`. That file is committed, so a recalibration is a code
@@ -952,6 +953,45 @@ everything fell still says whether the high scores fell less. Alongside it: the
 share of days with a positive IC, the top-third-minus-bottom-third return
 spread, and the mean excess return per verdict label.
 
+It does that on two cross-sections:
+
+| | Stocks | Signals |
+|---|---|---|
+| **Watchlist** | the stocks added by hand | every signal, the prose and the old LLM score included |
+| **Universum** | the watchlist plus the reference universe (below) | the ones computed from numbers alone: factor score, raw factor score, the six pillars |
+
+The watchlist is the only place the narrative can be judged. It is also a
+sample of one person's taste and a few dozen names wide. The universe is several
+hundred stocks chosen by an index committee, which is where a factor can
+actually be measured. One day's IC has a standard error of about 1/√(n−1):
+±0.17 over 37 stocks, ±0.045 over 500.
+
+**Returns are in dollars.** The benchmark is the S&P 500 in dollars, so every
+other listing's closes are restated in dollars at each session's exchange rate
+(`EURUSD=X` and so on) before a return is taken. Measured in euros, Airbus was
+credited with whatever the euro did against the dollar. A listing without an
+exchange-rate history is left out rather than mixed in.
+
+**Within sectors as well.** The second IC column (*Im Sektor*) ranks each stock
+only against its own sector: its score as a percentile among the sector's
+scores, its return less the sector's mean return. A score that likes banks is
+right in the year banks rally and says nothing about which bank to own. Pooled,
+that industry bet passes for stock picking; within sectors it cancels, and what
+is left is the selection.
+
+**What the evidence says about the weights.** The evaluation ends with a
+suggestion for `PILLAR_WEIGHTS` at the 20-session horizon, read from the
+universe. Each pillar's IC is shrunk towards zero by its own uncertainty —
+`ic × τ² / (τ² + se²)` with τ = 0.05, the posterior mean under a prior that a
+good factor's IC is a few hundredths — and the pillar's weight is tilted by
+`1 + shrunk / τ`, then all weights are renormalised to the same total. A pillar
+measured at one prior width of skill doubles, one at minus that width drops out,
+and one measured over a handful of windows barely moves: evidence moves weights
+away from judgment in proportion to how much of it there is. It is printed and
+shown under **Auswertung**, never applied. The weights are the scoring model, a
+change to them is a commit, and a model refitted to its own recent returns is no
+longer tested by them.
+
 How to read it, and how not to:
 
 - **Point in time.** A signal counts from observations dated strictly before the
@@ -963,10 +1003,11 @@ How to read it, and how not to:
   are roughly one observation, not twenty. The mean uses every day; the
   t-statistic uses only non-overlapping windows, and `indep.` says how many
   there were. No t-statistic is printed below three.
-- **Power.** With ~37 stocks one day's IC has a standard error near ±0.17. A
-  useful factor sits around 0.03–0.08. Telling that apart from zero takes many
-  independent windows — months at a 20-session horizon, not weeks. Until then
-  the output is a description of what happened, not evidence about the model.
+- **Power.** With ~37 stocks one day's IC has a standard error near ±0.17, over
+  the universe near ±0.045. A useful factor sits around 0.03–0.08. Telling that
+  apart from zero takes many independent windows — months at a 20-session
+  horizon, not weeks. Until then the output is a description of what happened,
+  not evidence about the model.
 - **Hindsight in the model, not the data.** `rescore` rewrites history with
   today's rules, so the backfilled series is what the current model *would* have
   said. The inputs are point in time; the rules were not tuned on returns, but
@@ -975,7 +1016,69 @@ How to read it, and how not to:
 Nothing is stored: the score series accumulates with every nightly refresh and
 prices are fetched fresh from Yahoo, so each run is a recomputation that knows a
 little more than the last. The pillar weights (`PILLAR_WEIGHTS`) are set by
-judgment today; this is what will eventually be allowed to argue with them.
+judgment today; the suggestion above is how the evidence gets to argue with them.
+
+### The reference universe
+
+Two questions need a population rather than a watchlist. The calibration asks
+where the typical stock sits on each criterion, and the evaluation asks whether
+the score ranked the stocks that did better. Asked of 37 stocks picked by one
+person, both answer questions about that person's taste.
+
+So the nightly run also scores the **S&P 500** (`src/universe.ts`). The member
+list comes from the community-maintained
+[`datasets/s-and-p-500-companies`](https://github.com/datasets/s-and-p-500-companies)
+file on GitHub, with share classes in Yahoo's spelling (`BRK.B` → `BRK-B`). The
+last good list is kept in `app_state`, so a night without GitHub uses
+yesterday's. A download that parses to fewer than 400 members is treated as a
+failed one rather than as a smaller index.
+
+A reference symbol is a row in `symbols` with `reference = true`, and it is
+stored exactly like any other: snapshots, observations, the score series. What
+differs is where it shows up:
+
+| | Watchlist stock | Reference symbol |
+|---|---|---|
+| List, overview, admin watchlist, Distill | yes | never |
+| LLM analysis, news, options chain | yes | never |
+| Peer medians | daily | monthly (`REFERENCE_PEER_TTL_MS`) |
+| Factor score, score series | yes | yes |
+| Calibration, evaluation (*Universum*), re-score | yes | yes |
+
+**A night does a hundred of them.** Several hundred refreshes a night do not fit
+a 60-per-minute Finnhub budget, and a reference stock does not need to be
+current to the day. After the watchlist is done, a full run refreshes the
+`universe.batchSize` members (default 100, **⚙ Administration**) that were
+refreshed longest ago, so the index comes round every five nights. The rotation
+keeps no state of its own: whatever a night did not reach is oldest the next
+night. A symbol that has never refreshed counts from its first attempt, so a
+delisted ticker queues behind the rest instead of taking the first slot every
+night. A run over a hand-picked subset, such as `▶` next to one stock, never
+includes the universe.
+
+A reference refresh is the data step on a diet: no news, no options chain and
+no Distill, because the score reads none of them. It records its own step,
+**Referenz**, in the run log. A failed reference refresh does not make the run
+`partial`: it keeps its place among the oldest and the rotation comes back to
+it, so it is nobody's morning problem.
+
+**Watchlist stocks in the index stay watchlist stocks.** They are refreshed in
+full every night already, so the rotation skips them. A reference symbol that
+someone adds or analyses joins the watchlist with the history it already has
+(`promoteSymbol`).
+
+**Three things keep the API budgets whole:**
+
+- Every Finnhub request waits for a slot in a rolling minute of 55
+  (`RateWindow`), instead of being refused with a 429 that used to be stored as
+  a peer group of nobody.
+- A company's `/stock/metric` answer is shared for an hour. In a night of
+  reference refreshes, most members are someone else's peer.
+- The market reading — VIX, the index, the dollar, the sector ETF — is shared
+  for half an hour instead of being fetched once per stock.
+
+Under Hatchet the universe runs as its own task, `reference`, after the
+watchlist's chains have settled, on the same rate-limit keys as the data step.
 
 ## Technical signals gauge
 
@@ -1002,6 +1105,7 @@ cancel, and the momentum pillar reads the return series directly instead.
 | Finnhub `/company-news` | Recent news (last 7 days) |
 | FRED | 10Y Treasury, Moody's AAA, ten-year government yields for 19 currencies, VIX, DXY, yield curve, HY spreads, sector ETF prices |
 | SEC EDGAR | Latest 10-K / 10-Q filings; operating lease liabilities from XBRL (US filers only) |
+| [`datasets/s-and-p-500-companies`](https://github.com/datasets/s-and-p-500-companies) | S&P 500 members — the reference universe |
 | Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
 | Perplexity Sonar | Optional forensic brief — dated events, contrary evidence, bull claims graded against the evidence; goes to the narrative stage, which never sees the valuation |
 
@@ -1065,11 +1169,16 @@ src/
 │   ├── admin.ts           Runs, settings, entity mappings, filing index
 │   ├── backfill.ts        One-shot import of the old file cache
 │   ├── rescore.ts         Re-scores stored history on today's code; the current card from stored inputs
+│   ├── calibrate.ts       Reference distributions from the stored history (`pnpm run calibrate`)
+│   ├── golden.ts          Captures stored inputs as golden fixtures (`pnpm run golden:capture`)
 │   └── evaluate.ts        CLI for the outcome evaluation (`pnpm run evaluate`)
 ├── files.ts               The two things that stay files (filings, reports)
 ├── sector-medians.ts      Peer-group medians (the app's most expensive read)
 ├── app-config.ts          Operational settings edited from the admin page
 ├── scheduler.ts           Nightly pipeline — one cron, one queue, one symbol at a time
+├── pipeline/steps.ts      The steps a run applies to a symbol, shared by both schedulers
+├── universe.ts            The reference universe: members, and tonight's rotation
+├── currencies.ts          Yahoo's quote currencies and the unit behind each (GBp → GBP)
 ├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
 ├── distill-dossiers.ts    Mirrors the watchlist onto Distill's dossier switches
 ├── distill-sectors.ts     Yahoo sector/industry → Distill sector handles (1:n)
@@ -1081,7 +1190,9 @@ src/
 ├── data/
 │   ├── yfinance.ts        Yahoo: financials, quarterly revenues, ISIN via Wikidata
 │   ├── finnhub.ts         News, basic metrics, peer-group medians
-│   ├── fred.ts            FRED rates (live 10Y, AAA, …)
+│   ├── fred.ts            FRED rates (live 10Y, AAA, …) and the local ten-year yields
+│   ├── country-risk.ts    Damodaran's country risk premiums, default spreads and tax rates
+│   ├── universe.ts        S&P 500 members from the datasets file
 │   ├── macro.ts           SPY + sector-ETF bundles, yield curve, VIX
 │   ├── perplexity.ts      Sonar-Pro forensic brief → structured findings
 │   ├── distill.ts         Distill briefing service — briefings for a resolved entity
@@ -1091,9 +1202,16 @@ src/
 │   └── edgar.ts           SEC EDGAR filings
 ├── analysis/
 │   ├── metrics.ts         19 valuation models
+│   ├── dcf.ts             The revenue-driven DCF, its 512 draws and the reverse solves
+│   ├── basis.ts           Shares, debt and the equity bridge every model values against
+│   ├── cost-of-capital.ts Blume beta, country premium, synthetic rating, WACC, stable growth
+│   ├── trailing.ts        Trailing twelve months rebuilt from the quarters
+│   ├── sampling.ts        Halton points and the normal quantile for the simulation
 │   ├── computeMetrics.ts  Orchestrates the bundle of models for the web GET
 │   ├── score.ts           The deterministic score: six pillars, caps, the blend
-│   ├── evaluate.ts        Rank IC of every score signal against the returns that followed
+│   ├── calibration.ts     Percentile reading of a criterion against its reference distribution
+│   ├── calibration-table.ts  Generated reference distributions (`pnpm run calibrate`)
+│   ├── evaluate.ts        Rank IC, sector-neutral IC and the weight suggestion
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
@@ -1103,7 +1221,9 @@ src/
 │   ├── score-card.ts      Renders a factor score for a prompt or the UI
 │   ├── markdown.ts        Terminal + report markdown
 │   └── report.ts          PDF/HTML report (Puppeteer)
-└── utils/logger.ts        Chalk-based structured logging
+└── utils/
+    ├── logger.ts          Chalk-based structured logging
+    └── rate-window.ts     At most n calls per rolling window, waiting rather than failing
 
 web/
 ├── index.html
@@ -1214,6 +1334,7 @@ Per symbol, in order:
 | 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
 | 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`). Free, with nothing to configure | on |
 | 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-5.6-terra` |
+| 4 | **Referenz** | After the whole watchlist, on full runs only: the next S&P 500 members of the [reference universe](#the-reference-universe), numbers and factor score only | on, 100 per night |
 
 Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).
 
@@ -1470,7 +1591,25 @@ pnpm run build        # compile TypeScript → dist/
 pnpm run web:build    # build the Vite bundle
 pnpm run typecheck    # type-check src and test without emitting
 pnpm test             # node:test via tsx — no database or network needed
+pnpm run calibrate    # recompute the reference distributions → src/analysis/calibration-table.ts
+pnpm run evaluate     # rank IC of the stored scores, watchlist and universe
 ```
+
+**Golden tests.** `test/golden/` holds the stored inputs of six real stocks: a
+megacap, an insurer priced by its excess returns, a euro listing, an ADR
+reporting in kroner, a firm losing money, and one with almost no revenue.
+`test/golden.test.ts` recomputes every model and the factor score from them.
+Any change that moves a real stock's numbers fails a test instead of passing
+unnoticed:
+
+```bash
+pnpm run golden:capture -- MSFT,BRK-B   # new fixtures from the database
+UPDATE_GOLDEN=1 pnpm test               # accept an intended change
+```
+
+The diff of the `*.expected.json` files is the change's effect on real stocks,
+reviewable line by line. They are scored on the explicit ramps, so a
+recalibration does not rewrite them.
 
 ## License
 

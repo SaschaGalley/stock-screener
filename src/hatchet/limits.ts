@@ -35,6 +35,8 @@ export const RATE_LIMITS = [
 
 /** Finnhub calls one data step makes: basic financials + news. */
 export const FINNHUB_UNITS_PER_SYMBOL = 2;
+/** A reference refresh reads no news. Its monthly peer reading is paced by the client. */
+export const FINNHUB_UNITS_PER_REFERENCE = 1;
 export const YAHOO_UNITS_PER_SYMBOL   = 1;
 
 /** How many symbols may sit in each stage at once. */

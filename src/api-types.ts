@@ -196,6 +196,10 @@ export interface ConfigResponse {
   /** Where the file-shaped leftovers live (EDGAR filings, generated reports). */
   dataDir:       string;
   distillApiUrl: string;
+  /** Reference symbols stored so far — the universe the score is calibrated and evaluated on. */
+  referenceSymbols: number;
+  /** Members of the index as last fetched; 0 before the first full run. */
+  universeSize:     number;
 }
 
 /** `PUT /api/config` */
@@ -245,6 +249,12 @@ export interface DistillEntityUnresolvedResponse {
 /** GET /api/evaluation — how the stored scores ranked the returns that followed. */
 export interface EvaluationResponse {
   computedAt: string;
-  signals:    { key: string; title: string; pillar: boolean }[];
+  signals:    { key: string; title: string; pillar: boolean; factor: boolean }[];
+  /** The watchlist, every signal. */
   evaluation: import('./analysis/evaluate.js').Evaluation;
+  /** Watchlist and reference universe, the factor signals; null before there is a universe. */
+  universe:   import('./analysis/evaluate.js').Evaluation | null;
+  /** Pillar weights the evidence argues for — a suggestion, never applied. */
+  weights:    (import('./analysis/evaluate.js').WeightSuggestion & { title: string })[];
+  weightHorizon: number;
 }

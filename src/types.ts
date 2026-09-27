@@ -444,7 +444,7 @@ export const DCFResultSchema = z.object({
   terminalDiscountRate: z.number().nullable().describe('WACC the rate converges to by year ten: the same capital structure at beta 1 — a mature firm'),
   costOfDebt:         z.number().nullable().describe('Pre-tax cost of debt kd (decimal): risk-free rate + the live ICE BofA spread for the synthetic rating + the headquarters country\'s default spread; null for debt-free firms'),
   syntheticRating:    z.enum(RATINGS as [Rating, ...Rating[]]).nullable().describe("Rating bucket the firm's interest coverage (operating income ÷ interest) earns on Damodaran's table; null when unrated (priced as BBB) or debt-free"),
-  beta:               z.number().nullable().describe('Beta used for CAPM: Blume-adjusted (0.67 × raw + 0.33), bounded to 0.5–2.0'),
+  beta:               z.number().nullable().describe('Beta used for CAPM: Blume-adjusted (0.67 × raw + 0.33), bounded to 0.8–2.0'),
   riskFreeRate:       z.number().describe("Risk-free rate used (decimal): the ten-year government yield in the stock's trading currency, the Treasury for dollars"),
   equityRiskPremium:  z.number().describe("Equity risk premium used (Damodaran's implied ERP for the latest month, decimal)"),
   countryRiskPremium: z.number().nullable().describe('Premium the headquarters country adds over the United States (decimal)'),

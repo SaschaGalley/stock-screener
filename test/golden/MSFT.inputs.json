@@ -1,0 +1,864 @@
+{
+  "financials": {
+    "eps": 17.97,
+    "ppe": 337253000000,
+    "roa": 0.14088,
+    "roe": 0.34039003,
+    "sga": 34666000000,
+    "wkn": null,
+    "beta": 1.108,
+    "ebit": 168985000000,
+    "isin": "US5949181045",
+    "roic": 0.2435,
+    "capex": 115948000000,
+    "price": 501.61,
+    "ebitda": 194237005824,
+    "sector": "Technology",
+    "symbol": "MSFT",
+    "avgPE5Y": 32.09376997682475,
+    "peRatio": 27.913746,
+    "revenue": 331839012864,
+    "taxRate": 0.19396265985271252,
+    "website": "https://www.microsoft.com",
+    "industry": "Software - Infrastructure",
+    "pegRatio": 1.6,
+    "prevYear": {
+      "ppe": 229789000000,
+      "sga": 32877000000,
+      "revenue": 281724000000,
+      "netIncome": 101832000000,
+      "grossProfit": 193893000000,
+      "receivables": 69905000000,
+      "totalAssets": 619003000000,
+      "depreciation": 29433000000,
+      "longTermDebt": 40152000000,
+      "currentAssets": 191131000000,
+      "operatingCashFlow": 136162000000,
+      "sharesOutstanding": 7465000000,
+      "currentLiabilities": 141218000000
+    },
+    "bookValue": 59.565,
+    "employees": 223000,
+    "forwardPE": 21.18654,
+    "marketCap": 3724727812096,
+    "netIncome": 133749000000,
+    "netMargin": 0.40305,
+    "totalCash": 76842999808,
+    "totalDebt": 128812998656,
+    "analystBuy": 38,
+    "quickRatio": 1.099,
+    "shortRatio": 2.49,
+    "analystHold": 3,
+    "analystSell": 0,
+    "companyName": "Microsoft Corporation",
+    "description": "Microsoft Corporation, a technology company, develops and supports a portfolio of technology solutions for individuals and businesses worldwide. Its products include operating systems, server applications, business solution applications, software development tools, desktop and server management tools, and video games; and devices, such as PCs, tablets, gaming and entertainment consoles, other intelligent devices, and related accessories. The company's Productivity and Business Processes segment offers Microsoft 365 Commercial, Enterprise Mobility + Security, Power BI, Exchange, SharePoint, Microsoft Teams, Microsoft 365 Security and Compliance, Microsoft 365 Copilot, and Windows Commercial on-premises and Office licensed on-premises. This segment also provides Microsoft 365 Consumer products and cloud services; LinkedIn, including talent solutions, marketing solutions, subscriptions, and sales solutions; Dynamics 365, a set of cloud-based applications; and on-premises ERP and CRM applications. Its Intelligent Cloud segment offers server products and cloud services; cloud and AI consumption-based services, GitHub cloud services, health and life sciences cloud services, as well as virtual desktop offerings, and other cloud services; SQL Server, Windows Server, Visual Studio, System Center, and related client access licenses; and enterprise support services, industry solutions, Microsoft partner network, and learning experience. The company's More Personal Computing segment provides Windows OEM licensing and devices comprising Surface and PC accessories; XBOX hardware, and XBOX first- and third-party content and services; XBOX Game Pass and other subscriptions; XBOX Cloud Gaming, advertising, and other cloud services; and search advertising consisting of Bing, Copilot, Microsoft News, Microsoft Edge, and third-party affiliates. It sells its products through partners and retail networks. The company was founded in 1975 and is headquartered in Redmond, Washington.",
+    "epsGrowth3Y": 0.22829999999999998,
+    "grossProfit": 225465008128,
+    "payoutRatio": 0.1983,
+    "receivables": 80876000000,
+    "sharesShort": 74451155,
+    "totalAssets": 758376000000,
+    "analystCount": 52,
+    "currentRatio": 1.23,
+    "debtToEquity": 29.118,
+    "depreciation": 38534000000,
+    "freeCashFlow": 16545500160,
+    "headquarters": "Redmond, WA, United States",
+    "longTermDebt": 31067000000,
+    "dividendYield": 0.0079,
+    "revenueGrowth": 0.177,
+    "earningsGrowth": 0.317,
+    "exDividendDate": "2026-11-19",
+    "monthlyReturns": [
+      -0.04804674418145868,
+      -0.017052538842774845,
+      -0.1102725435304822,
+      -0.08518345240172709,
+      -0.05746798756249531,
+      0.10160193378338175,
+      0.10651617603697688,
+      -0.17150856157139235,
+      0.24583136341252143,
+      0.09365852394039423,
+      -0.026631728474953105,
+      0.015857237214189728
+    ],
+    "workingCapital": 38885000000,
+    "dividendPayDate": "2026-12-10",
+    "enterpriseValue": 3776697860096,
+    "fiftyTwoWeekLow": 349.2,
+    "incomeBeforeTax": 165934000000,
+    "insiderBuyCount": null,
+    "insiderBuyValue": null,
+    "interestExpense": 3051000000,
+    "operatingMargin": 0.45111,
+    "targetMeanPrice": 575.33826,
+    "tradingCurrency": "USD",
+    "analystStrongBuy": 14,
+    "analystTargetLow": 440,
+    "fiftyTwoWeekHigh": 553.72,
+    "incomeTaxExpense": 32185000000,
+    "insiderBuyShares": null,
+    "insiderSellCount": 8,
+    "insiderSellValue": 81929012,
+    "nextEarningsDate": "2026-10-28",
+    "retainedEarnings": 328265000000,
+    "revenueGrowthYoY": 0.177,
+    "totalLiabilities": 315989000000,
+    "analystStrongSell": 0,
+    "analystTargetHigh": 870,
+    "earningsEstimates": [
+      {
+        "epsLow": 4.43,
+        "period": "0q",
+        "endDate": "2026-09-30",
+        "epsHigh": 4.83363,
+        "epsGrowth": 0.144,
+        "epsEstimate": 4.72455,
+        "revenueGrowth": 0.1672,
+        "revenueEstimate": 90659206720,
+        "numberOfAnalysts": 25
+      },
+      {
+        "epsLow": 4.72,
+        "period": "+1q",
+        "endDate": "2026-12-31",
+        "epsHigh": 5.02,
+        "epsGrowth": 0.16459998,
+        "epsEstimate": 4.82158,
+        "revenueGrowth": 0.1749,
+        "revenueEstimate": 95486710660,
+        "numberOfAnalysts": 25
+      },
+      {
+        "epsLow": 19.21,
+        "period": "0y",
+        "endDate": "2027-06-30",
+        "epsHigh": 20.7,
+        "epsGrowth": 0.1435,
+        "epsEstimate": 19.75972,
+        "revenueGrowth": 0.1784,
+        "revenueEstimate": 391037099320,
+        "numberOfAnalysts": 33
+      },
+      {
+        "epsLow": 22.08,
+        "period": "+1y",
+        "endDate": "2028-06-30",
+        "epsHigh": 26,
+        "epsGrowth": 0.1982,
+        "epsEstimate": 23.67588,
+        "revenueGrowth": 0.19549999,
+        "revenueEstimate": 467466932110,
+        "numberOfAnalysts": 32
+      }
+    ],
+    "earningsSurprises": [
+      {
+        "quarter": "-4q",
+        "epsActual": 4.13,
+        "epsEstimate": 3.66355,
+        "surprisePct": 0.1273
+      },
+      {
+        "quarter": "-3q",
+        "epsActual": 4.14,
+        "epsEstimate": 3.91702,
+        "surprisePct": 0.056900002
+      },
+      {
+        "quarter": "-2q",
+        "epsActual": 4.27,
+        "epsEstimate": 4.07062,
+        "surprisePct": 0.049000002
+      },
+      {
+        "quarter": "-1q",
+        "epsActual": 4.74,
+        "epsEstimate": 4.23939,
+        "surprisePct": 0.1181
+      }
+    ],
+    "financialCurrency": "USD",
+    "fundamentalsStale": false,
+    "insiderSellShares": 166771,
+    "institutionsCount": 8177,
+    "lastFiscalYearEnd": "2026-06-30",
+    "mostRecentQuarter": "2026-06-30",
+    "operatingCashFlow": 182934994944,
+    "quarterlyRevenues": [
+      {
+        "endDate": "2025-06-30",
+        "revenue": 76441000000
+      },
+      {
+        "endDate": "2025-09-30",
+        "revenue": 77673000000
+      },
+      {
+        "endDate": "2025-12-31",
+        "revenue": 81273000000
+      },
+      {
+        "endDate": "2026-03-31",
+        "revenue": 82886000000
+      },
+      {
+        "endDate": "2026-06-30",
+        "revenue": 90007000000
+      }
+    ],
+    "sharesOutstanding": 7425545491,
+    "nextDividendAmount": 3.92,
+    "totalCurrentAssets": 207710000000,
+    "analystTargetMedian": 567.5,
+    "dataQualityWarnings": [],
+    "fundamentalsHistory": {
+      "eps": [
+        {
+          "year": 2023,
+          "value": 9.68
+        },
+        {
+          "year": 2024,
+          "value": 11.8
+        },
+        {
+          "year": 2025,
+          "value": 13.64
+        },
+        {
+          "year": 2026,
+          "value": 17.95
+        }
+      ],
+      "revenue": [
+        {
+          "year": 2023,
+          "value": 211915000000
+        },
+        {
+          "year": 2024,
+          "value": 245122000000
+        },
+        {
+          "year": 2025,
+          "value": 281724000000
+        },
+        {
+          "year": 2026,
+          "value": 331839000000
+        }
+      ],
+      "netIncome": [
+        {
+          "year": 2023,
+          "value": 72361000000
+        },
+        {
+          "year": 2024,
+          "value": 88136000000
+        },
+        {
+          "year": 2025,
+          "value": 101832000000
+        },
+        {
+          "year": 2026,
+          "value": 133749000000
+        }
+      ],
+      "grossProfit": [
+        {
+          "year": 2023,
+          "value": 146052000000
+        },
+        {
+          "year": 2024,
+          "value": 171008000000
+        },
+        {
+          "year": 2025,
+          "value": 193893000000
+        },
+        {
+          "year": 2026,
+          "value": 225465000000
+        }
+      ],
+      "totalAssets": [
+        {
+          "year": 2023,
+          "value": 411976000000
+        },
+        {
+          "year": 2024,
+          "value": 512163000000
+        },
+        {
+          "year": 2025,
+          "value": 619003000000
+        },
+        {
+          "year": 2026,
+          "value": 758376000000
+        }
+      ],
+      "freeCashFlow": [
+        {
+          "year": 2023,
+          "value": 59475000000
+        },
+        {
+          "year": 2024,
+          "value": 74071000000
+        },
+        {
+          "year": 2025,
+          "value": 71611000000
+        },
+        {
+          "year": 2026,
+          "value": 66987000000
+        }
+      ],
+      "operatingIncome": [
+        {
+          "year": 2023,
+          "value": 88523000000
+        },
+        {
+          "year": 2024,
+          "value": 109433000000
+        },
+        {
+          "year": 2025,
+          "value": 128528000000
+        },
+        {
+          "year": 2026,
+          "value": 155237000000
+        }
+      ],
+      "operatingCashFlow": [
+        {
+          "year": 2023,
+          "value": 87582000000
+        },
+        {
+          "year": 2024,
+          "value": 118548000000
+        },
+        {
+          "year": 2025,
+          "value": 136162000000
+        },
+        {
+          "year": 2026,
+          "value": 182935000000
+        }
+      ],
+      "stockholdersEquity": [
+        {
+          "year": 2023,
+          "value": 206223000000
+        },
+        {
+          "year": 2024,
+          "value": 268477000000
+        },
+        {
+          "year": 2025,
+          "value": 343479000000
+        },
+        {
+          "year": 2026,
+          "value": 442387000000
+        }
+      ]
+    },
+    "insidersPercentHeld": 0.00092,
+    "shortPercentOfFloat": 0.01,
+    "deferredRevenueShare": 0.43219309936324596,
+    "dividendGrowthRate5Y": 0.102,
+    "sharesShortPriorMonth": null,
+    "institutionsPercentHeld": 0.75795996,
+    "operatingCashFlowAnnual": 182935000000,
+    "sharesOutstandingAnnual": 7453000000,
+    "totalCurrentLiabilities": 168825000000,
+    "interestInOperatingCashFlow": null
+  },
+  "marketSignals": {
+    "macro": {
+      "vix": 15.13,
+      "dxyLevel": 98.80000305175781,
+      "fetchedAt": "2026-08-23T11:27:29.895Z",
+      "vixRegime": "normal",
+      "hySpreadBps": 275,
+      "spy3MReturn": 0.030708903335894183,
+      "dxyChange3MPct": -0.003931841718411277,
+      "sectorEtfSymbol": "XLK",
+      "yieldCurve2Y10Y": 50,
+      "sectorEtfReturn3M": 0.02759556881955796
+    },
+    "options": {
+      "ivAtm30d": 0.2677685745729387,
+      "ivVsHv90Ratio": 0.6592746315438537,
+      "putCallOIRatio": 0.3951065092659764,
+      "putCallVolumeRatio": 0.6269261962692619,
+      "nextEarningsImpliedMove": {
+        "pct": 0.1247309825345584,
+        "expirationDate": "2026-11-20"
+      }
+    },
+    "revisions": {
+      "perPeriod": [
+        {
+          "period": "0q",
+          "epsTrend": {
+            "ago7d": 4.72036,
+            "ago30d": 4.61963,
+            "ago60d": 4.61418,
+            "ago90d": 4.61434,
+            "current": 4.72092
+          },
+          "revisions": {
+            "up7d": 17,
+            "up30d": 16,
+            "up90d": null,
+            "down7d": 4,
+            "down30d": 5,
+            "down90d": null
+          },
+          "netRevision30d": 11,
+          "epsChange30dPct": 0.02192599840246939
+        },
+        {
+          "period": "+1q",
+          "epsTrend": {
+            "ago7d": 4.82335,
+            "ago30d": 4.79021,
+            "ago60d": 4.77702,
+            "ago90d": 4.77306,
+            "current": 4.82575
+          },
+          "revisions": {
+            "up7d": 13,
+            "up30d": 13,
+            "up90d": null,
+            "down7d": 7,
+            "down30d": 7,
+            "down90d": null
+          },
+          "netRevision30d": 6,
+          "epsChange30dPct": 0.007419298945140218
+        },
+        {
+          "period": "0y",
+          "epsTrend": {
+            "ago7d": 19.69383,
+            "ago30d": 19.39448,
+            "ago60d": 19.373,
+            "ago90d": 19.36538,
+            "current": 19.72885
+          },
+          "revisions": {
+            "up7d": 1,
+            "up30d": 20,
+            "up90d": null,
+            "down7d": 1,
+            "down30d": 9,
+            "down90d": null
+          },
+          "netRevision30d": 11,
+          "epsChange30dPct": 0.017240472546827746
+        },
+        {
+          "period": "+1y",
+          "epsTrend": {
+            "ago7d": 23.4742,
+            "ago30d": 22.60632,
+            "ago60d": 22.62778,
+            "ago90d": 22.62809,
+            "current": 23.57328
+          },
+          "revisions": {
+            "up7d": 1,
+            "up30d": 19,
+            "up90d": null,
+            "down7d": 0,
+            "down30d": 4,
+            "down90d": null
+          },
+          "netRevision30d": 15,
+          "epsChange30dPct": 0.04277387916299514
+        }
+      ],
+      "analystRatingMoMDelta": {
+        "buy": -2,
+        "hold": 0,
+        "sell": 0,
+        "strongBuy": 0,
+        "strongSell": 0
+      }
+    },
+    "technicals": {
+      "hv30": 0.4905468778301816,
+      "hv90": 0.40615634480867663,
+      "atr14": 12.352340500880347,
+      "cci20": 23.518980267962068,
+      "ema10": 482.9606894493257,
+      "ema20": 469.26061184618015,
+      "ema30": 456.01098516024734,
+      "ema50": 439.7021214756245,
+      "rsi14": 62.95966950415251,
+      "sma10": 489.7855194091797,
+      "sma20": 472.2936721801758,
+      "sma30": 445.2879211425781,
+      "sma50": 419.09196105957034,
+      "ema100": 427.5648577868348,
+      "ema200": 435.7174180379271,
+      "sma100": 414.32764434814453,
+      "sma200": 429.43266357421874,
+      "returns": {
+        "d1": 0.0043437521862263,
+        "m1": 0.2688026452311873,
+        "m3": 0.15524044503888798,
+        "m6": 0.22145432040998167,
+        "w1": -0.022709519023450628,
+        "y1": -0.035005794910741066,
+        "ytd": 0.028260993792046548
+      },
+      "atr14Pct": 0.025561503084397814,
+      "macdLine": 20.0188950191162,
+      "stochD14": 44.27630810363616,
+      "stochK14": 28.477112218114996,
+      "rsVsSPY3M": 0.1245315417029938,
+      "macdSignal": 23.24874209142339,
+      "momentum10": -15.810516357421875,
+      "avgVolume30": 34478956.666666664,
+      "goldenCross": false,
+      "williamsR14": -83.35156212848923,
+      "bollingerMid": 472.2936721801758,
+      "rsVsSector3M": 0.12764487621933002,
+      "macdHistogram": -3.229847072307191,
+      "bollingerLower": 399.0135770579716,
+      "bollingerUpper": 545.57376730238,
+      "position52WPct": 0.706671523697688,
+      "currentVolRatio": 0.6522587158718164,
+      "distFromSMA50Pct": 0.1530643274870323,
+      "bollingerPercentB": 0.5746882085506628,
+      "distFromSMA200Pct": 0.12529863520932835,
+      "drawdownFromHighPct": -0.10119360212369496
+    }
+  },
+  "sectorMedians": {
+    "pb": 21.89245,
+    "pe": 41.17565,
+    "roe": 0.2881,
+    "roic": 0.11074999999999999,
+    "peers": [
+      "ORCL",
+      "PLTR",
+      "PANW",
+      "CRWD",
+      "CRM",
+      "NOW",
+      "FTNT",
+      "APP"
+    ],
+    "netMargin": 0.24175,
+    "peerCount": 8,
+    "evToEbitda": 46.9673,
+    "priceToFCF": 46.31245,
+    "evToRevenue": 15.697199999999999,
+    "priceToSales": 15.82535,
+    "operatingMargin": 0.2545,
+    "revenueGrowthYoY": 0.23245,
+    "forwardPriceToSales": 12.840561483224471,
+    "runRatePriceToSales": 14.097321640650687
+  },
+  "technicalSignals": {
+    "overall": {
+      "buy": 11,
+      "sell": 3,
+      "items": [
+        {
+          "hint": "price 483.24 < SMA 10 489.79",
+          "name": "SMA 10",
+          "value": 489.7855194091797,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 483.24 > SMA 20 472.29",
+          "name": "SMA 20",
+          "value": 472.2936721801758,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > SMA 30 445.29",
+          "name": "SMA 30",
+          "value": 445.2879211425781,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > SMA 50 419.09",
+          "name": "SMA 50",
+          "value": 419.09196105957034,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > SMA 100 414.33",
+          "name": "SMA 100",
+          "value": 414.32764434814453,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > SMA 200 429.43",
+          "name": "SMA 200",
+          "value": 429.43266357421874,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 ≈ EMA 10 482.96",
+          "name": "EMA 10",
+          "value": 482.9606894493257,
+          "signal": "neutral"
+        },
+        {
+          "hint": "price 483.24 > EMA 20 469.26",
+          "name": "EMA 20",
+          "value": 469.26061184618015,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > EMA 30 456.01",
+          "name": "EMA 30",
+          "value": 456.01098516024734,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > EMA 50 439.70",
+          "name": "EMA 50",
+          "value": 439.7021214756245,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > EMA 100 427.56",
+          "name": "EMA 100",
+          "value": 427.5648577868348,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > EMA 200 435.72",
+          "name": "EMA 200",
+          "value": 435.7174180379271,
+          "signal": "buy"
+        },
+        {
+          "hint": "63.0 in 30–70 → neutral",
+          "name": "RSI (14)",
+          "value": 62.95966950415251,
+          "signal": "neutral"
+        },
+        {
+          "hint": "%K 28.5 vs %D 44.3 (oversold <20, overbought >80)",
+          "name": "Stochastic %K (14)",
+          "value": 28.477112218114996,
+          "signal": "neutral"
+        },
+        {
+          "hint": "line 20.02 < signal 23.25",
+          "name": "MACD (12,26,9)",
+          "value": -3.229847072307191,
+          "signal": "sell"
+        },
+        {
+          "hint": "23.5 in ±100 → neutral",
+          "name": "CCI (20)",
+          "value": 23.518980267962068,
+          "signal": "neutral"
+        },
+        {
+          "hint": "-83.4 ≤ −80 → oversold",
+          "name": "Williams %R (14)",
+          "value": -83.35156212848923,
+          "signal": "buy"
+        },
+        {
+          "hint": "negative (-15.81)",
+          "name": "Momentum (10)",
+          "value": -15.810516357421875,
+          "signal": "sell"
+        },
+        {
+          "hint": "0.57 in band",
+          "name": "Bollinger %B",
+          "value": 0.5746882085506628,
+          "signal": "neutral"
+        }
+      ],
+      "score": 0.3035714285714286,
+      "neutral": 5,
+      "verdict": "BUY"
+    },
+    "oscillators": {
+      "buy": 1,
+      "sell": 2,
+      "items": [
+        {
+          "hint": "63.0 in 30–70 → neutral",
+          "name": "RSI (14)",
+          "value": 62.95966950415251,
+          "signal": "neutral"
+        },
+        {
+          "hint": "%K 28.5 vs %D 44.3 (oversold <20, overbought >80)",
+          "name": "Stochastic %K (14)",
+          "value": 28.477112218114996,
+          "signal": "neutral"
+        },
+        {
+          "hint": "line 20.02 < signal 23.25",
+          "name": "MACD (12,26,9)",
+          "value": -3.229847072307191,
+          "signal": "sell"
+        },
+        {
+          "hint": "23.5 in ±100 → neutral",
+          "name": "CCI (20)",
+          "value": 23.518980267962068,
+          "signal": "neutral"
+        },
+        {
+          "hint": "-83.4 ≤ −80 → oversold",
+          "name": "Williams %R (14)",
+          "value": -83.35156212848923,
+          "signal": "buy"
+        },
+        {
+          "hint": "negative (-15.81)",
+          "name": "Momentum (10)",
+          "value": -15.810516357421875,
+          "signal": "sell"
+        },
+        {
+          "hint": "0.57 in band",
+          "name": "Bollinger %B",
+          "value": 0.5746882085506628,
+          "signal": "neutral"
+        }
+      ],
+      "score": -0.14285714285714285,
+      "neutral": 4,
+      "verdict": "SELL"
+    },
+    "movingAverages": {
+      "buy": 10,
+      "sell": 1,
+      "items": [
+        {
+          "hint": "price 483.24 < SMA 10 489.79",
+          "name": "SMA 10",
+          "value": 489.7855194091797,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 483.24 > SMA 20 472.29",
+          "name": "SMA 20",
+          "value": 472.2936721801758,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > SMA 30 445.29",
+          "name": "SMA 30",
+          "value": 445.2879211425781,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > SMA 50 419.09",
+          "name": "SMA 50",
+          "value": 419.09196105957034,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > SMA 100 414.33",
+          "name": "SMA 100",
+          "value": 414.32764434814453,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > SMA 200 429.43",
+          "name": "SMA 200",
+          "value": 429.43266357421874,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 ≈ EMA 10 482.96",
+          "name": "EMA 10",
+          "value": 482.9606894493257,
+          "signal": "neutral"
+        },
+        {
+          "hint": "price 483.24 > EMA 20 469.26",
+          "name": "EMA 20",
+          "value": 469.26061184618015,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > EMA 30 456.01",
+          "name": "EMA 30",
+          "value": 456.01098516024734,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > EMA 50 439.70",
+          "name": "EMA 50",
+          "value": 439.7021214756245,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > EMA 100 427.56",
+          "name": "EMA 100",
+          "value": 427.5648577868348,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 483.24 > EMA 200 435.72",
+          "name": "EMA 200",
+          "value": 435.7174180379271,
+          "signal": "buy"
+        }
+      ],
+      "score": 0.75,
+      "neutral": 1,
+      "verdict": "STRONG BUY"
+    }
+  },
+  "rates": {
+    "riskFreeRate": 0.0518,
+    "aaaBondYield": 0.0613,
+    "equityRiskPremium": 0.0409,
+    "creditSpreads": {
+      "AAA": 0.004,
+      "AA": 0.0058,
+      "A": 0.0067,
+      "BBB": 0.0097,
+      "BB": 0.016399999999999998,
+      "B": 0.0286,
+      "CCC": 0.1112
+    },
+    "localRiskFreeRates": {
+      "EUR": 0.0318,
+      "GBP": 0.049886,
+      "CHF": 0.004699999999999999,
+      "JPY": 0.0294,
+      "CAD": 0.03675,
+      "AUD": 0.05015,
+      "SEK": 0.030231400000000002,
+      "NOK": 0.0428635,
+      "DKK": 0.0301,
+      "KRW": 0.042859999999999995
+    }
+  }
+}

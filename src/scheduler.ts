@@ -15,6 +15,10 @@
  *   3. analysis — only when the newest verdict is older than `maxAgeDays`,
  *                 forced past the stored verdict so it produces an actual new one
  *
+ * Then, on a full run, the night's share of the reference universe
+ * (`src/universe.ts`): one slimmed data step each, after the whole watchlist,
+ * never interleaved with it.
+ *
  * Runs are rows in `runs` / `run_steps`, so the admin page can show what
  * happened last night after a restart — and so every observation written
  * during the run can point back at the run that produced it.
@@ -28,10 +32,13 @@ import { isHatchetConfigured } from './hatchet/client.js';
 import { AppConfig, readAppConfig } from './app-config.js';
 import {
   finishRun, JobRun, JobRunStatus, JobStep, JobStepResult, JobSymbolResult,
-  listRuns, pruneRuns, reapStaleRuns, recordRunSteps, setRunSymbol, startRun, StepStatus,
+  listRuns, pruneRuns, reapStaleRuns, recordRunSteps, setRunSymbol, startRun, StepStatus, tallySteps,
 } from './db/admin.js';
-import { runAnalysisStep, runDataStep, runDistillStep, scheduledSymbols } from './pipeline/steps.js';
+import {
+  needsAttention, runAnalysisStep, runDataStep, runDistillStep, runReferenceStep, scheduledSymbols,
+} from './pipeline/steps.js';
 import { syncWatchlistDossiers } from './distill-dossiers.js';
+import { referenceBatch } from './universe.js';
 
 export type { JobRun, JobRunStatus, JobStep, JobStepResult, JobSymbolResult, StepStatus };
 export { scheduledSymbols };
@@ -80,18 +87,6 @@ export class JobBusyError extends Error {
   }
 }
 
-/** Running tally, so the live view matches what the database will report. */
-function tally(symbols: JobSymbolResult[]): JobRun['totals'] {
-  const totals = { symbols: symbols.length, data: 0, distill: 0, analysis: 0, failed: 0 };
-  for (const sym of symbols) {
-    for (const step of sym.steps) {
-      if (step.status === 'ok') totals[step.step]++;
-      if (step.status === 'failed') totals.failed++;
-    }
-  }
-  return totals;
-}
-
 /**
  * Walk the watchlist serially. Resolves with the finished run; step failures
  * are recorded per symbol and never abort the rest of the list — one dead
@@ -107,9 +102,17 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
 
   const config = await readAppConfig();
 
-  const symbols = opts.symbols?.length
-    ? opts.symbols.map((s) => s.toUpperCase())
+  const explicit = !!opts.symbols?.length;
+  const symbols = explicit
+    ? opts.symbols!.map((s) => s.toUpperCase())
     : await scheduledSymbols(config);
+  // A run over a hand-picked subset is someone checking on those stocks, not
+  // the night's pass, so the universe only follows a full run.
+  const reference = explicit ? [] : await referenceBatch(config).catch((e) => {
+    logger.warn(`Reference universe unavailable: ${(e as Error).message}`);
+    return [] as string[];
+  });
+  const planned = symbols.length + reference.length;
 
   const runId = await startRun(opts.trigger);
   const run: JobRun = {
@@ -120,12 +123,13 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
     status:        'running',
     currentSymbol: null,
     symbols:       [],
-    totals:        { symbols: symbols.length, data: 0, distill: 0, analysis: 0, failed: 0 },
+    totals:        tallySteps([], planned),
   };
   activeRun = run;
   stopRequested = false;
 
-  logger.info(`Pipeline run started (${opts.trigger}) — ${symbols.length} symbol(s)`);
+  logger.info(`Pipeline run started (${opts.trigger}) — ${symbols.length} symbol(s)`
+    + `${reference.length ? `, then ${reference.length} of the reference universe` : ''}`);
 
   // Mirror the watchlist onto Distill before the walk, not on a cron of its
   // own: the dossier switch gates whether Distill builds anything at all, so a
@@ -148,11 +152,27 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
       await setRunSymbol(runId, symbol);
       const result = await processSymbol(config, symbol, runId);
       run.symbols.push(result);
-      run.totals = { ...tally(run.symbols), symbols: symbols.length };
+      run.totals = tallySteps(run.symbols, planned);
+    }
+
+    // What is left of the night goes to the universe; the watchlist is what
+    // someone looks at in the morning, so it never waits behind it.
+    for (const symbol of reference) {
+      if (stopRequested) {
+        run.status = 'stopped';
+        break;
+      }
+      run.currentSymbol = symbol;
+      await setRunSymbol(runId, symbol);
+      const startedAt = Date.now();
+      const step = await runReferenceStep(config, symbol, runId);
+      await recordRunSteps(runId, symbol, [step]);
+      run.symbols.push({ symbol, steps: [step], ms: Date.now() - startedAt });
+      run.totals = tallySteps(run.symbols, planned);
     }
 
     if (run.status !== 'stopped') {
-      run.status = run.totals.failed > 0 ? 'partial' : 'ok';
+      run.status = needsAttention(run.symbols.flatMap((s) => s.steps)) ? 'partial' : 'ok';
     }
   } catch (e) {
     run.status = 'failed';
@@ -169,7 +189,7 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
     const secs = ((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(0);
     logger.success(
       `Pipeline run ${run.status} in ${secs}s — data ${run.totals.data}, distill ${run.totals.distill}, `
-      + `analysis ${run.totals.analysis}, failed ${run.totals.failed}`,
+      + `analysis ${run.totals.analysis}, reference ${run.totals.reference}, failed ${run.totals.failed}`,
     );
   }
 
@@ -216,7 +236,7 @@ async function runPipelineOnHatchet(opts: RunOptions): Promise<JobRun> {
   return latest ?? {
     id: 'queued', trigger: opts.trigger, startedAt: new Date().toISOString(),
     finishedAt: null, status: 'running', currentSymbol: null, symbols: [],
-    totals: { symbols: 0, data: 0, distill: 0, analysis: 0, failed: 0 },
+    totals: tallySteps([]),
   };
 }
 

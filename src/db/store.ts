@@ -130,15 +130,103 @@ export async function symbolId(symbol: string): Promise<number | null> {
 }
 
 /**
+ * Which symbols a caller means.
+ *
+ *   watchlist — the stocks the user added: the list, the nightly analysis, Distill
+ *   reference — the universe scored only to calibrate and evaluate the score
+ *   all       — both, for everything that reads the score as a population
+ */
+export type SymbolScope = 'watchlist' | 'reference' | 'all';
+
+const SCOPE_FILTER: Record<SymbolScope, string> = {
+  watchlist: 'NOT s.reference',
+  reference: 's.reference',
+  all:       'TRUE',
+};
+
+/**
  * Every symbol the app knows about — the successor to "a directory containing
  * financials.json". Only symbols that actually have financials count, so a
  * half-finished add doesn't appear in the sidebar as an empty row.
+ *
+ * The watchlist unless asked otherwise: a reference symbol is in the database
+ * to be counted, not to be shown.
  */
-export async function listSymbols(): Promise<string[]> {
+export async function listSymbols(scope: SymbolScope = 'watchlist'): Promise<string[]> {
   const res = await query<{ symbol: string }>(
     `SELECT s.symbol FROM symbols s
-     WHERE EXISTS (SELECT 1 FROM snapshots sn WHERE sn.symbol_id = s.id AND sn.kind = 'financials')
+     WHERE ${SCOPE_FILTER[scope]}
+       AND EXISTS (SELECT 1 FROM snapshots sn WHERE sn.symbol_id = s.id AND sn.kind = 'financials')
      ORDER BY s.symbol`,
+  );
+  return res.rows.map((r) => r.symbol);
+}
+
+/**
+ * Register a symbol as a member of the reference universe.
+ *
+ * Only ever creates: a symbol that already exists keeps its standing, so a
+ * watchlist stock that is also in the index stays on the watchlist.
+ */
+export async function markReference(symbol: string): Promise<void> {
+  await query(
+    `INSERT INTO symbols (symbol, reference) VALUES ($1, true) ON CONFLICT (symbol) DO NOTHING`,
+    [symbol.toUpperCase()],
+  );
+}
+
+/** The user added a reference symbol: it joins the watchlist with the history it has. */
+export async function promoteSymbol(symbol: string): Promise<void> {
+  await query(`UPDATE symbols SET reference = false WHERE symbol = $1 AND reference`, [symbol.toUpperCase()]);
+}
+
+/** Sector and listing currency per symbol, as the profile last recorded them. */
+export async function symbolFacts(
+  symbols: string[],
+): Promise<Map<string, { sector: string | null; currency: string | null }>> {
+  const res = await query<{ symbol: string; sector: string | null; currency: string | null }>(
+    'SELECT symbol, sector, currency FROM symbols WHERE symbol = ANY($1)',
+    [symbols.map((s) => s.toUpperCase())],
+  );
+  return new Map(res.rows.map((r) => [r.symbol, { sector: r.sector, currency: r.currency }]));
+}
+
+/** Symbols per scope, for the admin page's counts. */
+export async function symbolCounts(): Promise<Record<Exclude<SymbolScope, 'all'>, number>> {
+  const row = await queryOne<{ watchlist: number; reference: number }>(
+    `SELECT count(*) FILTER (WHERE NOT reference)::int AS watchlist,
+            count(*) FILTER (WHERE reference)::int     AS reference
+       FROM symbols s
+      WHERE EXISTS (SELECT 1 FROM snapshots sn WHERE sn.symbol_id = s.id AND sn.kind = 'financials')`,
+  );
+  return { watchlist: row?.watchlist ?? 0, reference: row?.reference ?? 0 };
+}
+
+/**
+ * The next reference symbols to refresh: among `members`, those that are
+ * reference symbols (or not yet stored at all), the least recently refreshed
+ * first and the never attempted before everything.
+ *
+ * The rotation needs no state of its own. Whatever a night did not reach is the
+ * oldest the next night. A symbol that has never refreshed successfully counts
+ * from its first attempt, so a delisted ticker queues behind the rest instead
+ * of taking the first slot every night.
+ */
+export async function referenceRotation(members: string[], limit: number): Promise<string[]> {
+  if (members.length === 0 || limit <= 0) return [];
+  const res = await query<{ symbol: string }>(
+    `SELECT m.symbol
+       FROM unnest($1::text[]) AS m(symbol)
+       LEFT JOIN symbols s ON s.symbol = m.symbol
+       LEFT JOIN LATERAL (
+         SELECT max(sn.last_seen_at) AS seen
+           FROM snapshots sn
+          WHERE sn.symbol_id = s.id AND sn.kind = 'financials'
+       ) f ON true
+      WHERE s.id IS NULL OR s.reference
+      ORDER BY COALESCE(f.seen, s.first_seen_at) ASC NULLS FIRST, m.symbol
+      LIMIT $2`,
+    [members.map((m) => m.toUpperCase()), limit],
   );
   return res.rows.map((r) => r.symbol);
 }
@@ -246,6 +334,9 @@ export interface SnapshotMeta {
  * The stock list and the overview each render one row per symbol; asking per
  * symbol would be a query per row, which is exactly the shape the file cache
  * had and the reason the overview walked 35 directories to draw a table.
+ *
+ * Like every `…ForAll` reader, it covers the watchlist only: these draw what
+ * the user sees, and the reference universe is there to be counted.
  */
 export async function latestSnapshotForAll<T>(
   kind: SnapshotKind,
@@ -257,7 +348,7 @@ export async function latestSnapshotForAll<T>(
             s.symbol, sn.content, sn.captured_at, sn.last_seen_at, sn.schema_ver
        FROM snapshots sn
        JOIN symbols s ON s.id = sn.symbol_id
-      WHERE sn.kind = $1
+      WHERE sn.kind = $1 AND NOT s.reference
       ORDER BY sn.symbol_id, sn.last_seen_at DESC`,
     [kind],
   );
@@ -334,9 +425,11 @@ export async function writeMarketSignals(
   await saveSnapshot(symbol, 'market_signals', MARKET_SIGNALS_VERSION, data, runId);
 }
 
-export async function readSectorMedians(symbol: string): Promise<SectorMedians | null> {
+export async function readSectorMedians(
+  symbol: string, maxAgeMs = SECTOR_MEDIANS_TTL_MS,
+): Promise<SectorMedians | null> {
   const hit = await latestSnapshot<SectorMedians>(symbol, 'sector_medians', {
-    schemaVer: SECTOR_MEDIANS_VERSION, maxAgeMs: SECTOR_MEDIANS_TTL_MS,
+    schemaVer: SECTOR_MEDIANS_VERSION, maxAgeMs,
   });
   return hit && !hit.stale ? hit.data : null;
 }
@@ -671,7 +764,7 @@ export async function latestVerdictsForAll(): Promise<Map<string, CachedAnalysis
     `SELECT DISTINCT ON (d.symbol_id, d.variant) s.symbol, d.data, d.produced_at
        FROM documents d
        JOIN symbols s ON s.id = d.symbol_id
-      WHERE d.kind = 'verdict' AND d.schema_ver = $1
+      WHERE d.kind = 'verdict' AND d.schema_ver = $1 AND NOT s.reference
       ORDER BY d.symbol_id, d.variant, d.produced_at DESC`,
     [ANALYSIS_VERSION],
   );
@@ -867,7 +960,7 @@ export async function latestValueForAll(key: string): Promise<Map<string, number
        FROM observations o
        JOIN metrics m ON m.id = o.metric_id
        JOIN symbols s ON s.id = o.symbol_id
-      WHERE m.key = $1 AND o.value IS NOT NULL
+      WHERE m.key = $1 AND o.value IS NOT NULL AND NOT s.reference
       ORDER BY o.symbol_id, o.observed_at DESC`,
     [key],
   );
@@ -883,7 +976,7 @@ export async function seriesForAll(
        FROM observations o
        JOIN metrics m ON m.id = o.metric_id
        JOIN symbols s ON s.id = o.symbol_id
-      WHERE m.key = $1 AND ($2::timestamptz IS NULL OR o.observed_at >= $2)
+      WHERE m.key = $1 AND ($2::timestamptz IS NULL OR o.observed_at >= $2) AND NOT s.reference
       ORDER BY s.symbol, o.observed_at`,
     [key, opts.since ?? null],
   );
@@ -1205,7 +1298,7 @@ export async function latestPointsForAll(
        FROM observations o
        JOIN metrics m ON m.id = o.metric_id
        JOIN symbols s ON s.id = o.symbol_id
-      WHERE m.key = ANY($1)
+      WHERE m.key = ANY($1) AND NOT s.reference
       ORDER BY o.symbol_id, m.key, o.observed_at DESC`,
     [keys],
   );

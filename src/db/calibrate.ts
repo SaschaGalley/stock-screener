@@ -26,9 +26,9 @@ import { collectCalibrated, CriterionDistribution, percentiles } from '../analys
 import { computeFactorScore } from '../analysis/score.js';
 import { StockFinancials } from '../types.js';
 import { logger } from '../utils/logger.js';
-import { closePool, query, waitForDatabase } from './client.js';
+import { closePool, waitForDatabase } from './client.js';
 import { storedInputs } from './rescore.js';
-import { snapshotHistory } from './store.js';
+import { listSymbols, snapshotHistory } from './store.js';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -47,7 +47,7 @@ async function weeklyInstants(symbol: string, weeks: number): Promise<number[]> 
 export async function calibrate(weeks: number): Promise<{
   table: Record<string, CriterionDistribution>; symbols: number; observations: number;
 }> {
-  const symbols = (await query<{ symbol: string }>('SELECT symbol FROM symbols ORDER BY symbol')).rows.map((r) => r.symbol);
+  const symbols = await listSymbols('all');
   const byKey = new Map<string, { values: number[]; symbols: Set<string> }>();
   let observations = 0;
   let scoredSymbols = 0;

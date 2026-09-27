@@ -28,6 +28,7 @@
     "backfill": "tsx src/db/backfill.ts",
     "rescore": "tsx src/db/rescore.ts",
     "calibrate": "tsx src/db/calibrate.ts",
+    "golden:capture": "tsx src/db/golden.ts",
     "evaluate": "tsx src/db/evaluate.ts"
   },
   "dependencies": {

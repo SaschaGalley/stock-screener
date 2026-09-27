@@ -1,0 +1,784 @@
+{
+  "financials": {
+    "eps": -0.94,
+    "ppe": 43696000,
+    "roa": -0.06651,
+    "roe": -0.07696,
+    "sga": 80442000,
+    "wkn": null,
+    "beta": 1.201,
+    "ebit": -139294000,
+    "isin": "US02156V1098",
+    "roic": null,
+    "capex": 33205000,
+    "price": 44.38,
+    "ebitda": -216798000,
+    "sector": "Utilities",
+    "symbol": "OKLO",
+    "avgPE5Y": null,
+    "peRatio": null,
+    "revenue": 1210000,
+    "taxRate": null,
+    "website": "https://www.oklo.com",
+    "industry": "Utilities - Independent Power Producers",
+    "pegRatio": null,
+    "prevYear": {
+      "ppe": 2184000,
+      "sga": 26090000,
+      "revenue": null,
+      "netIncome": -73616000,
+      "grossProfit": null,
+      "receivables": null,
+      "totalAssets": 281736000,
+      "depreciation": 268000,
+      "longTermDebt": null,
+      "currentAssets": 231939000,
+      "operatingCashFlow": -38390000,
+      "currentLiabilities": 5336000
+    },
+    "bookValue": 17.686,
+    "employees": 215,
+    "forwardPE": null,
+    "marketCap": 8255463424,
+    "netIncome": -105663000,
+    "netMargin": 0,
+    "totalCash": 2465157888,
+    "totalDebt": 3959000,
+    "analystBuy": 10,
+    "quickRatio": 47.627,
+    "shortRatio": 3.47,
+    "analystHold": 9,
+    "analystSell": 0,
+    "companyName": "Oklo Inc.",
+    "description": "Oklo Inc. develops fission power plants to provide energy at scale to customers in the United States. The company offers Aurora Powerhouse, which is designed to produce between 15 and up to 75 megawatts of electricity. It is also commercializing nuclear fuel recycling and fuel fabrication technology that can convert used nuclear fuel into usable fuel for its reactors. The company was formerly known as AltC Acquisition Corp. and changed its name to Oklo Inc. in May 2024. Oklo Inc. was founded in 2013 and is headquartered in Santa Clara, California.",
+    "epsGrowth3Y": null,
+    "grossProfit": 489000,
+    "payoutRatio": 0,
+    "receivables": null,
+    "sharesShort": 30330285,
+    "totalAssets": 1528457000,
+    "analystCount": 20,
+    "currentRatio": 48.463,
+    "debtToEquity": 0.121,
+    "depreciation": 522000,
+    "freeCashFlow": -239324880,
+    "headquarters": "Santa Clara, CA, United States",
+    "longTermDebt": null,
+    "dividendYield": null,
+    "revenueGrowth": null,
+    "earningsGrowth": null,
+    "exDividendDate": null,
+    "monthlyReturns": [
+      0.18937568341107963,
+      -0.3117421532510115,
+      -0.21470776654519583,
+      0.10953177782004517,
+      -0.20936952284089436,
+      -0.21223193722686964,
+      0.46198829959504517,
+      -0.07751727926320043,
+      -0.2175537682400202,
+      -0.25797820614614553,
+      0.14293069727907864,
+      0
+    ],
+    "workingCapital": 1228223000,
+    "dividendPayDate": null,
+    "enterpriseValue": 5794264064,
+    "fiftyTwoWeekLow": 36.61,
+    "incomeBeforeTax": -110192000,
+    "insiderBuyCount": 11,
+    "insiderBuyValue": 32724821,
+    "interestExpense": null,
+    "operatingMargin": -60.4876,
+    "targetMeanPrice": 79.875,
+    "tradingCurrency": "USD",
+    "analystStrongBuy": 5,
+    "analystTargetLow": 14,
+    "fiftyTwoWeekHigh": 193.84,
+    "incomeTaxExpense": -4529000,
+    "insiderBuyShares": 853553,
+    "insiderSellCount": 28,
+    "insiderSellValue": 162544302,
+    "nextEarningsDate": "2026-08-07",
+    "retainedEarnings": -240772000,
+    "revenueGrowthYoY": null,
+    "totalLiabilities": 52247000,
+    "analystStrongSell": 1,
+    "analystTargetHigh": 130,
+    "earningsEstimates": [
+      {
+        "epsLow": -0.3,
+        "period": "0q",
+        "endDate": "2026-09-30",
+        "epsHigh": -0.17,
+        "epsGrowth": -0.1378,
+        "epsEstimate": -0.22757,
+        "revenueGrowth": 0,
+        "revenueEstimate": 728880,
+        "numberOfAnalysts": 13
+      },
+      {
+        "epsLow": -0.33,
+        "period": "+1q",
+        "endDate": "2026-12-31",
+        "epsHigh": -0.17,
+        "epsGrowth": 0.103999995,
+        "epsEstimate": -0.24193,
+        "revenueGrowth": 0,
+        "revenueEstimate": 892530,
+        "numberOfAnalysts": 13
+      },
+      {
+        "epsLow": -1.13027,
+        "period": "0y",
+        "endDate": "2026-12-31",
+        "epsHigh": -0.77,
+        "epsGrowth": -0.3049,
+        "epsEstimate": -0.93955,
+        "revenueGrowth": 0,
+        "revenueEstimate": 2387670,
+        "numberOfAnalysts": 13
+      },
+      {
+        "epsLow": -1.44,
+        "period": "+1y",
+        "endDate": "2027-12-31",
+        "epsHigh": -0.2,
+        "epsGrowth": -0.022,
+        "epsEstimate": -0.96019,
+        "revenueGrowth": 2.2691,
+        "revenueEstimate": 7805550,
+        "numberOfAnalysts": 19
+      }
+    ],
+    "earningsSurprises": [],
+    "financialCurrency": "USD",
+    "fundamentalsStale": false,
+    "insiderSellShares": 2752242,
+    "institutionsCount": 838,
+    "lastFiscalYearEnd": "2025-12-31",
+    "mostRecentQuarter": "2026-06-30",
+    "operatingCashFlow": -116919000,
+    "quarterlyRevenues": [
+      {
+        "endDate": "2026-06-30",
+        "revenue": 1210000
+      }
+    ],
+    "sharesOutstanding": 186017650,
+    "nextDividendAmount": null,
+    "totalCurrentAssets": 1253769000,
+    "analystTargetMedian": 81.5,
+    "dataQualityWarnings": [],
+    "fundamentalsHistory": {
+      "eps": [
+        {
+          "year": 2022,
+          "value": -0.142546
+        },
+        {
+          "year": 2023,
+          "value": -0.457521
+        },
+        {
+          "year": 2024,
+          "value": -0.74
+        },
+        {
+          "year": 2025,
+          "value": -0.72
+        }
+      ],
+      "revenue": [],
+      "netIncome": [
+        {
+          "year": 2022,
+          "value": -10023891
+        },
+        {
+          "year": 2023,
+          "value": -32173000
+        },
+        {
+          "year": 2024,
+          "value": -73616000
+        },
+        {
+          "year": 2025,
+          "value": -105663000
+        }
+      ],
+      "grossProfit": [],
+      "totalAssets": [
+        {
+          "year": 2022,
+          "value": 10987425
+        },
+        {
+          "year": 2023,
+          "value": 14885000
+        },
+        {
+          "year": 2024,
+          "value": 281736000
+        },
+        {
+          "year": 2025,
+          "value": 1528457000
+        }
+      ],
+      "freeCashFlow": [
+        {
+          "year": 2022,
+          "value": -10142085
+        },
+        {
+          "year": 2023,
+          "value": -16081000
+        },
+        {
+          "year": 2024,
+          "value": -38742000
+        },
+        {
+          "year": 2025,
+          "value": -115379000
+        }
+      ],
+      "operatingIncome": [
+        {
+          "year": 2022,
+          "value": -10024811
+        },
+        {
+          "year": 2023,
+          "value": -18636000
+        },
+        {
+          "year": 2024,
+          "value": -52801000
+        },
+        {
+          "year": 2025,
+          "value": -139294000
+        }
+      ],
+      "operatingCashFlow": [
+        {
+          "year": 2022,
+          "value": -9992525
+        },
+        {
+          "year": 2023,
+          "value": -15998000
+        },
+        {
+          "year": 2024,
+          "value": -38390000
+        },
+        {
+          "year": 2025,
+          "value": -82174000
+        }
+      ],
+      "stockholdersEquity": [
+        {
+          "year": 2022,
+          "value": -28111066
+        },
+        {
+          "year": 2023,
+          "value": -34361000
+        },
+        {
+          "year": 2024,
+          "value": 250857000
+        },
+        {
+          "year": 2025,
+          "value": 1476210000
+        }
+      ]
+    },
+    "insidersPercentHeld": 0.15416999,
+    "shortPercentOfFloat": 0.186,
+    "dividendGrowthRate5Y": null,
+    "sharesShortPriorMonth": null,
+    "institutionsPercentHeld": 0.46962002,
+    "operatingCashFlowAnnual": -82174000,
+    "totalCurrentLiabilities": 25546000
+  },
+  "marketSignals": {
+    "macro": {
+      "vix": 14.95,
+      "dxyLevel": 99.66999816894531,
+      "fetchedAt": "2026-08-17T09:23:30.222Z",
+      "vixRegime": "low",
+      "hySpreadBps": 271,
+      "spy3MReturn": 0.03792966527670554,
+      "dxyChange3MPct": 0.007989491681544681,
+      "sectorEtfSymbol": "XLU",
+      "yieldCurve2Y10Y": 51,
+      "sectorEtfReturn3M": -0.006838735030247314
+    },
+    "options": {
+      "ivAtm30d": 0.8039799615294644,
+      "ivVsHv90Ratio": 0.825500895432917,
+      "putCallOIRatio": null,
+      "putCallVolumeRatio": 0.21546170365068004,
+      "nextEarningsImpliedMove": {
+        "pct": 0.08224425416854439,
+        "expirationDate": "2026-08-21"
+      }
+    },
+    "revisions": {
+      "perPeriod": [
+        {
+          "period": "0q",
+          "epsTrend": {
+            "ago7d": -0.1742,
+            "ago30d": -0.16822,
+            "ago60d": -0.16604,
+            "ago90d": -0.17462,
+            "current": -0.22757
+          },
+          "revisions": {
+            "up7d": 1,
+            "up30d": 1,
+            "up90d": null,
+            "down7d": 1,
+            "down30d": 1,
+            "down90d": null
+          },
+          "netRevision30d": 0,
+          "epsChange30dPct": -0.35281179407918195
+        },
+        {
+          "period": "+1q",
+          "epsTrend": {
+            "ago7d": -0.18833,
+            "ago30d": -0.18181,
+            "ago60d": -0.17999,
+            "ago90d": -0.19023,
+            "current": -0.24193
+          },
+          "revisions": {
+            "up7d": 1,
+            "up30d": 1,
+            "up90d": null,
+            "down7d": 1,
+            "down30d": 1,
+            "down90d": null
+          },
+          "netRevision30d": 0,
+          "epsChange30dPct": -0.3306748803696167
+        },
+        {
+          "period": "0y",
+          "epsTrend": {
+            "ago7d": -0.72503,
+            "ago30d": -0.69551,
+            "ago60d": -0.6893,
+            "ago90d": -0.7118,
+            "current": -0.93955
+          },
+          "revisions": {
+            "up7d": 0,
+            "up30d": 0,
+            "up90d": null,
+            "down7d": 2,
+            "down30d": 2,
+            "down90d": null
+          },
+          "netRevision30d": -2,
+          "epsChange30dPct": -0.3508792109387357
+        },
+        {
+          "period": "+1y",
+          "epsTrend": {
+            "ago7d": -0.83036,
+            "ago30d": -0.81848,
+            "ago60d": -0.84237,
+            "ago90d": -0.87988,
+            "current": -0.96019
+          },
+          "revisions": {
+            "up7d": 1,
+            "up30d": 2,
+            "up90d": null,
+            "down7d": 1,
+            "down30d": 1,
+            "down90d": null
+          },
+          "netRevision30d": 1,
+          "epsChange30dPct": -0.17313801192454306
+        }
+      ],
+      "analystRatingMoMDelta": {
+        "buy": 0,
+        "hold": 0,
+        "sell": 0,
+        "strongBuy": 0,
+        "strongSell": 0
+      }
+    },
+    "technicals": {
+      "hv30": 0.9035995928316392,
+      "hv90": 0.9739298478989942,
+      "atr14": 3.6134103845513676,
+      "cci20": 69.99129492907231,
+      "ema10": 44.5684983493241,
+      "ema20": 44.57645864193351,
+      "ema30": 45.80577509716108,
+      "ema50": 48.880686426893476,
+      "rsi14": 48.27208978499489,
+      "sma10": 44.561000442504884,
+      "sma20": 42.907500457763675,
+      "sma30": 44.12800038655599,
+      "sma50": 49.0170002746582,
+      "ema100": 55.74906215005558,
+      "ema200": 65.19024509353657,
+      "sma100": 56.053199996948244,
+      "sma200": 70.4843498802185,
+      "returns": {
+        "d1": -0.04456404006080849,
+        "m1": 0.06426859127440618,
+        "m3": -0.3396815701137507,
+        "m6": -0.30569458167355407,
+        "w1": -0.08343653972752882,
+        "y1": -0.4267630829534568,
+        "ytd": -0.4295629906519327
+      },
+      "atr14Pct": 0.08141979039174514,
+      "macdLine": -0.8311135614912786,
+      "stochD14": 70.52577519328148,
+      "stochK14": 67.67677605986299,
+      "rsVsSPY3M": -0.37761123539045627,
+      "macdSignal": -1.8088236145171153,
+      "momentum10": 5.549999237060547,
+      "avgVolume30": 9370666.666666666,
+      "goldenCross": false,
+      "williamsR14": -39.627031059700464,
+      "bollingerMid": 42.907500457763675,
+      "rsVsSector3M": -0.33284283508350343,
+      "macdHistogram": 0.9777100530258367,
+      "bollingerLower": 37.3184516282898,
+      "bollingerUpper": 48.49654928723755,
+      "position52WPct": 0.0549162487794983,
+      "currentVolRatio": 0.8499608708025044,
+      "distFromSMA50Pct": -0.09459981599364203,
+      "bollingerPercentB": 0.6317308772278317,
+      "distFromSMA200Pct": -0.37035666579127346,
+      "drawdownFromHighPct": -0.7451475753780589
+    }
+  },
+  "sectorMedians": {
+    "pb": 1.9146,
+    "pe": 21.55695,
+    "roe": 0.09209999999999999,
+    "roic": null,
+    "peers": [
+      "EVRG",
+      "LNT",
+      "PNW",
+      "OGE",
+      "IDA",
+      "POR",
+      "TXNM",
+      "OTTR"
+    ],
+    "netMargin": 0.14229999999999998,
+    "peerCount": 8,
+    "evToEbitda": 12.7156,
+    "priceToFCF": 59.38135,
+    "evToRevenue": 6.0343,
+    "priceToSales": 3.6182,
+    "operatingMargin": 0.2278,
+    "revenueGrowthYoY": 0.0276,
+    "forwardPriceToSales": 3.521019852082522
+  },
+  "technicalSignals": {
+    "overall": {
+      "buy": 4,
+      "sell": 10,
+      "items": [
+        {
+          "hint": "price 44.38 < SMA 10 44.56",
+          "name": "SMA 10",
+          "value": 44.561000442504884,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 > SMA 20 42.91",
+          "name": "SMA 20",
+          "value": 42.907500457763675,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 44.38 > SMA 30 44.13",
+          "name": "SMA 30",
+          "value": 44.12800038655599,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 44.38 < SMA 50 49.02",
+          "name": "SMA 50",
+          "value": 49.0170002746582,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < SMA 100 56.05",
+          "name": "SMA 100",
+          "value": 56.053199996948244,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < SMA 200 70.48",
+          "name": "SMA 200",
+          "value": 70.4843498802185,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 10 44.57",
+          "name": "EMA 10",
+          "value": 44.5684983493241,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 20 44.58",
+          "name": "EMA 20",
+          "value": 44.57645864193351,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 30 45.81",
+          "name": "EMA 30",
+          "value": 45.80577509716108,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 50 48.88",
+          "name": "EMA 50",
+          "value": 48.880686426893476,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 100 55.75",
+          "name": "EMA 100",
+          "value": 55.74906215005558,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 200 65.19",
+          "name": "EMA 200",
+          "value": 65.19024509353657,
+          "signal": "sell"
+        },
+        {
+          "hint": "48.3 in 30–70 → neutral",
+          "name": "RSI (14)",
+          "value": 48.27208978499489,
+          "signal": "neutral"
+        },
+        {
+          "hint": "%K 67.7 vs %D 70.5 (oversold <20, overbought >80)",
+          "name": "Stochastic %K (14)",
+          "value": 67.67677605986299,
+          "signal": "neutral"
+        },
+        {
+          "hint": "line -0.83 > signal -1.81",
+          "name": "MACD (12,26,9)",
+          "value": 0.9777100530258367,
+          "signal": "buy"
+        },
+        {
+          "hint": "70.0 in ±100 → neutral",
+          "name": "CCI (20)",
+          "value": 69.99129492907231,
+          "signal": "neutral"
+        },
+        {
+          "hint": "-39.6 in −80…−20 → neutral",
+          "name": "Williams %R (14)",
+          "value": -39.627031059700464,
+          "signal": "neutral"
+        },
+        {
+          "hint": "positive (5.55)",
+          "name": "Momentum (10)",
+          "value": 5.549999237060547,
+          "signal": "buy"
+        },
+        {
+          "hint": "0.63 in band",
+          "name": "Bollinger %B",
+          "value": 0.6317308772278317,
+          "signal": "neutral"
+        }
+      ],
+      "score": -0.19047619047619047,
+      "neutral": 5,
+      "verdict": "SELL"
+    },
+    "oscillators": {
+      "buy": 2,
+      "sell": 0,
+      "items": [
+        {
+          "hint": "48.3 in 30–70 → neutral",
+          "name": "RSI (14)",
+          "value": 48.27208978499489,
+          "signal": "neutral"
+        },
+        {
+          "hint": "%K 67.7 vs %D 70.5 (oversold <20, overbought >80)",
+          "name": "Stochastic %K (14)",
+          "value": 67.67677605986299,
+          "signal": "neutral"
+        },
+        {
+          "hint": "line -0.83 > signal -1.81",
+          "name": "MACD (12,26,9)",
+          "value": 0.9777100530258367,
+          "signal": "buy"
+        },
+        {
+          "hint": "70.0 in ±100 → neutral",
+          "name": "CCI (20)",
+          "value": 69.99129492907231,
+          "signal": "neutral"
+        },
+        {
+          "hint": "-39.6 in −80…−20 → neutral",
+          "name": "Williams %R (14)",
+          "value": -39.627031059700464,
+          "signal": "neutral"
+        },
+        {
+          "hint": "positive (5.55)",
+          "name": "Momentum (10)",
+          "value": 5.549999237060547,
+          "signal": "buy"
+        },
+        {
+          "hint": "0.63 in band",
+          "name": "Bollinger %B",
+          "value": 0.6317308772278317,
+          "signal": "neutral"
+        }
+      ],
+      "score": 0.2857142857142857,
+      "neutral": 5,
+      "verdict": "BUY"
+    },
+    "movingAverages": {
+      "buy": 2,
+      "sell": 10,
+      "items": [
+        {
+          "hint": "price 44.38 < SMA 10 44.56",
+          "name": "SMA 10",
+          "value": 44.561000442504884,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 > SMA 20 42.91",
+          "name": "SMA 20",
+          "value": 42.907500457763675,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 44.38 > SMA 30 44.13",
+          "name": "SMA 30",
+          "value": 44.12800038655599,
+          "signal": "buy"
+        },
+        {
+          "hint": "price 44.38 < SMA 50 49.02",
+          "name": "SMA 50",
+          "value": 49.0170002746582,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < SMA 100 56.05",
+          "name": "SMA 100",
+          "value": 56.053199996948244,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < SMA 200 70.48",
+          "name": "SMA 200",
+          "value": 70.4843498802185,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 10 44.57",
+          "name": "EMA 10",
+          "value": 44.5684983493241,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 20 44.58",
+          "name": "EMA 20",
+          "value": 44.57645864193351,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 30 45.81",
+          "name": "EMA 30",
+          "value": 45.80577509716108,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 50 48.88",
+          "name": "EMA 50",
+          "value": 48.880686426893476,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 100 55.75",
+          "name": "EMA 100",
+          "value": 55.74906215005558,
+          "signal": "sell"
+        },
+        {
+          "hint": "price 44.38 < EMA 200 65.19",
+          "name": "EMA 200",
+          "value": 65.19024509353657,
+          "signal": "sell"
+        }
+      ],
+      "score": -0.6666666666666666,
+      "neutral": 0,
+      "verdict": "STRONG SELL"
+    }
+  },
+  "rates": {
+    "riskFreeRate": 0.0518,
+    "aaaBondYield": 0.0613,
+    "equityRiskPremium": 0.0409,
+    "creditSpreads": {
+      "AAA": 0.004,
+      "AA": 0.0058,
+      "A": 0.0067,
+      "BBB": 0.0097,
+      "BB": 0.016399999999999998,
+      "B": 0.0286,
+      "CCC": 0.1112
+    },
+    "localRiskFreeRates": {
+      "EUR": 0.0318,
+      "GBP": 0.049886,
+      "CHF": 0.004699999999999999,
+      "JPY": 0.0294,
+      "CAD": 0.03675,
+      "AUD": 0.05015,
+      "SEK": 0.030231400000000002,
+      "NOK": 0.0428635,
+      "DKK": 0.0301,
+      "KRW": 0.042859999999999995
+    }
+  }
+}

@@ -19,6 +19,15 @@
  *     t-statistic uses only non-overlapping windows, which is the count that
  *     actually carries information.
  *
+ *   - **Within sectors as well.** A score that likes banks is right in a year
+ *     banks rally and says nothing about which bank to own. The sector-neutral
+ *     IC ranks each stock against its own sector and each return against its
+ *     sector's mean, so an industry bet cannot pass for stock picking.
+ *   - **In one currency.** Returns are measured against the S&P 500 in dollars,
+ *     so the caller converts every other listing to dollars first
+ *     (`inCommonCurrency`). A Paris listing measured in euros against a dollar
+ *     index credits the score with the exchange rate.
+ *
  * Point in time: a signal is read from observations dated strictly *before*
  * the formation day and the return runs from that day's close, so nothing the
  * score saw can be part of the return it is credited with.
@@ -47,6 +56,8 @@ export interface EvaluationInput {
   horizons:  number[];
   /** Signal whose `text` is the verdict label, for the per-label returns. */
   labelKey?: string;
+  /** symbol → sector, for the sector-neutral IC; left out, it is not computed. */
+  sectors?:  Map<string, string>;
 }
 
 export interface IcSummary {
@@ -57,8 +68,13 @@ export interface IcSummary {
   /** Non-overlapping windows — the sample size the t-statistic rests on. */
   independent:      number;
   meanIc:           number | null;
+  /** Standard error of the mean IC, from the non-overlapping windows. */
+  se:               number | null;
   /** Mean IC over non-overlapping windows divided by its standard error. */
   tStat:            number | null;
+  /** Mean rank IC within sectors (`sectorNeutralIc`); null without sectors. */
+  neutralIc:        number | null;
+  neutralTStat:     number | null;
   /** Share of formation days with a positive IC. */
   hitRate:          number | null;
   /** Mean excess return of the top third minus the bottom third, per window. */
@@ -94,6 +110,13 @@ export const MIN_CROSS_SECTION = 10;
 
 /** Non-overlapping windows needed before a t-statistic is reported at all. */
 export const MIN_INDEPENDENT = 3;
+
+/**
+ * Fewest stocks of one sector in a cross-section before the sector counts in
+ * the sector-neutral IC. Two is the least that can be ranked against each
+ * other; a sector of one has nothing to be neutral against.
+ */
+export const MIN_SECTOR_SIZE = 2;
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -136,6 +159,63 @@ export function spearman(x: number[], y: number[]): number | null {
 
 function mean(xs: number[]): number | null {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+}
+
+/** Mean, standard error and t of a sample of independent ICs; null below `MIN_INDEPENDENT`. */
+function meanTest(xs: number[]): { se: number | null; t: number | null } {
+  const m = mean(xs);
+  if (m === null || xs.length < MIN_INDEPENDENT) return { se: null, t: null };
+  const sd = Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1));
+  const se = sd / Math.sqrt(xs.length);
+  return { se, t: se > 0 ? m / se : null };
+}
+
+/**
+ * Rank IC within sectors, pooled.
+ *
+ * Each stock's signal becomes its centred percentile among its own sector's
+ * stocks and each return its distance from the sector's mean, and the two are
+ * rank-correlated across all sectors at once. A sector that did well as a
+ * whole, and happened to score well as a whole, contributes nothing; a sector
+ * in which the higher scores did better contributes, whatever the sector did.
+ */
+export function sectorNeutralIc(
+  xs: number[], ys: number[], sectors: (string | null | undefined)[],
+): number | null {
+  const groups = new Map<string, number[]>();
+  sectors.forEach((s, i) => {
+    if (!s) return;
+    const g = groups.get(s) ?? [];
+    g.push(i);
+    groups.set(s, g);
+  });
+  const nx: number[] = [];
+  const ny: number[] = [];
+  for (const idx of groups.values()) {
+    if (idx.length < MIN_SECTOR_SIZE) continue;
+    const r = ranks(idx.map((i) => xs[i]));
+    const my = mean(idx.map((i) => ys[i]))!;
+    idx.forEach((i, k) => {
+      nx.push((r[k] - (idx.length + 1) / 2) / idx.length);
+      ny.push(ys[i] - my);
+    });
+  }
+  return nx.length >= MIN_CROSS_SECTION ? spearman(nx, ny) : null;
+}
+
+/**
+ * Closes restated in another currency: each close times the exchange rate of
+ * its session (the last one at or before it), in units of the target currency
+ * per unit of the listing's. Sessions before the first rate are dropped rather
+ * than guessed.
+ */
+export function inCommonCurrency(closes: Close[], fx: Close[]): Close[] {
+  const out: Close[] = [];
+  for (const c of closes) {
+    const rate = closeAtOrBefore(fx, c.date);
+    if (rate !== null && rate > 0) out.push({ date: c.date, close: c.close * rate });
+  }
+  return out;
 }
 
 /**
@@ -202,7 +282,7 @@ function windowsFor(benchmark: Close[], h: number, firstSignal: string): Window[
 }
 
 export function evaluate(input: EvaluationInput): Evaluation {
-  const { signals, prices, benchmark, horizons, labelKey } = input;
+  const { signals, prices, benchmark, horizons, labelKey, sectors } = input;
 
   let first: string | null = null;
   let last: string | null = null;
@@ -229,10 +309,13 @@ export function evaluate(input: EvaluationInput): Evaluation {
       if (key === labelKey) continue;
       const daily: { ic: number; spread: number | null; n: number }[] = [];
       const independent: number[] = [];
+      const neutralDaily: number[] = [];
+      const neutralIndependent: number[] = [];
 
       windows.forEach((w, i) => {
         const xs: number[] = [];
         const ys: number[] = [];
+        const ss: (string | undefined)[] = [];
         for (const [symbol, points] of bySymbol) {
           const v = valueBefore(points, w.day)?.value;
           if (v == null || !Number.isFinite(v)) continue;
@@ -240,10 +323,19 @@ export function evaluate(input: EvaluationInput): Evaluation {
           if (r === null) continue;
           xs.push(v);
           ys.push(r - w.bench);
+          ss.push(sectors?.get(symbol));
         }
         if (xs.length < MIN_CROSS_SECTION) return;
         const ic = spearman(xs, ys);
         if (ic === null) return;
+
+        if (sectors) {
+          const neutral = sectorNeutralIc(xs, ys, ss);
+          if (neutral !== null) {
+            neutralDaily.push(neutral);
+            if (i % h === 0) neutralIndependent.push(neutral);
+          }
+        }
 
         // Terciles by the signal's rank; the spread is what a long-top,
         // short-bottom book would have earned, before any cost.
@@ -256,21 +348,17 @@ export function evaluate(input: EvaluationInput): Evaluation {
         if (i % h === 0) independent.push(ic);
       });
 
-      const m = mean(independent);
-      let tStat: number | null = null;
-      if (m !== null && independent.length >= MIN_INDEPENDENT) {
-        const sd = Math.sqrt(
-          independent.reduce((a, x) => a + (x - m) ** 2, 0) / (independent.length - 1),
-        );
-        tStat = sd > 0 ? m / (sd / Math.sqrt(independent.length)) : null;
-      }
+      const test = meanTest(independent);
 
       ics.push({
         key, horizon: h,
         days:             daily.length,
         independent:      independent.length,
         meanIc:           mean(daily.map((d) => d.ic)),
-        tStat,
+        se:               test.se,
+        tStat:            test.t,
+        neutralIc:        mean(neutralDaily),
+        neutralTStat:     meanTest(neutralIndependent).t,
         hitRate:          daily.length ? daily.filter((d) => d.ic > 0).length / daily.length : null,
         spread:           mean(daily.map((d) => d.spread).filter((s): s is number => s !== null)),
         meanCrossSection: mean(daily.map((d) => d.n)),
@@ -299,4 +387,57 @@ export function evaluate(input: EvaluationInput): Evaluation {
   }
 
   return { from: first, to: last, symbols: symbols.size, ics, labels };
+}
+
+// ── What the evidence says about the weights ─────────────────────────────────
+
+/**
+ * How large a rank IC is at all, as a prior: well-documented factors run at
+ * 0.02–0.06 over a month, and 0.10 would be exceptional.
+ */
+export const IC_PRIOR_SD = 0.05;
+
+export interface WeightSuggestion {
+  key:         string;
+  current:     number;
+  suggested:   number;
+  /** Measured mean IC; null when the pillar was not measured at this horizon. */
+  ic:          number | null;
+  /** The IC shrunk towards zero by its own uncertainty — what the tilt reads. */
+  shrunkIc:    number;
+  independent: number;
+}
+
+/**
+ * Pillar weights the evidence argues for, starting from the ones set by judgment.
+ *
+ * Each pillar's measured IC is shrunk towards zero by how uncertain it is —
+ * `ic × τ² / (τ² + se²)`, the posterior mean under a normal prior of width τ —
+ * and tilts its weight by `1 + shrunk / τ`. A pillar measured at one prior
+ * width of skill doubles, one measured at minus that width drops out, and one
+ * measured over a handful of windows barely moves. The result is renormalised
+ * to the total the weights had before.
+ *
+ * A suggestion, never applied: the weights are the scoring model, and a model
+ * refitted to its own recent returns stops being a test of anything. Someone
+ * reads it, and a change to `PILLAR_WEIGHTS` is a commit.
+ */
+export function suggestWeights(
+  current: Record<string, number>, ics: IcSummary[], horizon: number, keyOf: (name: string) => string,
+): WeightSuggestion[] {
+  const rows = Object.entries(current).map(([key, w]) => {
+    const r = ics.find((x) => x.key === keyOf(key) && x.horizon === horizon);
+    const shrunkIc = r?.meanIc != null && r.se != null
+      ? r.meanIc * IC_PRIOR_SD ** 2 / (IC_PRIOR_SD ** 2 + r.se ** 2)
+      : 0;
+    return {
+      key, current: w, ic: r?.meanIc ?? null, shrunkIc, independent: r?.independent ?? 0,
+      tilted: w * Math.max(0, 1 + shrunkIc / IC_PRIOR_SD),
+    };
+  });
+  const total = rows.reduce((a, r) => a + r.current, 0);
+  const tiltedTotal = rows.reduce((a, r) => a + r.tilted, 0);
+  return rows.map(({ tilted, ...r }) => ({
+    ...r, suggested: tiltedTotal > 0 ? (tilted / tiltedTotal) * total : r.current,
+  }));
 }

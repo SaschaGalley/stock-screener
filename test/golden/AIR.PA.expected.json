@@ -1,0 +1,93 @@
+{
+  "price": 193.62,
+  "dcf": {
+    "fairValue": 154.811,
+    "p10": 82.1434,
+    "p50": 136.683,
+    "p90": 238.348,
+    "aboveprice": 0.208984,
+    "wacc": 0.0658495,
+    "terminalWacc": 0.0689078,
+    "terminalGrowth": 0.0318,
+    "targetMargin": 0.0731576,
+    "salesToCapital": 2.82507
+  },
+  "reverseDcf": {
+    "impliedGrowth": 0.193346,
+    "requiredMargin": 0.0874
+  },
+  "models": {
+    "grahamNumber": 69.9651,
+    "grahamRevised": 270.568,
+    "lynch": 139.516,
+    "ddm": 176.381,
+    "epv": 80.3286,
+    "rim": 146.72,
+    "peers": null
+  },
+  "composite": {
+    "primary": {
+      "median": 154.811,
+      "models": {
+        "DCF (Revenue-Driven)": {
+          "value": 154.811,
+          "weight": 1
+        },
+        "Peter Lynch": {
+          "value": 139.516,
+          "weight": 0.5
+        },
+        "Analyst Consensus": {
+          "value": 230.957,
+          "weight": 1
+        }
+      }
+    },
+    "conservative": {
+      "median": 146.72,
+      "models": {
+        "Graham Number": {
+          "value": 69.9651,
+          "weight": 1
+        },
+        "Graham Revised V*": {
+          "value": 270.568,
+          "weight": 1
+        },
+        "EPV (Greenwald)": {
+          "value": 80.3286,
+          "weight": 1
+        },
+        "Excess Return (RIM)": {
+          "value": 146.72,
+          "weight": 1
+        },
+        "DDM (Two-Stage)": {
+          "value": 176.381,
+          "weight": 1
+        }
+      }
+    }
+  },
+  "health": {
+    "piotroski": 8,
+    "altmanZ": 1.86589,
+    "beneish": -2.53068,
+    "coverage": 6.8
+  },
+  "factor": {
+    "score": 5.6,
+    "raw": 5.54512,
+    "verdict": "HOLD",
+    "confidence": 0.901,
+    "agreement": 0.314,
+    "pillars": {
+      "valuation": 3.01967,
+      "quality": 6.10997,
+      "health": 6.00185,
+      "consensus": 7.17373,
+      "momentum": 7.16943,
+      "revisions": 7.23943
+    }
+  }
+}

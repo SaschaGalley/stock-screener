@@ -23,14 +23,16 @@
 import { readAppConfig } from '../../app-config.js';
 import { finishRun, JobStepResult, pruneRuns, recordRunSteps, setRunSymbol, startRun } from '../../db/admin.js';
 import {
-  isVerdictStale, newestAnalysisAges, runAnalysisStep, runDataStep, runDistillStep, scheduledSymbols,
+  isVerdictStale, newestAnalysisAges, runAnalysisStep, runDataStep, runDistillStep, runReferenceStep,
+  scheduledSymbols,
 } from '../../pipeline/steps.js';
 import { syncWatchlistDossiers } from '../../distill-dossiers.js';
+import { referenceBatch } from '../../universe.js';
 import { logger } from '../../utils/logger.js';
 import { getHatchet } from '../client.js';
 import {
   analysisGate, distillGate,
-  FINNHUB_UNITS_PER_SYMBOL, YAHOO_UNITS_PER_SYMBOL,
+  FINNHUB_UNITS_PER_REFERENCE, FINNHUB_UNITS_PER_SYMBOL, YAHOO_UNITS_PER_SYMBOL,
 } from '../limits.js';
 
 const hatchet = getHatchet();
@@ -40,6 +42,10 @@ const hatchet = getHatchet();
 const DATA_RETRIES     = 3;
 const DISTILL_RETRIES  = 3;
 const ANALYSIS_RETRIES = 2;
+// A reference symbol that fails keeps its old place in the rotation and comes
+// round again; retrying it tonight spends the rate limit the rest of the
+// universe is queueing for.
+const REFERENCE_RETRIES = 1;
 
 /**
  * How long a task may take before Hatchet decides the worker lost it.
@@ -181,6 +187,25 @@ export const analysisTask = hatchet.task<SymbolInput, StepOutput>({
   },
 });
 
+/** A member of the reference universe: the slimmed data step, on the data step's budgets. */
+export const referenceTask = hatchet.task<SymbolInput, StepOutput>({
+  name:    'reference',
+  retries: REFERENCE_RETRIES,
+  executionTimeout: DATA_TIMEOUT,
+  scheduleTimeout:  QUEUE_TIMEOUT,
+  rateLimits: [
+    { staticKey: 'finnhub', units: FINNHUB_UNITS_PER_REFERENCE },
+    { staticKey: 'yahoo',   units: YAHOO_UNITS_PER_SYMBOL },
+  ],
+  fn: async (input, ctx) => {
+    const config = await readAppConfig();
+    return settle(
+      await runReferenceStep(config, input.symbol, input.runId),
+      input.runId, input.symbol, ctx, REFERENCE_RETRIES,
+    );
+  },
+});
+
 /**
  * One symbol through all three stages, in order.
  *
@@ -210,10 +235,12 @@ export type PipelineInput = {
 };
 
 export type PipelineOutput = {
-  runId:    number;
-  symbols:  number;
-  analysed: number;
-  failed:   number;
+  runId:     number;
+  symbols:   number;
+  analysed:  number;
+  failed:    number;
+  /** Reference symbols refreshed after the watchlist. */
+  reference: number;
 };
 
 export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
@@ -235,6 +262,11 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
     const symbols = input.symbols.length
       ? input.symbols.map((s) => s.toUpperCase())
       : await scheduledSymbols(config);
+    // Only after a full run, as in the in-process scheduler.
+    const reference = input.symbols.length ? [] : await referenceBatch(config).catch((e) => {
+      logger.warn(`Reference universe unavailable: ${(e as Error).message}`);
+      return [] as string[];
+    });
 
     // One query for the whole fan-out. Asking per symbol was affordable inside
     // a serial loop; deciding the shape of a fan-out up front is not.
@@ -243,7 +275,8 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
 
     const runId = await startRun(input.trigger);
     const opening = `Run ${runId} (${input.trigger}) — ${symbols.length} symbol(s), `
-      + `${stale.length} due for analysis`;
+      + `${stale.length} due for analysis`
+      + `${reference.length ? `, then ${reference.length} of the reference universe` : ''}`;
     logger.info(`Pipeline ${opening}`);
     await Promise.resolve(ctx.log(opening)).catch(() => { /* ignore */ });
 
@@ -278,6 +311,18 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
           if (step?.status === 'failed') failed++;
         }
       }
+
+      // The universe after the watchlist has settled, never beside it: the
+      // watchlist is what someone reads in the morning, and the two draw on
+      // the same Yahoo and Finnhub budgets. Its failures do not make the run
+      // partial — the rotation comes round to a failed symbol again.
+      const refs = await Promise.allSettled(reference.map((symbol) => referenceTask.run(
+        { symbol, runId, ageDays: null },
+        { additionalMetadata: { symbol, runId: String(runId), trigger: input.trigger } },
+      )));
+      const refFailed = refs.filter((r) => r.status === 'rejected' || r.value?.status === 'failed').length;
+      if (refFailed > 0) logger.warn(`Run ${runId}: ${refFailed} of ${reference.length} reference refreshes failed`);
+
       await finishRun(runId, failed > 0 ? 'partial' : 'ok');
       await Promise.resolve(ctx.log(
         `Run ${runId} finished — ${symbols.length} symbol(s), ${failed} failed step(s)`,
@@ -299,6 +344,6 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
       await pruneRuns().catch(() => { /* retention is best effort */ });
     }
 
-    return { runId, symbols: symbols.length, analysed: stale.length, failed };
+    return { runId, symbols: symbols.length, analysed: stale.length, failed, reference: reference.length };
   },
 });

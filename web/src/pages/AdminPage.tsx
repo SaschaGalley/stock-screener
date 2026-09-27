@@ -391,6 +391,36 @@ export default function AdminPage({ onClose }: Props) {
           </Card>
         </div>
 
+        {/* ── Referenzuniversum ──────────────────────────────────────────── */}
+        <Card
+          title={`Referenzuniversum (${meta.referenceSymbols} gespeichert)`}
+          hint="Der S&P 500, nach der Watchlist rotierend aktualisiert und nur mit Zahlen bewertet — die Grundgesamtheit für Kalibrierung und Auswertung. Erscheint nie in der Liste, wird nie analysiert."
+        >
+          <Toggle
+            checked={config.universe.enabled}
+            onChange={(v) => patch((d) => { d.universe.enabled = v; })}
+            label="Referenzuniversum pflegen"
+            hint="Nur bei vollständigen Läufen, nicht bei einzeln gestarteten Aktien."
+          />
+          <div className="flex items-center gap-2">
+            <label className="text-[11px] text-ink-400">Pro Nacht</label>
+            <input
+              type="number"
+              min={0}
+              max={600}
+              value={config.universe.batchSize}
+              onChange={(e) => patch((d) => {
+                d.universe.batchSize = Math.max(0, Math.min(600, Math.round(Number(e.target.value) || 0)));
+              })}
+              className={`${inputCls} w-20 text-right font-mono`}
+            />
+            <span className="text-[11px] text-ink-500">
+              Aktien{config.universe.batchSize > 0 && meta.universeSize > 0
+                && ` · jede der ${meta.universeSize} etwa alle ${Math.max(1, Math.round(meta.universeSize / config.universe.batchSize))} Nächte`}
+            </span>
+          </div>
+        </Card>
+
         {/* ── Watchlist ──────────────────────────────────────────────────── */}
         <Card
           title={`Watchlist (${watchedCount}/${meta.symbols.length})`}
@@ -473,6 +503,7 @@ export default function AdminPage({ onClose }: Props) {
                 {fmtDuration(jobs.current.startedAt, null)} ·{' '}
                 <span className="text-ink-500">
                   Daten {jobs.current.totals.data} · Distill {jobs.current.totals.distill} · Analyse {jobs.current.totals.analysis}
+                  {jobs.current.totals.reference > 0 && ` · Referenz ${jobs.current.totals.reference}`}
                 </span>
                 {jobs.current.totals.failed > 0 && (
                   <span className="text-red-400"> · {jobs.current.totals.failed} Fehler</span>
@@ -547,6 +578,7 @@ function RunRow({ run, expanded, onToggle }: { run: JobRun; expanded: boolean; o
         <span className="shrink-0 rounded border border-ink-700 px-1 text-[10px] text-ink-500">{run.trigger}</span>
         <span className="truncate text-[11px] text-ink-500">
           {run.symbols.length}/{run.totals.symbols} Aktien · Daten {run.totals.data} · Distill {run.totals.distill} · Analyse {run.totals.analysis}
+          {run.totals.reference > 0 && ` · Referenz ${run.totals.reference}`}
           {run.totals.failed > 0 && <span className="text-red-400"> · {run.totals.failed} Fehler</span>}
         </span>
         <span className="ml-auto shrink-0 text-[11px] text-ink-500">{fmtDuration(run.startedAt, run.finishedAt)}</span>

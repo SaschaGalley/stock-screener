@@ -101,7 +101,32 @@ export interface MacroBundle {
   sectorBars: DailyBar[] | null;
 }
 
-export async function getMacroBundle(
+/**
+ * How long one market reading is shared. VIX, the index, the dollar and a
+ * sector ETF are the same for every stock refreshed in the same half hour, and
+ * a night that refreshes a hundred reference stocks used to fetch them a
+ * hundred times.
+ */
+const MACRO_TTL_MS = 30 * 60_000;
+const macroMemo = new Map<string, { at: number; value: Promise<MacroBundle> }>();
+
+export function getMacroBundle(
+  sector: string | null,
+  fredApiKey: string | null,
+): Promise<MacroBundle> {
+  const key = `${sectorToEtf(sector) ?? '-'}|${fredApiKey ? 'fred' : '-'}`;
+  const hit = macroMemo.get(key);
+  if (hit && Date.now() - hit.at < MACRO_TTL_MS) return hit.value;
+  const entry = { at: Date.now(), value: fetchMacroBundle(sector, fredApiKey) };
+  // The fetches report failure as an empty series; an index that did not load
+  // is not a reading to share for half an hour.
+  const forget = () => { if (macroMemo.get(key) === entry) macroMemo.delete(key); };
+  entry.value.then((b) => { if (b.spyBars.length === 0) forget(); }, forget);
+  macroMemo.set(key, entry);
+  return entry.value;
+}
+
+async function fetchMacroBundle(
   sector: string | null,
   fredApiKey: string | null,
 ): Promise<MacroBundle> {

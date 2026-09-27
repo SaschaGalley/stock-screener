@@ -1,0 +1,81 @@
+{
+  "price": 45.89,
+  "dcf": {
+    "fairValue": 51.722,
+    "p10": 34.2043,
+    "p50": 48.2317,
+    "p90": 69.7698,
+    "aboveprice": 0.546875,
+    "wacc": 0.0803554,
+    "terminalWacc": 0.0877371,
+    "terminalGrowth": 0.0259,
+    "targetMargin": 0.397439,
+    "salesToCapital": 1.13914
+  },
+  "reverseDcf": {
+    "impliedGrowth": -0.03108,
+    "requiredMargin": 0.353417
+  },
+  "models": {
+    "grahamNumber": 23.6871,
+    "grahamRevised": 100.263,
+    "lynch": null,
+    "ddm": 102.981,
+    "epv": 43.4428,
+    "rim": 101.493,
+    "peers": null
+  },
+  "composite": {
+    "primary": {
+      "median": 49.3869,
+      "models": {
+        "DCF (Revenue-Driven)": {
+          "value": 51.722,
+          "weight": 1
+        },
+        "Analyst Consensus": {
+          "value": 47.1572,
+          "weight": 1
+        }
+      }
+    },
+    "conservative": {
+      "median": 100.263,
+      "models": {
+        "Graham Revised V*": {
+          "value": 100.263,
+          "weight": 1
+        },
+        "EPV (Greenwald)": {
+          "value": 43.4428,
+          "weight": 1
+        },
+        "DDM (Two-Stage)": {
+          "value": 102.981,
+          "weight": 1
+        }
+      }
+    }
+  },
+  "health": {
+    "piotroski": 4,
+    "altmanZ": 2.81482,
+    "beneish": -2.58129,
+    "coverage": 30.3442
+  },
+  "factor": {
+    "score": 6.9,
+    "raw": 6.36577,
+    "verdict": "BUY",
+    "confidence": 0.888,
+    "agreement": 0.787,
+    "pillars": {
+      "valuation": 6.90874,
+      "quality": 5.48483,
+      "health": 9.06083,
+      "consensus": 4.86075,
+      "momentum": 3.36517,
+      "revisions": 7.71429
+    }
+  }
+}

@@ -106,6 +106,17 @@ export const AppConfigSchema = z.object({
    * the nightly run without anyone having to remember to enable it.
    */
   watchlist: z.record(z.string(), z.boolean()).default({}),
+
+  /**
+   * The reference universe (`src/universe.ts`): the S&P 500, refreshed on a
+   * rotation after the watchlist and scored on the numbers alone, so that the
+   * calibration and the evaluation have a population to read the score against.
+   */
+  universe: z.object({
+    enabled:   z.boolean().default(true),
+    /** Reference symbols refreshed per night; the index comes round every 500 / batchSize nights. */
+    batchSize: z.number().int().min(0).max(600).default(100),
+  }).prefault({}),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -143,13 +154,9 @@ function repair(raw: unknown): AppConfig {
     const result = shape.safeParse(obj[key]);
     return (result.success ? result.data : DEFAULT_APP_CONFIG[key]) as AppConfig[K];
   };
-  return {
-    schedule:  section('schedule'),
-    steps:      section('steps'),
-    perplexity: section('perplexity'),
-    scoring:    section('scoring'),
-    watchlist:  section('watchlist'),
-  };
+  // Every section of the schema, so a new one is repaired without being listed here.
+  const keys = Object.keys(AppConfigSchema.shape) as (keyof AppConfig)[];
+  return Object.fromEntries(keys.map((k) => [k, section(k)])) as AppConfig;
 }
 
 /** Persist a full config. Returns what was actually written. */

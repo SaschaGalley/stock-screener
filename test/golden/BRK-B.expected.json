@@ -1,0 +1,81 @@
+{
+  "price": 499.62,
+  "dcf": {
+    "fairValue": null,
+    "p10": null,
+    "p50": null,
+    "p90": null,
+    "aboveprice": null,
+    "wacc": null,
+    "terminalWacc": null,
+    "terminalGrowth": 0.0518,
+    "targetMargin": null,
+    "salesToCapital": null
+  },
+  "reverseDcf": {
+    "impliedGrowth": null,
+    "requiredMargin": null
+  },
+  "models": {
+    "grahamNumber": 485.684,
+    "grahamRevised": 190.863,
+    "lynch": null,
+    "ddm": null,
+    "epv": null,
+    "rim": 694.823,
+    "peers": 1092.55
+  },
+  "composite": {
+    "primary": {
+      "median": 694.823,
+      "models": {
+        "Excess Return (RIM)": {
+          "value": 694.823,
+          "weight": 1
+        },
+        "Peer Multiples": {
+          "value": 1092.55,
+          "weight": 1
+        },
+        "Analyst Consensus": {
+          "value": 547.667,
+          "weight": 1
+        }
+      }
+    },
+    "conservative": {
+      "median": 304.465,
+      "models": {
+        "Graham Number": {
+          "value": 485.684,
+          "weight": 1
+        },
+        "Graham Revised V*": {
+          "value": 190.863,
+          "weight": 1
+        }
+      }
+    }
+  },
+  "health": {
+    "piotroski": 3,
+    "altmanZ": null,
+    "beneish": -2.41928,
+    "coverage": 17.2673
+  },
+  "factor": {
+    "score": 6.5,
+    "raw": 6.1761,
+    "verdict": "BUY",
+    "confidence": 0.856,
+    "agreement": 0.719,
+    "pillars": {
+      "valuation": 5.71364,
+      "quality": 3.84935,
+      "health": 10,
+      "consensus": 5.77731,
+      "momentum": 5.00544,
+      "revisions": 8.25
+    }
+  }
+}

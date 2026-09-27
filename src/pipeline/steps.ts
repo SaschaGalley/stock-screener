@@ -153,6 +153,36 @@ export async function runDataStep(
   }
 }
 
+/**
+ * A member of the reference universe: the data the factor score reads, and the
+ * score. Governed by the data step's switch, since it is that step on a diet.
+ */
+export async function runReferenceStep(
+  config: AppConfig, symbol: string, runId: number,
+): Promise<JobStepResult> {
+  if (!config.steps.data.enabled) return result('reference', 'skipped', 'data step disabled', 0);
+  try {
+    const { detail, ms } = await timed(async () => {
+      const data = await refreshStockData(symbol, { reference: true, runId });
+      const c = data.scoreCard;
+      return `${fmtPrice(data.financials.price, data.financials.tradingCurrency)} · `
+        + `${c.final.verdict} ${c.factor.score.toFixed(1)}`;
+    });
+    return result('reference', 'ok', detail, ms);
+  } catch (e) {
+    return result('reference', 'failed', (e as Error).message, 0);
+  }
+}
+
+/**
+ * Whether a run's steps call for a look: any failed watchlist step. A reference
+ * refresh that fails — a ticker that left the exchange, a Yahoo hiccup — is
+ * retried by the rotation and is nobody's morning problem.
+ */
+export function needsAttention(steps: JobStepResult[]): boolean {
+  return steps.some((s) => s.status === 'failed' && s.step !== 'reference');
+}
+
 /** Distill: the rolling dossiers for the company and its sectors, with the
  *  briefing as a paid fallback only in `refresh` mode. */
 export async function runDistillStep(

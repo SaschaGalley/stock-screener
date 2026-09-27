@@ -52,6 +52,14 @@ export async function lastGoodSectorMedians(symbol: string): Promise<SectorMedia
 const inFlight = new Map<string, Promise<SectorMedians | null>>();
 
 /**
+ * How long a reference symbol's peer medians are reused. A peer group moves
+ * slowly, a fresh reading costs up to nineteen Finnhub requests, and the
+ * universe is several hundred stocks against a 60/min budget — so a reference
+ * symbol reads its peers once a month, where a watchlist stock reads them daily.
+ */
+export const REFERENCE_PEER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
  * Peer medians for a symbol, from cache when fresh.
  *
  * Returns null instead of throwing — every caller treats peer data as optional
@@ -66,10 +74,11 @@ export async function getSectorMediansCached(
   symbol: string,
   apiKey: string | undefined,
   financials?: StockFinancials | null,
+  maxAgeMs?: number,
 ): Promise<SectorMedians | null> {
   if (!apiKey) return null;
 
-  const stored = await readSectorMedians(symbol);
+  const stored = await readSectorMedians(symbol, maxAgeMs);
   if (isPeerReading(stored)) return hasPeers(stored) ? stored : null;
 
   const pending = inFlight.get(symbol);

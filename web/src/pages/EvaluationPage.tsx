@@ -13,9 +13,15 @@ import { RECOMMENDATIONS } from '../../../src/verdict';
  * look authoritative long before they are: with a few dozen stocks one day's
  * IC has a standard error near ±0.17, and until there are many independent
  * windows every column here describes the past rather than testing the model.
+ *
+ * Two cross-sections: the watchlist with every signal, and the universe —
+ * watchlist plus reference stocks — with the signals computed from numbers
+ * alone, which is where a factor can be measured on hundreds of stocks.
  */
 
 const HORIZONS = [5, 20, 60];
+
+type Scope = 'watchlist' | 'universe';
 
 interface Props {
   onClose: () => void;
@@ -54,6 +60,7 @@ export default function EvaluationPage({ onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [horizon, setHorizon] = useState(20);
+  const [scope, setScope] = useState<Scope>('watchlist');
 
   const load = useCallback(async (fresh = false) => {
     setLoading(true);
@@ -69,13 +76,19 @@ export default function EvaluationPage({ onClose }: Props) {
 
   useEffect(() => { void load(); }, [load]);
 
-  const ev = data?.evaluation;
+  const universe = scope === 'universe' && data?.universe ? data.universe : null;
+  const ev = universe ?? data?.evaluation;
   const rows = ev?.ics.filter((r) => r.horizon === horizon) ?? [];
   const rowOf = new Map(rows.map((r) => [r.key, r]));
   const labels = (ev?.labels.filter((l) => l.horizon === horizon) ?? [])
     .sort((a, b) => RECOMMENDATIONS.indexOf(a.label as never) - RECOMMENDATIONS.indexOf(b.label as never));
   const closedHorizons = new Set(ev?.ics.filter((r) => r.days > 0).map((r) => r.horizon));
-  const headline = rowOf.get('score.final.score');
+  // The universe has no prose, so its headline is the factor score.
+  const headlineKey = universe ? 'score.factor.score' : 'score.final.score';
+  const headlineTitle = data?.signals.find((s) => s.key === headlineKey)?.title ?? headlineKey;
+  const headline = rowOf.get(headlineKey);
+  // One day's rank IC over n stocks, under no relationship: about 1/√(n−1).
+  const dailyNoise = ev && ev.symbols > 1 ? 1 / Math.sqrt(ev.symbols - 1) : null;
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -108,21 +121,45 @@ export default function EvaluationPage({ onClose }: Props) {
 
         <p className="text-sm leading-relaxed text-ink-300">
           Sortiert an jedem Handelstag alle Aktien nach dem Score, den sie <em>vorher</em> hatten, und nach
-          ihrer Rendite gegenüber dem S&amp;P 500 in den folgenden Handelstagen, und misst, wie gut die
-          beiden Reihenfolgen übereinstimmen (Rang-IC: +1 perfekt, 0 kein Zusammenhang, −1 umgekehrt).
-          Ein brauchbarer Faktor liegt bei 0,03–0,08. Mit ~37 Aktien schwankt ein einzelner Tag um etwa ±0,17 —
-          belastbar wird das erst nach vielen unabhängigen Zeitfenstern, also nach Monaten.
+          ihrer Rendite gegenüber dem S&amp;P 500 in den folgenden Handelstagen — in Dollar, damit eine
+          Euro-Aktie nicht mit dem Wechselkurs punktet — und misst, wie gut die beiden Reihenfolgen
+          übereinstimmen (Rang-IC: +1 perfekt, 0 kein Zusammenhang, −1 umgekehrt). Ein brauchbarer Faktor
+          liegt bei 0,03–0,08.{dailyNoise !== null && ` Mit ${ev!.symbols} Aktien schwankt ein einzelner Tag um etwa ±${dailyNoise.toFixed(2).replace('.', ',')}`}
+          {' '}— belastbar wird das erst nach vielen unabhängigen Zeitfenstern, also nach Monaten.
+          „Im Sektor“ vergleicht jede Aktie nur mit ihrem eigenen Sektor: was dort bleibt, ist Aktienauswahl
+          statt einer Wette auf die Branche.
         </p>
 
         {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
         {!data && loading && (
           <div className="p-8 text-center text-sm text-ink-500">
-            Lade Kurse und rechne — beim ersten Aufruf dauert das etwa eine halbe Minute…
+            Lade Kurse und rechne — mit dem Referenzuniversum dauert der erste Aufruf ein bis zwei Minuten…
           </div>
         )}
 
         {ev && (
           <>
+            {data?.universe && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[11px] text-ink-400">Aktien</span>
+                {([
+                  ['watchlist', `Watchlist (${data.evaluation.symbols})`, 'Alle Signale, auch Text und alter LLM-Score'],
+                  ['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale'],
+                ] as const).map(([s, label, title]) => (
+                  <button
+                    key={s}
+                    onClick={() => setScope(s)}
+                    title={title}
+                    className={`rounded px-2.5 py-1 text-xs transition ${
+                      s === scope ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-[11px] text-ink-400">Horizont</span>
               {HORIZONS.map((h) => (
@@ -141,7 +178,8 @@ export default function EvaluationPage({ onClose }: Props) {
 
             {headline && headline.days > 0 && (
               <div className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3 text-sm text-ink-200">
-                Gesamt-Score über {horizon} Handelstage: Rang-IC <span className="font-mono">{headline.meanIc?.toFixed(2)}</span>,
+                {headlineTitle} über {horizon} Handelstage: Rang-IC <span className="font-mono">{headline.meanIc?.toFixed(2)}</span>
+                {headline.neutralIc !== null && <>, im Sektor <span className="font-mono">{headline.neutralIc.toFixed(2)}</span></>},
                 im oberen Drittel {pct(headline.spread)} gegenüber dem unteren ·{' '}
                 <span className={evidence(headline.tStat, headline.independent).cls}>
                   {evidence(headline.tStat, headline.independent).label}
@@ -154,8 +192,8 @@ export default function EvaluationPage({ onClose }: Props) {
               <header className="border-b border-ink-800 px-4 py-2.5">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Signale</h3>
                 <p className="mt-0.5 text-[11px] text-ink-500">
-                  IC gemittelt über alle Tage · t nur aus nicht überlappenden Fenstern · Treffer = Anteil der Tage mit positivem IC ·
-                  Oben−Unten = Mehrrendite oberes minus unteres Drittel
+                  IC gemittelt über alle Tage · t nur aus nicht überlappenden Fenstern · Im Sektor = IC gegen den eigenen Sektor ·
+                  Treffer = Anteil der Tage mit positivem IC · Oben−Unten = Mehrrendite oberes minus unteres Drittel
                 </p>
               </header>
               <div className="overflow-x-auto">
@@ -166,6 +204,7 @@ export default function EvaluationPage({ onClose }: Props) {
                       <th className="px-2 py-2 text-right font-normal">IC</th>
                       <th className="w-32 px-2 py-2 font-normal" />
                       <th className="px-2 py-2 text-right font-normal">t</th>
+                      <th className="px-2 py-2 text-right font-normal">Im Sektor (t)</th>
                       <th className="px-2 py-2 text-right font-normal">Treffer</th>
                       <th className="px-2 py-2 text-right font-normal">Oben−Unten</th>
                       <th className="px-2 py-2 text-right font-normal">Tage / unabh.</th>
@@ -183,6 +222,10 @@ export default function EvaluationPage({ onClose }: Props) {
                           <td className="px-2 py-1.5 text-right font-mono">{r.meanIc?.toFixed(2) ?? '—'}</td>
                           <td className="px-2 py-1.5"><SignedBar value={r.meanIc} scale={0.3} /></td>
                           <td className="px-2 py-1.5 text-right font-mono text-ink-300">{r.tStat?.toFixed(1) ?? '—'}</td>
+                          <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
+                            {r.neutralIc === null ? '—' : r.neutralIc.toFixed(2)}
+                            {r.neutralTStat !== null && <span className="text-ink-500"> ({r.neutralTStat.toFixed(1)})</span>}
+                          </td>
                           <td className="px-2 py-1.5 text-right font-mono text-ink-300">
                             {r.hitRate === null ? '—' : `${Math.round(r.hitRate * 100)} %`}
                           </td>
@@ -221,6 +264,50 @@ export default function EvaluationPage({ onClose }: Props) {
                       </span>
                     </div>
                   ))}
+                </div>
+              </section>
+            )}
+
+            {data && data.weights.length > 0 && (
+              <section className="rounded-lg border border-ink-700 bg-ink-900">
+                <header className="border-b border-ink-800 px-4 py-2.5">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Säulengewichte: was die Daten nahelegen</h3>
+                  <p className="mt-0.5 text-[11px] text-ink-500">
+                    IC jeder Säule über {data.weightHorizon} Handelstage{data.universe ? ' im Universum' : ''}, um seinen Standardfehler
+                    zur Null geschrumpft; ein Gewicht kippt um den geschrumpften IC geteilt durch 0,05. Nur ein Vorschlag —
+                    geändert werden die Gewichte im Code, nicht hier.
+                  </p>
+                </header>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead className="text-[11px] text-ink-400">
+                      <tr className="border-b border-ink-800">
+                        <th className="px-4 py-2 text-left font-normal">Säule</th>
+                        <th className="px-2 py-2 text-right font-normal">Heute</th>
+                        <th className="px-2 py-2 text-right font-normal">Vorschlag</th>
+                        <th className="px-2 py-2 text-right font-normal">IC</th>
+                        <th className="px-2 py-2 text-right font-normal">geschrumpft</th>
+                        <th className="px-4 py-2 text-right font-normal">unabh. Fenster</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.weights.map((w) => {
+                        const delta = w.suggested - w.current;
+                        return (
+                          <tr key={w.key} className="border-b border-ink-800/60 last:border-0">
+                            <td className="px-4 py-1.5 text-ink-200">{w.title}</td>
+                            <td className="px-2 py-1.5 text-right font-mono text-ink-300">{(w.current * 100).toFixed(0)} %</td>
+                            <td className={`px-2 py-1.5 text-right font-mono ${Math.abs(delta) < 0.005 ? 'text-ink-400' : delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {(w.suggested * 100).toFixed(0)} %
+                            </td>
+                            <td className="px-2 py-1.5 text-right font-mono text-ink-300">{w.ic?.toFixed(2) ?? '—'}</td>
+                            <td className="px-2 py-1.5 text-right font-mono text-ink-400">{w.shrunkIc.toFixed(3)}</td>
+                            <td className="px-4 py-1.5 text-right font-mono text-ink-500">{w.independent}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </section>
             )}

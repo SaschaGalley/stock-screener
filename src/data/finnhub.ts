@@ -2,15 +2,63 @@ import { NewsItem, SectorMedians } from '../types.js';
 import { runRateToTrailing } from '../analysis/run-rate.js';
 import { logger } from '../utils/logger.js';
 import { toFiniteNumber } from '../utils/num.js';
+import { RateWindow } from '../utils/rate-window.js';
 
 const BASE = 'https://finnhub.io/api/v1';
 
+/**
+ * The free tier's 60 requests a minute, a little under so our window and
+ * Finnhub's need not agree to the second. One peer reading is up to nineteen
+ * requests, and a burst of them used to be answered with 429s and stored as
+ * nothing. Per process: a Hatchet worker and the server each keep their own,
+ * and the queue's rate limits pace the two together.
+ */
+const finnhubWindow = new RateWindow(55, 60_000);
+
 async function fetchFinnhub(path: string, apiKey: string): Promise<unknown> {
+  await finnhubWindow.take();
   const url = `${BASE}${path}&token=${apiKey}`;
   logger.debug(`Finnhub request: ${path.split('?')[0]}`);
   const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
   if (!res.ok) throw new Error(`Finnhub HTTP ${res.status}`);
   return res.json();
+}
+
+/**
+ * How long one company's `/stock/metric` answer is reused. The same company is
+ * asked for as a stock, then as a peer of its neighbours — in a night of
+ * reference refreshes, most S&P 500 members are someone's peer — and its
+ * multiples do not move within the hour in any way a median would notice.
+ */
+const METRIC_TTL_MS = 60 * 60_000;
+const metricMemo = new Map<string, { at: number; value: Promise<FinnhubMetricResponse> }>();
+
+/**
+ * Forget the shared `/stock/metric` answers and the requests counted against
+ * the minute — for tests, which stub `fetch` per case and would otherwise wait
+ * out a minute that no real API is counting.
+ */
+export function resetFinnhubClient(): void {
+  metricMemo.clear();
+  finnhubWindow.reset();
+}
+
+/** `/stock/metric` for one symbol, trimmed to what is read and shared for an hour. */
+function stockMetric(symbol: string, apiKey: string): Promise<FinnhubMetricResponse> {
+  const now = Date.now();
+  const hit = metricMemo.get(symbol);
+  if (hit && now - hit.at < METRIC_TTL_MS) return hit.value;
+  for (const [k, v] of metricMemo) if (now - v.at >= METRIC_TTL_MS) metricMemo.delete(k);
+
+  const value = (fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`, apiKey) as
+    Promise<FinnhubMetricResponse>)
+    // The full answer carries a decade of series; one of them is read.
+    .then((d) => ({ metric: d?.metric, series: { annual: { roic: d?.series?.annual?.roic ?? [] } } }));
+  const entry = { at: now, value };
+  // A failure is not an answer: the next caller asks again.
+  value.catch(() => { if (metricMemo.get(symbol) === entry) metricMemo.delete(symbol); });
+  metricMemo.set(symbol, entry);
+  return value;
 }
 
 function sentimentFromScore(score: number): NewsItem['sentiment'] {
@@ -79,8 +127,7 @@ export interface FinnhubBasicMetrics {
 export async function getBasicFinancials(symbol: string, apiKey: string): Promise<FinnhubBasicMetrics> {
   const empty: FinnhubBasicMetrics = { roic: null, epsGrowth3Y: null, dividendGrowthRate5Y: null };
   try {
-    const path = `/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`;
-    const data = await fetchFinnhub(path, apiKey) as FinnhubMetricResponse;
+    const data = await stockMetric(symbol, apiKey);
     const m = data?.metric;
     if (!m) return empty;
 
@@ -190,8 +237,7 @@ export async function getSectorMedians(
 ): Promise<SectorMedians | null> {
   try {
     // 1. Our own metrics, for the market cap the peers are measured against
-    const metricFor = (p: string) =>
-      fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(p)}&metric=all`, apiKey) as Promise<FinnhubMetricResponse>;
+    const metricFor = (p: string) => stockMetric(p, apiKey);
     const own = await metricFor(symbol).catch(() => null);
     const ownCap = toFiniteNumber(own?.metric?.marketCapitalization);
 

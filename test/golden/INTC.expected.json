@@ -1,0 +1,72 @@
+{
+  "price": 92.8,
+  "dcf": {
+    "fairValue": 1.01981,
+    "p10": -4.58859,
+    "p50": 3.31383,
+    "p90": 12.7346,
+    "aboveprice": 0,
+    "wacc": 0.126291,
+    "terminalWacc": 0.0954599,
+    "terminalGrowth": 0.0518,
+    "targetMargin": 0.197448,
+    "salesToCapital": 0.5
+  },
+  "reverseDcf": {
+    "impliedGrowth": null,
+    "requiredMargin": 0.725723
+  },
+  "models": {
+    "grahamNumber": null,
+    "grahamRevised": null,
+    "lynch": null,
+    "ddm": null,
+    "epv": null,
+    "rim": 10.5351,
+    "peers": 179.091
+  },
+  "composite": {
+    "primary": {
+      "median": 114.878,
+      "models": {
+        "DCF (Revenue-Driven)": {
+          "value": 1.01981,
+          "weight": 0.5
+        },
+        "Peer Multiples": {
+          "value": 179.091,
+          "weight": 1
+        },
+        "Analyst Consensus": {
+          "value": 114.878,
+          "weight": 1
+        }
+      }
+    },
+    "conservative": {
+      "median": null,
+      "models": {}
+    }
+  },
+  "health": {
+    "piotroski": 6,
+    "altmanZ": 3.16146,
+    "beneish": -2.58694,
+    "coverage": -0.0210816
+  },
+  "factor": {
+    "score": 4.8,
+    "raw": 4.75033,
+    "verdict": "HOLD",
+    "confidence": 0.608,
+    "agreement": 0.116,
+    "pillars": {
+      "valuation": 2.39254,
+      "quality": 2.90909,
+      "health": 6.97354,
+      "consensus": 6.13509,
+      "momentum": 5.43827,
+      "revisions": 9.40625
+    }
+  }
+}

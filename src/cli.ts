@@ -7,7 +7,8 @@ import chalk from 'chalk';
 import { getConfig, requireApiKey } from './config.js';
 import { logger } from './utils/logger.js';
 import { getFinancials, getOptionsSignals, resolveSymbol, searchByQuery } from './data/yfinance.js';
-import { getNews, getBasicFinancials } from './data/finnhub.js';
+import { getNews } from './data/finnhub.js';
+import { fetchFinancialsBundle } from './refresh.js';
 import { getSectorMediansCached } from './sector-medians.js';
 import { fmtBig } from './analysis/metrics.js';
 import { fmtPrice } from './format.js';
@@ -22,7 +23,7 @@ import {
   readNews,          writeNews,
   readMarketSignals, writeMarketSignals,
   readDistill,       writeDistill,
-  recordRunData,
+  recordRunData,     promoteSymbol,
   AnalysisFlagsKey,  analysisHash,
 } from './db/store.js';
 import { readSubmissions } from './db/admin.js';
@@ -293,6 +294,8 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     throw new Error('runAnalysis requires either symbol or query');
   }
   emit({ stage: 'resolve', message: `Resolved → ${symbol}`, data: { symbol } });
+  // Analysing a stock is adding it: a reference symbol joins the watchlist.
+  await promoteSymbol(symbol);
 
   console.log(chalk.bold.white(`\n  Investment Analysis — ${symbol}\n`));
   logger.info(`Model: ${modelId}  |  Search: ${searchKey(requested)}`);
@@ -308,16 +311,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
 
   if (!financials) {
     emit({ stage: 'financials', message: 'Fetching financials from Yahoo + Finnhub…' });
-    const [bundle, finnhubMetrics] = await Promise.all([
-      getFinancials(symbol),
-      cfg.finnhubApiKey ? getBasicFinancials(symbol, cfg.finnhubApiKey) : Promise.resolve(null),
-    ]);
-
-    if (finnhubMetrics) {
-      bundle.financials.roic                 = finnhubMetrics.roic;
-      bundle.financials.epsGrowth3Y          = finnhubMetrics.epsGrowth3Y;
-      bundle.financials.dividendGrowthRate5Y = finnhubMetrics.dividendGrowthRate5Y;
-    }
+    const bundle = await fetchFinancialsBundle(symbol);
 
     financials       = bundle.financials;
     bundleDailyBars  = bundle.dailyBars;
@@ -665,15 +659,7 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
       ? await searchByQuery(String(opts.query))
       : await resolveSymbol(rawSymbol!);
     if (fetchMode === 'financials' || fetchMode === 'all') {
-      const [bundle, finnhubMetrics] = await Promise.all([
-        getFinancials(symbol),
-        cfg.finnhubApiKey ? getBasicFinancials(symbol, cfg.finnhubApiKey) : Promise.resolve(null),
-      ]);
-      if (finnhubMetrics) {
-        bundle.financials.roic                 = finnhubMetrics.roic;
-        bundle.financials.epsGrowth3Y          = finnhubMetrics.epsGrowth3Y;
-        bundle.financials.dividendGrowthRate5Y = finnhubMetrics.dividendGrowthRate5Y;
-      }
+      const bundle = await fetchFinancialsBundle(symbol);
       await writeFinancials(symbol, bundle.financials);
     }
     if (fetchMode === 'submissions' || fetchMode === 'all') {

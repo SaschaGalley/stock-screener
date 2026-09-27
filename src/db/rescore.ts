@@ -150,7 +150,9 @@ export async function rescoreHistory(opts: {
   dryRun?:  boolean;
 } = {}): Promise<RescoreStats> {
   const stats: RescoreStats = { symbols: 0, days: 0, observations: 0, cleared: 0, skipped: 0 };
-  const symbols = opts.symbols?.length ? opts.symbols : await listSymbols();
+  // The reference universe too: calibration and evaluation read its series,
+  // and a series half on the old code is two scores, not one.
+  const symbols = opts.symbols?.length ? opts.symbols : await listSymbols('all');
   // The admin settings, as the refresh reads them — not the defaults, or a
   // changed narrative weight would split the re-scored series from the live one.
   const scoring = (await readAppConfig()).scoring;

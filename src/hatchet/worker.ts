@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   const name  = workerName(WORKER_NAME, role);
 
   const { ping } = await import('./tasks/ping.js');
-  const { pipeline, dataTask, distillTask, analysisTask } = await import('./tasks/pipeline.js');
+  const { pipeline, dataTask, distillTask, analysisTask, referenceTask } = await import('./tasks/pipeline.js');
   const { refreshData, distillRefresh, perplexityRefresh, analyze } = await import('./tasks/single.js');
   const { ensureRateLimits } = await import('./limits.js');
 
@@ -54,8 +54,8 @@ async function main(): Promise<void> {
   // task sits with the pipeline stage it duplicates, so a click and the nightly
   // run draw on one ceiling rather than each getting their own.
   const byRole = {
-    all:      [ping, pipeline, dataTask, distillTask, analysisTask, refreshData, distillRefresh, perplexityRefresh, analyze],
-    general:  [ping, pipeline, dataTask, refreshData, perplexityRefresh],
+    all:      [ping, pipeline, dataTask, referenceTask, distillTask, analysisTask, refreshData, distillRefresh, perplexityRefresh, analyze],
+    general:  [ping, pipeline, dataTask, referenceTask, refreshData, perplexityRefresh],
     distill:  [distillTask, distillRefresh],
     analysis: [analysisTask, analyze],
   } satisfies Record<WorkerRole, unknown[]>;

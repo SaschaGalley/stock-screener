@@ -8,10 +8,10 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { getSectorMedians } from '../src/data/finnhub.js';
+import { getSectorMedians, resetFinnhubClient } from '../src/data/finnhub.js';
 
 const realFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => { globalThis.fetch = realFetch; resetFinnhubClient(); });
 
 function serve(peers: string[] | Record<string, string[]>, metrics: Record<string, Record<string, number>>) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {

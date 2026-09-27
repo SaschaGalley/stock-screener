@@ -1,0 +1,68 @@
+{
+  "price": 44.38,
+  "dcf": {
+    "fairValue": null,
+    "p10": null,
+    "p50": null,
+    "p90": null,
+    "aboveprice": null,
+    "wacc": null,
+    "terminalWacc": null,
+    "terminalGrowth": 0.0518,
+    "targetMargin": null,
+    "salesToCapital": null
+  },
+  "reverseDcf": {
+    "impliedGrowth": null,
+    "requiredMargin": 0.95
+  },
+  "models": {
+    "grahamNumber": null,
+    "grahamRevised": null,
+    "lynch": null,
+    "ddm": null,
+    "epv": null,
+    "rim": 2.70192,
+    "peers": 14.2321
+  },
+  "composite": {
+    "primary": {
+      "median": 33.7163,
+      "models": {
+        "Peer Multiples": {
+          "value": 14.2321,
+          "weight": 1
+        },
+        "Analyst Consensus": {
+          "value": 79.875,
+          "weight": 1
+        }
+      }
+    },
+    "conservative": {
+      "median": null,
+      "models": {}
+    }
+  },
+  "health": {
+    "piotroski": 3,
+    "altmanZ": 95.2488,
+    "beneish": null,
+    "coverage": null
+  },
+  "factor": {
+    "score": 3.4,
+    "raw": 3.44717,
+    "verdict": "SELL",
+    "confidence": 0.708,
+    "agreement": 0.405,
+    "pillars": {
+      "valuation": 0,
+      "quality": 2.72727,
+      "health": 10,
+      "consensus": 7.6,
+      "momentum": 0,
+      "revisions": 2.61719
+    }
+  }
+}
