@@ -884,6 +884,18 @@ hashes differently the server re-scores the history in the background on start.
 Nothing to run by hand, and no version number to forget to bump. A full manual
 `rescore` stores the fingerprint too.
 
+**The inputs of one instant describe one moment.** The market signals and the
+technical aggregate count only if they were taken within three days of the
+financials they are scored with (`MAX_SIGNAL_LAG_MS`). A refresh writes them
+seconds apart. But on 22 September six symbols had financials written while the
+signals in force were five weeks old, and their momentum pillars scored a
+month-old return beside that day's price. Now those pillars abstain, and the
+missing coverage lowers the confidence. The other ages have guards of their
+own. The evaluation stops counting a series ten days after its last point. The
+detail page scores as of the list's newest point, never the wall clock, and
+shows its stale-data banner. A listing whose newest quarter is more than nine
+months old is flagged by the data-quality audit.
+
 **Empty peer groups are not peer data.** A rate-limited Finnhub fetch — every
 peer request refused — used to be stored as a group of zero peers with every
 median null (10 of 31 fetches on 16 August), which dropped the peer-multiples

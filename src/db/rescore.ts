@@ -85,13 +85,33 @@ const SAME_RUN_MS = 15 * 60_000;
  * The entry that belongs to `at` — the newest one at or before it, or one
  * written just after by the same run.
  */
-function asOf<T>(history: { data: T; capturedAt: Date }[], at: number): T | null {
-  let found: T | null = null;
+function rowAsOf<T>(history: { data: T; capturedAt: Date }[], at: number): { data: T; capturedAt: Date } | null {
+  let found: { data: T; capturedAt: Date } | null = null;
   for (const row of history) {
     if (row.capturedAt.getTime() > at + SAME_RUN_MS) break;
-    found = row.data;
+    found = row;
   }
   return found;
+}
+
+function asOf<T>(history: { data: T; capturedAt: Date }[], at: number): T | null {
+  return rowAsOf(history, at)?.data ?? null;
+}
+
+/**
+ * How far behind the financials a market reading may be and still describe the
+ * same moment. A refresh writes both within seconds. On 22 September six
+ * symbols had financials written while the market signals in force were five
+ * weeks old, and their momentum pillars scored a month-old return beside that
+ * day's price. Older than this, the reading is missing, and the pillars that
+ * read it abstain and cost the score its coverage instead.
+ */
+export const MAX_SIGNAL_LAG_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** The reading, when it was taken close enough to `anchor` to belong with it. */
+export function withinLag<T>(row: { data: T; capturedAt: Date } | null, anchor: Date): T | null {
+  if (!row) return null;
+  return anchor.getTime() - row.capturedAt.getTime() <= MAX_SIGNAL_LAG_MS ? row.data : null;
 }
 
 type RateHistory = Map<string, { at: number; value: number }[]>;
@@ -196,19 +216,20 @@ export async function rescoreHistory(opts: {
 
     let wrote = 0;
     for (const at of instants) {
-      const f = asOf(financials, at);
-      if (!f || typeof f.price !== 'number' || !Number.isFinite(f.price)) {
+      const fRow = rowAsOf(financials, at);
+      const f = fRow?.data;
+      if (!fRow || !f || typeof f.price !== 'number' || !Number.isFinite(f.price)) {
         stats.skipped++;
         continue;
       }
 
       const inForce = asOf(peers, at);
       const sectorMedians = hasPeers(inForce) ? inForce : null;
-      const marketSignals = asOf(signals, at);
+      const marketSignals = withinLag(rowAsOf(signals, at), fRow.capturedAt);
 
       // Prefer the stored aggregate; derive it where the snapshot predates the
       // technical-signals kind but the indicators behind it were kept.
-      const technicalSignals = asOf(techSig, at)
+      const technicalSignals = withinLag(rowAsOf(techSig, at), fRow.capturedAt)
         ?? (marketSignals?.technicals ? deriveTechnicalSignals(marketSignals.technicals, f.price) : null);
 
       const metrics = computeAllMetrics(f, ratesAt(rates, at), sectorMedians);
@@ -274,9 +295,10 @@ export async function storedInputs(symbol: string, now: number = Date.now()): Pr
     snapshotHistory<TechnicalSignals>(symbol, 'technical_signals'),
     macroHistory('macro.'),
   ]);
-  const f = asOf(financials, now);
-  if (!f || typeof f.price !== 'number' || !Number.isFinite(f.price)) return null;
-  const marketSignals = asOf(signals, now);
+  const fRow = rowAsOf(financials, now);
+  const f = fRow?.data;
+  if (!fRow || !f || typeof f.price !== 'number' || !Number.isFinite(f.price)) return null;
+  const marketSignals = withinLag(rowAsOf(signals, now), fRow.capturedAt);
   return {
     financials:       f,
     marketSignals,
@@ -285,7 +307,7 @@ export async function storedInputs(symbol: string, now: number = Date.now()): Pr
       const m = asOf(peers.filter((r) => isPeerReading(r.data)), now);
       return hasPeers(m) ? m : null;
     })(),
-    technicalSignals: asOf(techSig, now)
+    technicalSignals: withinLag(rowAsOf(techSig, now), fRow.capturedAt)
       ?? (marketSignals?.technicals ? deriveTechnicalSignals(marketSignals.technicals, f.price) : null),
     rates:            ratesAt(rates, now),
   };
