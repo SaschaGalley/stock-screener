@@ -9,6 +9,7 @@ import {
   calculatePeerMultiples, calculateInterestCoverage, calculateSortino,
   calculateBeneish, calculateCompositeFairValue,
 } from './metrics.js';
+import { baseFairValue } from './dcf.js';
 
 export interface ComputedMetrics {
   dcf:              ReturnType<typeof calculateDCF>;
@@ -51,6 +52,41 @@ export function modelRates(
   const local = ratesForCurrency(marketRates ?? FALLBACK_RATES, financials.tradingCurrency, financials.currencyDefaultSpread ?? 0);
   const premium = Math.max(MIN_EQUITY_PREMIUM, local.equityRiskPremium + adjustment);
   return { ...local, equityRiskPremium: premium, premiumAdjustment: premium - local.equityRiskPremium };
+}
+
+/** How far either way the premium may be shifted in the search, and how finely. */
+const PREMIUM_SEARCH = { range: 0.04, steps: 30 } as const;
+
+/**
+ * The shift of the market premium at which the DCF's base case values one
+ * stock at its price. A stock no shift within the range can price sits at the
+ * range's edge rather than dropping out: the ones the model finds dearest are
+ * exactly the ones that need the largest cut, and leaving them out pulled the
+ * median towards zero. Null only where there is no DCF — a lender, a firm with
+ * no margin to converge to.
+ */
+export function impliedPremiumShift(inputs: {
+  financials: StockFinancials; rates: MarketRates | null; sectorMedians: SectorMedians | null;
+}): number | null {
+  const { financials: f, rates, sectorMedians } = inputs;
+  const price = f.price;
+  if (typeof price !== 'number' || !(price > 0)) return null;
+  const at = (shift: number) => baseFairValue(f, modelRates(f, rates, shift), sectorMedians);
+  let lo: number = -PREMIUM_SEARCH.range;
+  let hi: number = PREMIUM_SEARCH.range;
+  const vLo = at(lo);
+  const vHi = at(hi);
+  if (vLo === null || vHi === null) return null;
+  // Value falls as the premium rises.
+  if (vLo < price) return lo;
+  if (vHi > price) return hi;
+  for (let i = 0; i < PREMIUM_SEARCH.steps; i++) {
+    const mid = (lo + hi) / 2;
+    const v = at(mid);
+    if (v === null) return null;
+    if (v > price) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
 }
 
 /** Run every valuation model on cached financials. Cheap (<10ms total). */

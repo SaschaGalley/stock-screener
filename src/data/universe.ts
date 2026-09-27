@@ -64,9 +64,51 @@ export function parseConstituents(csv: string): string[] {
 }
 
 export async function fetchSp500(): Promise<string[]> {
+  return parseConstituents(await fetchSp500Csv());
+}
+
+async function fetchSp500Csv(): Promise<string> {
   const res = await fetch(SP500_URL, { signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`constituents HTTP ${res.status}`);
-  return parseConstituents(await res.text());
+  return res.text();
+}
+
+export interface Constituent {
+  symbol:      string;
+  name:        string;
+  sector:      string;
+  subIndustry: string;
+  /** The day it joined the index, where the file says. */
+  added:       string | null;
+  cik:         string | null;
+}
+
+/** The S&P 500 file with what the backtest needs beside the ticker: GICS, the day it joined, the SEC's CIK. */
+export function parseConstituentRows(csv: string): Constituent[] {
+  const lines = csv.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+  const header = csvRecord(lines[0]).map((h) => h.trim().toLowerCase());
+  const col = (name: string) => header.indexOf(name);
+  const [cSym, cName, cSector, cSub, cAdded, cCik] =
+    ['symbol', 'security', 'gics sector', 'gics sub-industry', 'date added', 'cik'].map(col);
+  if (cSym < 0) return [];
+  const out: Constituent[] = [];
+  for (const line of lines.slice(1)) {
+    const r = csvRecord(line);
+    const raw = r[cSym]?.trim();
+    if (!raw || !/^[A-Za-z][A-Za-z0-9.\-]{0,9}$/.test(raw)) continue;
+    const added = r[cAdded]?.trim().match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
+    const cik = r[cCik]?.trim().replace(/\D/g, '') || null;
+    out.push({
+      symbol: yahooTicker(raw), name: r[cName]?.trim() ?? raw,
+      sector: r[cSector]?.trim() ?? '', subIndustry: r[cSub]?.trim() ?? '', added, cik,
+    });
+  }
+  return out;
+}
+
+export async function fetchSp500Constituents(): Promise<Constituent[]> {
+  return parseConstituentRows(await fetchSp500Csv());
 }
 
 // ── Wikipedia tables ─────────────────────────────────────────────────────────

@@ -139,7 +139,8 @@ function serialToMonth(serial: number, date1904: boolean): string {
 }
 
 /** The last row of the monthly series: its premium, and the month it belongs to. */
-export function parseImpliedERP(xlsx: Buffer): ImpliedERP | null {
+/** Every month of the sheet, oldest first — the whole series, which a backtest reads month by month. */
+export function parseImpliedERPSeries(xlsx: Buffer): ImpliedERP[] {
   const files = readZipEntries(xlsx, new Set([
     'xl/workbook.xml', 'xl/sharedStrings.xml', 'xl/worksheets/sheet1.xml',
   ]));
@@ -150,7 +151,7 @@ export function parseImpliedERP(xlsx: Buffer): ImpliedERP | null {
 
   let premiumCol: string | null = null;
   let dateCol: string | null = null;
-  let last: { premium: number; serial: number | null } | null = null;
+  const out: ImpliedERP[] = [];
   let serial: number | null = null;
 
   for (const { col, row, text } of cells(sheet, strings)) {
@@ -165,15 +166,26 @@ export function parseImpliedERP(xlsx: Buffer): ImpliedERP | null {
     if (col === dateCol) serial = Number(text);
     if (col === premiumCol) {
       const premium = Number(text);
-      if (Number.isFinite(premium)) last = { premium, serial: Number.isFinite(serial) ? serial : null };
+      if (Number.isFinite(premium)) {
+        out.push({ premium, asOf: Number.isFinite(serial) && serial !== null ? serialToMonth(serial, date1904) : null });
+      }
     }
   }
-  if (!last) return null;
+  return out;
+}
 
-  return {
-    premium: last.premium,
-    asOf: last.serial === null ? null : serialToMonth(last.serial, date1904),
-  };
+export function parseImpliedERP(xlsx: Buffer): ImpliedERP | null {
+  const series = parseImpliedERPSeries(xlsx);
+  return series.length ? series[series.length - 1] : null;
+}
+
+/** The whole monthly series, fetched once per call — for the backtest, which runs rarely. */
+export async function getImpliedERPSeries(): Promise<ImpliedERP[]> {
+  const res = await fetch(ERP_XLSX, { signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`Damodaran ERP HTTP ${res.status}`);
+  const [lo, hi] = PLAUSIBLE_ERP;
+  return parseImpliedERPSeries(Buffer.from(await res.arrayBuffer()))
+    .filter((x) => x.asOf !== null && x.premium >= lo && x.premium <= hi);
 }
 
 // ─── Fetching ────────────────────────────────────────────────────────────────

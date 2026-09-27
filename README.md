@@ -1222,6 +1222,85 @@ burst Yahoo and fill the general worker's slots. And since a stop from the
 admin page can only cancel what is queued, the parent checks the run before
 starting each one.
 
+### The backtest
+
+The live evaluation needs months of stored scores before it can say anything;
+the weight suggestion above needs a dozen independent monthly windows. So
+`pnpm run backtest` rebuilds them (`src/backtest/`). At every month-end since
+2013 it reconstructs each S&P 500 member as the scorer would have seen it that
+day, then scores the whole cross-section with the live code. The scores are
+evaluated against the following months with the same `evaluate` the page uses.
+
+**The filings as they stood that day.** The SEC's XBRL company facts carry, for
+every figure a US filer has tagged since 2009, the period it covers and the day
+it was filed (`data/edgar-facts.ts`). A figure exists from the day after its
+filing, and a restatement from the day of the restatement, not from the end of
+the quarter. Twelve months are built the way the filings add up: year to date,
+plus the last fiscal year, minus the same year to date a year earlier.
+Companies rename their tags — Apple reported `SalesRevenueNet` until 2018 — so
+each line is a list of tags merged per period. Only a period's first filing and
+its restatements are kept, and the reduced facts are cached under the data
+directory.
+
+**Prices and splits.** Yahoo's split-adjusted closes give the market
+capitalisation, and the dividend-adjusted ones the return. A share count from a
+2014 filing is on 2014's basis, so the splits since then bring it onto today's.
+
+**Everything calibrated is recalibrated per month**, from that month's
+cross-section only: the premium adjustment, and every criterion's reference
+distribution. Peer medians come from the index's own GICS sub-industries that
+month, with the same filters Finnhub's go through. Rates are FRED's month-end
+series and Damodaran's premium for the month. Nothing from after a month-end
+reaches its scores.
+
+What it cannot do, and the page says so beside the numbers:
+
+- **No analyst data.** Estimates, ratings, targets and surprises were never
+  archived. The consensus and revisions pillars are silent, the DCF starts from
+  trailing growth, and those two pillars keep their weights in the suggestion.
+- **Survivors only.** The universe is today's index members, each from the day
+  it joined. Companies that left before today are missing.
+- **US only.** The SEC does not hold European filings.
+
+The result is stored (`app_state`, `backtest.result`) and shown under
+**Auswertung** as a third view, *Backtest*. It has the same table of signals,
+the factor score's IC by year, the excess return by factor verdict, and the
+pillar weights the backtest argues for. A first run downloads about 500 filings
+and price histories and takes a few minutes; later ones read the cache.
+
+```bash
+pnpm run backtest                     # S&P 500, month-ends since 2013
+pnpm run backtest -- --from 2016-01   # a later start
+pnpm run backtest -- --limit 60       # the first 60 companies, to try it out
+```
+
+Every criterion's own figure is evaluated too, turned so that more is better.
+A pillar that ranks nothing may still hold a criterion that does, and a
+criterion with a negative IC is read in the wrong direction.
+
+**What it found (27 September 2026, 165 month-ends, 490 companies).** The
+number-only factor score does not rank the S&P 500's next month: IC 0.007
+(t 0.9), and 0.002 over three months. By year the IC swings between −0.05 and
++0.05 with no sign it would settle. The criteria underneath say why:
+
+| Criterion | IC, 1 month | t | Reading |
+|---|---|---|---|
+| Net share issuance | 0.020 | 2.5 | The one robust signal, as Pontiff and Woodgate found; 62 % of months right |
+| ROIC spread, gross profitability, accruals | 0.006–0.013 | 1.0–1.4 | Weakly positive |
+| DCF probability, the margin the price requires | 0.009 | 0.8–0.9 | Weakly positive |
+| Twelve-minus-one momentum | −0.002 | −0.2 | Nothing, in US large caps over these years |
+| Closeness to the 52-week high | −0.018 | −1.1 | Slightly the wrong way |
+| Margin against peers, Rule of 40 | −0.009 to −0.011 | −0.9 to −1.7 | Slightly the wrong way |
+
+This is how an efficient large-cap market over a decade that was poor for
+value and quality usually looks, and the evaluation is not blind: it finds
+the issuance effect where the literature does. It is also a result about the
+number half alone. The consensus and revisions pillars, which carry a quarter
+of the weight, could not be tested. The shrunk pillar suggestion moves little:
+valuation 30 → 35 %, health 15 → 12 %, momentum 10 → 8 %. No weight has been
+changed on this evidence. It was measured on the same years any change would
+be tested on.
+
 ## Technical signals gauge
 
 Indicators come from [`trading-signals`](https://github.com/bennycode/trading-signals);
@@ -1312,7 +1391,7 @@ src/
 │   ├── admin.ts           Runs, settings, entity mappings, filing index
 │   ├── backfill.ts        One-shot import of the old file cache
 │   ├── rescore.ts         Re-scores stored history on today's code; the current card from stored inputs
-│   ├── calibrate.ts       Reference distributions from the stored history (`pnpm run calibrate`)
+│   ├── calibrate.ts       Reference distributions and the premium adjustment (`pnpm run calibrate`)
 │   ├── golden.ts          Captures stored inputs as golden fixtures (`pnpm run golden:capture`)
 │   └── evaluate.ts        CLI for the outcome evaluation (`pnpm run evaluate`)
 ├── files.ts               The two things that stay files (filings, reports)
@@ -1322,6 +1401,13 @@ src/
 ├── pipeline/steps.ts      The steps a run applies to a symbol, shared by both schedulers
 ├── universe.ts            The reference universe: members per index, departures, tonight's rotation
 ├── alerts.ts              Verdict changes: recorded when they happen, announced once they hold
+├── backtest/              The factor score rebuilt at past month-ends (`pnpm run backtest`)
+│   ├── payload.ts         A company as the scorer would have seen it on a past day
+│   ├── prices.ts          Daily histories with their splits, cached on disk
+│   ├── peers.ts           Peer medians from the month's own cross-section
+│   ├── rates.ts           FRED and Damodaran by month
+│   ├── result.ts          The stored result the page reads
+│   └── run.ts             Month by month: rebuild, calibrate, score, evaluate
 ├── currencies.ts          Yahoo's quote currencies and the unit behind each (GBp → GBP)
 ├── distill-service.ts     Distill orchestration: symbol → entity UUID → briefings
 ├── distill-dossiers.ts    Mirrors the watchlist onto Distill's dossier switches
@@ -1336,6 +1422,7 @@ src/
 │   ├── finnhub.ts         News, basic metrics, peer-group medians
 │   ├── fred.ts            FRED rates (live 10Y, AAA, …) and the local ten-year yields
 │   ├── country-risk.ts    Damodaran's country risk premiums, default spreads and tax rates
+│   ├── edgar-facts.ts     SEC XBRL company facts, point in time: every figure from the day it was filed
 │   ├── universe.ts        Index members: the S&P 500 file, EURO STOXX 50 and DAX from Wikipedia
 │   ├── macro.ts           SPY + sector-ETF bundles, yield curve, VIX
 │   ├── perplexity.ts      Sonar-Pro forensic brief → structured findings
@@ -1389,6 +1476,7 @@ web/
 │       ├── StockRail.tsx          The same list at rail width, beside an analysis
 │       ├── StockListControls.tsx  Search · sort · watchlist, shared by both
 │       ├── VerdictChanges.tsx     The week's verdict changes above the overview
+│       ├── BacktestPanel.tsx      The backtest's view under Auswertung
 │       ├── AnalysisModal.tsx      Stored analyses + model/search/pplx, as a dialog
 │       ├── AnalysisView.tsx       Centre detail; renders all sections
 │       ├── VerdictHero.tsx        Verdict + composite + analyst hero cards
@@ -1739,6 +1827,7 @@ pnpm run typecheck    # type-check src and test without emitting
 pnpm test             # node:test via tsx — no database or network needed
 pnpm run calibrate    # recompute the reference distributions → src/analysis/calibration-table.ts
 pnpm run evaluate     # rank IC of the stored scores, watchlist and universe
+pnpm run backtest     # the factor score rebuilt monthly since 2013 from SEC filings
 ```
 
 **Golden tests.** `test/golden/` holds the stored inputs of six real stocks: a

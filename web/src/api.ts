@@ -21,6 +21,7 @@ import type {
   SchedulerStatus,
   ActivityEntry,
   EvaluationResponse,
+  BacktestResponse,
   VerdictChangesResponse,
 } from './types';
 
@@ -140,6 +141,10 @@ export const api = {
   // The set of chartable numbers is a query parameter now, not a fixed shape:
   // `listMetrics` is the picker's data source and `getSeries` draws whatever
   // was picked.
+
+  /** The stored backtest — cheap, it is computed by `pnpm run backtest`, not here. */
+  getBacktest: () =>
+    jsonFetch<BacktestResponse>(`${BASE}/backtest`),
 
   /** Rank IC of the stored scores against later returns. Slow when not cached server-side. */
   getEvaluation: (horizons: number[], fresh = false) =>

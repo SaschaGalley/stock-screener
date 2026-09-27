@@ -19,6 +19,7 @@ import {
   recentVerdictChanges,
 } from './db/store.js';
 import { sendWebhook } from './alerts.js';
+import { storedBacktest } from './backtest/result.js';
 import { CALIBRATION_META, calibrationDue } from './analysis/calibration.js';
 import { migrate } from './db/migrate.js';
 import { storedMembers } from './universe.js';
@@ -26,7 +27,9 @@ import { syncCatalog } from './db/catalog.js';
 import { closePool, waitForDatabase } from './db/client.js';
 import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials } from './types.js';
 import { PILLAR_LABELS } from './analysis/score.js';
-import type { AnalysisListEntry, ConsensusBand, EvaluationResponse, OverviewRow, StockSummary } from './api-types.js';
+import type {
+  AnalysisListEntry, BacktestResponse, ConsensusBand, EvaluationResponse, OverviewRow, StockSummary,
+} from './api-types.js';
 import { MODELS } from './models.js';
 import {
   DistillUnauthorizedError,
@@ -817,6 +820,21 @@ export function createApp(): express.Express {
         universe:      report.universe,
         weights:       report.weights.map((w) => ({ ...w, title: PILLAR_LABELS[w.key as PillarKey] ?? w.key })),
         weightHorizon: report.weightHorizon,
+      };
+      res.json(body);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/backtest ──────────────────────────────────────────────────────
+  // The stored result of `pnpm run backtest`: the factor score rebuilt at every
+  // month-end since 2013 from the SEC's filings and judged on what followed.
+  app.get('/api/backtest', async (_req, res, next) => {
+    try {
+      const body: BacktestResponse = {
+        backtest: await storedBacktest(),
+        signals:  EVALUATED_SIGNALS.filter((s) => s.factor).map(({ key, title, pillar }) => ({ key, title, pillar: pillar ?? false })),
       };
       res.json(body);
     } catch (e) {

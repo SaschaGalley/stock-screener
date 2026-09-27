@@ -36,6 +36,7 @@ export type {
   DistillEntityUnresolvedResponse,
   PerplexityRefreshResponse,
   EvaluationResponse,
+  BacktestResponse,
   VerdictChangesResponse,
 } from '../../src/api-types';
 

@@ -58,6 +58,8 @@ export interface EvaluationInput {
   labelKey?: string;
   /** symbol → sector, for the sector-neutral IC; left out, it is not computed. */
   sectors?:  Map<string, string>;
+  /** Keep every formation day's IC, for a table by year — the backtest's, not the page's. */
+  keepDaily?: boolean;
 }
 
 export interface IcSummary {
@@ -75,6 +77,8 @@ export interface IcSummary {
   /** Mean rank IC within sectors (`sectorNeutralIc`); null without sectors. */
   neutralIc:        number | null;
   neutralTStat:     number | null;
+  /** Every formation day's IC, when asked for (`keepDaily`). */
+  daily?:           { day: string; ic: number; neutralIc: number | null }[];
   /** Share of formation days with a positive IC. */
   hitRate:          number | null;
   /** Mean excess return of the top third minus the bottom third, per window. */
@@ -282,7 +286,7 @@ function windowsFor(benchmark: Close[], h: number, firstSignal: string): Window[
 }
 
 export function evaluate(input: EvaluationInput): Evaluation {
-  const { signals, prices, benchmark, horizons, labelKey, sectors } = input;
+  const { signals, prices, benchmark, horizons, labelKey, sectors, keepDaily } = input;
 
   let first: string | null = null;
   let last: string | null = null;
@@ -311,6 +315,7 @@ export function evaluate(input: EvaluationInput): Evaluation {
       const independent: number[] = [];
       const neutralDaily: number[] = [];
       const neutralIndependent: number[] = [];
+      const kept: { day: string; ic: number; neutralIc: number | null }[] = [];
 
       windows.forEach((w, i) => {
         const xs: number[] = [];
@@ -329,13 +334,15 @@ export function evaluate(input: EvaluationInput): Evaluation {
         const ic = spearman(xs, ys);
         if (ic === null) return;
 
+        let neutral: number | null = null;
         if (sectors) {
-          const neutral = sectorNeutralIc(xs, ys, ss);
+          neutral = sectorNeutralIc(xs, ys, ss);
           if (neutral !== null) {
             neutralDaily.push(neutral);
             if (i % h === 0) neutralIndependent.push(neutral);
           }
         }
+        if (keepDaily) kept.push({ day: w.day, ic, neutralIc: neutral });
 
         // Terciles by the signal's rank; the spread is what a long-top,
         // short-bottom book would have earned, before any cost.
@@ -359,6 +366,7 @@ export function evaluate(input: EvaluationInput): Evaluation {
         tStat:            test.t,
         neutralIc:        mean(neutralDaily),
         neutralTStat:     meanTest(neutralIndependent).t,
+        ...(keepDaily ? { daily: kept } : {}),
         hitRate:          daily.length ? daily.filter((d) => d.ic > 0).length / daily.length : null,
         spread:           mean(daily.map((d) => d.spread).filter((s): s is number => s !== null)),
         meanCrossSection: mean(daily.map((d) => d.n)),

@@ -15,8 +15,7 @@ import { calculateDCF, calculateReverseDCF } from '../src/analysis/metrics.js';
 import { adjustedBeta, betaPrior, costOfEquity, MATURE_MAX_DEBT_SHARE, wacc } from '../src/analysis/cost-of-capital.js';
 import { valuationBasis } from '../src/analysis/basis.js';
 import { baseFairValue, dcfInputs, MIN_TERMINAL_SPREAD } from '../src/analysis/dcf.js';
-import { MIN_EQUITY_PREMIUM, modelRates } from '../src/analysis/computeMetrics.js';
-import { impliedPremiumShift } from '../src/db/calibrate.js';
+import { impliedPremiumShift, MIN_EQUITY_PREMIUM, modelRates } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES, MarketRates } from '../src/data/fred.js';
 import type { StockFinancials } from '../src/types.js';
 
@@ -257,7 +256,7 @@ describe('the model\'s premium', () => {
     const fair = baseFairValue(f, modelRates(f, r, 0))!;
     // Priced a fifth above the model: the market is discounting at a lower premium.
     const dear = { ...f, price: fair * 1.2, marketCap: fair * 1.2 * 10_000_000 } as typeof f;
-    const shift = impliedPremiumShift({ financials: dear, rates: r, sectorMedians: null, marketSignals: null, technicalSignals: null })!;
+    const shift = impliedPremiumShift({ financials: dear, rates: r, sectorMedians: null })!;
     assert.ok(shift < 0, `${shift}`);
     close(baseFairValue(dear, modelRates(dear, r, shift)), dear.price, dear.price * 1e-3);
   });
@@ -267,6 +266,6 @@ describe('the model\'s premium', () => {
     const r = rates(0.0475, 0.041);
     const fair = baseFairValue(f, modelRates(f, r, 0))!;
     const absurd = { ...f, price: fair * 50, marketCap: fair * 50 * 10_000_000 } as typeof f;
-    assert.equal(impliedPremiumShift({ financials: absurd, rates: r, sectorMedians: null, marketSignals: null, technicalSignals: null }), -0.04);
+    assert.equal(impliedPremiumShift({ financials: absurd, rates: r, sectorMedians: null }), -0.04);
   });
 });

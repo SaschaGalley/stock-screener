@@ -213,6 +213,13 @@ export interface ConfigResponse {
   };
 }
 
+/** `GET /api/backtest` — the stored result of `pnpm run backtest`, null before the first run. */
+export interface BacktestResponse {
+  backtest: import('./backtest/result.js').BacktestResult | null;
+  /** Titles of the evaluated signals, keyed as the result keys them. */
+  signals:  { key: string; title: string; pillar: boolean }[];
+}
+
 /** `GET /api/verdict-changes` */
 export interface VerdictChangesResponse {
   changes: import('./db/store.js').VerdictChange[];

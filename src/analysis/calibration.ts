@@ -160,7 +160,7 @@ export function modelPremiumAdjustment(): number {
  * Null the rest of the time; scoring never reads it. A figure read within its
  * sector arrives with the sector, and goes into both distributions.
  */
-type Sink = (key: string, value: number, sector?: string) => void;
+type Sink = (key: string, value: number, sector?: string, direction?: 1 | -1) => void;
 let collector: Sink | null = null;
 
 /** Run `fn` with every calibrated figure it reads handed to `sink`. */
@@ -196,7 +196,7 @@ export function calibrated(
 ): number | null {
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
   const sector = opts.sector ?? undefined;
-  collector?.(key, value, sector);
+  collector?.(key, value, sector, direction);
   const table = opts.table ?? override ?? CALIBRATION;
   const own = sector ? table[sectorKey(key, sector)] : undefined;
   const dist = own && own.symbols >= MIN_SECTOR_CALIBRATION_SYMBOLS && own.quantiles.length >= 2

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import type { EvaluationResponse } from '../types';
+import type { BacktestResponse, EvaluationResponse } from '../types';
 import { CloseIcon } from '../components/icons';
+import BacktestPanel from '../components/BacktestPanel';
+import { SignedBar, evidence, pct } from '../components/evaluationParts';
 import { recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 
@@ -16,43 +18,17 @@ import { RECOMMENDATIONS } from '../../../src/verdict';
  *
  * Two cross-sections: the watchlist with every signal, and the universe —
  * watchlist plus reference stocks — with the signals computed from numbers
- * alone, which is where a factor can be measured on hundreds of stocks.
+ * alone, which is where a factor can be measured on hundreds of stocks. And the
+ * backtest, which rebuilt the factor score at every month-end since 2013 and
+ * so does not have to wait for the months to pass.
  */
 
 const HORIZONS = [5, 20, 60];
 
-type Scope = 'watchlist' | 'universe';
+type Scope = 'watchlist' | 'universe' | 'backtest';
 
 interface Props {
   onClose: () => void;
-}
-
-function pct(v: number | null): string {
-  return v === null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)} %`;
-}
-
-/** How much the sample supports reading anything into the row. */
-function evidence(t: number | null, independent: number): { label: string; cls: string } {
-  if (t === null || independent < 3) return { label: 'zu wenig Daten', cls: 'text-ink-500' };
-  const a = Math.abs(t);
-  if (a >= 2) return { label: t > 0 ? 'belastbar positiv' : 'belastbar negativ', cls: t > 0 ? 'text-emerald-400' : 'text-red-400' };
-  if (a >= 1) return { label: 'Tendenz', cls: 'text-amber-400' };
-  return { label: 'nicht von Zufall zu unterscheiden', cls: 'text-ink-500' };
-}
-
-/** A signed bar around a centre line; `scale` is the value that fills one side. */
-function SignedBar({ value, scale }: { value: number | null; scale: number }) {
-  if (value === null) return <div className="h-2 w-full" />;
-  const w = Math.min(Math.abs(value) / scale, 1) * 50;
-  return (
-    <div className="relative h-2 w-full rounded bg-ink-800">
-      <div className="absolute inset-y-0 left-1/2 w-px bg-ink-600" />
-      <div
-        className={`absolute inset-y-0 rounded ${value >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`}
-        style={value >= 0 ? { left: '50%', width: `${w}%` } : { right: '50%', width: `${w}%` }}
-      />
-    </div>
-  );
 }
 
 export default function EvaluationPage({ onClose }: Props) {
@@ -61,6 +37,11 @@ export default function EvaluationPage({ onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [horizon, setHorizon] = useState(20);
   const [scope, setScope] = useState<Scope>('watchlist');
+  const [bt, setBt] = useState<BacktestResponse | null>(null);
+
+  useEffect(() => {
+    api.getBacktest().then(setBt).catch(() => { /* no backtest is no error */ });
+  }, []);
 
   const load = useCallback(async (fresh = false) => {
     setLoading(true);
@@ -133,35 +114,38 @@ export default function EvaluationPage({ onClose }: Props) {
         </p>
 
         {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
-        {!data && loading && (
+        {!data && loading && scope !== 'backtest' && (
           <div className="p-8 text-center text-sm text-ink-500">
             Lade Kurse und rechne — mit dem Referenzuniversum dauert der erste Aufruf ein bis zwei Minuten…
           </div>
         )}
 
-        {ev && (
-          <>
-            {data?.universe && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-[11px] text-ink-400">Aktien</span>
-                {([
-                  ['watchlist', `Watchlist (${data.evaluation.symbols})`, 'Alle Signale, auch Text und alter LLM-Score'],
-                  ['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale'],
-                ] as const).map(([s, label, title]) => (
-                  <button
-                    key={s}
-                    onClick={() => setScope(s)}
-                    title={title}
-                    className={`rounded px-2.5 py-1 text-xs transition ${
-                      s === scope ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
+        {(data?.universe || bt) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[11px] text-ink-400">Aktien</span>
+            {([
+              ...(data ? [['watchlist', `Watchlist (${data.evaluation.symbols})`, 'Alle Signale, auch Text und alter LLM-Score']] : []),
+              ...(data?.universe ? [['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale']] : []),
+              ...(bt ? [['backtest', 'Backtest (S&P 500 seit 2013)', 'Faktor-Score an jedem Monatsende aus den SEC-Abschlüssen nachgerechnet']] : []),
+            ] as [Scope, string, string][]).map(([s, label, title]) => (
+              <button
+                key={s}
+                onClick={() => setScope(s)}
+                title={title}
+                className={`rounded px-2.5 py-1 text-xs transition ${
+                  s === scope ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
+        {scope === 'backtest' && bt && <BacktestPanel data={bt} />}
+
+        {scope !== 'backtest' && ev && (
+          <>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-[11px] text-ink-400">Horizont</span>
               {HORIZONS.map((h) => (
