@@ -95,26 +95,58 @@ const idCache = new Map<string, number>();
  * Ensure the symbol exists and return its id, refreshing the profile when one
  * is supplied. COALESCE on update so a partial profile never blanks a field a
  * richer earlier write had filled in.
+ *
+ * Only a symbol that does not exist yet costs a value of the id sequence.
+ * This used to be one `INSERT … ON CONFLICT DO UPDATE`, and Postgres draws
+ * the default id before it finds the conflict, so every write — each snapshot,
+ * each news document, each re-scored instant — spent one whether or not a row
+ * was created. The sequence was a smallint then. Months of nightly writes, then
+ * the reference universe and a re-score of the whole history after every
+ * deploy, spent its 32 767 values, and from then on every write for every
+ * symbol failed (migration 009). Most callers only want the id, and get it
+ * from the cache or one SELECT; a profile is written by an UPDATE, and only a
+ * miss inserts.
  */
 export async function upsertSymbol(symbol: string, profile: SymbolProfile = {}): Promise<number> {
   const sym = symbol.toUpperCase();
+  const fields = [
+    profile.companyName, profile.sector, profile.industry, profile.isin, profile.wkn, profile.website, profile.currency,
+  ].map((v) => v ?? null);
+  if (fields.every((v) => v === null)) {
+    const known = await symbolId(sym);
+    if (known !== null) return known;
+  }
   const row = await queryOne<{ id: number }>(
-    `INSERT INTO symbols (symbol, company_name, sector, industry, isin, wkn, website, currency)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (symbol) DO UPDATE SET
-       company_name = COALESCE(EXCLUDED.company_name, symbols.company_name),
-       sector       = COALESCE(EXCLUDED.sector,       symbols.sector),
-       industry     = COALESCE(EXCLUDED.industry,     symbols.industry),
-       isin         = COALESCE(EXCLUDED.isin,         symbols.isin),
-       wkn          = COALESCE(EXCLUDED.wkn,          symbols.wkn),
-       website      = COALESCE(EXCLUDED.website,      symbols.website),
-       currency     = COALESCE(EXCLUDED.currency,     symbols.currency),
-       updated_at   = now()
-     RETURNING id`,
-    [
-      sym, profile.companyName ?? null, profile.sector ?? null, profile.industry ?? null,
-      profile.isin ?? null, profile.wkn ?? null, profile.website ?? null, profile.currency ?? null,
-    ],
+    `WITH updated AS (
+       UPDATE symbols SET
+         company_name = COALESCE($2, company_name),
+         sector       = COALESCE($3, sector),
+         industry     = COALESCE($4, industry),
+         isin         = COALESCE($5, isin),
+         wkn          = COALESCE($6, wkn),
+         website      = COALESCE($7, website),
+         currency     = COALESCE($8, currency),
+         updated_at   = now()
+       WHERE symbol = $1
+       RETURNING id
+     ), inserted AS (
+       INSERT INTO symbols (symbol, company_name, sector, industry, isin, wkn, website, currency)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8
+       WHERE NOT EXISTS (SELECT 1 FROM updated)
+       -- Only a writer racing another to create the same symbol lands here.
+       ON CONFLICT (symbol) DO UPDATE SET
+         company_name = COALESCE(EXCLUDED.company_name, symbols.company_name),
+         sector       = COALESCE(EXCLUDED.sector,       symbols.sector),
+         industry     = COALESCE(EXCLUDED.industry,     symbols.industry),
+         isin         = COALESCE(EXCLUDED.isin,         symbols.isin),
+         wkn          = COALESCE(EXCLUDED.wkn,          symbols.wkn),
+         website      = COALESCE(EXCLUDED.website,      symbols.website),
+         currency     = COALESCE(EXCLUDED.currency,     symbols.currency),
+         updated_at   = now()
+       RETURNING id
+     )
+     SELECT id FROM updated UNION ALL SELECT id FROM inserted`,
+    [sym, ...fields],
   );
   idCache.set(sym, row!.id);
   return row!.id;
@@ -170,8 +202,12 @@ export async function listSymbols(scope: SymbolScope = 'watchlist'): Promise<str
  * watchlist stock that is also in the index stays on the watchlist.
  */
 export async function markReference(symbol: string): Promise<void> {
+  // Selected rather than VALUES: `ON CONFLICT DO NOTHING` alone would still
+  // draw an id for every member every night (see `upsertSymbol`).
   await query(
-    `INSERT INTO symbols (symbol, reference) VALUES ($1, true) ON CONFLICT (symbol) DO NOTHING`,
+    `INSERT INTO symbols (symbol, reference)
+     SELECT $1, true WHERE NOT EXISTS (SELECT 1 FROM symbols WHERE symbol = $1)
+     ON CONFLICT (symbol) DO NOTHING`,
     [symbol.toUpperCase()],
   );
 }
