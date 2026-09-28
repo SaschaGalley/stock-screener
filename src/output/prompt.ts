@@ -219,9 +219,16 @@ ${distillInsights(block)}`.trimEnd();
  * heading that declared its contents "your strongest qualitative signal", and
  * each sector block then spent a paragraph walking that back. In a prompt,
  * structure outweighs prose: material filed under a strong-weight heading reads
- * as strong-weight material however the sentences hedge. So the claim now covers
- * only the company's own dossier, and the sectors get their own section, headed
- * as background, placed after.
+ * as strong-weight material however the sentences hedge. So the sectors get
+ * their own section, headed as background, placed after.
+ *
+ * The company section no longer claims weight either. It called the material
+ * "curated, multi-source" and "vetted RSS, earnings transcripts, sell-side
+ * research" and ranked it above Perplexity. Distill's own audit (27 Sept 2026)
+ * found 86 % of its statements coming from YouTube commentators, most daily
+ * dossier tiles passed through unedited, and promotional segments getting in
+ * (distill#171, distill#199). It is commentary to learn what is being said, and
+ * the section now says so.
  *
  * It also answers the volume problem the labelling alone could not. Two sector
  * dossiers routinely outweigh a company's several times over — Airbus has 2.9k
@@ -253,22 +260,31 @@ ${demoteHeadings(briefing.body.trim(), 3)}`
 
   const companySection = company || briefing
     ? `
-### Distill Dossier — ${symbol} (curated, multi-source — weight HIGHER than Perplexity / search)
+### Distill Dossier — ${symbol} (aggregated commentary and news — not verified, not ranked above other sources)
 
-Synthesised by Distill from a curated set of sources (vetted RSS, earnings
-transcripts, sell-side research, expert commentary). Because the editorial
-filtering happens upstream, treat this as your **strongest qualitative signal**
-— stronger than raw search or Perplexity, second only to the quantitative
-valuation models and analyst consensus. Where it contradicts the calculated
-models or the analyst consensus, surface the divergence explicitly in the bull
-or bear case.
+Condensed by Distill from the channels, feeds and newsletters it follows — a mix
+of news and commentary, much of it from individual commentators. Distill keeps
+statements that carry a claim; it does not check whether they are true. Weigh it
+like the web research, not above it: it tells you what is being said about
+${symbol}, not whether it holds.
 
-The block carries two kinds of thing and they do not weigh the same. The
-**dossier** is Distill's synthesised 30-day picture and is the strong signal.
-The **raw source statements** beneath it are single unsynthesised items the
-dossier does not reproduce — that includes today, which no dossier window
-covers, but also older material that arrived late. Treat one raw statement as
-one source.
+- **An opinion stays an opinion.** "Undervalued" or "the next winner" from a
+  channel is that channel's view, however confidently it is phrased.
+- **Repetition is not confirmation.** One channel saying it on three days is one
+  source, and so is a dossier sentence built from those three.
+- **A number or an event needs a second source** — the financial data, the
+  consensus or the web research — before it carries a finding on its own.
+- **Promotion can slip through.** A pitch with an offer, a discount code or a
+  "sponsored segment" is marketing, not evidence.
+- Where it contradicts the calculated models or the analyst consensus, surface
+  the divergence in the bull or bear case — as a question to check, not as a
+  verdict.
+
+The block carries two kinds of thing. The **dossier** condenses the last 30 days
+of these statements; on a quiet day it is the day's statements themselves,
+unedited. The **raw source statements** beneath it are single items the dossier
+does not reproduce — that includes today, which no dossier window covers, but
+also older material that arrived late. Treat one raw statement as one source.
 ${company ? `\n${distillBlock(company, symbol)}\n` : ''}${briefingBlock}
 `
     : '';
@@ -530,7 +546,7 @@ Leere Abschnitte heißen „gesucht und nichts gefunden", nicht „nicht gesucht
 
 ${perplexity.synthesis}
 `
-      : `\n### Perplexity Sonar (web-recherchiert — unter Distill zu gewichten)\n\n${perplexity.synthesis}\n`;
+      : `\n### Perplexity Sonar (web-recherchiert)\n\n${perplexity.synthesis}\n`;
 
   return `## Qualitative Lage: ${f.symbol} — ${f.companyName}
 Sektor ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}
@@ -578,6 +594,10 @@ Regeln:
   Ein Branchengegenwind ist ein Grund nachzusehen, ob die Firma ihn teilt — kein
   Befund, dass sie ihn teilt.
 - Rohe Einzelmeldungen wiegen als eine Quelle, nicht als ein Trend.
+- **Distill ist gesammelter Kommentar, keine geprüfte Quelle.** Die Einschätzung
+  eines einzelnen Kanals oder Newsletters trägt für sich weder ±2 noch ±1 —
+  dafür braucht es einen datierten Vorgang oder eine zweite, unabhängige Quelle.
+  Wiederholt dieselbe Quelle etwas, bleibt es eine Quelle.
 - \`events\` sind konkrete, datierte Vorgänge (Auftrag, Zulassung, Rückruf,
   Personalwechsel, Kapitalmaßnahme) — keine Einschätzungen.
 

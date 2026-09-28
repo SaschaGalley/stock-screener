@@ -10,7 +10,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { distillDossierSection } from '../src/output/prompt.js';
+import { buildNarrativePrompt, distillDossierSection } from '../src/output/prompt.js';
+import type { PerplexityContext } from '../src/data/perplexity.js';
+import type { StockFinancials } from '../src/types.js';
 import type {
   DistillBundle,
   DistillDossierBlock,
@@ -323,7 +325,7 @@ describe('the company / sector split', () => {
     const company = out.indexOf('### Distill Dossier — AIR.PA');
     const sector  = out.indexOf('### Sector Context');
     assert.ok(company >= 0 && sector > company, 'the company section comes first');
-    assert.match(out, /strongest qualitative signal/);
+    assert.match(out, /Weigh it\s+like the web research, not above it/);
   });
 
   it('emits no sector section when the stock has none', () => {
@@ -340,5 +342,55 @@ describe('the company / sector split', () => {
     }));
 
     assert.match(out, /### Sector Context — Aerospace & Defense, Industrials/);
+  });
+});
+
+
+/**
+ * How much Distill weighs. The company section used to call its material
+ * "curated, multi-source", list "vetted RSS, earnings transcripts, sell-side
+ * research" and rank it above Perplexity. Distill's audit of 27 September 2026
+ * found most of it to be YouTube commentary, many daily tiles passed through
+ * unedited, and promotion getting in — so the prompt no longer claims weight
+ * for it, in the section or in the Perplexity heading that mirrored the claim.
+ */
+describe('how much Distill weighs', () => {
+  const out = () => distillDossierSection('AIR.PA', bundle({ company: block() }));
+
+  it('claims no precedence over the other qualitative sources', () => {
+    const text = out();
+    assert.doesNotMatch(text, /strongest qualitative signal|weight HIGHER|curated|vetted|sell-side research/);
+    assert.match(text, /not verified, not ranked above other sources/);
+  });
+
+  it('says that opinion and repetition do not add up to evidence', () => {
+    const text = out();
+    assert.match(text, /An opinion stays an opinion/);
+    assert.match(text, /Repetition is not confirmation/);
+    assert.match(text, /A number or an event needs a second source/);
+    assert.match(text, /Promotion can slip through/);
+  });
+
+  it('turns a divergence from the models into a question, not a verdict', () => {
+    assert.match(out(), /as a question to check, not as a\s+verdict/);
+  });
+});
+
+describe('the narrative prompt', () => {
+  const f = { symbol: 'AIR.PA', companyName: 'Airbus', sector: 'Industrials', industry: 'Aerospace' } as StockFinancials;
+  const pplx: PerplexityContext = {
+    model: 'sonar-pro', synthesis: 'Order backlog at a record.', citations: [], fetchedAt: '2026-09-28T08:00:00.000Z',
+  };
+
+  it('no longer ranks Perplexity below Distill', () => {
+    const text = buildNarrativePrompt(f, bundle({ company: block() }), pplx);
+    assert.doesNotMatch(text, /unter Distill zu gewichten/);
+    assert.match(text, /### Perplexity Sonar \(web-recherchiert\)/);
+  });
+
+  it('scores no dimension on a single commentator', () => {
+    const text = buildNarrativePrompt(f, bundle({ company: block() }), pplx);
+    assert.match(text, /Distill ist gesammelter Kommentar, keine geprüfte Quelle/);
+    assert.match(text, /Wiederholt dieselbe Quelle etwas, bleibt es eine Quelle/);
   });
 });

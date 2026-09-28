@@ -325,8 +325,8 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   const usePplx   = input.pplx !== null && input.pplx !== undefined;
   const pplxModel: 'sonar' | 'sonar-pro' = input.pplx === 'sonar' ? 'sonar' : 'sonar-pro';
   // Distill is always-on when the key is configured — there's no per-run
-  // toggle. The briefings are upstream-curated, so they're cheap to include
-  // and consistently the highest-signal context block we can hand the LLM.
+  // toggle. Its dossiers cost nothing to read, so they are always included, as
+  // one qualitative source among others (see `distillDossierSection`).
   const useDistill = !!cfg.distillApiKey;
   emit({ stage: 'rates', message: 'Fetching macro rates + news + sector medians'
     + (usePplx ? ' + Perplexity' : '')
