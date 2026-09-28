@@ -62,6 +62,8 @@ const INSIGHT_LIMIT = 25;
  * problem worth acting on here:
  *
  *   ready       take the prose, plus the insights it does not reproduce
+ *   outdated    the same, but the prose lags: the prompt says by how many days,
+ *               so the model reads it as background up to its window's end
  *   empty       built, nothing in the window — the insights still come
  *   not_built   switched on, sweep has not reached it — insights carry it
  *   not_enabled the switch is off, which should not happen once the sync has
@@ -93,7 +95,12 @@ async function readBlock(
   }
 
   if (content.state === 'not_enabled') {
-    logger.info(`Distill dossier for ${target.ref} was off — switching it on; tonight's build will fill it.`);
+    // Distill builds only while its sweep is on — switching the entity on does not
+    // promise a build by itself.
+    const build = content.sweep?.enabled === false
+      ? "Distill's sweep is off, so nothing gets built until it runs again"
+      : "tonight's build will fill it";
+    logger.info(`Distill dossier for ${target.ref} was off — switching it on; ${build}.`);
     // Through the ledger rather than a bare PUT, so the switch we just set is
     // the switch the next sync sees.
     await dossiersFollow([{ kind: target.kind, subject: target.subject, enabled: true }])
@@ -111,6 +118,9 @@ async function readBlock(
     periodEnd:   body?.periodEnd ?? null,
     builtAt:     body?.builtAt ?? null,
     stale:       body?.stale ?? false,
+    staleReasons: body?.staleReasons ?? [],
+    behindDays:  body?.behindDays ?? null,
+    sweep:       content.sweep,
     content:     body?.content ?? null,
     // Handed through untouched. The membership rule is Distill's and is about
     // provenance, not dates — a client-side filter on `from`/`to` would drop

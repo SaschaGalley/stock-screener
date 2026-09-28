@@ -12,6 +12,7 @@ import { afterEach, describe, it } from 'node:test';
 
 import {
   getDistillDossier,
+  getDistillDossierContent,
   setDistillDossier,
 } from '../src/data/distill-dossier.js';
 import {
@@ -168,5 +169,77 @@ describe('getDistillDossier', () => {
     assert.deepEqual(state, { ref: 'company:microsoft', id: ID, enabled: true, eligible: true });
     assert.equal(calls[0].method, 'GET');
     assert.equal(calls[0].body, null);
+  });
+});
+
+describe('getDistillDossierContent', () => {
+  const dossier = {
+    unit: 'day', span: 30,
+    period_start: '2026-08-16T22:00:00.000Z', period_end: '2026-09-15T22:00:00.000Z',
+    built_at: '2026-09-15T22:21:00.000Z', chars: 12, content: 'Old but real',
+  };
+
+  it('takes the prose of an outdated dossier, with why and how far it lags', async () => {
+    stubFetch([{ status: 200, body: {
+      ref: 'company:nvidia', id: ID, enabled: true, eligible: true, state: 'outdated',
+      dossier: { ...dossier, stale: true, stale_reasons: ['window_moved', 'from_the_future'], behind_days: 12 },
+    } }]);
+
+    const c = await getDistillDossierContent(ID, KEY, BASE, NO_RETRY);
+
+    assert.equal(c.state, 'outdated');
+    assert.equal(c.dossier?.content, 'Old but real');
+    assert.equal(c.dossier?.behindDays, 12);
+    // A reason this client does not know is dropped, not guessed at.
+    assert.deepEqual(c.dossier?.staleReasons, ['window_moved']);
+  });
+
+  it('reads whether Distill builds at all, and the span its limit left out', async () => {
+    stubFetch([{ status: 200, body: {
+      ref: 'company:nvidia', id: ID, enabled: true, eligible: true, state: 'ready',
+      dossier: { ...dossier, stale: false, stale_reasons: [], behind_days: 0 },
+      sweep: { enabled: false, last_run_finished_at: '2026-09-15T22:22:09.000Z', last_run_status: 'completed' },
+      insights: {
+        from: dossier.period_start, to: '2026-09-27T20:00:00.000Z', count: 1, truncated: true,
+        omitted: { count: 87, from: '2026-09-16T08:00:00.000Z', to: '2026-09-23T19:30:00.000Z' },
+        data: [{ id: 'i1', at: '2026-09-24T08:00:00.000Z', content: 'x' }],
+      },
+    } }]);
+
+    const c = await getDistillDossierContent(ID, KEY, BASE, { ...NO_RETRY, includeInsights: true });
+
+    assert.deepEqual(c.sweep, {
+      enabled: false, lastRunFinishedAt: '2026-09-15T22:22:09.000Z', lastRunStatus: 'completed',
+    });
+    assert.deepEqual(c.insights?.omitted, {
+      count: 87, from: '2026-09-16T08:00:00.000Z', to: '2026-09-23T19:30:00.000Z',
+    });
+  });
+
+  it('an older Distill without the new fields still parses, with nothing invented', async () => {
+    stubFetch([{ status: 200, body: {
+      ref: 'company:nvidia', id: ID, enabled: true, eligible: true, state: 'ready',
+      dossier: { ...dossier, stale: true },
+      insights: { from: dossier.period_start, to: '2026-09-27T20:00:00.000Z', count: 0, truncated: false, data: [] },
+    } }]);
+
+    const c = await getDistillDossierContent(ID, KEY, BASE, { ...NO_RETRY, includeInsights: true });
+
+    assert.equal(c.sweep, null);
+    assert.equal(c.dossier?.stale, true);
+    assert.deepEqual(c.dossier?.staleReasons, []);
+    assert.equal(c.dossier?.behindDays, null);
+    assert.equal(c.insights?.omitted, null);
+  });
+
+  it('an unknown state carries no prose', async () => {
+    stubFetch([{ status: 200, body: {
+      ref: 'company:nvidia', id: ID, enabled: true, eligible: true, state: 'something_new', dossier,
+    } }]);
+
+    const c = await getDistillDossierContent(ID, KEY, BASE, NO_RETRY);
+
+    assert.equal(c.state, 'not_built');
+    assert.equal(c.dossier, null);
   });
 });

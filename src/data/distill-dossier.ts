@@ -194,16 +194,34 @@ export async function setDistillDossier(
  * code for everything except an entity it does not know, so this field — not
  * the HTTP status — is what the caller branches on.
  *
- *   ready       the prose is there
+ *   ready       the prose is there, at most a day behind its window
+ *   outdated    the prose is there but lags further: Distill's nightly sweep
+ *               missed a night or is switched off. Still true for its own
+ *               window, no longer the current state — `behindDays` says how far
  *   not_enabled the switch is off. Deliberately *no* content: switching off
  *               deletes nothing, so an artefact whose window stopped weeks ago
  *               is still lying there and would read as the current state
  *   not_built   switched on, but the nightly sweep has not reached it yet
  *   empty       built, and nothing happened in the window. Not a failure
+ *
+ * `outdated` exists because a bare `stale` flag was not enough: from 16 to 27
+ * September 2026 the sweep did not run, every dossier came back `ready` and
+ * twelve days old, and this client read the flag as "a late document, the
+ * window still holds" (distill#168).
  */
-export type DistillDossierContentState = 'ready' | 'not_enabled' | 'not_built' | 'empty';
+export type DistillDossierContentState = 'ready' | 'outdated' | 'not_enabled' | 'not_built' | 'empty';
 
-const CONTENT_STATES: readonly string[] = ['ready', 'not_enabled', 'not_built', 'empty'];
+const CONTENT_STATES: readonly string[] = ['ready', 'outdated', 'not_enabled', 'not_built', 'empty'];
+
+/**
+ * Why Distill considers a dossier stale — one value per stale rule, in rule
+ * order. Only `late_material` is harmless: a document that arrived late and
+ * carries a date inside a day that was already built.
+ */
+export type DistillStaleReason = 'late_material' | 'child_stale' | 'window_moved' | 'material_withdrawn';
+
+const STALE_REASONS: readonly DistillStaleReason[] =
+  ['late_material', 'child_stale', 'window_moved', 'material_withdrawn'];
 
 export interface DistillDossierBody {
   unit:        string;
@@ -212,9 +230,15 @@ export interface DistillDossierBody {
   periodStart: string | null;
   periodEnd:   string | null;
   builtAt:     string | null;
-  /** Common and usually harmless — a late document landing in a built tile.
-   *  Carry it, do not branch on it: the window is still the truth. */
+  /** Short for "`staleReasons` is not empty". Branch on the reasons instead. */
   stale:       boolean;
+  /** Empty for a valid dossier. Unknown values from a newer Distill are dropped,
+   *  so `stale` can be true while this is empty. */
+  staleReasons: DistillStaleReason[];
+  /** Calendar days (Europe/Vienna) between `periodEnd` and the end of today's
+   *  window. 0 is freshly built, 1 is normal until the night's sweep has run.
+   *  Null when Distill did not say (older versions). */
+  behindDays:  number | null;
   chars:       number | null;
   content:     string;
 }
@@ -256,8 +280,27 @@ export interface DistillInsightWindow {
   count:     number;
   /** `insight_limit` bit. Counts only — Distill applies no character cap. */
   truncated: boolean;
+  /**
+   * What `insight_limit` cut: how many, and the span of their dates. The oldest
+   * go first, so the gap sits before the first item — usually right behind the
+   * dossier's window. Null when nothing was cut or Distill did not say;
+   * absent in bundles stored before Distill reported it.
+   */
+  omitted?:  { count: number; from: string | null; to: string | null } | null;
   /** Cut newest-first upstream, then handed back in chronological order. */
   items:     DistillInsight[];
+}
+
+/**
+ * Whether Distill builds dossiers at all. `enabled` is its switch — which only
+ * takes effect when its workers next start — and the last finished run says
+ * whether anything actually happened. Neither alone answers "will tonight's
+ * build fill this?".
+ */
+export interface DistillSweepStatus {
+  enabled:            boolean;
+  lastRunFinishedAt:  string | null;
+  lastRunStatus:      string | null;
 }
 
 export interface DistillDossierContent {
@@ -270,6 +313,30 @@ export interface DistillDossierContent {
   dossier:  DistillDossierBody | null;
   /** Only present when asked for with `includeInsights`. */
   insights: DistillInsightWindow | null;
+  /** Null when Distill did not say (older versions). */
+  sweep:    DistillSweepStatus | null;
+}
+
+function toSweep(raw: unknown): DistillSweepStatus | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.enabled !== 'boolean') return null;
+  return {
+    enabled:           s.enabled,
+    lastRunFinishedAt: typeof s.last_run_finished_at === 'string' ? s.last_run_finished_at : null,
+    lastRunStatus:     typeof s.last_run_status === 'string' ? s.last_run_status : null,
+  };
+}
+
+function toOmitted(raw: unknown): DistillInsightWindow['omitted'] {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.count !== 'number' || o.count <= 0) return null;
+  return {
+    count: o.count,
+    from:  typeof o.from === 'string' ? o.from : null,
+    to:    typeof o.to === 'string' ? o.to : null,
+  };
 }
 
 function toInsight(raw: unknown): DistillInsight | null {
@@ -300,6 +367,7 @@ function toInsights(raw: unknown): DistillInsightWindow | null {
     // actually parsed so a dropped empty row cannot make the two disagree.
     count:     items.length,
     truncated: w.truncated === true,
+    omitted:   toOmitted(w.omitted),
     items,
   };
 }
@@ -316,6 +384,9 @@ function toBody(raw: unknown): DistillDossierBody | null {
     periodEnd:   typeof d.period_end === 'string' ? d.period_end : null,
     builtAt:     typeof d.built_at === 'string' ? d.built_at : null,
     stale:       d.stale === true,
+    staleReasons: (Array.isArray(d.stale_reasons) ? d.stale_reasons : [])
+      .filter((r): r is DistillStaleReason => STALE_REASONS.includes(r as DistillStaleReason)),
+    behindDays:  typeof d.behind_days === 'number' ? d.behind_days : null,
     chars:       typeof d.chars === 'number' ? d.chars : content.length,
     content,
   };
@@ -366,13 +437,16 @@ export async function getDistillDossierContent(
     enabled:  row.enabled === true,
     eligible: typeof row.eligible === 'boolean' ? row.eligible : null,
     state,
-    // Only `ready` may carry prose. A `not_enabled` answer can still ship a
-    // stale artefact, and taking it would mean reading a window that stopped
-    // moving weeks ago as though it were current.
-    dossier:  state === 'ready' ? toBody(row.dossier) : null,
+    // Only `ready` and `outdated` carry prose. A `not_enabled` answer can still
+    // ship a stale artefact, and taking it would mean reading a window that
+    // stopped moving weeks ago as though it were current. `outdated` prose is
+    // taken because Distill says so itself — with how far it lags, which the
+    // prompt passes on.
+    dossier:  state === 'ready' || state === 'outdated' ? toBody(row.dossier) : null,
     // Insights, by contrast, are valid in every state — for anything but
     // `ready` they *are* the material, covering the same 30 days the paid
     // briefing used to read.
     insights: toInsights(row.insights),
+    sweep:    toSweep(row.sweep),
   };
 }

@@ -123,9 +123,68 @@ function distillInsights(block: DistillDossierBlock): string {
   return `
 **${heading}** (${kept.length}, oldest first, dated by when the news is from rather than
 when Distill saw it). Unsynthesised and unfiltered: weigh a single one as a single
-source.${more ? ' More exist than are shown — absence here is not evidence of absence.' : ''}
+source.${more ? missingNote(block, all, kept) : ''}
 
 ${kept.map(insightLine).join('\n')}`;
+}
+
+/**
+ * What is missing from the list, said as a span when the span is known.
+ *
+ * Both cuts drop the *oldest* statements: Distill's `insight_limit` upstream and
+ * the per-kind cap here. So the gap sits before the first line shown, usually
+ * right behind the dossier's window — the one place a reader would otherwise
+ * assume nothing happened. From 16 to 23 September 2026 that was 87 statements
+ * about Nvidia (distill#168).
+ */
+function missingNote(block: DistillDossierBlock, all: DistillInsight[], kept: DistillInsight[]): string {
+  const upstream = block.insights?.omitted ?? null;
+  const cutHere  = all.length - kept.length;
+  const count    = (upstream?.count ?? 0) + cutHere;
+  const from     = upstream ? upstream.from : cutHere > 0 ? all[0].at : null;
+  const to       = cutHere > 0 ? all[cutHere - 1].at : upstream?.to ?? null;
+  if (count === 0 || !from || !to) {
+    return ' More exist than are shown — absence here is not evidence of absence.';
+  }
+  return ` ${count} older statements from ${from.slice(0, 10)} to ${to.slice(0, 10)} are not`
+    + ' shown — absence in that span is not evidence of absence.';
+}
+
+/**
+ * How current the prose is, in the words the model needs.
+ *
+ * A bare `stale` used to be rendered as "a late document landed in a built tile;
+ * the window above still holds" — also when the dossier was twelve days old
+ * because Distill's sweep had not run (distill#168). The reason decides the
+ * sentence now, and a dossier more than a day behind is said to be out of date
+ * in a paragraph of its own, not in a trailing clause.
+ */
+function freshnessNote(block: DistillDossierBlock): { inline: string; paragraph: string } {
+  const reasons = block.staleReasons ?? [];
+  const behind  = block.behindDays ?? null;
+  if (block.state === 'outdated' || (behind !== null && behind > 1)) {
+    const days = behind !== null ? `${behind} days` : 'more than a day';
+    const end  = block.periodEnd ? ` on ${block.periodEnd.slice(0, 10)}` : '';
+    return {
+      inline: '',
+      paragraph: `**Out of date:** this dossier ends${end}, ${days} behind today, and Distill has`
+        + ' not rebuilt it since. Read it as background up to its end; anything newer is only in'
+        + ' the raw statements below.',
+    };
+  }
+  if (reasons.includes('window_moved') && behind === 1) {
+    return { inline: " · a day behind until Distill's nightly build; the raw statements below cover it", paragraph: '' };
+  }
+  if (!block.stale) return { inline: '', paragraph: '' };
+  // No reasons: a bundle stored before Distill gave them, or a reason this
+  // client does not know yet. The old sentence is the best it can say.
+  if (reasons.length === 0 || reasons.every((r) => r === 'late_material')) {
+    return { inline: ' · marked stale upstream (a late document landed in a built day; the window above still holds)', paragraph: '' };
+  }
+  return {
+    inline: ' · marked stale upstream (part of its material was rebuilt or reassigned since; the window above still holds)',
+    paragraph: '',
+  };
 }
 
 /** One dossier block, headed by what it is *about* — see `distillDossierSection`. */
@@ -142,8 +201,9 @@ function distillBlock(block: DistillDossierBlock, symbol: string): string {
       + 'finding. Where the company diverges from its sector, that divergence is the signal.'
     : `**Scope: ${symbol} itself.**`;
 
+  const fresh = freshnessNote(block);
   const prose = block.content?.trim()
-    ? `\n${window}${built}${block.stale ? ' · marked stale upstream (a late document landed in a built tile; the window above still holds)' : ''}\n\n${demoteHeadings(block.content.trim(), 3)}`
+    ? `\n${window}${built}${fresh.inline}${fresh.paragraph ? `\n\n${fresh.paragraph}` : ''}\n\n${demoteHeadings(block.content.trim(), 3)}`
     : '';
 
   return `#### ${block.kind === 'sector' ? 'Sector' : 'Company'} — ${block.displayName} (\`${block.ref}\`)

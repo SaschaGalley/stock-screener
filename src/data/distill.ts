@@ -1,6 +1,11 @@
 import { logger } from '../utils/logger.js';
 import type { DistillEntityRef } from './distill-entities.js';
-import type { DistillDossierContentState, DistillInsightWindow } from './distill-dossier.js';
+import type {
+  DistillDossierContentState,
+  DistillInsightWindow,
+  DistillStaleReason,
+  DistillSweepStatus,
+} from './distill-dossier.js';
 
 // Re-exported so callers keep importing Distill's failure modes from one place.
 export {
@@ -13,6 +18,8 @@ export type {
   DistillDossierContentState,
   DistillInsight,
   DistillInsightWindow,
+  DistillStaleReason,
+  DistillSweepStatus,
 } from './distill-dossier.js';
 
 /**
@@ -56,7 +63,16 @@ export interface DistillDossierBlock {
   periodEnd:   string | null;
   builtAt:     string | null;
   stale:       boolean;
-  /** Null unless `state` is `ready`. */
+  /**
+   * Why the dossier is stale, and how many days it lags behind today's window.
+   * Absent in bundles stored before Distill reported them (distill#168) — read
+   * with a fallback, never as though they were always there.
+   */
+  staleReasons?: DistillStaleReason[];
+  behindDays?:   number | null;
+  /** Whether Distill builds at all. Absent in bundles stored before distill#168. */
+  sweep?:        DistillSweepStatus | null;
+  /** Null unless `state` is `ready` or `outdated`. */
   content:     string | null;
   /**
    * What the dossier does not reproduce — raw, unsynthesised, and valid in

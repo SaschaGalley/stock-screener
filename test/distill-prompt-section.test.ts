@@ -179,7 +179,37 @@ describe('raw insights in the prompt', () => {
     assert.equal(out.match(/^- 2026-08-/gm)?.length, 8);
     assert.doesNotMatch(out, /item 3\b/, 'the four oldest are dropped');
     assert.match(out, /item 11\b/, 'the newest survive');
-    assert.match(out, /More exist than are shown/);
+    // Not claiming completeness, and saying which days the dropped four are from.
+    assert.match(out, /4 older statements from 2026-08-10 to 2026-08-13 are not shown/);
+  });
+
+  it('says which span Distill left out, not just that something is missing', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({
+        insights: {
+          ...window([insight({ at: '2026-09-24T08:00:00.000Z' })], true),
+          omitted: { count: 87, from: '2026-09-16T08:00:00.000Z', to: '2026-09-23T19:30:00.000Z' },
+        },
+      }),
+    }));
+    // The gap right behind a dossier is where a reader would assume nothing happened.
+    assert.match(out, /87 older statements from 2026-09-16 to 2026-09-23 are not shown/);
+    assert.doesNotMatch(out, /More exist than are shown/);
+  });
+
+  it("adds its own sector cap to what Distill left out, as one span", () => {
+    const many = Array.from({ length: 12 }, (_, n) =>
+      insight({ id: `i${n}`, at: `2026-08-${String(10 + n).padStart(2, '0')}T00:00:00.000Z`, content: `item ${n}` }));
+    const out = distillDossierSection('AIR.PA', bundle({
+      sectors: [block({
+        kind: 'sector', ref: 'sector:industrials', displayName: 'Industrials',
+        insights: {
+          ...window(many, true),
+          omitted: { count: 5, from: '2026-08-01T00:00:00.000Z', to: '2026-08-05T00:00:00.000Z' },
+        },
+      })],
+    }));
+    assert.match(out, /9 older statements from 2026-08-01 to 2026-08-13 are not shown/);
   });
 
   it('leaves a company uncapped below the limit', () => {
@@ -194,6 +224,71 @@ describe('raw insights in the prompt', () => {
   it('renders nothing extra when a block brought no insights', () => {
     const out = distillDossierSection('AIR.PA', bundle({ company: block() }));
     assert.doesNotMatch(out, /Raw source statements/);
+  });
+});
+
+/**
+ * How current the prose is. From 16 to 27 September 2026 every dossier came back
+ * twelve days old, and the prompt still told the model "a late document landed;
+ * the window above still holds" (distill#168). The reason decides the sentence.
+ */
+describe('dossier freshness', () => {
+  it('says a dossier is out of date, with its end and how far it lags', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({
+        state: 'outdated', stale: true, staleReasons: ['window_moved'], behindDays: 12,
+        periodEnd: '2026-09-15T22:00:00.000Z',
+      }),
+    }));
+    assert.match(out, /\*\*Out of date:\*\* this dossier ends on 2026-09-15, 12 days behind today/);
+    assert.doesNotMatch(out, /the window above still holds/);
+    // The prose itself is still there — true for its own window.
+    assert.match(out, /Order book grew\./);
+  });
+
+  it('reads a lag of more than a day as out of date even under the state ready', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ state: 'ready', stale: true, staleReasons: ['window_moved'], behindDays: 3 }),
+    }));
+    assert.match(out, /\*\*Out of date:\*\*.*3 days behind today/);
+  });
+
+  it('keeps the harmless note for a late document, and only for that', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ stale: true, staleReasons: ['late_material'], behindDays: 0 }),
+    }));
+    assert.match(out, /a late document landed in a built day; the window above still holds/);
+    assert.doesNotMatch(out, /Out of date/);
+  });
+
+  it("says a day of lag is covered by the raw statements until the night's build", () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ stale: true, staleReasons: ['window_moved'], behindDays: 1 }),
+    }));
+    assert.match(out, /a day behind until Distill's nightly build/);
+    assert.doesNotMatch(out, /a late document landed/);
+  });
+
+  it('names rebuilt or reassigned material as such', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ stale: true, staleReasons: ['material_withdrawn'], behindDays: 0 }),
+    }));
+    assert.match(out, /part of its material was rebuilt or reassigned since/);
+  });
+
+  it('a bundle stored before the reasons existed keeps the old sentence', () => {
+    const stored = block({ stale: true });
+    delete stored.staleReasons;
+    delete stored.behindDays;
+    const out = distillDossierSection('AIR.PA', bundle({ company: stored }));
+    assert.match(out, /a late document landed in a built day; the window above still holds/);
+  });
+
+  it('says nothing about freshness when the dossier is current', () => {
+    const out = distillDossierSection('AIR.PA', bundle({
+      company: block({ stale: false, staleReasons: [], behindDays: 0 }),
+    }));
+    assert.doesNotMatch(out, /Out of date|marked stale|a day behind/);
   });
 });
 
