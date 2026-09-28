@@ -867,13 +867,13 @@ export function createApp(): express.Express {
       }
       // A real announcement, marked as a test: what arrives is what a change will look like.
       const sample = verdictAlert('AAPL', { from: 'HOLD', to: 'BUY', score: 6.7 });
-      const ok = await sendAlert(webhookUrl, format, {
+      const sent = await sendAlert(webhookUrl, format, {
         ...sample,
         title:  `Test · ${sample.title}`,
         text:   `stock-cli: Test — so sieht eine Urteilsänderung aus: ${sample.text}`,
         fields: { ...sample.fields, test: true },
       });
-      res.json({ ok });
+      res.json({ ok: sent.ok, error: sent.reason ?? undefined });
     } catch (e) {
       next(e);
     }

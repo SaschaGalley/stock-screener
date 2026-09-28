@@ -175,7 +175,8 @@ export default function AdminPage({ onClose }: Props) {
     setError(null);
     try {
       const r = await api.testAlert();
-      setNotice(r.ok ? 'Testnachricht gesendet.' : 'Der Webhook hat die Testnachricht nicht angenommen.');
+      if (r.ok) setNotice('Testnachricht gesendet.');
+      else setError(`Der Webhook hat die Testnachricht nicht angenommen${r.error ? ` — ${r.error}` : ''}.`);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -485,7 +486,9 @@ export default function AdminPage({ onClose }: Props) {
           <p className="text-[11px] leading-relaxed text-ink-500">
             {config.alerts.format === 'ntfy'
               ? <>Leer = aus. Die URL des ntfy-Topics, auf ntfy.sh oder einem eigenen Server; die ntfy-App abonniert dasselbe
-                  Topic. Titel ist der Wechsel (<span className="font-mono">MSFT: HOLD → BUY</span>), darunter der Score, dazu 📈 oder 📉.</>
+                  Topic. Titel ist der Wechsel (<span className="font-mono">MSFT: HOLD → BUY</span>), darunter der Score, dazu 📈 oder 📉.
+                  Geschützter Server: <span className="font-mono">https://nutzer:passwort@…/topic</span> oder mit Zugangstoken{' '}
+                  <span className="font-mono">https://:tk_…@…/topic</span>.</>
               : <>Leer = aus. Gesendet wird ein JSON-POST mit <span className="font-mono">text</span> (Slack) und{' '}
                   <span className="font-mono">content</span> (Discord) sowie Symbol, altem und neuem Urteil und Score.</>}
           </p>

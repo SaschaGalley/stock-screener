@@ -677,8 +677,13 @@ verdicts and the score. *ntfy* posts to an ntfy topic URL — ntfy.sh or a
 server of your own — the way ntfy reads it: the change as the title
 (`MSFT: HOLD → BUY`), the score as the text, and 📈 or 📉 as a tag. Title and
 tag travel as query parameters, which ntfy accepts in place of its headers and
-which carry the arrow a header could not. Empty is off, and **Test senden**
-sends a sample announcement to the stored URL. The comparison is always against
+which carry the arrow a header could not. A protected receiver takes its
+credentials in the URL — `https://user:password@host/topic`, or an ntfy access
+token as `https://:tk_…@host/topic` — and they are sent as an `Authorization`
+header, since Node's fetch refuses a URL that carries them. Empty is off, and
+**Test senden** sends a sample announcement to the stored URL; when the
+receiver refuses it, the page shows its answer (`HTTP 403: forbidden`) or why
+it could not be reached (`fetch failed: ENOTFOUND`). The comparison is always against
 the stored series, which a re-score after a model change rewrites too: a new
 scoring model moves verdicts in bulk, and that is a deploy, not news about the
 companies.

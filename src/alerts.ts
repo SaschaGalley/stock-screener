@@ -87,38 +87,86 @@ export interface Alert {
   fields?: Record<string, unknown>;
 }
 
+/**
+ * Credentials written into the URL, as the header that carries them.
+ *
+ * A protected receiver — an ntfy server of one's own, most often — is
+ * configured as `https://user:password@host/topic`, and Node's fetch refuses
+ * to send a URL that carries credentials at all. So they leave the URL and
+ * travel as `Authorization`: Basic for a user and password, Bearer for an
+ * ntfy access token given without a user (`https://:tk_…@host/topic`).
+ */
+function credentialsApart(url: string): { url: string; authorization: string | null } {
+  const u = new URL(url);
+  if (!u.username && !u.password) return { url, authorization: null };
+  const user = decodeURIComponent(u.username);
+  const password = decodeURIComponent(u.password);
+  u.username = '';
+  u.password = '';
+  const authorization = !user && password.startsWith('tk_')
+    ? `Bearer ${password}`
+    : `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`;
+  return { url: u.toString(), authorization };
+}
+
 /** The request that delivers `alert` to `url` in `format`. Pure, so each format is testable. */
 export function alertRequest(url: string, format: AlertFormat, alert: Alert): { url: string; init: RequestInit } {
+  const { url: bare, authorization } = credentialsApart(url);
+  const auth: Record<string, string> = authorization ? { Authorization: authorization } : {};
   if (format === 'ntfy') {
-    const target = new URL(url);
+    const target = new URL(bare);
     target.searchParams.set('title', alert.title);
     if (alert.tags?.length) target.searchParams.set('tags', alert.tags.join(','));
     return {
       url: target.toString(),
-      init: { method: 'POST', headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: alert.detail ?? alert.text },
+      init: {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', ...auth },
+        body: alert.detail ?? alert.text,
+      },
     };
   }
   // Slack reads `text`, Discord `content`, anything else the fields.
   return {
-    url,
+    url: bare,
     init: {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...auth },
       body: JSON.stringify({ content: alert.text, text: alert.text, ...alert.fields }),
     },
   };
 }
 
-/** Deliver one alert; false, and a warning in the log, when the receiver did not take it. */
-export async function sendAlert(url: string, format: AlertFormat, alert: Alert): Promise<boolean> {
-  const { url: target, init } = alertRequest(url, format, alert);
+/** What a receiver said when it refused: ntfy answers `{"error": "forbidden", …}`, others with a line of text. */
+function refusal(status: number, body: string): string {
+  let said = body.trim();
   try {
+    const json = JSON.parse(said) as { error?: unknown; message?: unknown };
+    const text = json.error ?? json.message;
+    if (typeof text === 'string') said = text;
+  } catch { /* not JSON: the text as it came */ }
+  return said ? `HTTP ${status}: ${said.slice(0, 200)}` : `HTTP ${status}`;
+}
+
+/**
+ * Deliver one alert. Not delivered, it says why — the receiver's status and
+ * answer, or why it could not be reached — for the log and the admin page's
+ * test, which is where a wrong URL or a missing password shows.
+ */
+export async function sendAlert(url: string, format: AlertFormat, alert: Alert): Promise<{ ok: boolean; reason: string | null }> {
+  try {
+    const { url: target, init } = alertRequest(url, format, alert);
     const res = await fetch(target, { ...init, signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) logger.warn(`Alert webhook answered HTTP ${res.status}`);
-    return res.ok;
+    if (res.ok) return { ok: true, reason: null };
+    const reason = refusal(res.status, await res.text().catch(() => ''));
+    logger.warn(`Alert webhook refused: ${reason}`);
+    return { ok: false, reason };
   } catch (e) {
-    logger.warn(`Alert webhook failed: ${(e as Error).message}`);
-    return false;
+    // fetch reports an unreachable host as "fetch failed" and keeps the why in `cause`.
+    const cause = (e as { cause?: { code?: string; message?: string } }).cause;
+    const reason = [(e as Error).message, cause?.code ?? cause?.message].filter(Boolean).join(': ');
+    logger.warn(`Alert webhook failed: ${reason}`);
+    return { ok: false, reason };
   }
 }
 

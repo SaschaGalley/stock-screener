@@ -7,9 +7,9 @@
  */
 
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 
-import { SETTLE_MS, alertRequest, verdictAlert, verdictEvents, type VerdictPoint } from '../src/alerts.js';
+import { SETTLE_MS, alertRequest, sendAlert, verdictAlert, verdictEvents, type VerdictPoint } from '../src/alerts.js';
 
 const t0 = Date.parse('2026-09-20T00:30:00Z');
 const at = (hours: number, verdict: string, score = 5): VerdictPoint => ({ at: new Date(t0 + hours * 3_600_000), verdict, score });
@@ -70,5 +70,41 @@ describe('delivering an announcement', () => {
 
   it('tags a downgrade with the falling chart', () => {
     assert.deepEqual(verdictAlert('X', { from: 'BUY', to: 'SELL', score: null }).tags, ['chart_with_downwards_trend']);
+  });
+});
+
+describe('a protected receiver, and one that refuses', () => {
+  const alert = verdictAlert('MSFT', { from: 'BUY', to: 'HOLD', score: 6.1 });
+  const headers = (init: RequestInit) => init.headers as Record<string, string>;
+
+  it('moves a user and password out of the URL into Basic auth, which fetch would refuse to send', () => {
+    const { url, init } = alertRequest('https://phil:s%C3%A9cret@ntfy.example.com/stocks', 'ntfy', alert);
+    assert.equal(new URL(url).username, '');
+    assert.equal(`${new URL(url).origin}${new URL(url).pathname}`, 'https://ntfy.example.com/stocks');
+    assert.equal(headers(init).Authorization, `Basic ${Buffer.from('phil:sécret').toString('base64')}`);
+  });
+
+  it('sends an ntfy access token given without a user as a bearer token', () => {
+    const { init } = alertRequest('https://:tk_AgQdq7mVBoFD37zQ@ntfy.example.com/stocks', 'ntfy', alert);
+    assert.equal(headers(init).Authorization, 'Bearer tk_AgQdq7mVBoFD37zQ');
+  });
+
+  it('leaves a URL without credentials as it was, and sends no Authorization', () => {
+    const { url, init } = alertRequest('https://hooks.example.com/x', 'json', alert);
+    assert.equal(url, 'https://hooks.example.com/x');
+    assert.equal(headers(init).Authorization, undefined);
+  });
+
+  const realFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it('says what the receiver answered when it refuses', async () => {
+    globalThis.fetch = async () => new Response('{"code":40301,"http":403,"error":"forbidden"}', { status: 403 });
+    assert.deepEqual(await sendAlert('https://ntfy.example.com/stocks', 'ntfy', alert), { ok: false, reason: 'HTTP 403: forbidden' });
+  });
+
+  it('says why a receiver could not be reached', async () => {
+    globalThis.fetch = async () => { throw new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } }); };
+    assert.deepEqual(await sendAlert('https://ntfy.example.com/stocks', 'ntfy', alert), { ok: false, reason: 'fetch failed: ENOTFOUND' });
   });
 });
