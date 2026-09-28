@@ -455,11 +455,22 @@ export default function AdminPage({ onClose }: Props) {
           hint="Ein Urteilswechsel auf der Watchlist wird gemeldet, sobald er einen weiteren Nachtlauf gehalten hat — ein Score auf der Bandgrenze meldet sich so nicht jede Nacht. Alle Wechsel stehen außerdem über der Übersicht."
         >
           <div className="flex flex-wrap items-center gap-2">
-            <label className="text-[11px] text-ink-400">Webhook-URL</label>
+            <label className="text-[11px] text-ink-400">Format</label>
+            <select
+              value={config.alerts.format}
+              onChange={(e) => patch((d) => { d.alerts.format = e.target.value as typeof d.alerts.format; })}
+              className={inputCls}
+            >
+              <option value="json">JSON (Slack, Discord, …)</option>
+              <option value="ntfy">ntfy</option>
+            </select>
+            <label className="text-[11px] text-ink-400">{config.alerts.format === 'ntfy' ? 'Topic-URL' : 'Webhook-URL'}</label>
             <input
               value={config.alerts.webhookUrl}
               onChange={(e) => patch((d) => { d.alerts.webhookUrl = e.target.value.trim(); })}
-              placeholder="https://hooks.slack.com/… oder https://discord.com/api/webhooks/…"
+              placeholder={config.alerts.format === 'ntfy'
+                ? 'https://ntfy.sh/dein-topic'
+                : 'https://hooks.slack.com/… oder https://discord.com/api/webhooks/…'}
               className={`${inputCls} min-w-[280px] flex-1 font-mono`}
             />
             <button
@@ -472,8 +483,11 @@ export default function AdminPage({ onClose }: Props) {
             </button>
           </div>
           <p className="text-[11px] leading-relaxed text-ink-500">
-            Leer = aus. Gesendet wird ein JSON-POST mit <span className="font-mono">text</span> (Slack) und{' '}
-            <span className="font-mono">content</span> (Discord) sowie Symbol, altem und neuem Urteil und Score.
+            {config.alerts.format === 'ntfy'
+              ? <>Leer = aus. Die URL des ntfy-Topics, auf ntfy.sh oder einem eigenen Server; die ntfy-App abonniert dasselbe
+                  Topic. Titel ist der Wechsel (<span className="font-mono">MSFT: HOLD → BUY</span>), darunter der Score, dazu 📈 oder 📉.</>
+              : <>Leer = aus. Gesendet wird ein JSON-POST mit <span className="font-mono">text</span> (Slack) und{' '}
+                  <span className="font-mono">content</span> (Discord) sowie Symbol, altem und neuem Urteil und Score.</>}
           </p>
         </Card>
 

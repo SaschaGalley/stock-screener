@@ -18,7 +18,7 @@ import {
   readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry, symbolCounts, refreshedWithin,
   recentVerdictChanges,
 } from './db/store.js';
-import { sendWebhook } from './alerts.js';
+import { sendAlert, verdictAlert } from './alerts.js';
 import { storedBacktest } from './backtest/result.js';
 import { CALIBRATION_META, calibrationDue } from './analysis/calibration.js';
 import { migrate } from './db/migrate.js';
@@ -860,12 +860,19 @@ export function createApp(): express.Express {
   // before the first real change needs it.
   app.post('/api/alerts/test', async (_req, res, next) => {
     try {
-      const url = (await readAppConfig()).alerts.webhookUrl;
-      if (!url) {
+      const { webhookUrl, format } = (await readAppConfig()).alerts;
+      if (!webhookUrl) {
         res.status(400).json({ ok: false, error: 'Keine Webhook-URL gespeichert' });
         return;
       }
-      const ok = await sendWebhook(url, { text: 'stock-cli: Test — so sieht eine Urteilsänderung aus: AAPL: HOLD → BUY (6.7)', test: true });
+      // A real announcement, marked as a test: what arrives is what a change will look like.
+      const sample = verdictAlert('AAPL', { from: 'HOLD', to: 'BUY', score: 6.7 });
+      const ok = await sendAlert(webhookUrl, format, {
+        ...sample,
+        title:  `Test · ${sample.title}`,
+        text:   `stock-cli: Test — so sieht eine Urteilsänderung aus: ${sample.text}`,
+        fields: { ...sample.fields, test: true },
+      });
       res.json({ ok });
     } catch (e) {
       next(e);

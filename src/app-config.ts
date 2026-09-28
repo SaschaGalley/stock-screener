@@ -120,12 +120,14 @@ export const AppConfigSchema = z.object({
 
   /**
    * Where a verdict change on the watchlist is announced once it has held
-   * (`src/alerts.ts`): any endpoint that takes a JSON POST — Slack reads
-   * `text`, Discord `content`. Empty is off; every change is still listed on
-   * the overview.
+   * (`src/alerts.ts`). `json` suits any endpoint that takes a JSON POST —
+   * Slack reads `text`, Discord `content`; `ntfy` posts to an ntfy topic URL
+   * as ntfy reads it. Empty is off; every change is still listed on the
+   * overview.
    */
   alerts: z.object({
     webhookUrl: z.union([z.string().url(), z.literal('')]).default(''),
+    format:     z.enum(['json', 'ntfy']).default('json'),
   }).prefault({}),
 });
 

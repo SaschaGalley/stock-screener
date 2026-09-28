@@ -670,10 +670,15 @@ HOLD → BUY → HOLD overnight announces nothing. The data step and the analysi
 write minutes apart, and a second write in the same night does not count as
 holding. A stock's first reading is where it stands, not news.
 
-Announcements go to a webhook configured under **⚙ Administration**. That can
-be any endpoint that takes a JSON POST: the body carries `text` for Slack and
-`content` for Discord, plus the symbol, both verdicts and the score. Empty is
-off, and **Test senden** checks a stored URL. The comparison is always against
+Announcements go to a webhook configured under **⚙ Administration**, in one
+of two formats. *JSON* suits any endpoint that takes a JSON POST: the body
+carries `text` for Slack and `content` for Discord, plus the symbol, both
+verdicts and the score. *ntfy* posts to an ntfy topic URL — ntfy.sh or a
+server of your own — the way ntfy reads it: the change as the title
+(`MSFT: HOLD → BUY`), the score as the text, and 📈 or 📉 as a tag. Title and
+tag travel as query parameters, which ntfy accepts in place of its headers and
+which carry the arrow a header could not. Empty is off, and **Test senden**
+sends a sample announcement to the stored URL. The comparison is always against
 the stored series, which a re-score after a model change rewrites too: a new
 scoring model moves verdicts in bulk, and that is a deploy, not news about the
 companies.

@@ -13,9 +13,16 @@
  * The comparison is always against the stored series, which a re-score after
  * a model change rewrites too: a new scoring model changes verdicts in bulk,
  * and that is a deploy, not news about the companies.
+ *
+ * Two formats reach most places a phone or a team channel listens on: a JSON
+ * POST for Slack, Discord and any generic webhook, and ntfy's own — the text
+ * as the body, the title and an emoji tag as query parameters, which ntfy
+ * accepts in place of its headers and which carry an arrow or an umlaut where
+ * a header could not.
  */
 
-import { readAppConfig } from './app-config.js';
+import { readAppConfig, type AppConfig } from './app-config.js';
+import { RECOMMENDATIONS } from './verdict.js';
 import {
   announcedVerdict, isReferenceSymbol, recentVerdictPoints, recordVerdictChange, setAnnouncedVerdict,
 } from './db/store.js';
@@ -64,21 +71,70 @@ export function verdictEvents(points: VerdictPoint[], announced: string | null):
   return { change, announce: null, announced: null };
 }
 
-/** POST one message to a webhook; Slack reads `text`, Discord `content`, anything else the fields. */
-export async function sendWebhook(url: string, payload: Record<string, unknown> & { text: string }): Promise<boolean> {
-  try {
-    const res = await fetch(url, {
+export type AlertFormat = AppConfig['alerts']['format'];
+
+/** One announcement, in the parts every format picks from. */
+export interface Alert {
+  /** Heading: ntfy's title. */
+  title:  string;
+  /** The whole message in one line: what Slack and Discord show. */
+  text:   string;
+  /** The line under the heading, where a format has one (ntfy); `text` otherwise. */
+  detail?: string;
+  /** ntfy tags; a tag that names an emoji shows as that emoji. */
+  tags?:  string[];
+  /** The facts as fields, for a JSON receiver that wants more than a line. */
+  fields?: Record<string, unknown>;
+}
+
+/** The request that delivers `alert` to `url` in `format`. Pure, so each format is testable. */
+export function alertRequest(url: string, format: AlertFormat, alert: Alert): { url: string; init: RequestInit } {
+  if (format === 'ntfy') {
+    const target = new URL(url);
+    target.searchParams.set('title', alert.title);
+    if (alert.tags?.length) target.searchParams.set('tags', alert.tags.join(','));
+    return {
+      url: target.toString(),
+      init: { method: 'POST', headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: alert.detail ?? alert.text },
+    };
+  }
+  // Slack reads `text`, Discord `content`, anything else the fields.
+  return {
+    url,
+    init: {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: payload.text, ...payload }),
-      signal: AbortSignal.timeout(10_000),
-    });
+      body: JSON.stringify({ content: alert.text, text: alert.text, ...alert.fields }),
+    },
+  };
+}
+
+/** Deliver one alert; false, and a warning in the log, when the receiver did not take it. */
+export async function sendAlert(url: string, format: AlertFormat, alert: Alert): Promise<boolean> {
+  const { url: target, init } = alertRequest(url, format, alert);
+  try {
+    const res = await fetch(target, { ...init, signal: AbortSignal.timeout(10_000) });
     if (!res.ok) logger.warn(`Alert webhook answered HTTP ${res.status}`);
     return res.ok;
   } catch (e) {
     logger.warn(`Alert webhook failed: ${(e as Error).message}`);
     return false;
   }
+}
+
+/** The announcement of a verdict that has held. */
+export function verdictAlert(symbol: string, a: { from: string; to: string; score: number | null }): Alert {
+  // Earlier in the list is the more bullish verdict.
+  const rank = (v: string) => RECOMMENDATIONS.indexOf(v as (typeof RECOMMENDATIONS)[number]);
+  const up = rank(a.to) < rank(a.from);
+  const score = a.score !== null ? a.score.toFixed(1) : null;
+  return {
+    title:  `${symbol}: ${a.from} → ${a.to}`,
+    text:   `${symbol}: ${a.from} → ${a.to}${score !== null ? ` (${score})` : ''}`,
+    detail: `${score !== null ? `Score ${score.replace('.', ',')} — ` : ''}das neue Urteil hat einen weiteren Nachtlauf gehalten.`,
+    tags:   [up ? 'chart_with_upwards_trend' : 'chart_with_downwards_trend'],
+    fields: { symbol, from: a.from, to: a.to, score: a.score },
+  };
 }
 
 /**
@@ -95,14 +151,8 @@ export async function noteVerdict(symbol: string, source: 'refresh' | 'analysis'
       logger.info(`${symbol}: ${events.change.from} → ${events.change.to}`);
     }
     if (events.announce) {
-      const url = (await readAppConfig()).alerts.webhookUrl;
-      const { from, to, score } = events.announce;
-      if (url) {
-        await sendWebhook(url, {
-          text: `${symbol}: ${from} → ${to}${score !== null ? ` (${score.toFixed(1)})` : ''}`,
-          symbol, from, to, score,
-        });
-      }
+      const { webhookUrl, format } = (await readAppConfig()).alerts;
+      if (webhookUrl) await sendAlert(webhookUrl, format, verdictAlert(symbol, events.announce));
     }
     if (events.announced !== null) {
       const current = points[points.length - 1];
