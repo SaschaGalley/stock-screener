@@ -26,6 +26,14 @@ function buildLogoSources(
   const sz = size <= 32 ? 64 : size <= 64 ? 128 : 256;
   const out: string[] = [];
 
+  // 0. TradingView, via our server (it resolves ticker → logoid). Square logos
+  //    on the brand's own background colour, drawn for a dark UI — a black
+  //    mark (Micron, AMD) stays visible, where the transparent marks below
+  //    vanish into the row. 404s when TradingView has nothing for the ticker.
+  if (symbol) {
+    out.push(`/api/stocks/${encodeURIComponent(symbol)}/logo`);
+  }
+
   // 1. Logo.dev — highest-quality brand logos. Requires free token.
   //    Ticker route (`/ticker/<SYM>`) maps directly via Logo.dev's stock
   //    database — more accurate than domain lookup for many tickers (e.g.
@@ -59,10 +67,11 @@ function buildLogoSources(
   //    so we can cascade to the next source.
   out.push(`https://unavatar.io/${domain}?fallback=false`);
 
-  // 4. DuckDuckGo's icon service — decent quality, no auth.
-  out.push(`https://icons.duckduckgo.com/ip3/${domain}.ico`);
+  // DuckDuckGo's icon service is deliberately absent: on a miss it answers
+  // 404 *with* a grey placeholder arrow, which the browser draws instead of
+  // firing onError — Berkshire showed that arrow rather than its monogram.
 
-  // 5. Google's favicon — last resort. Reliably available but often only 32px.
+  // 4. Google's favicon — last resort. Reliably available but often only 32px.
   out.push(`https://www.google.com/s2/favicons?domain=${domain}&sz=${sz}`);
 
   return out;
@@ -83,14 +92,14 @@ interface Props {
 }
 
 /** Stock logo with multi-source fallback cascade. Order:
+ *    0. TradingView /<SYM>       (via our server)
  *    1. Logo.dev /ticker/<SYM>   (token only)
  *    2. Logo.dev /<domain>       (token only)
  *    3. Brandfetch /<SYM>        (client-id only)
  *    4. Brandfetch /<domain>     (client-id only)
  *    5. Unavatar /<domain>       (free, aggregator)
- *    6. DuckDuckGo IP3           (free, favicon)
- *    7. Google S2                (free, last resort)
- *    8. 2-letter monogram        (final fallback)
+ *    6. Google S2                (free, last resort)
+ *    7. 2-letter monogram        (final fallback)
  *
  *  Symbol lookups are tried before domain lookups because tickers like GOOGL
  *  resolve directly to the brand under that ticker, whereas the company's

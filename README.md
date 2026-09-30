@@ -1584,7 +1584,7 @@ web/
 │       ├── BullBearRisks.tsx      3-column bull/bear/risks block
 │       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per rail item
 │       ├── StockHeader.tsx        Logo, price, refresh — and the ✕ / ⚙ chrome
-│       ├── StockLogo.tsx          Multi-source logo cascade (Logo.dev → Brandfetch → …)
+│       ├── StockLogo.tsx          Multi-source logo cascade (TradingView → Logo.dev → …)
 │       ├── ProgressBanner.tsx     SSE progress events while a run is in flight
 │       ├── AnalyzeForm.tsx        Bottom "analyze a new symbol" input
 │       ├── icons.tsx              Gear, close and sliders as SVG

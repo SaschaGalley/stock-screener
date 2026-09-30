@@ -23,6 +23,7 @@ import { storedBacktest } from './backtest/result.js';
 import { CALIBRATION_META, calibrationDue } from './analysis/calibration.js';
 import { migrate } from './db/migrate.js';
 import { storedMembers } from './universe.js';
+import { tradingViewLogoUrl } from './data/tradingview-logo.js';
 import { syncCatalog } from './db/catalog.js';
 import { closePool, waitForDatabase } from './db/client.js';
 import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials } from './types.js';
@@ -1068,6 +1069,20 @@ export function createApp(): express.Express {
         industryPeers: onePerCompany(industryPeers.map(peerRow), [self.companyName, ...peers.map((p) => p.companyName)]),
       };
       res.json(body);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/stocks/:symbol/logo ───────────────────────────────────────────
+  // Redirects to the ticker's TradingView logo, or 404s so the browser's logo
+  // cascade moves on to the next source.
+  app.get('/api/stocks/:symbol/logo', async (req, res, next) => {
+    try {
+      const url = await tradingViewLogoUrl(req.params.symbol);
+      res.set('Cache-Control', 'public, max-age=86400');
+      if (url) res.redirect(302, url);
+      else res.status(404).end();
     } catch (e) {
       next(e);
     }
