@@ -95,6 +95,10 @@ Measured across the list, the stock you clicked lands on the pixel it was on, go
 
   When something is out of date the button carries a yellow **!**; its tooltip says what, and the menu marks the entry that fixes it. That replaced a yellow banner across the page, which only appeared after a first refresh and put its own two buttons next to this one — so a full run used to take three places and the right order.
 
+- **Peers** (header) opens a dialog listing who else is in the business, each with its score and market cap, the stock itself pinned on top for comparison. Two groups: **Finnhub's peer group**, the companies the peer medians in the analysis are computed from, and **the same Yahoo industry** across the list and the reference universe. The second group is what gives a European listing peers at all, since Finnhub's free tier has none for it. A company already on the list opens with one click; the rest carry **+ Hinzufügen**, which is the add below, so several can be added in a row without leaving the dialog. `GET /api/stocks/:symbol/peers` reads it all from the database; only a Finnhub peer never stored costs one batched Yahoo quote, for its name. Share classes and second listings of one company count once.
+
+  A dialog rather than one more section: the question comes up when a stock is opened, not after scrolling past its valuation models, and it ends in adding stocks — a moment, not a state.
+
 Adding a stock (`+ Hinzufügen` at the bottom of the window, under either density) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit run from the Analyse dialog, so looking a company up never costs an API bill.
 
 **⚙ Administration** — schedule, pipeline steps, watchlist and run log; closed by the same ✕, in the same corner. See [Nightly pipeline](#nightly-pipeline) below.

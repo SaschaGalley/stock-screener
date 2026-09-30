@@ -16,7 +16,7 @@ import {
   readAnalysis, readDistillLax, readFinancialsMeta, readFinancialsLax,
   readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax,
   readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry, symbolCounts, refreshedWithin,
-  recentVerdictChanges,
+  recentVerdictChanges, peersByIndustry, peersBySymbol, StoredPeer,
 } from './db/store.js';
 import { sendAlert, verdictAlert } from './alerts.js';
 import { storedBacktest } from './backtest/result.js';
@@ -29,7 +29,8 @@ import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials } from './types.js';
 import { PILLAR_LABELS, WEIGHTS } from './analysis/score.js';
 import { FITTED_WEIGHTS_META } from './analysis/weight-table.js';
 import type {
-  AnalysisListEntry, BacktestResponse, ConsensusBand, EvaluationResponse, OverviewRow, StockSummary,
+  AnalysisListEntry, BacktestResponse, ConsensusBand, EvaluationResponse, OverviewRow, PeerRow, PeersResponse,
+  StockSummary,
 } from './api-types.js';
 import { MODELS } from './models.js';
 import {
@@ -46,7 +47,9 @@ import { cachedEvaluation, EVALUATED_SIGNALS } from './db/evaluate.js';
 import { currentScoreCard, rescoreIfScoringChanged, storedInputs } from './db/rescore.js';
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
-import { searchByQuery } from './data/yfinance.js';
+import { QuoteBrief, quoteBriefs, searchByQuery } from './data/yfinance.js';
+import { yahooTicker } from './data/universe.js';
+import { lastGoodSectorMedians } from './sector-medians.js';
 import { AppConfigSchema, readAppConfig, writeAppConfig, isWatched } from './app-config.js';
 import {
   applySchedule,
@@ -93,6 +96,67 @@ function logoDomainFromWebsite(url: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * How many same-industry companies the peer dialog lists. Most Yahoo industries
+ * hold fewer across the list and the universe; the cap is for the few that do
+ * not, such as regional banks and utilities.
+ */
+const INDUSTRY_PEER_LIMIT = 30;
+
+function peerRow(p: StoredPeer): PeerRow {
+  return {
+    symbol:      p.symbol,
+    companyName: p.companyName,
+    logoDomain:  logoDomainFromWebsite(p.website),
+    price:       p.price,
+    marketCap:   p.marketCap,
+    currency:    p.currency,
+    score:       p.score,
+    verdict:     p.verdict,
+    status:      p.reference ? 'reference' : 'list',
+  };
+}
+
+/**
+ * One row per company. Alphabet's two share classes are one competitor, and
+ * Yahoo gives both lines the same name; so do a stock's other listings in the
+ * universe. The row on the list wins over its twin, otherwise the first — the
+ * larger, in the order the industry arrives. `taken` names companies already
+ * shown elsewhere in the dialog.
+ */
+function onePerCompany(rows: PeerRow[], taken: (string | null)[]): PeerRow[] {
+  const shown = new Set(taken.filter((n): n is string => !!n));
+  const byName = new Map<string, number>();
+  const out: PeerRow[] = [];
+  for (const row of rows) {
+    const name = row.companyName;
+    if (name && shown.has(name)) continue;
+    const at = name ? byName.get(name) : undefined;
+    if (at === undefined) {
+      if (name) byName.set(name, out.length);
+      out.push(row);
+    } else if (row.status === 'list' && out[at].status !== 'list') {
+      out[at] = row;
+    }
+  }
+  return out;
+}
+
+/** A peer the database has never stored: a ticker, and whatever Yahoo's quote says about it. */
+function unknownPeerRow(symbol: string, quote: QuoteBrief | undefined): PeerRow {
+  return {
+    symbol,
+    companyName: quote?.name ?? null,
+    logoDomain:  null,
+    price:       quote?.price ?? null,
+    marketCap:   quote?.marketCap ?? null,
+    currency:    quote?.currency ?? null,
+    score:       null,
+    verdict:     null,
+    status:      'unknown',
+  };
 }
 
 /**
@@ -958,6 +1022,52 @@ export function createApp(): express.Express {
         return;
       }
       res.json({ symbol, period: raw, rows: await readFundamentals(symbol, raw) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/stocks/:symbol/peers ──────────────────────────────────────────
+  // Who to compare a stock with, for the dialog in its header: the Finnhub
+  // group its peer medians were computed from, and whoever else Yahoo files
+  // under the same industry among the list and the reference universe. All of
+  // it is already stored — only a Finnhub peer the database has never seen
+  // costs anything, one batched Yahoo quote for the names.
+  app.get('/api/stocks/:symbol/peers', async (req, res, next) => {
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      const [own, medians] = await Promise.all([
+        peersBySymbol([symbol]),
+        lastGoodSectorMedians(symbol),
+      ]);
+      const self = own.get(symbol);
+      if (!self) {
+        res.status(404).json({ error: `No financials stored for ${symbol} yet` });
+        return;
+      }
+
+      // Finnhub spells a share class with a dot, Yahoo and the database with a dash.
+      const peerSymbols = [...new Set((medians?.peers ?? []).map(yahooTicker))].filter((p) => p !== symbol);
+      const [stored, industryPeers] = await Promise.all([
+        peersBySymbol(peerSymbols),
+        self.industry
+          ? peersByIndustry(self.industry, [symbol, ...peerSymbols], INDUSTRY_PEER_LIMIT)
+          : Promise.resolve([]),
+      ]);
+      const quoted = await quoteBriefs(peerSymbols.filter((p) => !stored.has(p)));
+
+      const peers = peerSymbols.map((p) => {
+        const known = stored.get(p);
+        return known ? peerRow(known) : unknownPeerRow(p, quoted.get(p));
+      });
+      const body: PeersResponse = {
+        symbol,
+        industry: self.industry,
+        self:     peerRow(self),
+        peers,
+        industryPeers: onePerCompany(industryPeers.map(peerRow), [self.companyName, ...peers.map((p) => p.companyName)]),
+      };
+      res.json(body);
     } catch (e) {
       next(e);
     }

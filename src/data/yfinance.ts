@@ -366,6 +366,42 @@ export async function findBetterListing(
   return better ?? null;
 }
 
+export interface QuoteBrief {
+  symbol:    string;
+  name:      string | null;
+  price:     number | null;
+  marketCap: number | null;
+  currency:  string | null;
+}
+
+/**
+ * Name, price and size for several tickers in one request — enough to put a
+ * name to a peer the database has never stored. Keyed by the ticker as asked;
+ * a ticker Yahoo does not know is simply absent, and a failed request is an
+ * empty map rather than an error, since the caller only wanted a label.
+ */
+export async function quoteBriefs(symbols: string[]): Promise<Map<string, QuoteBrief>> {
+  const out = new Map<string, QuoteBrief>();
+  if (symbols.length === 0) return out;
+  try {
+    const quotes = await yf.quote(symbols, { return: 'array' }) as any[];
+    for (const q of quotes ?? []) {
+      const symbol = str(q?.symbol);
+      if (!symbol) continue;
+      out.set(symbol.toUpperCase(), {
+        symbol:    symbol.toUpperCase(),
+        name:      str(q.longName) ?? str(q.shortName),
+        price:     num(q.regularMarketPrice),
+        marketCap: num(q.marketCap),
+        currency:  str(q.currency),
+      });
+    }
+  } catch (e) {
+    logger.warn(`Quote briefs for ${symbols.join(',')}: ${(e as Error).message}`);
+  }
+  return out;
+}
+
 export async function resolveSymbol(input: string): Promise<string> {
   try {
     const q = await yf.quote(input);

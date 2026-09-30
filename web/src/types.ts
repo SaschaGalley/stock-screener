@@ -31,6 +31,8 @@ export type {
   ConfigResponse,
   ConfigSaveResponse,
   AddStockResponse,
+  PeerRow,
+  PeersResponse,
   DistillRefreshResponse,
   DistillEntityCandidate,
   DistillEntityUnresolvedResponse,

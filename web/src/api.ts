@@ -18,6 +18,7 @@ import type {
   ConfigResponse,
   ConfigSaveResponse,
   AddStockResponse,
+  PeersResponse,
   SchedulerStatus,
   ActivityEntry,
   EvaluationResponse,
@@ -81,6 +82,14 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ input }),
     }),
+
+  /**
+   * The companies to compare a stock with: its Finnhub peer group and the rest
+   * of its industry among the list and the reference universe. Read from the
+   * database — no LLM call, and a Yahoo quote only for peers never stored.
+   */
+  getPeers: (symbol: string) =>
+    jsonFetch<PeersResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/peers`),
 
   /** Force-refresh raw data (Yahoo + Finnhub + FRED + macro). No LLM call. */
   refreshData: (symbol: string) =>

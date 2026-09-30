@@ -4,7 +4,7 @@ import { fmt, relativeTime } from "../format";
 import { useMoney } from "../currency";
 import { api } from "../api"; // refresh endpoint (PDF/MD endpoints unused since report generation is skipped)
 import StockLogo, { initialsFromName } from "./StockLogo";
-import { CloseIcon, GearIcon } from "./icons";
+import { CloseIcon, GearIcon, PeersIcon } from "./icons";
 
 interface Props {
   summary: StockSummary;
@@ -31,6 +31,8 @@ interface Props {
   onRerun: () => void;
   /** Open the dialog: a different model, search or Perplexity, or a stored one. */
   onOpenAnalysis: () => void;
+  /** Open the peer dialog: who else is in this business, and adding them to the list. */
+  onOpenPeers: () => void;
   /** The combination on show, so "everything" says what it will spend. */
   flagsLabel: string;
   /** An analysis this page is streaming, or one the queue knows about. */
@@ -50,6 +52,7 @@ export default function StockHeader({
   staleFix,
   onRerun,
   onOpenAnalysis,
+  onOpenPeers,
   flagsLabel,
   analyzing,
 }: Props) {
@@ -157,6 +160,16 @@ export default function StockHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={onOpenPeers}
+            className="flex items-center gap-1 rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700"
+            title="Peers und Konkurrenten — vergleichen und zur Liste hinzufügen"
+            aria-label="Peers und Konkurrenten"
+          >
+            <PeersIcon size={14} />
+            <span className="hidden sm:inline">Peers</span>
+          </button>
+
           <RefreshMenu
             busy={busy}
             analyzing={analyzing}

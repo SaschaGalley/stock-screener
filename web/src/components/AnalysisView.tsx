@@ -46,6 +46,8 @@ interface Props {
   onToggleStocks: () => void;
   /** Open the picker: stored analyses, and the settings for a new run. */
   onOpenAnalysis: () => void;
+  /** Open the peer dialog. */
+  onOpenPeers: () => void;
   /** Re-run with the combination on show, bypassing the cache. */
   onRerun: () => void;
   /** The flag combination on show, for the verdict card to wear. */
@@ -64,6 +66,7 @@ export default function AnalysisView({
   onOpenAdmin,
   onToggleStocks,
   onOpenAnalysis,
+  onOpenPeers,
   onRerun,
   flagsLabel,
 }: Props) {
@@ -213,6 +216,7 @@ export default function AnalysisView({
           staleFix={staleFix}
           onRerun={onRerun}
           onOpenAnalysis={onOpenAnalysis}
+          onOpenPeers={onOpenPeers}
           flagsLabel={flagsLabel}
           analyzing={analyzing}
         />

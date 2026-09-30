@@ -66,3 +66,23 @@ export function ChartIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
     </svg>
   );
 }
+
+export function PeersIcon({ size = 16, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20v-1.5A4.5 4.5 0 0 1 7.5 14h3a4.5 4.5 0 0 1 4.5 4.5V20" />
+      <path d="M16 4.3a3.2 3.2 0 0 1 0 7.4M21 20v-1.5a4.5 4.5 0 0 0-3-4.24" />
+    </svg>
+  );
+}

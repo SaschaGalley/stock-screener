@@ -244,6 +244,38 @@ export interface AddStockResponse {
   summary: StockSummary | null;
 }
 
+/** One company in `GET /api/stocks/:symbol/peers`. */
+export interface PeerRow {
+  symbol:      string;
+  companyName: string | null;
+  logoDomain:  string | null;
+  price:       number | null;
+  marketCap:   number | null;
+  /** Trading currency of `price`/`marketCap`, per row — peers list anywhere. */
+  currency:    string | null;
+  /** The headline score and band the last refresh recorded; null when never scored. */
+  score:       number | null;
+  verdict:     string | null;
+  /**
+   * Where it stands here: on the list, scored in the reference universe only,
+   * or never fetched. The last two can be added.
+   */
+  status:      'list' | 'reference' | 'unknown';
+}
+
+/** `GET /api/stocks/:symbol/peers` — read from the database, no LLM call. */
+export interface PeersResponse {
+  symbol:   string;
+  /** Yahoo's industry for the stock, which `industryPeers` share. */
+  industry: string | null;
+  /** The stock itself, for comparison. */
+  self:     PeerRow;
+  /** Finnhub's peer group — the companies the peer medians are computed from. */
+  peers:    PeerRow[];
+  /** Other companies in the same industry, from the list and the reference universe. */
+  industryPeers: PeerRow[];
+}
+
 /** `POST /api/stocks/:symbol/distill-refresh` — free; re-reads, buys nothing. */
 export interface DistillRefreshResponse {
   ok:     boolean;

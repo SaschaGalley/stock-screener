@@ -331,6 +331,92 @@ export async function symbolCounts(): Promise<Record<Exclude<SymbolScope, 'all'>
   return { watchlist: row?.watchlist ?? 0, reference: row?.reference ?? 0 };
 }
 
+/** What the database knows about a company someone might compare a stock with. */
+export interface StoredPeer {
+  symbol:      string;
+  /** Scored in the reference universe only — not on the list. */
+  reference:   boolean;
+  companyName: string | null;
+  industry:    string | null;
+  website:     string | null;
+  currency:    string | null;
+  price:       number | null;
+  marketCap:   number | null;
+  /** The headline score and its band, as the last refresh recorded them. */
+  score:       number | null;
+  verdict:     string | null;
+}
+
+/**
+ * One row per symbol, watchlist and universe alike: the profile, the newest
+ * financials' price and size, and the newest recorded score. `where` narrows
+ * the symbols; everything else is shared by the two ways a peer is found.
+ */
+async function storedPeers(where: string, params: unknown[], tail = ''): Promise<StoredPeer[]> {
+  const res = await query<{
+    symbol: string; reference: boolean; company_name: string | null; industry: string | null;
+    website: string | null; currency: string | null; price: number | null; market_cap: number | null;
+    score: number | null; verdict: string | null;
+  }>(
+    `WITH keys AS (
+       SELECT (SELECT id FROM metrics WHERE key = 'score.final.score')   AS score_id,
+              (SELECT id FROM metrics WHERE key = 'score.final.verdict') AS verdict_id
+     )
+     SELECT s.symbol, s.reference, s.company_name, s.industry, s.website, s.currency,
+            (f.content->>'price')::float8     AS price,
+            (f.content->>'marketCap')::float8 AS market_cap,
+            sc.value      AS score,
+            vd.value_text AS verdict
+       FROM symbols s
+       CROSS JOIN keys
+       JOIN LATERAL (
+         SELECT content FROM snapshots
+          WHERE symbol_id = s.id AND kind = 'financials'
+          ORDER BY last_seen_at DESC LIMIT 1
+       ) f ON true
+       LEFT JOIN LATERAL (
+         SELECT value FROM observations
+          WHERE symbol_id = s.id AND metric_id = keys.score_id AND value IS NOT NULL
+          ORDER BY observed_at DESC LIMIT 1
+       ) sc ON true
+       LEFT JOIN LATERAL (
+         SELECT value_text FROM observations
+          WHERE symbol_id = s.id AND metric_id = keys.verdict_id AND value_text IS NOT NULL
+          ORDER BY observed_at DESC LIMIT 1
+       ) vd ON true
+      WHERE ${where}
+      ${tail}`,
+    params,
+  );
+  return res.rows.map((r) => ({
+    symbol: r.symbol, reference: r.reference, companyName: r.company_name, industry: r.industry,
+    website: r.website, currency: r.currency, price: r.price, marketCap: r.market_cap,
+    score: r.score, verdict: r.verdict,
+  }));
+}
+
+/** The stored facts for each of these symbols that has financials; the rest are simply absent. */
+export async function peersBySymbol(symbols: string[]): Promise<Map<string, StoredPeer>> {
+  if (symbols.length === 0) return new Map();
+  const rows = await storedPeers('s.symbol = ANY($1)', [symbols.map((x) => x.toUpperCase())]);
+  return new Map(rows.map((r) => [r.symbol, r]));
+}
+
+/**
+ * Other companies Yahoo files under the same industry, largest first.
+ *
+ * Largest by the market cap as quoted, whatever its currency: this only picks
+ * which `limit` to return when an industry has more, and nearly the whole
+ * universe quotes in dollars or euros.
+ */
+export async function peersByIndustry(industry: string, exclude: string[], limit: number): Promise<StoredPeer[]> {
+  return storedPeers(
+    's.industry = $1 AND NOT (s.symbol = ANY($2))',
+    [industry, exclude.map((x) => x.toUpperCase())],
+    `ORDER BY market_cap DESC NULLS LAST LIMIT ${Math.max(0, Math.floor(limit))}`,
+  );
+}
+
 /**
  * The next reference symbols to refresh: among `members`, those that are
  * reference symbols (or not yet stored at all), the least recently refreshed

@@ -5,6 +5,7 @@ import StockRail from './components/StockRail';
 import StockTable from './components/StockTable';
 import AnalyzeForm from './components/AnalyzeForm';
 import AnalysisModal, { flagsLabel } from './components/AnalysisModal';
+import PeersModal from './components/PeersModal';
 import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
 import AdminPage from './pages/AdminPage';
@@ -117,6 +118,8 @@ export default function App() {
   const [stocksDrawer, setStocksDrawer] = useState(false);
   /** Stored analyses and the settings for a new run, as a dialog over the page. */
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  /** Who else is in the business, and adding them — a dialog from the header. */
+  const [peersOpen, setPeersOpen] = useState(false);
   /** Symbols the queue is working on, keyed by symbol → the stages in flight. */
   const [activity, setActivity] = useState<Record<string, string[]>>({});
 
@@ -388,16 +391,16 @@ export default function App() {
     if (isTable) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
-      // The dialog owns Esc while it is open, and closing it must not also
+      // A dialog owns Esc while it is open, and closing it must not also
       // close the analysis underneath.
-      if (analysisOpen) return;
+      if (analysisOpen || peersOpen) return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       closeOverlay();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isTable, closeOverlay, analysisOpen]);
+  }, [isTable, closeOverlay, analysisOpen, peersOpen]);
 
   return (
     <div className="flex h-full flex-col bg-ink-950 text-ink-100">
@@ -488,6 +491,7 @@ export default function App() {
               onOpenAdmin={openAdmin}
               onToggleStocks={() => setStocksDrawer((v) => !v)}
               onOpenAnalysis={() => setAnalysisOpen(true)}
+              onOpenPeers={() => setPeersOpen(true)}
               onRerun={() => startAnalyze(selected, true)}
               flagsLabel={flagsLabel(settings)}
             />
@@ -506,6 +510,20 @@ export default function App() {
           onRun={(force) => startAnalyze(selected, force)}
           loading={loading}
           onClose={() => setAnalysisOpen(false)}
+        />
+      )}
+
+      {/* Opening a peer switches the analysis to it; adding one only grows
+          the list behind the dialog, so several can be added in a row. */}
+      {peersOpen && selected && (
+        <PeersModal
+          symbol={selected}
+          onClose={() => setPeersOpen(false)}
+          onOpen={(s) => {
+            setPeersOpen(false);
+            handleSelectSymbol(s);
+          }}
+          onAdded={() => { void reloadRows(); }}
         />
       )}
 
