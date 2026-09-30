@@ -132,13 +132,15 @@ npx tsx src/cli.ts MSFT --pplx sonar
 npx tsx src/cli.ts MSFT --pplx sonar-pro
 
 # Model IDs — the registry lives in src/models.ts
-npx tsx src/cli.ts NOW  --model claude-opus-5 --search brave
-npx tsx src/cli.ts NOW  --model gpt-5.6-terra
+npx tsx src/cli.ts NOW  --model claude-opus-5-5 --search brave
+npx tsx src/cli.ts NOW  --model gpt-6.1-sol
 
 # …or the short alias for the same thing
-npx tsx src/cli.ts AAPL --model opus        # claude-opus-5
-npx tsx src/cli.ts MSFT --model terra       # gpt-5.6-terra
-npx tsx src/cli.ts MSFT --model luna        # gpt-5.6-luna
+npx tsx src/cli.ts AAPL --model opus        # claude-opus-5-5
+npx tsx src/cli.ts AAPL --model fable       # claude-fable-5-1
+npx tsx src/cli.ts MSFT --model sol         # gpt-6.1-sol
+npx tsx src/cli.ts MSFT --model astra       # gpt-6-astra
+npx tsx src/cli.ts MSFT --model luna        # gpt-6-luna
 npx tsx src/cli.ts MSFT --model mini        # gpt-5.4-mini
 npx tsx src/cli.ts MSFT --model haiku       # claude-haiku-4-5-20251001
 
@@ -167,9 +169,9 @@ Arguments:
 
 Options:
   -m, --model <id>    Model shortcut or full model ID  (default: claude)
-                        Model IDs: claude-sonnet-5 | claude-opus-5 |
-                                   gpt-5.6-terra | gpt-5.6-luna | gpt-5.4-mini
-                        Aliases:   claude | sonnet | opus | terra | luna | mini
+                        Model IDs: claude-sonnet-5-5 | claude-opus-5-5 | claude-fable-5-1 |
+                                   gpt-6.1-sol | gpt-6-astra | gpt-6-luna | gpt-5.4-mini
+                        Aliases:   claude | sonnet | opus | fable | sol | astra | luna | mini
                         Any other: claude-* | gpt-* | o1-*
   -s, --search [type] Web search — omit value for native search of active model
                         none | claude | openai | brave | tavily
@@ -890,6 +892,36 @@ before a single brace is emitted — which surfaces as `JSON.parse` failing with
 now check `finish_reason` / `stop_reason` and raise `LLMTruncatedError`, which
 names the limit and says to raise it.
 
+**A declined request is re-run, not lost.** Claude Opus 5.5, Sonnet 5.5 and
+Fable 5.1 run safety classifiers that can decline a request. On those models the
+call carries `fallbacks: "default"`, so Anthropic re-runs a declined request on
+a model that answers, inside the same call and billed only when it happens
+(`refusalFallback` in `src/models.ts`). Should the whole chain decline, the error
+says so by name instead of surfacing as a response that was not JSON.
+
+**Which model writes the synthesis.** Measured on the same synthesis prompt for
+VST and NVDA (September 2026), in dollars per call:
+
+| Model | VST | NVDA |
+|---|---|---|
+| gpt-5.6-terra | 0.022 | 0.026 |
+| gpt-6.1-sol | 0.018 | 0.017 |
+| claude-sonnet-5-5 | 0.042 | 0.037 |
+| claude-opus-5-5 | 0.063 | 0.085 |
+| gpt-6-astra | 0.081 | — |
+| claude-fable-5-1 | 0.160 | — |
+
+Every model returned valid JSON well inside the 6,000-token budget. GPT-6.1 Sol
+is the pipeline default: cheaper than Terra, with the most careful separation of
+what management claims from what independent sources show. The Claude models
+count the same German prompt as about 1.75 times as many tokens, so the same
+list price costs twice as much per call. Opus 5.5 is the one worth paying for,
+if any: it did the most arithmetic of its own (a free-cash-flow yield from the
+guidance, how much of the target's upside is only the fall in price) and tied
+the Beneish warning to the prose's accusations of circular financing. The two
+summarisers together add 1.7–2.3 cents, so a whole analysis on the default is
+about 4 cents.
+
 ### What Perplexity is asked for
 
 The narrative stage exists to read what the pillars cannot see, so Perplexity is
@@ -936,6 +968,16 @@ Mechanics that keep it honest:
 - **The prompt hash is compared.** It existed from the start and was never read,
   so a rewritten brief would have gone on serving answers to the old one for up
   to two weeks. A stored answer from another prompt is now a cache miss.
+- **Sonar Pro, not Sonar.** The brief is one structured search, and Sonar
+  answers it in the same shape with as many items, as recent, at a third of the
+  price (1.4 against 4.3 cents per call over AAPL, VST and ONDS on one day).
+  Which run found the stronger evidence depended on the stock. The difference
+  that matters is the label: Sonar called 7 of 17 items taken from the company's
+  own investor pages and SEC filings independent, Sonar Pro 1 of 12. Independent
+  items are what earn the narrative its weight, so Sonar would let press
+  releases buy exactly the weight this section exists to deny them. At one call
+  per stock every two to three weeks, the difference is about five cents per
+  stock a month.
 
 ### The blend
 
@@ -1667,7 +1709,7 @@ Per symbol, in order:
 | --- | --- | --- | --- |
 | 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
 | 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`). Free, with nothing to configure | on |
-| 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-5.6-terra` |
+| 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-6.1-sol` |
 | 4 | **Referenz** | After the whole watchlist, on full runs only: the next members of the [reference universe](#the-reference-universe) (S&P 500, EURO STOXX 50, DAX), numbers and factor score only | on, 100 per night |
 
 Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).

@@ -105,7 +105,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
   }, [onClose]);
 
   // Settings normally already hold a real model ID; resolving covers an alias
-  // typed into the custom-model box ('opus' → 'claude-opus-5').
+  // typed into the custom-model box ('opus' → 'claude-opus-5-5').
   const activeModel = resolveModelId(settings.model);
   const cachedMatch = analyses.find((a) => flagsMatch(a, settings));
 

@@ -26,6 +26,12 @@ export interface ModelDef {
   provider: ModelProvider;
   /** Short `--model` aliases. Convenience for typing only — never stored. */
   aliases?: string[];
+  /**
+   * Whether Anthropic may re-run a declined request on another model inside
+   * the same call (`fallbacks: "default"`). Only the models whose safety
+   * classifiers can decline accept the parameter; for the others it is a 400.
+   */
+  refusalFallback?: boolean;
 }
 
 /**
@@ -33,16 +39,18 @@ export interface ModelDef {
  * provider is that provider's fallback model (see `defaultModelFor`).
  */
 export const MODELS: ModelDef[] = [
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', provider: 'claude', aliases: ['claude', 'sonnet'] },
-  { id: 'claude-opus-5',   label: 'Claude Opus 5',   provider: 'claude', aliases: ['opus'] },
-  { id: 'gpt-5.6-terra',   label: 'GPT-5.6 Terra',   provider: 'openai', aliases: ['terra'] },
-  { id: 'gpt-5.6-luna',    label: 'GPT-5.6 Luna',    provider: 'openai', aliases: ['luna'] },
-  { id: 'gpt-5.4-mini',    label: 'GPT-5.4 Mini',    provider: 'openai', aliases: ['mini'] },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', provider: 'claude', aliases: ['claude', 'sonnet'], refusalFallback: true },
+  { id: 'claude-opus-5-5',   label: 'Claude Opus 5.5',   provider: 'claude', aliases: ['opus'],             refusalFallback: true },
+  { id: 'claude-fable-5-1',  label: 'Claude Fable 5.1',  provider: 'claude', aliases: ['fable'],            refusalFallback: true },
+  { id: 'gpt-6.1-sol',       label: 'GPT-6.1 Sol',       provider: 'openai', aliases: ['sol'] },
+  { id: 'gpt-6-astra',       label: 'GPT-6 Astra',       provider: 'openai', aliases: ['astra'] },
+  { id: 'gpt-6-luna',        label: 'GPT-6 Luna',        provider: 'openai', aliases: ['luna'] },
+  { id: 'gpt-5.4-mini',      label: 'GPT-5.4 Mini',      provider: 'openai', aliases: ['mini'] },
   { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', provider: 'claude', aliases: ['haiku'] },
 ];
 
 /** Used when neither `--model` nor a stored web setting says otherwise. */
-export const DEFAULT_MODEL_ID = 'claude-sonnet-5';
+export const DEFAULT_MODEL_ID = 'claude-sonnet-5-5';
 
 /**
  * Default for the scheduled pipeline, which re-analyses the whole watchlist and
@@ -50,7 +58,7 @@ export const DEFAULT_MODEL_ID = 'claude-sonnet-5';
  * than as a string literal in app-config.ts so retiring a model is still a
  * one-file edit — the point of this registry.
  */
-export const DEFAULT_PIPELINE_MODEL_ID = 'gpt-5.6-terra';
+export const DEFAULT_PIPELINE_MODEL_ID = 'gpt-6.1-sol';
 
 /**
  * Default for the two summariser stages of the verdict pipeline.

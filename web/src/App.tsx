@@ -204,7 +204,7 @@ export default function App() {
     ? rows.find((r) => r.symbol === selected)?.companyName
     : undefined;
 
-  // Resolve the actual model id (e.g. 'claude' shortcut → 'claude-sonnet-5')
+  // Resolve the actual model id (e.g. 'claude' shortcut → 'claude-sonnet-5-5')
   // for cache lookups. Server resolves these on POST, but for the read-only
   // GET `/analyses-by-flags?model=...` we send the shortcut string verbatim and
   // it'll miss; better to use the resolved ID. For now rely on the server
