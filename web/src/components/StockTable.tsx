@@ -28,6 +28,34 @@ interface Props {
 }
 
 /**
+ * Which columns a viewport has room for, narrowest first.
+ *
+ * Name and score are the list; everything else is detail about a stock you can
+ * open. So the table gives columns up from the right end of that ranking rather
+ * than scrolling sideways — a list that hides its own score behind a scrollbar
+ * has stopped being a ranking. Each header and its cells share one entry, or
+ * a column could fold away while its label stayed.
+ */
+const COL = {
+  verdict: 'hidden sm:table-cell',
+  price:   'hidden sm:table-cell',
+  target:  'hidden md:table-cell',
+  trend:   'hidden lg:table-cell',
+  model:   'hidden lg:table-cell',
+  mcap:    'hidden lg:table-cell',
+  age:     'hidden xl:table-cell',
+} as const;
+
+/**
+ * Below `xl` the name column takes what the others leave and truncates in it.
+ * Left to the table, a cell is never narrower than its longest unbroken line —
+ * and `truncate` makes the whole company name one line, so a long name pushed
+ * the score off the right edge instead of shortening. From `xl` on every column
+ * fits beside the full name, and the table spreads them as it always has.
+ */
+const NAME_CELL = 'w-full max-w-0 xl:w-auto xl:max-w-none';
+
+/**
  * The stock list at full width: every column the overview has room for.
  *
  * Its narrow twin is `StockRail`, and the two columns they share come from
@@ -52,7 +80,7 @@ export default function StockTable({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-wrap items-center gap-3 border-b border-ink-700 bg-ink-900 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-700 bg-ink-900 px-4 py-2">
         <h2 className="text-sm font-semibold text-ink-100">
           Übersicht{' '}
           <span className="text-ink-500">
@@ -61,11 +89,17 @@ export default function StockTable({
         </h2>
         {avg && (
           <span className="text-[11px] text-ink-500">
-            Ø Score <span className={scoreColor(avg.avg)}>{avg.avg.toFixed(1)}</span> über {avg.count} bewertete
+            Ø Score <span className={scoreColor(avg.avg)}>{avg.avg.toFixed(1)}</span>
+            {/* The count is the first thing a phone's header line can spare. */}
+            <span className="hidden sm:inline"> über {avg.count} bewertete</span>
           </span>
         )}
-        <div className="ml-auto flex items-center gap-3">
+        {/* On a phone the controls take a row of their own under the title,
+            and the two icons stay up beside it rather than wrapping alone. */}
+        <div className="order-last w-full sm:order-none sm:ml-auto sm:w-auto">
           <StockListControls view={view} onChange={onViewChange} layout="bar" />
+        </div>
+        <div className="ml-auto flex items-center gap-3 sm:ml-0">
           <button
             onClick={onOpenEvaluation}
             title="Auswertung — sagt der Score die spätere Rendite voraus?"
@@ -100,17 +134,17 @@ export default function StockTable({
               <tr className={`${HEADER_HEIGHT} border-b border-ink-700`}>
                 <th className="px-3 py-2 text-left font-semibold">Aktie</th>
                 <th className="px-2 py-2 text-right font-semibold">Score</th>
-                <th className="px-2 py-2 text-left font-semibold">Verlauf</th>
-                <th className="px-2 py-2 text-left font-semibold">Verdict</th>
-                <th className="px-2 py-2 text-right font-semibold">Kurs</th>
-                <th className="px-2 py-2 text-right font-semibold" title="Analysten-Konsensziel und Abstand zum Kurs">
+                <th className={`${COL.trend} px-2 py-2 text-left font-semibold`}>Verlauf</th>
+                <th className={`${COL.verdict} px-2 py-2 text-left font-semibold`}>Verdict</th>
+                <th className={`${COL.price} px-2 py-2 text-right font-semibold`}>Kurs</th>
+                <th className={`${COL.target} px-2 py-2 text-right font-semibold`} title="Analysten-Konsensziel und Abstand zum Kurs">
                   Ø Ziel
                 </th>
-                <th className="px-2 py-2 text-right font-semibold" title="Composite Fair Value der Bewertungsmodelle">
+                <th className={`${COL.model} px-2 py-2 text-right font-semibold`} title="Composite Fair Value der Bewertungsmodelle">
                   Modell-FV
                 </th>
-                <th className="px-2 py-2 text-right font-semibold">MCap</th>
-                <th className="px-3 py-2 text-right font-semibold">Aktualität</th>
+                <th className={`${COL.mcap} px-2 py-2 text-right font-semibold`}>MCap</th>
+                <th className={`${COL.age} px-3 py-2 text-right font-semibold`}>Aktualität</th>
               </tr>
             </thead>
             <tbody>
@@ -124,7 +158,7 @@ export default function StockTable({
                     title={rowTitle(r, fmtBig)}
                     className={`${ROW_HEIGHT} cursor-pointer border-b border-ink-800 transition hover:bg-ink-800`}
                   >
-                    <td className="py-2 pr-2 pl-3">
+                    <td className={`${NAME_CELL} py-2 pr-2 pl-3`}>
                       <StockIdentity row={r} active={false} stages={activity[r.symbol]} />
                     </td>
 
@@ -132,11 +166,11 @@ export default function StockTable({
                       <StockScore row={r} split />
                     </td>
 
-                    <td className="px-2 py-1">
+                    <td className={`${COL.trend} px-2 py-1`}>
                       <ScoreSparkline points={r.scoreHistory} />
                     </td>
 
-                    <td className="px-2 py-2">
+                    <td className={`${COL.verdict} whitespace-nowrap px-2 py-2`}>
                       {r.recommendation ? (
                         <RecommendationBadge
                           rec={r.recommendation}
@@ -151,27 +185,27 @@ export default function StockTable({
                       )}
                     </td>
 
-                    <td className="px-2 py-2 text-right font-mono text-xs tabular text-ink-200">
+                    <td className={`${COL.price} whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular text-ink-200`}>
                       {fmtPrice(r.price, r.currency)}
                     </td>
 
-                    <td className="px-2 py-2 text-right font-mono text-xs tabular">
+                    <td className={`${COL.target} whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular`}>
                       <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean, r.currency)}</div>
                       <div className={`text-[10px] ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
                     </td>
 
-                    <td className="px-2 py-2 text-right font-mono text-xs tabular">
+                    <td className={`${COL.model} whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular`}>
                       <div className="text-ink-300">
                         {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue, r.currency)}
                       </div>
                       <div className={`text-[10px] ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
                     </td>
 
-                    <td className="px-2 py-2 text-right font-mono text-xs tabular text-ink-400">
+                    <td className={`${COL.mcap} whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular text-ink-400`}>
                       {fmtBig(r.marketCap, r.currency)}
                     </td>
 
-                    <td className="px-3 py-2 text-right text-[10px] text-ink-500">
+                    <td className={`${COL.age} whitespace-nowrap px-3 py-2 text-right text-[10px] text-ink-500`}>
                       <div title="Alter der Marktdaten">
                         {r.dataAgeHours === null
                           ? '—'

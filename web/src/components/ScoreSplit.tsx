@@ -31,7 +31,7 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
   ].filter(Boolean).join('\n');
 
   return (
-    <div className="font-mono text-[9px] font-normal text-ink-600" title={title}>
+    <div className="whitespace-nowrap font-mono text-[9px] font-normal text-ink-600" title={title}>
       Z {row.factorScore.toFixed(1)}
       {row.narrativeScore !== null && <> · T {row.narrativeScore.toFixed(1)}</>}
       {conf !== null && <> · {conf}%</>}

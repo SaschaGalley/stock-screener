@@ -36,7 +36,7 @@ export default function StockListControls({ view, onChange, layout, badge }: Pro
       onChange={(e) => onChange({ ...view, query: e.target.value })}
       placeholder={layout === 'rail' ? 'Symbol, Name, Sektor…' : 'Filtern nach Symbol, Name, Sektor…'}
       className={`rounded border border-ink-700 bg-ink-950 py-1.5 pl-2.5 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent focus:outline-none ${
-        layout === 'rail' ? 'w-full pr-14' : 'w-56 pr-2.5'
+        layout === 'rail' ? 'w-full pr-14' : 'w-full pr-2.5 sm:w-56'
       }`}
     />
   );
