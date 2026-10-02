@@ -87,7 +87,11 @@ The list does not move when any of that happens. The two densities share the row
 Measured across the list, the stock you clicked lands on the pixel it was on, going in and coming back. Where the browser supports view transitions the columns fade rather than vanish between frames.
 
 - **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and the watchlist filter belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
-- **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull and bear case, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+- **Center pane**: full analysis — verdict card with the score's composition underneath, composite fair value (primary + conservative tiers), bull and bear case, valuation over five years, valuation models, fundamentals (history, margin trend and today's figures in one section), peer comparison, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+
+  **Wie der Score entsteht** is a strip under the three verdict cards rather than a section of its own: the blend as one line (Zahlen × weight + Text × weight → score), the six pillars with their weights, and the five narrative dimensions. Findings, method and the two prose reads sit behind *Befunde & Begründung*, which remembers being opened; the two prose reads are also a hover on their half of the formula.
+
+  **Bewertung im Zeitverlauf** answers what one day's numbers cannot — whether today is unusual for this stock. Every month-end of the last five years is rebuilt from the SEC filings known that day and run through the live models (`src/backtest/history.ts`, the backtest's own reconstruction for a single stock), giving three views: the reconstructed fair value against the price, with the range the gap usually sat in ("meist 69–86 % über dem Fair Value; heute 64 % darüber — günstiger als in 83 % der Monate"); the price against earnings times the stock's median P/E, FAST-Graphs style; and each of P/E, P/S, P/FCF and EV/EBITDA against its own three- and five-year median, with the price the median multiple implies. Medians rather than means, because ServiceNow's P/E of 640 on near-zero 2021 earnings put its five-year mean at 210. Analyst targets and peer multiples were never archived, so the rebuilt fair value runs below the headline composite — it is consistent with itself, and today's live value is drawn beside it. A listing without XBRL filings gets the earnings and multiples from Yahoo's fiscal years instead, without a fair value. The first open of a stock each day takes a few seconds (a SEC download and two price histories); the result is cached as a `valuation_history` snapshot for a day.
 - **Analyse dialog** (the combination named on the verdict card, or „Andere Einstellungen…" in the refresh menu): every flag combo is its own cached entry, so the dialog lists what is stored — one click shows that one, and costs nothing — and underneath it holds the model, web-search and Perplexity pickers with the button that spends money. Outdated entries stay selectable and carry a ⚠.
 
   It used to be a permanent third column, which gave a panel you touch a few times a day the same standing as the analysis itself and a fifth of the window to say it. Both of its jobs are moments rather than states, and a run that costs an API call is better confirmed in a dialog than fired by a stray click on a sidebar button.
@@ -848,7 +852,7 @@ expected and weighed for what it found, and that an opened probe is at most −1
 The five ratings are shown as chips in the breakdown, each with its evidence.
 
 **Bull and bear first.** On the detail page the case for and against sits
-directly under the verdict, above "Wie der Score entsteht", in two columns —
+directly under the verdict and its score strip, in two columns —
 Key Risks mostly repeated the bear case in a narrower third column and are folded
 into it (older analyses included).
 
@@ -1663,7 +1667,8 @@ web/
 │       └── sections/              ValuationDetail, QualityScores, FundamentalsGrid,
 │                                  PeerCompare, TechnicalSignalsPanel, PriceAction,
 │                                  MarketContext, OwnershipFlow, EarningsBlock,
-│                                  NewsAndResearch, CompanyInfo, ScoreBreakdown
+│                                  NewsAndResearch, CompanyInfo, ScoreBreakdown,
+│                                  ValuationHistory, MarginTrends
 ```
 
 ## Storage

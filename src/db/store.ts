@@ -69,7 +69,10 @@ const DISTILL_TTL_MS        = 30 * 60 * 1000;
 
 export type SnapshotKind =
   | 'financials' | 'market_signals' | 'metrics'
-  | 'sector_medians' | 'news' | 'technical_signals';
+  | 'sector_medians' | 'news' | 'technical_signals'
+  // Derived rather than fetched: rebuilt from the SEC filings and price
+  // history, cached for a day (`valuation-history-service.ts`).
+  | 'valuation_history';
 
 export type DocumentKind = 'distill' | 'perplexity' | 'verdict' | 'search_trace';
 

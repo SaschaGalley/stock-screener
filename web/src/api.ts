@@ -25,6 +25,7 @@ import type {
   BacktestResponse,
   VerdictChangesResponse,
 } from './types';
+import type { ValuationHistory } from '../../src/analysis/valuation-history';
 
 const BASE = '/api';
 
@@ -90,6 +91,12 @@ export const api = {
    */
   getPeers: (symbol: string) =>
     jsonFetch<PeersResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/peers`),
+
+  /** Five years rebuilt month by month — a few seconds the first time a stock is opened each day. */
+  getValuationHistory: (symbol: string) =>
+    jsonFetch<{ symbol: string; history: ValuationHistory | null }>(
+      `${BASE}/stocks/${encodeURIComponent(symbol)}/valuation-history`,
+    ),
 
   /** Force-refresh raw data (Yahoo + Finnhub + FRED + macro). No LLM call. */
   refreshData: (symbol: string) =>

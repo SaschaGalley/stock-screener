@@ -56,7 +56,7 @@ function CaseCard({ direction, side }: { direction: CaseDirection; side: CaseVie
     <article className={`flex flex-col rounded-lg border border-ink-700 ${a.border} border-l-4 bg-ink-900 p-4`}>
       <div className="mb-3 flex items-center gap-2">
         <span className={`text-base font-bold ${a.text}`}>{a.icon}</span>
-        <h3 className="text-sm font-semibold text-ink-100">{CASE_TITLE[direction]}</h3>
+        <h3 className="text-[15px] font-semibold text-ink-100">{CASE_TITLE[direction]}</h3>
       </div>
 
       <div className="space-y-4">
@@ -93,7 +93,7 @@ function CaseCard({ direction, side }: { direction: CaseDirection; side: CaseVie
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500">{children}</h4>
+    <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{children}</h4>
   );
 }
 
@@ -103,7 +103,7 @@ function Points({ points, bulletClass, muted = false }: { points: string[]; bull
       {points.map((p, i) => (
         <li
           key={i}
-          className={`flex gap-2 leading-relaxed ${muted ? 'text-xs text-ink-400' : 'text-[13px] text-ink-300'}`}
+          className={`flex gap-2 leading-relaxed ${muted ? 'text-[13px] text-ink-400' : 'text-sm text-ink-300'}`}
         >
           <span className={`mt-0.5 shrink-0 ${bulletClass}`}>·</span>
           <span>{p}</span>

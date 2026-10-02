@@ -40,12 +40,14 @@ const CACHE_DAYS = 7;
  */
 const yahooWindow = new RateWindow(2, 1000);
 
-export async function priceHistory(symbol: string, from: string, cacheDir: string): Promise<PriceHistory | null> {
+export async function priceHistory(
+  symbol: string, from: string, cacheDir: string, maxAgeDays = CACHE_DAYS,
+): Promise<PriceHistory | null> {
   const file = join(cacheDir, `${symbol.replace(/[^A-Za-z0-9.^-]/g, '_')}.json`);
   if (existsSync(file)) {
     try {
       const cached = JSON.parse(readFileSync(file, 'utf8')) as PriceHistory & { fetchedAt: string; from: string };
-      if (cached.from <= from && Date.now() - Date.parse(cached.fetchedAt) < CACHE_DAYS * 86_400_000) return cached;
+      if (cached.from <= from && Date.now() - Date.parse(cached.fetchedAt) < maxAgeDays * 86_400_000) return cached;
     } catch { /* fetch again */ }
   }
   try {
@@ -87,6 +89,18 @@ export function indexAtOrBefore(dates: string[], date: string): number {
     if (dates[mid] <= date) { found = mid; lo = mid + 1; } else hi = mid - 1;
   }
   return found;
+}
+
+/** The last trading day of every month between `from` and `to`. */
+export function monthEnds(dates: string[], from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let k = 0; k < dates.length; k++) {
+    const d = dates[k];
+    if (d < from || d > to) continue;
+    const next = dates[k + 1];
+    if (!next || next.slice(0, 7) !== d.slice(0, 7)) out.push(d);
+  }
+  return out;
 }
 
 /**

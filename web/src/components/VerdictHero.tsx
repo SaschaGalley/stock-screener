@@ -11,9 +11,6 @@ interface Props {
     score: number;
     recommendation: string;
     thesis: string;
-    /** The two halves behind `score`, when a score card was stored with it. */
-    factorScore?: number | null;
-    narrativeScore?: number | null;
     /** Reasons a cap held the label below its band; empty when none did. */
     capReasons?: string[];
   } | null;
@@ -25,6 +22,11 @@ interface Props {
   flagsLabel: string;
   /** Open the picker: switch to another stored analysis, or compute one. */
   onOpenAnalysis: () => void;
+  /**
+   * How the score came about, full width under the three cards — part of the
+   * verdict rather than a section of its own further down.
+   */
+  breakdown?: ReactNode;
   analyst: {
     targetMeanPrice: number | null;
     analystTargetLow: number | null;
@@ -40,7 +42,7 @@ interface Props {
 }
 
 export default function VerdictHero({
-  price, composite, llm, llmGeneratedAt, llmModel, flagsLabel, onOpenAnalysis, analyst,
+  price, composite, llm, llmGeneratedAt, llmModel, flagsLabel, onOpenAnalysis, analyst, breakdown,
 }: Props) {
   const { fmtPrice } = useMoney();
 
@@ -103,14 +105,6 @@ export default function VerdictHero({
             <p className="mt-3 text-sm leading-relaxed text-ink-300">
               {llm.thesis}
             </p>
-            {llm.factorScore !== undefined && llm.factorScore !== null && (
-              <p className="mt-2 font-mono text-[10px] text-ink-500">
-                Zahlen {llm.factorScore.toFixed(1)}
-                {llm.narrativeScore !== null && llm.narrativeScore !== undefined
-                  && ` · Text ${llm.narrativeScore.toFixed(1)}`}
-                {' — Aufschlüsselung unter "Wie der Score entsteht"'}
-              </p>
-            )}
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
@@ -210,6 +204,8 @@ export default function VerdictHero({
           </div>
         )}
       </Card>
+
+      {breakdown && <div className="lg:col-span-3">{breakdown}</div>}
     </section>
   );
 }

@@ -25,11 +25,18 @@ function writeStoredOpen(key: string, open: boolean): void {
   try { localStorage.setItem(STORAGE_PREFIX + key, open ? '1' : '0'); } catch { /* ignore */ }
 }
 
-export default function Section({ title, subtitle, defaultOpen = true, children, rightHeader, storageKey }: Props) {
-  const key = storageKey ?? title;
+/**
+ * An open/closed state that survives a reload — the Section's own, and any
+ * disclosure inside one that should be remembered the same way.
+ */
+export function useStoredOpen(key: string, defaultOpen: boolean): [boolean, (f: (open: boolean) => boolean) => void] {
   const [open, setOpen] = useState(() => readStoredOpen(key, defaultOpen));
-
   useEffect(() => { writeStoredOpen(key, open); }, [key, open]);
+  return [open, setOpen];
+}
+
+export default function Section({ title, subtitle, defaultOpen = true, children, rightHeader, storageKey }: Props) {
+  const [open, setOpen] = useStoredOpen(storageKey ?? title, defaultOpen);
 
   return (
     <section className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900">

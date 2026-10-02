@@ -11,6 +11,8 @@ import StockHeader from "./StockHeader";
 import { verdictForScore } from "../format";
 import Section from "./Section";
 import ScoreBreakdown from "./sections/ScoreBreakdown";
+import MarginTrends from "./sections/MarginTrends";
+import ValuationHistory from "./sections/ValuationHistory";
 import CompositeChart from "./charts/CompositeChart";
 import ValuationDetail from "./sections/ValuationDetail";
 import QualityScores from "./sections/QualityScores";
@@ -240,8 +242,6 @@ export default function AnalysisView({
               composite={m.composite}
               llm={llm && {
                 ...llm,
-                factorScore:    analysis?.scoreCard?.factor.score ?? null,
-                narrativeScore: analysis?.scoreCard?.narrative?.score ?? null,
                 capReasons:     analysis?.scoreCard
                   && verdictForScore(analysis.scoreCard.final.score) !== analysis.scoreCard.final.verdict
                   ? analysis.scoreCard.factor.caps.map((c) => c.reason)
@@ -263,21 +263,12 @@ export default function AnalysisView({
                 analystSell: f.analystSell,
                 analystStrongSell: f.analystStrongSell,
               }}
+              // How the verdict was arrived at — the calculation, not a retelling.
+              breakdown={analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
             />
 
             {/* TIER 2: THE CASE FOR AND AGAINST — what a reader wants right after the verdict. */}
             {llm && <BullBearRisks llm={llm} />}
-
-            {/* How that verdict was arrived at — the calculation, not a retelling. */}
-            {analysis?.scoreCard && (
-              <Section
-                title="Wie der Score entsteht"
-                subtitle="Sechs berechnete Säulen, eine Prosa-Lesart, und das Mischungsverhältnis dazwischen"
-                storageKey="score-breakdown"
-              >
-                <ScoreBreakdown card={analysis.scoreCard} />
-              </Section>
-            )}
 
             {/* TIER 3: COMPOSITE BAR CHART (Primary + Conservative tiers) */}
             {(m.composite.primary.models.length > 0 ||
@@ -312,6 +303,15 @@ export default function AnalysisView({
               </Section>
             )}
 
+            {/* TIER 3b: THE SAME QUESTION OVER FIVE YEARS — is today unusual for this stock? */}
+            <Section
+              title="Bewertung im Zeitverlauf"
+              subtitle="Fair Value, Gewinn und Multiples der letzten fünf Jahre"
+              storageKey="valuation-history"
+            >
+              <ValuationHistory symbol={symbol} liveFairValue={m.composite.primary.median} />
+            </Section>
+
             {/* TIER 4: VALUATION DETAILS */}
             <Section
               title="Valuation Models"
@@ -333,27 +333,25 @@ export default function AnalysisView({
               </Section>
             )}
 
-            {/* TIER 8: FUNDAMENTALS */}
-            <Section title="Fundamentals" defaultOpen={false}>
-              <FundamentalsGrid
-                financials={f}
-                ratios={m.ratios}
-                evMultiples={m.evMultiples}
-              />
+            {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}
+            <Section title="Fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
+              <div className="space-y-5">
+                {f.fundamentalsHistory &&
+                  (f.fundamentalsHistory.revenue?.length > 0 ||
+                    f.fundamentalsHistory.netIncome?.length > 0 ||
+                    f.fundamentalsHistory.eps?.length > 0) && (
+                    <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
+                      <FundamentalsHistoryChart history={f.fundamentalsHistory} />
+                      <MarginTrends history={f.fundamentalsHistory} />
+                    </div>
+                  )}
+                <FundamentalsGrid
+                  financials={f}
+                  ratios={m.ratios}
+                  evMultiples={m.evMultiples}
+                />
+              </div>
             </Section>
-
-            {/* TIER 6b: 5y Fundamentals History (overlay charts) */}
-            {f.fundamentalsHistory &&
-              (f.fundamentalsHistory.revenue?.length > 0 ||
-                f.fundamentalsHistory.netIncome?.length > 0 ||
-                f.fundamentalsHistory.eps?.length > 0) && (
-                <Section
-                  title="Fundamentals History"
-                  subtitle="last ~5 fiscal years"
-                >
-                  <FundamentalsHistoryChart history={f.fundamentalsHistory} />
-                </Section>
-              )}
 
             {/* TIER 7: PEER COMPARISON */}
             {bundle.sectorMedians && (

@@ -48,6 +48,7 @@ import { cachedEvaluation, EVALUATED_SIGNALS } from './db/evaluate.js';
 import { currentScoreCard, rescoreIfScoringChanged, storedInputs } from './db/rescore.js';
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
+import { getValuationHistory } from './valuation-history-service.js';
 import { QuoteBrief, quoteBriefs, searchByQuery } from './data/yfinance.js';
 import { yahooTicker } from './data/universe.js';
 import { lastGoodSectorMedians } from './sector-medians.js';
@@ -1023,6 +1024,19 @@ export function createApp(): express.Express {
         return;
       }
       res.json({ symbol, period: raw, rows: await readFundamentals(symbol, raw) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/stocks/:symbol/valuation-history ──────────────────────────────
+  // The last five years, month-end by month-end: price, the fair value the
+  // models would have computed then, earnings and four multiples. Rebuilt on
+  // first request and cached for a day, so the first open takes a few seconds.
+  app.get('/api/stocks/:symbol/valuation-history', async (req, res, next) => {
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      res.json({ symbol, history: await getValuationHistory(symbol) });
     } catch (e) {
       next(e);
     }

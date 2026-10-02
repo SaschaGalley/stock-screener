@@ -53,7 +53,7 @@ import { PILLAR_KEYS } from '../types.js';
 import { Company, payloadAt, yahooSector } from './payload.js';
 import { BACKTEST_CAVEATS, BacktestResult, RESULT_KEY } from './result.js';
 import { crossSectionPeers } from './peers.js';
-import { indexAtOrBefore, priceHistory, PriceHistory } from './prices.js';
+import { indexAtOrBefore, monthEnds, priceHistory, PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
 import { renderWeightTable, scoredRow, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
 
@@ -71,17 +71,9 @@ export const CRITERION_PREFIX = 'criterion.';
 export const BACKTEST_SIGNALS = ['score.factor.score', 'score.factor.raw', ...PILLAR_KEYS.map(pillarKey)];
 const LABEL_KEY = 'score.factor.verdict';
 
-/** The last trading day of every month between `from` and `to`. */
-export function monthEnds(dates: string[], from: string, to: string): string[] {
-  const out: string[] = [];
-  for (let k = 0; k < dates.length; k++) {
-    const d = dates[k];
-    if (d < from || d > to) continue;
-    const next = dates[k + 1];
-    if (!next || next.slice(0, 7) !== d.slice(0, 7)) out.push(d);
-  }
-  return out;
-}
+// Lives beside the other calendar helpers now, so a single stock's history can
+// use it without importing the whole backtest; re-exported for existing callers.
+export { monthEnds } from './prices.js';
 
 function median(xs: number[]): number | null {
   if (xs.length === 0) return null;

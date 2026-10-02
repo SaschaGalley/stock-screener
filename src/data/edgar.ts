@@ -59,7 +59,7 @@ async function getText(url: string): Promise<string | null> {
 const TICKER_TABLE_TTL_MS = 24 * 60 * 60 * 1000;
 let tickerTable: { at: number; byTicker: Map<string, { cik: string; name: string }> } | null = null;
 
-async function lookupCIK(symbol: string): Promise<{ cik: string; name: string } | null> {
+export async function lookupCIK(symbol: string): Promise<{ cik: string; name: string } | null> {
   if (!tickerTable || Date.now() - tickerTable.at > TICKER_TABLE_TTL_MS) {
     const data = await getJson<Record<string, TickerEntry>>(`${SEC_BASE}/files/company_tickers.json`);
     if (!data) return null;
