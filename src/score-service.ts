@@ -26,7 +26,7 @@
 
 import {
   DataSummaryOutputSchema, LLMAnalysis, MarketSignals, NarrativeOutput,
-  NarrativeOutputSchema, ScoreCard, SearchResult, SectorMedians, StockFinancials,
+  NarrativeOutputSchema, NarrativeTheses, ScoreCard, SearchResult, SectorMedians, StockFinancials,
   SynthesisOutput, SynthesisOutputSchema, TechnicalSignals,
 } from './types.js';
 import { ComputedMetrics } from './analysis/computeMetrics.js';
@@ -41,7 +41,7 @@ import {
 import { appendSearchResults } from './providers/base.js';
 import { createProviderForModel } from './providers/factory.js';
 import { DistillBundle } from './data/distill.js';
-import { PerplexityContext, PerplexityFindings } from './data/perplexity.js';
+import { EVIDENCE_LABEL, PerplexityClaim, PerplexityContext, PerplexityFindings } from './data/perplexity.js';
 import { logger } from './utils/logger.js';
 
 const SYSTEM_SUMMARISER =
@@ -87,6 +87,11 @@ const PERPLEXITY_FULL_WEIGHT_ITEMS = 6;
  * Bull claims count when they were checked against something — independently
  * confirmed or contradicted. A claim resting only on management's statements is
  * exactly the thing the brief exists to discount.
+ *
+ * Bear claims do not count. They were added for the bull and bear case, not for
+ * the weight, and whatever evidences them is already in `bearEvidence` —
+ * counting both would raise the narrative's share of the headline merely by
+ * asking one more question.
  */
 function independentItems(f: PerplexityFindings): number {
   return f.events.filter((e) => e.independent).length
@@ -249,7 +254,8 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
           system: SYSTEM_SUMMARISER,
           user:   appendSearchResults(buildNarrativePrompt(f, distill ?? undefined, perplexity ?? undefined), searchResults),
           schema: NarrativeOutputSchema,
-          maxTokens: 3000,
+          // Up to eight theses on top of the summary, events and five notes.
+          maxTokens: 4000,
         }).catch((e): null => {
           logger.warn(`${f.symbol}: one narrative read failed (${(e as Error).message})`);
           return null;
@@ -267,6 +273,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
   const narrative = combined === null ? null : {
     summary:    combined.read.summary,
     events:     combined.read.events,
+    theses:     combined.read.theses,
     score:      combined.score,
     dimensions: combined.read.dimensions,
     confidence: material.confidence * combined.confidenceFactor,
@@ -297,7 +304,10 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
     card:      renderFactorCard(factor),
     dataNote,
     research:  perplexity?.findings ? researchDigest(perplexity.findings) : null,
-    narrative: narrative && { summary: narrative.summary, events: narrative.events, score: narrative.score, sources: narrative.sources },
+    narrative: narrative && {
+      summary: narrative.summary, events: narrative.events, score: narrative.score,
+      sources: narrative.sources, theses: narrative.theses,
+    },
     blendNote: blendNote(factor.score, narrative?.score ?? null, preview, input.adjustmentLimit ?? 1),
   });
 
@@ -308,7 +318,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
       system: SYSTEM_SYNTHESIS,
       user:   synthesisPrompt,
       schema: SynthesisOutputSchema,
-      // The largest of the three: up to ten argued bullets, the triggers and a
+      // The largest of the three: two sides of up to nine points each and a
       // thesis over the longest prompt. GOOGL truncated at 2048 on the first
       // live run; the longer bullets need the headroom.
       maxTokens: 6000,
@@ -318,7 +328,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
       return null;
     });
 
-  const prose = synthesis ?? fallbackProse(factor, dataNote, narrative?.summary ?? null, f);
+  const prose = synthesis ?? fallbackProse(factor, dataNote, narrative, f);
 
   const final = blendScores({
     factor,
@@ -335,7 +345,6 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
     llmAnalysis: {
       bullCase:          prose.bullCase,
       bearCase:          prose.bearCase,
-      watch:             prose.watch,
       thesis:            prose.thesis,
       // Computed, not asked for — see `fairValueRange`.
       fairValueEstimate: fairValueRange(f, metrics.composite),
@@ -359,15 +368,14 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
 function researchDigest(findings: PerplexityFindings): string {
   const line = (x: { date: string | null; what: string; independent: boolean }) =>
     `- ${x.date ? `${x.date} · ` : ''}${x.independent ? 'unabhängig' : 'Unternehmensquelle'} — ${x.what}`;
-  const claim: Record<string, string> = {
-    independent: 'unabhängig belegt', 'management-only': 'nur Management', contradicted: 'widerlegt',
-  };
+  const claims = (title: string, list: PerplexityClaim[] | undefined) => list?.length
+    ? `${title}:\n${list.slice(0, 5).map((c) => `- ${c.claim} — ${EVIDENCE_LABEL[c.evidence] ?? c.evidence}: ${c.detail}`).join('\n')}`
+    : '';
   return [
     findings.events.length ? `Ereignisse:\n${findings.events.slice(0, 5).map(line).join('\n')}` : '',
     findings.bearEvidence.length ? `Belege gegen die Bullen-These:\n${findings.bearEvidence.slice(0, 5).map(line).join('\n')}` : '',
-    findings.bullClaims.length
-      ? `Geprüfte Bullen-Thesen:\n${findings.bullClaims.slice(0, 5).map((c) => `- ${c.claim} — ${claim[c.evidence] ?? c.evidence}: ${c.detail}`).join('\n')}`
-      : '',
+    claims('Geprüfte Bullen-Thesen', findings.bullClaims),
+    claims('Geprüfte Bären-Thesen', findings.bearClaims),
   ].filter(Boolean).join('\n\n');
 }
 
@@ -394,21 +402,21 @@ Enden nur annähert. Deckel auf der Überzeugung bleiben davon unberührt.`;
 /**
  * A verdict without a synthesis model.
  *
- * Not a neutral placeholder — the score is the one the arithmetic produced, and
- * the bullets are its own top findings. The thesis says plainly that no model
- * wrote it, because a fallback that reads like the real thing is worse than a
- * visible gap.
+ * Not a neutral placeholder — the score is the one the arithmetic produced, the
+ * figures are its own top findings, and the theses are the arguments the
+ * narrative stage collected from the sources, unedited. The thesis says plainly
+ * that no model wrote it, because a fallback that reads like the real thing is
+ * worse than a visible gap.
  */
 function fallbackProse(
   factor: ReturnType<typeof computeFactorScore>,
   dataNote: string | null,
-  narrativeSummary: string | null,
+  narrative: { summary: string; theses?: NarrativeTheses } | null,
   f: StockFinancials,
 ): SynthesisOutput {
   const pick = (kind: 'driver' | 'drag') =>
     factor.findings.filter((x) => x.kind === kind).slice(0, 3).map((x) => x.note);
-  const pad = (rows: string[], filler: string) =>
-    rows.length >= 2 ? rows : [...rows, filler, filler].slice(0, 2);
+  const atLeastOne = (rows: string[], filler: string) => (rows.length > 0 ? rows : [filler]);
 
   // Risks belong to the bear side now — caps, gaps and divergences with it.
   const risks = factor.findings
@@ -417,12 +425,19 @@ function fallbackProse(
     .map((x) => x.note);
 
   return {
-    bullCase: pad(pick('driver'), 'Keine Säule trug den Score nennenswert.'),
-    bearCase: pad([...pick('drag'), ...risks], 'Keine Säule belastete den Score nennenswert.'),
-    watch:    [],
+    bullCase: {
+      theses:   atLeastOne(narrative?.theses?.bull ?? [], 'Ohne Synthese und ohne Thesen aus den Quellen.'),
+      figures:  atLeastOne(pick('driver'), 'Keine Säule trug den Score nennenswert.'),
+      triggers: [],
+    },
+    bearCase: {
+      theses:   atLeastOne([...(narrative?.theses?.bear ?? []), ...risks], 'Ohne Synthese und ohne Thesen aus den Quellen.'),
+      figures:  atLeastOne(pick('drag'), 'Keine Säule belastete den Score nennenswert.'),
+      triggers: [],
+    },
     thesis: `Ohne Synthese-Modell erzeugt: ${f.symbol} erreicht ${factor.score.toFixed(1)}/10 (${factor.verdict}) aus der reinen Rechnung.`
       + (dataNote ? ` ${dataNote.split('. ')[0]}.` : '')
-      + (narrativeSummary ? ` ${narrativeSummary.split('. ')[0]}.` : ''),
+      + (narrative?.summary ? ` ${narrative.summary.split('. ')[0]}.` : ''),
     adjustment: 0,
     adjustmentReason: null,
   };

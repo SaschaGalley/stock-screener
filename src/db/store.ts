@@ -23,6 +23,7 @@ import {
 import type { FetchedRates } from '../data/fred.js';
 import type { PerplexityContext } from '../data/perplexity.js';
 import type { DistillBundle } from '../data/distill.js';
+import { CASE_DIRECTIONS, CASE_TITLE, caseLines, readCases } from '../cases.js';
 import { logger } from '../utils/logger.js';
 import { query, queryOne } from './client.js';
 import { buildCatalog, keyedArraysFor, metricIds } from './catalog.js';
@@ -864,28 +865,22 @@ export interface AnalysisManifestEntry {
 /**
  * The verdict rendered as the text a reader (or another model) would compare.
  *
- * Tolerant of shape on purpose: analysis schema v3 stored bullCase/bearCase/
- * keyRisks as a single prose string where v4 onwards stores bullet arrays, and
- * those older verdicts are exactly the history worth keeping. A renderer that
- * insisted on arrays would throw on the oldest and most interesting rows.
+ * Tolerant of shape on purpose: schema v3 stored the cases as prose, v4 as flat
+ * lists, and since 2 October each side is in sections. Those older verdicts are
+ * exactly the history worth keeping, so the text goes through `readCases`
+ * rather than assuming today's shape.
  */
-function bullets(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((v) => `- ${String(v)}`);
-  if (typeof value === 'string' && value.trim()) return [value.trim()];
-  return [];
-}
-
 export function verdictText(a: LLMAnalysis): string {
+  const cases = readCases(a);
   return [
     a.thesis ?? '',
     '',
     `Empfehlung: ${a.recommendation} · Score ${a.score}/10 · Fair Value ${a.fairValueEstimate}`,
-    '',
-    'Bull Case:', ...bullets(a.bullCase),
-    '',
-    'Bear Case:', ...bullets(a.bearCase),
-    ...(a.keyRisks?.length ? ['', 'Risiken:', ...bullets(a.keyRisks)] : []),
-    ...(a.watch?.length ? ['', 'Was das Urteil ändern würde:', ...bullets(a.watch)] : []),
+    ...CASE_DIRECTIONS.flatMap((d) => [
+      '', `${CASE_TITLE[d]}:`,
+      ...caseLines(cases[d], d, { bullet: '- ', heading: (label) => `${label}:` }),
+    ]),
+    ...(cases.undirected.length ? ['', 'Was das Urteil ändern würde:', ...cases.undirected.map((w) => `- ${w}`)] : []),
   ].join('\n');
 }
 

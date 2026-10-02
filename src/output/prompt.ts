@@ -24,7 +24,7 @@ import {
 } from '../analysis/metrics.js';
 import { SEASONAL_GAP_THRESHOLD } from '../analysis/run-rate.js';
 import { currencyPrefix, fmtPrice } from '../format.js';
-import { MarketSignals, SectorMedians, StockFinancials } from '../types.js';
+import { MarketSignals, NarrativeTheses, SectorMedians, StockFinancials } from '../types.js';
 import { PerplexityContext } from '../data/perplexity.js';
 import { DistillBundle, DistillDossierBlock, DistillInsight } from '../data/distill.js';
 
@@ -536,13 +536,15 @@ export function buildNarrativePrompt(
       ? `
 ### Forensische Web-Recherche (Perplexity — gezielt nach dem gefragt, was die Zahlen nicht zeigen)
 
-Drei Teile, und sie wiegen nicht gleich. **Ereignisse** sind datierte Fakten. Die
-**Belege gegen die Bullen-These** sind das Ergebnis einer ausdrücklichen Suche nach dem,
-was die Optimisten übersehen. Die **geprüften Bullen-Thesen** sagen, welche verbreiteten
+Die Teile wiegen nicht gleich. **Ereignisse** sind datierte Fakten. Die **Belege gegen
+die Bullen-These** sind das Ergebnis einer ausdrücklichen Suche nach dem, was die
+Optimisten übersehen. Die **geprüften Bullen-Thesen** sagen, welche verbreiteten
 Argumente unabhängig belegt, nur vom Management behauptet oder widerlegt sind — eine
 widerlegte These ist das stärkste Signal auf dieser Seite, eine reine Management-Aussage
-das schwächste. Einträge aus einer Unternehmensquelle wiegen weniger als unabhängige.
-Leere Abschnitte heißen „gesucht und nichts gefunden", nicht „nicht gesucht".
+das schwächste. Die **geprüften Bären-Thesen** sind die Argumente der Skeptiker, ebenso
+geprüft; „bisher nur Meinung" heißt, dass noch nichts sie belegt. Einträge aus einer
+Unternehmensquelle wiegen weniger als unabhängige. Leere Abschnitte heißen „gesucht und
+nichts gefunden", nicht „nicht gesucht".
 
 ${perplexity.synthesis}
 `
@@ -598,8 +600,17 @@ Regeln:
   eines einzelnen Kanals oder Newsletters trägt für sich weder ±2 noch ±1 —
   dafür braucht es einen datierten Vorgang oder eine zweite, unabhängige Quelle.
   Wiederholt dieselbe Quelle etwas, bleibt es eine Quelle.
+- **Eine These ist kein Befund.** Bullen- und Bären-Thesen sind Argumente; als
+  Meinung tragen sie keine Dimension, nur was sie belegt oder widerlegt.
 - \`events\` sind konkrete, datierte Vorgänge (Auftrag, Zulassung, Rückruf,
   Personalwechsel, Kapitalmaßnahme) — keine Einschätzungen.
+- \`theses\` sammelt die Argumente, die in den Quellen für (\`bull\`) und gegen
+  (\`bear\`) das Unternehmen vertreten werden — je Seite bis zu 4, so wie eine
+  Investment-Debatte sie führt: Treiber → was er mit dem Geschäft macht → warum es
+  zählt. Sag in einem Halbsatz, wer es vertritt oder was es belegt (unabhängige
+  Recherche, Management, ein Kommentar), und führe eine widerlegte Bullen-These als
+  Bären-Argument. Nur Geschäft, keine Bewertung. Steht für eine Seite nichts in den
+  Quellen, bleibt sie leer.
 
 ${GERMAN_STYLE}
 
@@ -607,6 +618,7 @@ Antworte als JSON:
 {
   "summary": "4–6 Sätze zur qualitativen Lage.",
   "events":  ["bis zu 5 datierte, konkrete Vorgänge"],
+  "theses":  { "bull": ["bis zu 4 Argumente"], "bear": ["bis zu 4 Argumente"] },
   "dimensions": {
     "demand":     { "rating": -2, -1, 0, 1, 2 oder null, "note": "Beleg in einem Halbsatz" },
     "position":   { "rating": ..., "note": "..." },
@@ -617,11 +629,23 @@ Antworte als JSON:
 }`;
 }
 
+/** The arguments the narrative stage collected, as the synthesis reads them. */
+function thesesBlock(t: NarrativeTheses | undefined): string {
+  if (!t || (t.bull.length === 0 && t.bear.length === 0)) return '';
+  const side = (title: string, items: string[]) =>
+    `\n${title}:\n${items.length ? items.map((x) => `- ${x}`).join('\n') : '- keine in den Quellen'}`;
+  return `\n\nThesen aus den Quellen (ohne Kenntnis der Bewertung gesammelt):${side('Bull', t.bull)}${side('Bear', t.bear)}`;
+}
+
 export interface SynthesisInputs {
   /** Brief factor card: pillars, caps and findings, without the criteria detail. */
   card:      string;
   dataNote:  string | null;
-  narrative: { summary: string; events: string[]; score: number | null; sources: string[] } | null;
+  narrative: {
+    summary: string; events: string[]; score: number | null; sources: string[];
+    /** The arguments the sources make, per side — the raw material for the theses. */
+    theses?: NarrativeTheses;
+  } | null;
   /** The Perplexity findings, compact — what the bull and bear cases may cite beyond the summary. */
   research?: string | null;
   /** How the code will combine the two, stated before the model answers. */
@@ -647,11 +671,12 @@ Quellen: ${s.narrative.sources.join(', ') || 'keine'}
 Narrativ-Score: ${s.narrative.score === null ? 'Enthaltung — die Quellen trugen zu wenig' : `${s.narrative.score.toFixed(1)}/10`}
 
 ${s.narrative.summary}
-${s.narrative.events.length > 0 ? `\nKonkrete Vorgänge:\n${s.narrative.events.map((e) => `- ${e}`).join('\n')}` : ''}`
+${s.narrative.events.length > 0 ? `\nKonkrete Vorgänge:\n${s.narrative.events.map((e) => `- ${e}`).join('\n')}` : ''}${thesesBlock(s.narrative.theses)}`
     : `### Qualitative Zusammenfassung
 
 Keine — für dieses Unternehmen lagen weder Distill-Dossier noch Perplexity-Recherche vor.
-Der Score ruht damit allein auf der Arithmetik; sag das im \`bearCase\`.`;
+Der Score ruht damit allein auf der Arithmetik. Die Thesen stützen sich dann nur auf
+das Geschäftsmodell; sag in den Bear-Thesen, dass aktuelle Quellen fehlen.`;
 
   const research = s.research
     ? `### Recherche-Befunde (Perplexity, gezielt nach dem gesucht, was die Zahlen nicht zeigen)\n\n${s.research}`
@@ -689,23 +714,35 @@ diese Gewichtung ist bereits getroffen. Ohne solchen Anlass: \`adjustment: 0\` u
 \`adjustmentReason: null\`.
 
 Für die Texte — Bull und Bear Case sind das Erste, was ein Leser nach dem Urteil
-sieht, und sollen ihm den Fall erklären, nicht die Säulentabelle nacherzählen:
-- \`bullCase\` und \`bearCase\`: je 3–5 Punkte à 25–45 Wörter. Jeder Punkt nennt eine
-  Tatsache mit ihrem Beleg (Zahl, Datum, Quelle) **und** warum sie für die Aktie
-  zählt.
-- **Beide Seiten schöpfen aus allen Quellen.** Wo qualitative Zusammenfassung oder
-  Recherche-Befunde vorliegen, stammen mindestens zwei Punkte je Seite von dort —
-  Aufträge, Produkte, Management, Regulierung, geprüfte oder widerlegte Thesen.
-  Kennzahlen der Säulen belegen und ergänzen, sie sind nicht der ganze Fall.
-- **Risiken gehören in den \`bearCase\`**, nicht in eine eigene Liste: was noch nicht
+sieht. Jede Seite hat drei Abschnitte, und jeder hat eine andere Aufgabe:
+- \`theses\` (2–4 je Seite): die Investment-Debatte, wie der Markt sie führt —
+  Geschäftsmodell, Nachfrage, Wettbewerb, Produkt, Management, Regulierung. Jede
+  These ist eine Wirkungskette in 20–40 Wörtern: Treiber → was er mit dem Geschäft
+  macht → warum es für die Aktie zählt. Höchstens eine Zahl, und nur, wenn sie die
+  These trägt; Kennzahlen aus der Säulentabelle gehören nicht hierher.
+  Ein Beispiel für die Form, nicht für den Inhalt: „Plattform und hohe Wechselkosten
+  treiben die Ausweitung auf HR, Customer Service und Security; jeder neue Workflow
+  erhöht die Ausgaben pro Kunde und macht den Abo-Umsatz planbarer."
+- Material für die Thesen sind die Thesen aus den Quellen, die geprüften Bullen- und
+  Bären-Thesen und die Gegenbelege. Eine widerlegte Bullen-These ist ein
+  Bear-Argument. Strukturelle Thesen zum Geschäftsmodell (Wechselkosten,
+  Netzwerkeffekte, Zyklik, Preissetzungsmacht) darfst du aus deinem Wissen über das
+  Unternehmen formulieren; alles Aktuelle — Vorgänge, Trends, Zahlen — nur aus den
+  Quellen oben.
+- \`figures\` (1–3 je Seite): was die Zahlen für diese Seite sagen — Bewertung,
+  Qualität, Wachstum, Konsens, Momentum. Je Punkt die Zahl mit ihrem Maßstab und in
+  einem Halbsatz, was sie bedeutet, 15–30 Wörter.
+- \`triggers\` (1–2 je Seite): konkrete, beobachtbare Auslöser, die das Urteil in
+  diese Richtung verschieben würden — auf der Bull-Seite nach oben, auf der
+  Bear-Seite nach unten: eine Kennzahl, die eine Schwelle kreuzt, eine terminierte
+  Entscheidung, ein Quartal. Schreib nur die Bedingung, ohne „wenn" und ohne Pfeil —
+  die Überschrift sagt die Richtung. Keine allgemeinen Risiken.
+- **Risiken gehören in die Bear-Thesen**, nicht in eine eigene Liste: was noch nicht
   eingetreten ist, aber den Fall brechen würde, mit dem, was es auslöst.
-- \`watch\`: 2–3 konkrete, beobachtbare Auslöser, die das Urteil ändern würden, je
-  mit Richtung — „↑ wenn …" oder „↓ wenn …": eine Kennzahl, die eine Schwelle
-  kreuzt, eine terminierte Entscheidung, ein Quartal. Keine allgemeinen Risiken.
-- Führe mit der stärksten Einzeltatsache, nicht mit Kontext. Keine Konnektoren
-  zwischen den Punkten.
+- Führe in jedem Abschnitt mit dem stärksten Punkt. Keine Konnektoren zwischen den
+  Punkten, und kein Punkt sagt, was ein anderer schon gesagt hat.
 - Widersprechen sich die quantitative und die qualitative Seite, gehört dieser
-  Widerspruch in \`thesis\` oder den \`bearCase\`. Er ist die wertvollste
+  Widerspruch in \`thesis\` oder auf die Bear-Seite. Er ist die wertvollste
   Information auf dieser Seite, nicht ein Problem, das zu glätten wäre.
 - Die Fair-Value-Spanne wird **nicht** von dir gesetzt — sie ist die Spanne der
   Modelle, die sie erzeugt haben, und steht bereits fest. Erfinde keine.
@@ -714,9 +751,16 @@ ${GERMAN_STYLE}
 
 Antworte als JSON:
 {
-  "bullCase":         ["3–5 Punkte"],
-  "bearCase":         ["3–5 Punkte, Risiken eingeschlossen"],
-  "watch":            ["2–3 Auslöser mit ↑/↓"],
+  "bullCase": {
+    "theses":   ["2–4 Wirkungsketten"],
+    "figures":  ["1–3 Punkte aus den Zahlen"],
+    "triggers": ["1–2 Bedingungen, die das Urteil heben würden"]
+  },
+  "bearCase": {
+    "theses":   ["2–4 Wirkungsketten, Risiken eingeschlossen"],
+    "figures":  ["1–3 Punkte aus den Zahlen"],
+    "triggers": ["1–2 Bedingungen, die das Urteil senken würden"]
+  },
   "thesis":           "ein Satz",
   "adjustment":       -1 bis +1,
   "adjustmentReason": "warum — oder null bei 0"

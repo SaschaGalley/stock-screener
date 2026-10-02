@@ -30,7 +30,7 @@ describe('parsing the brief', () => {
     // "Searched and found nothing" is a finding. The old free-text path would
     // have called a short answer a refusal and thrown it away.
     const f = parseFindings('{"events": []}');
-    assert.deepEqual(f, { events: [], bearEvidence: [], bullClaims: [] });
+    assert.deepEqual(f, { events: [], bearEvidence: [], bullClaims: [], bearClaims: [] });
   });
 
   it('drops an item with no text rather than keeping a blank finding', () => {
@@ -52,6 +52,20 @@ describe('parsing the brief', () => {
     assert.deepEqual(f?.bullClaims.map((c) => c.evidence), ['contradicted', 'independent', 'management-only']);
   });
 
+  it('grades a bear claim on its own scale, with opinion as the weakest', () => {
+    // "management-only" means nothing for a short seller's thesis; an
+    // unrecognised label must not borrow it, nor upgrade the claim.
+    const f = parseFindings(JSON.stringify({
+      bear_claims: [
+        { claim: 'Hyperscaler agents erode seat counts', evidence: 'opinion' },
+        { claim: 'Deal velocity is slowing', evidence: 'independent', detail: 'Two large renewals shrank' },
+        { claim: 'Federal demand is collapsing', evidence: 'Contradicted' },
+        { claim: 'The multiple prices perfection', evidence: 'widely held' },
+      ],
+    }));
+    assert.deepEqual(f?.bearClaims?.map((c) => c.evidence), ['opinion', 'independent', 'contradicted', 'opinion']);
+  });
+
   it('returns null for text that is not JSON, so the caller can fall back', () => {
     assert.equal(parseFindings('ServiceNow reported strong results this quarter.'), null);
   });
@@ -61,6 +75,14 @@ describe('rendering the brief', () => {
   it('says an empty section was searched, not skipped', () => {
     const md = renderFindings({ events: [], bearEvidence: [], bullClaims: [] });
     assert.match(md, /Keine spezifischen Gegenbelege gefunden — das ist eine Aussage, keine Lücke/);
+  });
+
+  it('reports missing bear claims as none found, but only when they were asked for', () => {
+    const asked = renderFindings({ events: [], bearEvidence: [], bullClaims: [], bearClaims: [] });
+    assert.match(asked, /Keine Bären-Thesen im Umlauf gefunden/);
+    // A row from before the question existed did not search and must not say it did.
+    const old = renderFindings({ events: [], bearEvidence: [], bullClaims: [] });
+    assert.doesNotMatch(old, /Bären-Thesen/);
   });
 
   it('labels a contradicted claim so the reader cannot miss it', () => {

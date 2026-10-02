@@ -1,6 +1,6 @@
 # stock-cli
 
-Fundamental stock analysis from the terminal *and* a local web UI. Fetches live financial data, runs 19 valuation models, then asks an LLM for a structured bull/bear/risks analysis with a composite fair-value range.
+Fundamental stock analysis from the terminal *and* a local web UI. Fetches live financial data, runs 19 valuation models, then asks an LLM for a structured bull and bear case — theses, figures and triggers per side — with a composite fair-value range.
 
 ```
 CLI mode  →  one-shot analysis, prints markdown or JSON to stdout
@@ -87,7 +87,7 @@ The list does not move when any of that happens. The two densities share the row
 Measured across the list, the stock you clicked lands on the pixel it was on, going in and coming back. Where the browser supports view transitions the columns fade rather than vanish between frames.
 
 - **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and the watchlist filter belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
-- **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull/bear/risks, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+- **Center pane**: full analysis — AI verdict card, composite fair value (primary + conservative tiers), bull and bear case, valuation models, peer comparison, fundamentals history, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
 - **Analyse dialog** (the combination named on the verdict card, or „Andere Einstellungen…" in the refresh menu): every flag combo is its own cached entry, so the dialog lists what is stored — one click shows that one, and costs nothing — and underneath it holds the model, web-search and Perplexity pickers with the button that spends money. Outdated entries stay selectable and carry a ⚠.
 
   It used to be a permanent third column, which gave a panel you touch a few times a day the same standing as the analysis itself and a fifth of the window to say it. Both of its jobs are moments rather than states, and a run that costs an API call is better confirmed in a dialog than fired by a stray click on a sidebar button.
@@ -813,12 +813,16 @@ allowed to talk about is decided by the same arithmetic that decided the score.
    `5 + 2.5 × mean` (`narrativeScoreFrom`, at least two rated dimensions or it
    abstains). It is run **three times** in parallel over the identical prompt
    and the **median** is kept, together with the summary of the read that
-   produced it, so text and number agree (`combineNarrativeReads`).
+   produced it, so text and number agree (`combineNarrativeReads`). The same
+   read also collects the **theses** the sources argue, up to four per side —
+   material for the bull and bear case, never for the score.
 3. **Synthese** (the configured analysis model) gets the two short summaries, the
-   pillar table and a compact digest of the Perplexity findings, and writes the
-   thesis, a bull and a bear case of 3–5 argued points each (risks belong to the
-   bear side), and 2–3 triggers that would change the verdict (`watch`). It does not set the
-   score. It may move the blended one by up to ±1 point, with a reason on the
+   narrative's theses, the pillar table and a compact digest of the Perplexity
+   findings, and writes the thesis and a bull and a bear case in three sections
+   each: 2–4 **theses** (the argument as the market has it — driver, what it does
+   to the business, why it matters for the stock), 1–3 points **from the
+   figures**, and 1–2 **triggers** that would move the verdict that way. Risks
+   belong to the bear theses. It does not set the score. It may move the blended one by up to ±1 point, with a reason on the
    record, and only for something the pillars provably cannot see — an announced
    takeover, a regulatory decision, a recall.
 
@@ -843,11 +847,27 @@ in the sources is not part of any dimension, that the brief's bear evidence is
 expected and weighed for what it found, and that an opened probe is at most −1.
 The five ratings are shown as chips in the breakdown, each with its evidence.
 
-**Bull and bear first.** On the detail page the case for and against now sits
+**Bull and bear first.** On the detail page the case for and against sits
 directly under the verdict, above "Wie der Score entsteht", in two columns —
 Key Risks mostly repeated the bear case in a narrower third column and are folded
-into it (older analyses included). What is genuinely different, the triggers that
-would move the verdict, runs full width underneath.
+into it (older analyses included).
+
+**Why each side is in sections.** One list per side filled up with what the
+synthesis had most of — the pillar table. Apple's bull case read ROIC, operating
+margin, Piotroski, momentum and the analyst count: five numbers and not one
+sentence about why anyone owns the stock. The portals that do this well (Alpha
+Spread's *Bull/Bear Thesen*) write the debate instead. So a side is now
+**Thesen**, **In den Zahlen** and **Hebt / Senkt das Urteil, wenn …**, and the
+separate slot is the fix rather than a layout choice: the theses cannot be spent
+on multiples when the multiples have a section of their own. The triggers used
+to run full width underneath, each announcing its own ↑ or ↓; in its column the
+heading says it, and both columns end on them at the same height. The sections
+are declared once in `src/cases.ts`, which also reads the older shapes — a flat
+list renders without a section heading, and an old ↑/↓ trigger moves to its
+side. On ServiceNow the first run produced Meta's enterprise launch repricing the
+incumbents, customers still asking about AI security and cost, and the debt left
+by Armis on the bear side; switching costs and AI ACV on the bull side; and the
+DCF distribution and the conservative tier under the figures, where they belong.
 
 **Why three narrative reads.** Five identical runs over ServiceNow's material
 came back 5, 5, 5, 6, 7; GOOGL 6, 6, 6, 6, 7; Airbus 8 five times. Mostly one
@@ -943,6 +963,7 @@ structured JSON:
 | `events` | dated developments that move the outlook; always the latest earnings call — did guidance go up, down or hold, and what did management avoid? Product launches, partnership releases and routine insider sales excluded |
 | `bear_evidence` | the strongest *specific* evidence against the bull case — short reports, accounting concerns, guidance cuts, churn, share loss, documented structural threats. Evidence only, never "risks could include" |
 | `bull_claims` | what bulls say drives the stock, each graded `independent`, `management-only` or `contradicted` |
+| `bear_claims` | what bears argue will hold the stock back — the business model, demand, competition, the expectations priced in — each graded `independent`, `opinion` or `contradicted` |
 
 Every item carries a date, a source and an independent-or-company label. On the
 same stock it produced: a guide raised by $15M on a 150bp beat, federal revenue
@@ -956,7 +977,14 @@ Mechanics that keep it honest:
 
 - **High search context.** At `low` the same brief found four insider filings and
   nothing else. About five cents a call.
-- **Capped at 6 / 6 / 5 items, two sentences each.** Uncapped, the first live run
+- **Bear claims are the argument, `bear_evidence` the facts.** "Federal revenue
+  pulled forward" is evidence; "the multiple assumes years of net retention
+  nobody sustains" is the thesis a reader needs, and nothing asked for it until
+  the bull and bear case were split into sections. They feed the theses only:
+  the narrative's weight still counts the bull claims and the evidence, so
+  asking one more question does not buy the prose a larger share of the
+  headline.
+- **Capped at 6 / 6 / 5 / 5 items, two sentences each.** Uncapped, the first live run
   ran to 14k characters and was cut off at `max_tokens` mid-sentence.
 - **A truncated answer is salvaged**, not discarded: `salvageTruncatedJson` cuts
   back to the last finished item and closes what is open. Nothing is invented to
@@ -1469,7 +1497,7 @@ cancel, and the momentum pillar reads the return series directly instead.
 | [`datasets/s-and-p-500-companies`](https://github.com/datasets/s-and-p-500-companies) | S&P 500 members — the reference universe |
 | Wikipedia (`EURO_STOXX_50`, de: `DAX`) | EURO STOXX 50 and DAX members — the reference universe |
 | Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
-| Perplexity Sonar | Optional forensic brief — dated events, contrary evidence, bull claims graded against the evidence; goes to the narrative stage, which never sees the valuation |
+| Perplexity Sonar | Optional forensic brief — dated events, contrary evidence, bull and bear claims graded against the evidence; goes to the narrative stage, which never sees the valuation |
 
 ### What the trailing figures are, and where they come from
 
@@ -1623,7 +1651,7 @@ web/
 │       ├── AnalysisView.tsx       Centre detail; renders all sections
 │       ├── VerdictHero.tsx        Verdict + composite + analyst hero cards
 │       ├── ScoreSplit.tsx         The two halves behind one headline, per list row
-│       ├── BullBearRisks.tsx      3-column bull/bear/risks block
+│       ├── BullBearRisks.tsx      bull and bear case, each in theses / figures / triggers
 │       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per rail item
 │       ├── StockHeader.tsx        Logo, price, refresh — and the ✕ / ⚙ chrome
 │       ├── StockLogo.tsx          Multi-source logo cascade (TradingView → Logo.dev → …)

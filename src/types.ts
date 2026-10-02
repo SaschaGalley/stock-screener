@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RECOMMENDATIONS } from './verdict.js';
+import { CASE_DIRECTIONS, type CaseDirection, type CaseSection } from './cases.js';
 import { PROVIDERS } from './models.js';
 import { RATINGS, type Rating } from './data/ratings.js';
 
@@ -906,6 +907,20 @@ export const NarrativeDimensionsSchema = z.object(
 export type NarrativeDimensions = z.infer<typeof NarrativeDimensionsSchema>;
 
 /**
+ * The arguments in circulation, per side, as the valuation-blind reader found
+ * them in Distill and Perplexity.
+ *
+ * The synthesis model sees the sources only through this stage, so without it
+ * the debate in a Distill dossier reached the bull and bear case as one
+ * sentence of a summary paragraph. Collected here, it arrives as arguments.
+ */
+export const NarrativeThesesSchema = z.object(
+  Object.fromEntries(CASE_DIRECTIONS.map((d) => [d, z.array(z.string()).default([])])) as
+    Record<CaseDirection, z.ZodDefault<z.ZodArray<z.ZodString>>>,
+);
+export type NarrativeTheses = z.infer<typeof NarrativeThesesSchema>;
+
+/**
  * The qualitative half, scored from prose alone.
  *
  * Produced by a summariser that never sees a valuation model, so this number
@@ -921,6 +936,7 @@ export const NarrativeScoreSchema = z.object({
   spread:     z.number().nullable().optional().describe('Highest minus lowest score across the repeated reads of the same prose; the narrative score is their median'),
   dimensions: NarrativeDimensionsSchema.optional().describe('The per-dimension ratings of the kept read; the score is 5 + 2.5 × their mean'),
   runs:       z.number().int().optional().describe('How many reads the narrative score was taken from'),
+  theses:     NarrativeThesesSchema.optional().describe('The arguments for and against the company the sources make, as the kept read collected them — material for the bull and bear case, not for the score'),
   sources:    z.array(z.string()).describe('Which prose blocks were available (distill-company, distill-sector, perplexity, search)'),
   model:      z.string().describe('Model that produced this summary'),
   at:         z.string().describe('ISO timestamp of the read — a carried-forward narrative decays from here'),
@@ -957,11 +973,29 @@ export type ScoreCard = z.infer<typeof ScoreCardSchema>;
 
 // ─── LLM Output ───────────────────────────────────────────────────────────────
 
+const CASE_SECTION_DESCRIPTION: Record<CaseSection, string> = {
+  theses:   'The argument as the market has it — driver, what it does to the business, why it matters for the stock',
+  figures:  'What the numbers say for this side: valuation, quality, growth, consensus, momentum',
+  triggers: 'Observable conditions that would move the verdict in this side\'s direction',
+};
+
+/** One side of the case in sections — see `src/cases.ts` for why it is split. */
+export const CaseSideSchema = z.object(
+  Object.fromEntries(Object.entries(CASE_SECTION_DESCRIPTION).map(([k, d]) => [k, z.array(z.string()).describe(d)])) as
+    Record<CaseSection, z.ZodArray<z.ZodString>>,
+);
+
+/**
+ * A side as stored: sections today, a flat list until 2 October 2026, a single
+ * paragraph in schema v3. Read through `readCases`, never by shape.
+ */
+const StoredCaseSchema = z.union([CaseSideSchema, z.array(z.string()), z.string()]);
+
 export const LLMAnalysisSchema = z.object({
-  bullCase:          z.array(z.string()).min(2).max(6).describe('3–5 points making the bull case — each a fact with its evidence and why it matters, drawn from the numbers and the qualitative sources alike'),
-  bearCase:          z.array(z.string()).min(2).max(6).describe('3–5 points making the bear case, forward-looking risks included — same format'),
+  bullCase:          StoredCaseSchema.describe('The bull case: theses, figures and the triggers that would raise the verdict'),
+  bearCase:          StoredCaseSchema.describe('The bear case, risks included: theses, figures and the triggers that would lower the verdict'),
   keyRisks:          z.array(z.string()).optional().describe('Legacy: separate risk bullets from before 27 September. Risks now live in the bear case'),
-  watch:             z.array(z.string()).optional().describe('2–3 concrete, observable triggers that would change the verdict, each with its direction'),
+  watch:             z.array(z.string()).optional().describe('Legacy: one list of triggers marked ↑/↓, from before 2 October. Triggers now live in their side of the case'),
   thesis:            z.string().describe('Single 1–2 sentence investment thesis summarising the overall view'),
   score:             z.number().min(0).max(10).describe('Overall investment attractiveness score from 0 (avoid) to 10 (strong conviction buy)'),
   recommendation:    z.enum(RECOMMENDATIONS).describe('Structured recommendation label'),
@@ -990,14 +1024,26 @@ export type DataSummaryOutput = z.infer<typeof DataSummaryOutputSchema>;
 export const NarrativeOutputSchema = z.object({
   summary:    z.string().describe('German synthesis of the qualitative sources'),
   events:     z.array(z.string()).default([]).describe('Concrete dated developments the sources report'),
+  theses:     NarrativeThesesSchema.default(() => NarrativeThesesSchema.parse({})).describe('Arguments for and against the company the sources make'),
   dimensions: NarrativeDimensionsSchema.describe('One rating per dimension; the score is computed from these in code'),
 });
 export type NarrativeOutput = z.infer<typeof NarrativeOutputSchema>;
 
+/**
+ * A side as the synthesis model writes it. The bounds are per section because
+ * the sections do different jobs: a side with no thesis is the old table again,
+ * a side with no figure has lost its anchor, and a trigger is welcome but not
+ * owed. Generous at the top so one point too many does not cost the call.
+ */
+const CaseSideOutputSchema = z.object({
+  theses:   z.array(z.string()).min(1).max(5),
+  figures:  z.array(z.string()).min(1).max(4),
+  triggers: z.array(z.string()).max(3).default([]),
+} satisfies Record<CaseSection, z.ZodTypeAny>);
+
 export const SynthesisOutputSchema = z.object({
-  bullCase:          z.array(z.string()).min(2).max(6),
-  bearCase:          z.array(z.string()).min(2).max(6),
-  watch:             z.array(z.string()).max(4).default([]),
+  bullCase:          CaseSideOutputSchema,
+  bearCase:          CaseSideOutputSchema,
   thesis:            z.string(),
   adjustment:        z.coerce.number().default(0).describe('Correction to the blended score in points; clamped to the configured limit before use'),
   adjustmentReason:  z.string().nullable().default(null).describe('Required whenever the adjustment is non-zero'),

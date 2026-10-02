@@ -5,6 +5,7 @@ import {
 } from '../types.js';
 import { fmt, fmtPct, fmtBig } from '../analysis/metrics.js';
 import { currencyPrefix, fmtCount, fmtPrice } from '../format.js';
+import { CASE_DIRECTIONS, CASE_TITLE, caseLines, readCases } from '../cases.js';
 
 export function formatMarkdown(r: AnalysisResult): string {
   const { financials: f, dcf, grahamNumber: gn, ratios, llmAnalysis: llm, news, perplexity } = r;
@@ -20,6 +21,7 @@ export function formatMarkdown(r: AnalysisResult): string {
     rec.includes('HOLD')       ? chalk.yellow(rec)      :
     rec.includes('SELL')       ? chalk.red(rec)         : rec;
 
+  const cases = readCases(llm);
   const scoreBar = '█'.repeat(Math.round(llm.score)) + '░'.repeat(10 - Math.round(llm.score));
 
   const zoneColor = (z: string) =>
@@ -224,16 +226,13 @@ export function formatMarkdown(r: AnalysisResult): string {
 
     ...formatPerplexity(perplexity),
 
-    chalk.bold('## 🚀 Bull Case'),
-    '',
-    ...llm.bullCase.map((b) => `  • ${b}`),
-    '',
-    chalk.bold('## 🐻 Bear Case'),
-    '',
-    ...llm.bearCase.map((b) => `  • ${b}`),
-    '',
-    ...(llm.keyRisks?.length ? [chalk.bold('## ⚠️  Key Risks'), '', ...llm.keyRisks.map((risk) => `  • ${risk}`), ''] : []),
-    ...(llm.watch?.length ? [chalk.bold('## 👁  Was das Urteil ändern würde'), '', ...llm.watch.map((w) => `  • ${w}`), ''] : []),
+    ...CASE_DIRECTIONS.flatMap((d) => [
+      chalk.bold(`## ${d === 'bull' ? '🚀' : '🐻'} ${CASE_TITLE[d]}`),
+      '',
+      ...caseLines(cases[d], d, { bullet: '  • ', heading: (label) => chalk.dim(`  ${label}`) }),
+      '',
+    ]),
+    ...(cases.undirected.length ? [chalk.bold('## 👁  Was das Urteil ändern würde'), '', ...cases.undirected.map((w) => `  • ${w}`), ''] : []),
     chalk.bold('## 💡 Investment Thesis'),
     '',
     llm.thesis,

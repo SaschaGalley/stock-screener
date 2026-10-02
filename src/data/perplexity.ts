@@ -16,12 +16,19 @@ export interface PerplexityFinding {
   independent: boolean;
 }
 
-export type BullClaimEvidence = 'independent' | 'management-only' | 'contradicted';
+/**
+ * How a claim in circulation holds up against the evidence.
+ *
+ * Each side has its own way of being unsupported: a bull claim that only
+ * management makes (`management-only`), a bear claim nobody has evidenced yet
+ * (`opinion`). Both are that side's weakest grade.
+ */
+export type ClaimEvidence = 'independent' | 'management-only' | 'opinion' | 'contradicted';
 
-/** A bullish claim in circulation, checked against the evidence. */
-export interface PerplexityBullClaim {
+/** A claim in circulation — bullish or bearish — checked against the evidence. */
+export interface PerplexityClaim {
   claim:    string;
-  evidence: BullClaimEvidence;
+  evidence: ClaimEvidence;
   detail:   string;
   source:   string | null;
 }
@@ -29,7 +36,13 @@ export interface PerplexityBullClaim {
 export interface PerplexityFindings {
   events:       PerplexityFinding[];
   bearEvidence: PerplexityFinding[];
-  bullClaims:   PerplexityBullClaim[];
+  bullClaims:   PerplexityClaim[];
+  /**
+   * What the bears argue, graded like the bull claims. Absent on rows from
+   * before 2 October 2026, when the brief asked only for the bull side and the
+   * bear side was evidence without the argument it supports.
+   */
+  bearClaims?:  PerplexityClaim[];
 }
 
 export interface PerplexityContext {
@@ -65,6 +78,13 @@ const PPLX_API_URL = 'https://api.perplexity.ai/chat/completions';
  * federal revenue pulled forward from Q3, a margin beat from deferred marketing
  * spend, and AI usage acknowledged as a gross-margin headwind — each dated and
  * sourced, and two popular bull claims marked contradicted.
+ *
+ * The bear claims came later, and for the bull and bear case rather than for
+ * the score. Evidence against the bulls is not the bears' argument: "federal
+ * revenue pulled forward" is a fact, "the multiple assumes years of net
+ * retention nobody can sustain" is the thesis a reader needs, and nothing in
+ * the brief asked for it. They are graded the same way, with "opinion" as the
+ * bear side's counterpart to "management-only".
  */
 const SYSTEM_PROMPT =
   'You are a forensic equity researcher. You report evidence, not opinions, and you are ' +
@@ -98,27 +118,35 @@ Report only what that data cannot show, from roughly the last 90 days.
    whether independent evidence supports it, whether it rests on management's own
    statements, or whether the evidence contradicts it.
 
+4. "bear_claims": what bears currently argue will hold the stock back — the theses in
+   circulation about the business model, demand, competition or the expectations the
+   price already carries, as analysts, short sellers or the financial press put them.
+   For each claim, state whether independent evidence supports it, whether it is so far
+   an opinion without evidence, or whether the evidence contradicts it. Dated evidence
+   belongs in "bear_evidence"; this list is the argument it would support.
+
 Prefer independent sources — published analyst research, reputable financial press,
 regulatory filings — over the company's own press releases, and label each item.
 
-At most 6 events, 6 bear_evidence items and 5 bull_claims: the strongest, not all of
-them. Keep every "what" and "detail" to two sentences.
+At most 6 events, 6 bear_evidence items, 5 bull_claims and 5 bear_claims: the
+strongest, not all of them. Keep every "what" and "detail" to two sentences.
 
 Return ONLY this JSON:
 {
   "events":        [{"date": "YYYY-MM-DD", "what": "...", "source": "url", "independent": true}],
   "bear_evidence": [{"date": "YYYY-MM-DD", "what": "...", "source": "url", "independent": true}],
-  "bull_claims":   [{"claim": "...", "evidence": "independent" | "management-only" | "contradicted", "detail": "...", "source": "url"}]
+  "bull_claims":   [{"claim": "...", "evidence": "independent" | "management-only" | "contradicted", "detail": "...", "source": "url"}],
+  "bear_claims":   [{"claim": "...", "evidence": "independent" | "opinion" | "contradicted", "detail": "...", "source": "url"}]
 }`;
 
 // High search context: at "low" the same brief found four insider filings and
 // nothing else. The request fee rises from $0.006 to $0.014 and the answer
 // stops being thin — about five cents a call in all.
 const API_PARAMS = {
-  // The item caps above keep a typical answer near 2,500 tokens; this is the
-  // margin. The first live run without caps ran to 14k characters and was cut
-  // off mid-sentence at 3,500.
-  max_tokens: 5000,
+  // The item caps above keep a typical answer near 3,000 tokens with the bear
+  // claims; this is the margin. The first live run without caps ran to 14k
+  // characters and was cut off mid-sentence at 3,500.
+  max_tokens: 6000,
   temperature: 0.1,
   web_search_options: { search_context_size: 'high' },
 };
@@ -147,17 +175,23 @@ function finding(v: unknown): PerplexityFinding | null {
   };
 }
 
-function bullClaim(v: unknown): PerplexityBullClaim | null {
-  if (!v || typeof v !== 'object') return null;
-  const o = v as Record<string, unknown>;
-  const claim = text(o.claim);
-  if (!claim) return null;
-  const raw = text(o.evidence).toLowerCase();
-  const evidence: BullClaimEvidence =
-    raw.startsWith('contra') ? 'contradicted'
-    : raw.startsWith('indep') ? 'independent'
-    : 'management-only';
-  return { claim, evidence, detail: text(o.detail), source: optText(o.source) };
+/**
+ * A claim, graded. Anything unrecognised reads as `weakest` — the side's own
+ * unsupported grade — so a label the model invented never upgrades a claim.
+ */
+function claimOf(weakest: 'management-only' | 'opinion') {
+  return (v: unknown): PerplexityClaim | null => {
+    if (!v || typeof v !== 'object') return null;
+    const o = v as Record<string, unknown>;
+    const claim = text(o.claim);
+    if (!claim) return null;
+    const raw = text(o.evidence).toLowerCase();
+    const evidence: ClaimEvidence =
+      raw.startsWith('contra') ? 'contradicted'
+      : raw.startsWith('indep') ? 'independent'
+      : weakest;
+    return { claim, evidence, detail: text(o.detail), source: optText(o.source) };
+  };
 }
 
 /**
@@ -191,7 +225,8 @@ export function parseFindings(raw: string): PerplexityFindings | null {
   return {
     events:       list(obj.events, finding),
     bearEvidence: list(obj.bear_evidence ?? obj.bearEvidence, finding),
-    bullClaims:   list(obj.bull_claims ?? obj.bullClaims, bullClaim),
+    bullClaims:   list(obj.bull_claims ?? obj.bullClaims, claimOf('management-only')),
+    bearClaims:   list(obj.bear_claims ?? obj.bearClaims, claimOf('opinion')),
   };
 }
 
@@ -235,11 +270,16 @@ export function salvageTruncatedJson(text: string): string | null {
   return text.slice(0, cut.at) + closers;
 }
 
-const EVIDENCE_LABEL: Record<BullClaimEvidence, string> = {
+export const EVIDENCE_LABEL: Record<ClaimEvidence, string> = {
   'independent':     'unabhängig belegt',
   'management-only': 'nur Management-Aussage',
+  'opinion':         'bisher nur Meinung',
   'contradicted':    'widerlegt',
 };
+
+function claimLine(c: PerplexityClaim): string {
+  return `- **${c.claim}** — ${EVIDENCE_LABEL[c.evidence]}${c.detail ? `: ${c.detail}` : ''}`;
+}
 
 function findingLine(f: PerplexityFinding): string {
   return `- ${f.date ?? 'undatiert'} · ${f.independent ? 'unabhängig' : 'Unternehmensquelle'} — ${f.what}`;
@@ -253,9 +293,9 @@ export function renderFindings(f: PerplexityFindings): string {
     section('Ereignisse', f.events.map(findingLine), 'Keine Ereignisse, die den Ausblick verändern.'),
     section('Belege gegen die Bullen-These', f.bearEvidence.map(findingLine),
       'Keine spezifischen Gegenbelege gefunden — das ist eine Aussage, keine Lücke.'),
-    section('Bullen-Thesen, geprüft',
-      f.bullClaims.map((c) => `- **${c.claim}** — ${EVIDENCE_LABEL[c.evidence]}${c.detail ? `: ${c.detail}` : ''}`),
-      'Keine Bullen-Thesen im Umlauf gefunden.'),
+    section('Bullen-Thesen, geprüft', f.bullClaims.map(claimLine), 'Keine Bullen-Thesen im Umlauf gefunden.'),
+    // Old rows never asked; saying "none found" for them would be a false statement.
+    ...(f.bearClaims ? [section('Bären-Thesen, geprüft', f.bearClaims.map(claimLine), 'Keine Bären-Thesen im Umlauf gefunden.')] : []),
   ].join('\n\n');
 }
 
@@ -322,7 +362,8 @@ export async function fetchPerplexity(
   }
 
   logger.success(`Perplexity context fetched${findings
-    ? ` — ${findings.events.length} events, ${findings.bearEvidence.length} bear items, ${findings.bullClaims.length} claims`
+    ? ` — ${findings.events.length} events, ${findings.bearEvidence.length} bear items, `
+      + `${findings.bullClaims.length} bull and ${findings.bearClaims?.length ?? 0} bear claims`
     : ' (unstructured)'}`);
   return {
     model, synthesis, citations, fetchedAt: new Date().toISOString(),
