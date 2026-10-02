@@ -1428,8 +1428,9 @@ This is how an efficient large-cap market over a decade that was poor for
 value and quality usually looks, and the evaluation is not blind: it finds
 the issuance effect where the literature does. It is also a result about the
 number half alone. The consensus and revisions pillars, which carry a quarter
-of the weight, could not be tested. Whether the weights should move is the
-next question, and it is asked on years the answer has not seen.
+of the weight, could not be tested then — they can now, see *With the
+consensus rebuilt* below. Whether the weights should move is the next
+question, and it is asked on years the answer has not seen.
 
 **Fitting the weights, and checking the fit.** Reading weights off thirteen
 years of ICs is how a model gets fitted to its own past: some criterion always
@@ -1496,7 +1497,29 @@ and on all months the rule moved nothing. The judgment weights stay, and
 Raising net share issuance, the one criterion that stood out in the raw
 figures, would have been exactly the fit the check exists to catch. Read as
 the score reads it, within the sector, its t is 1.1 and 1.9 in the two halves.
-It is the right sign twice, and not yet evidence. Every backtest run asks
+It is the right sign twice, and not yet evidence.
+
+**With the consensus rebuilt (2 October 2026, same 490 companies and 166
+month-ends).** Two runs on the same downloads, one with `--no-analysts`. The
+rating history gave a consensus for 77–89 % of the company-months before 2020
+and 92–98 % after.
+
+| Signal | Without the consensus | With it |
+|---|---|---|
+| Factor score, 1 month | IC 0.007 (t 0.9), right in 53 % of months | IC 0.012 (t 1.6), right in 59 % |
+| … within the sector | 0.004 (t 0.5) | 0.009 (t 1.4) |
+| Factor score, 3 months | 0.001 | 0.007 (t 0.4) |
+| Consensus pillar, 1 month | — | 0.012 (t 1.4); rating 0.009, target upside 0.011 |
+| Rating drift, 1 month | — | 0.007 (t 1.6; within the sector t 2.0) |
+
+The consensus is the best-ranking pillar the backtest has measured, and the
+score improves with it in ten of the fourteen years, and is level in one. It is still a
+tendency, not evidence — no pillar reaches two standard errors, and a
+factor worth its name ranks at 0.03 or more. The weight rule now tilts on all
+months — consensus 15 → 18 %, revisions 10 → 15.5 %, balance sheet 15 → 8 % —
+but the check does not hold: fitted on 2020–2026 it moves nothing, and fitted
+on 2013–2019 it adds 0.0009 to the IC of the years after (t 0.3). The judgment
+weights stay. Every backtest run asks
 again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
 

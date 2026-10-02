@@ -27,7 +27,7 @@
  * What it cannot do, and says so in the result:
  *   - Estimates, their revisions and earnings surprises have no history, so
  *     the revisions pillar has only the rating drift and the DCF starts from
- *     trailing growth. The rating history thins out before 2019.
+ *     trailing growth. The rating history thins out before 2020.
  *   - The universe is today's index members, each from the day it joined.
  *     Companies that left before today are missing: survivors only.
  *   - Peer groups are the index's own GICS sub-industries, not Finnhub's.

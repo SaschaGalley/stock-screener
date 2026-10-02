@@ -35,7 +35,7 @@ export interface BacktestResult {
 
 export const BACKTEST_CAVEATS = [
   'Der Analystenkonsens ist aus Yahoos Rating-Historie rekonstruiert: je Haus das neueste Kursziel und Rating der zwölf Monate davor, '
-    + 'ab drei Häusern. Vor 2019 ist die Historie lückenhaft („Konsens“ je Jahr). Schätzungen, Revisionen und Überraschungen gibt es '
+    + 'ab drei Häusern. Vor 2020 ist die Historie dünner (Spalte „Konsens“ je Jahr). Schätzungen, Revisionen und Überraschungen gibt es '
     + 'rückwirkend nicht: Von „Erwartungen“ zählt nur die Rating-Veränderung, der DCF startet mit dem Wachstum der letzten zwölf Monate.',
   'Nur heutige S&P-500-Mitglieder, jedes ab seinem Aufnahmetag — wer den Index verlassen hat, fehlt (Survivorship).',
   'Peer-Gruppen sind die GICS-Sub-Industries des Index, nicht die Finnhub-Gruppen.',
