@@ -9,7 +9,7 @@
  */
 
 import { getImpliedERPSeries } from '../data/damodaran.js';
-import { FALLBACK_RATES, MarketRates } from '../data/fred.js';
+import { FALLBACK_RATES, FRED_SERIES, MarketRates } from '../data/fred.js';
 import { RATING_BUCKETS } from '../data/ratings.js';
 import { logger } from '../utils/logger.js';
 
@@ -48,8 +48,8 @@ export async function rateHistory(from: string, fredApiKey: string | null | unde
   const empty = new Map<string, number>();
   const [rf, aaa, ...spreads] = fredApiKey
     ? await Promise.all([
-      monthlySeries('DGS10', from, fredApiKey),
-      monthlySeries('DAAA', from, fredApiKey),
+      monthlySeries(FRED_SERIES.tenYear, from, fredApiKey),
+      monthlySeries(FRED_SERIES.aaa, from, fredApiKey),
       ...RATING_BUCKETS.map((b) => monthlySeries(b.fredSeries, from, fredApiKey)),
     ])
     : [empty, empty, ...RATING_BUCKETS.map(() => empty)];

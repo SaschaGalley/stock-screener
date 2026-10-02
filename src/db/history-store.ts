@@ -125,3 +125,23 @@ export async function saveInsiderTransactions(symbol: string, rows: InsiderTrans
     ],
   );
 }
+
+/** Upsert a macro series by the date each value is for. A revision replaces the value it revises. */
+export async function saveMacroSeries(series: string, rows: { day: string; value: number }[]): Promise<number> {
+  const valid = rows.filter((r) => Number.isFinite(r.value) && /^\d{4}-\d{2}-\d{2}$/.test(r.day));
+  if (valid.length === 0) return 0;
+  const res = await query(
+    `INSERT INTO macro_series (series, day, value)
+     SELECT $1, t.day, t.value FROM unnest($2::date[], $3::float8[]) AS t(day, value)
+     ON CONFLICT (series, day) DO UPDATE SET value = EXCLUDED.value, fetched_at = now()
+       WHERE macro_series.value IS DISTINCT FROM EXCLUDED.value`,
+    [series, valid.map((r) => r.day), valid.map((r) => r.value)],
+  );
+  return res.rowCount ?? 0;
+}
+
+/** The newest day stored for a series, or null for one never fetched. */
+export async function lastMacroDay(series: string): Promise<string | null> {
+  const row = await queryOne<{ day: Date | null }>('SELECT max(day) AS day FROM macro_series WHERE series = $1', [series]);
+  return row?.day ? row.day.toISOString().slice(0, 10) : null;
+}

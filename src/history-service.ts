@@ -11,8 +11,10 @@ import { join } from 'path';
 import { getConfig } from './config.js';
 import { readAppState, writeAppState } from './db/admin.js';
 import {
-  priceCoverage, saveAnalystActions, saveInsiderTransactions, savePriceBars, savePriceEvents,
+  lastMacroDay, priceCoverage, saveAnalystActions, saveInsiderTransactions, saveMacroSeries, savePriceBars, savePriceEvents,
 } from './db/history-store.js';
+import { getImpliedERPSeries } from './data/damodaran.js';
+import { fetchSeriesSince, READ_FRED_SERIES } from './data/fred.js';
 import { saveSnapshot } from './db/store.js';
 import { BENCHMARK_TICKERS } from './data/macro.js';
 import type { YahooRaw } from './data/yahoo-raw.js';
@@ -28,8 +30,18 @@ const BACKFILLED_DAYS = 2000;
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** Everything a Yahoo fetch brought back that the payload does not carry. */
-export async function archiveFetch(symbol: string, raw: YahooRaw, runId?: number | null): Promise<void> {
+/** Finnhub's `/stock/metric` as received, split by how often each half changes. */
+export interface FinnhubArchive {
+  /** Today's 130-odd ratios — new most days, a few kilobytes. */
+  metric: Record<string, unknown> | null;
+  /** Two decades of annual and quarterly ratios — new once a quarter, a quarter of a megabyte. */
+  series: Record<string, unknown> | null;
+}
+
+/** Everything a fetch brought back that the payload does not carry. */
+export async function archiveFetch(
+  symbol: string, raw: YahooRaw, runId?: number | null, finnhub?: FinnhubArchive | null,
+): Promise<void> {
   try {
     await savePriceBars(symbol, raw.priceBars);
     await savePriceEvents(symbol, raw.priceEvents);
@@ -40,8 +52,10 @@ export async function archiveFetch(symbol: string, raw: YahooRaw, runId?: number
     if (Object.keys(raw.holders).length > 0) await saveSnapshot(symbol, 'yahoo_holders', RAW_VERSION, raw.holders, runId);
     await saveAnalystActions(symbol, raw.analystActions);
     await saveInsiderTransactions(symbol, raw.insiderTransactions);
+    if (finnhub?.metric) await saveSnapshot(symbol, 'finnhub_metric', RAW_VERSION, finnhub.metric, runId);
+    if (finnhub?.series) await saveSnapshot(symbol, 'finnhub_series', RAW_VERSION, finnhub.series, runId);
     await ensureLongPriceHistory(symbol);
-    await refreshBenchmarks();
+    await dailyArchive();
   } catch (e) {
     logger.warn(`${symbol}: archive incomplete — ${(e as Error).message}`);
   }
@@ -50,7 +64,8 @@ export async function archiveFetch(symbol: string, raw: YahooRaw, runId?: number
 /** A daily history fetched for another purpose — the valuation history, a backtest — kept as well. */
 export async function savePriceHistory(ticker: string, px: PriceHistory): Promise<void> {
   await savePriceBars(ticker, px.dates.map((day, k) => ({
-    day, open: null, high: null, low: null, close: px.close[k], adjClose: px.adj[k], volume: null,
+    day, close: px.close[k], adjClose: px.adj[k],
+    open: px.open?.[k] ?? null, high: px.high?.[k] ?? null, low: px.low?.[k] ?? null, volume: px.volume?.[k] ?? null,
   })));
   await savePriceEvents(ticker, [
     ...px.splits.map((s) => ({ day: s.date, kind: 'split' as const, value: s.ratio })),
@@ -81,14 +96,19 @@ async function ensureLongPriceHistory(ticker: string): Promise<void> {
 }
 
 /**
- * The index, the dollar and the sector ETFs, once a day per process. A refresh
- * touches a hundred stocks a night and every one of them is measured against
- * the same dozen series.
+ * The market's own series, once a day per process: a refresh touches a hundred
+ * stocks a night and every one of them is measured against the same ones.
  */
-let benchmarksDay: string | null = null;
+let archivedDay: string | null = null;
+async function dailyArchive(): Promise<void> {
+  if (archivedDay === today()) return;
+  archivedDay = today();
+  await refreshBenchmarks();
+  await syncMacroSeries();
+}
+
+/** The index, VIX, the dollar and the sector ETFs. */
 async function refreshBenchmarks(): Promise<void> {
-  if (benchmarksDay === today()) return;
-  benchmarksDay = today();
   const dir = join(getConfig().dataDir, 'backtest', 'prices');
   for (const ticker of BENCHMARK_TICKERS) {
     const coverage = await priceCoverage(ticker);
@@ -96,5 +116,46 @@ async function refreshBenchmarks(): Promise<void> {
     const from = `${Number(today().slice(0, 4)) - years}${today().slice(4)}`;
     const px = await priceHistory(ticker, from, dir, 1);
     if (px) await savePriceHistory(ticker, px);
+  }
+}
+
+/**
+ * Series the models do not read but an evaluation will want beside the ones
+ * they do: the short end of the curve, the policy rate, inflation and its
+ * expectation, unemployment. Cheap to keep, impossible to reconstruct as they
+ * were known on a day once revised.
+ */
+const CONTEXT_FRED_SERIES = ['DGS2', 'DGS3MO', 'DFF', 'T10YIE', 'CPIAUCSL', 'UNRATE'];
+/** How far back a series reaches the first time it is fetched. */
+const MACRO_SINCE = '1990-01-01';
+/** Re-read this much before the newest stored day, so revisions replace what they revise. */
+const MACRO_REVISION_DAYS = 45;
+
+/**
+ * Every FRED series the app reads, plus a few for context, by the date each
+ * value is for — the full history once, then the tail daily. And Damodaran's
+ * monthly implied premium, the one market input that is not on FRED.
+ */
+export async function syncMacroSeries(): Promise<void> {
+  const apiKey = getConfig().fredApiKey;
+  if (apiKey) {
+    for (const series of [...new Set([...READ_FRED_SERIES, ...CONTEXT_FRED_SERIES])]) {
+      try {
+        const last = await lastMacroDay(series);
+        const since = last
+          ? new Date(Date.parse(last) - MACRO_REVISION_DAYS * 86_400_000).toISOString().slice(0, 10)
+          : MACRO_SINCE;
+        await saveMacroSeries(series, await fetchSeriesSince(series, apiKey, since));
+      } catch (e) {
+        logger.warn(`Macro archive ${series}: ${(e as Error).message}`);
+      }
+    }
+  }
+  try {
+    const erp = await getImpliedERPSeries();
+    // Monthly, labelled "YYYY-MM": stored on the first of its month.
+    await saveMacroSeries('DAMODARAN_IMPLIED_ERP', erp.flatMap((x) => (x.asOf ? [{ day: `${x.asOf.slice(0, 7)}-01`, value: x.premium }] : [])));
+  } catch (e) {
+    logger.warn(`Macro archive implied ERP: ${(e as Error).message}`);
   }
 }

@@ -76,6 +76,8 @@ export type SnapshotKind =
   // Yahoo's answers as received, beyond what the payload carries
   // (`history-service.ts`): statements, estimates and ratings, holders.
   | 'yahoo_statements' | 'yahoo_analyst' | 'yahoo_holders'
+  // Finnhub's /stock/metric: today's ratios, and two decades of them by period.
+  | 'finnhub_metric' | 'finnhub_series'
   // The score card as published. Observations are re-written when the scoring
   // changes; this is what the reader saw on the day.
   | 'score_card';
@@ -1433,8 +1435,16 @@ export async function recordRunData(input: RecordRunInput): Promise<void> {
   // symbol of a nightly pass overwrites rather than duplicating. Only what the
   // reading actually read is recorded: a fallback may price a model for a few
   // minutes, but it is not the market's number for the day.
-  const global = { ...(input.marketSignals?.macro ?? {}), ...(input.marketRates?.observed ?? {}) };
-  if (Object.keys(global).length > 0) await recordMacro(global, at, input.runId);
+  //
+  // Stamped with the day, not the moment: a night refreshes a hundred stocks
+  // and used to write the same reading a hundred times, seconds apart. And the
+  // sector ETF is left out — it is this stock's sector, not the market's, and
+  // in one global series every sector's return overwrote the last. It stays in
+  // the stock's own market signals; the ETF's prices are in `price_bars`.
+  const { sectorEtfSymbol: _etf, sectorEtfReturn3M: _etfReturn, ...market } = input.marketSignals?.macro ?? {};
+  const global = { ...market, ...(input.marketRates?.observed ?? {}) };
+  const day = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+  if (Object.keys(global).length > 0) await recordMacro(global, day, input.runId);
 }
 
 /**

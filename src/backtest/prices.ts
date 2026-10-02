@@ -32,6 +32,14 @@ export interface PriceHistory {
   splits: { date: string; ratio: number }[];
   /** Dividends per share. Absent in cache files written before they were asked for. */
   dividends?: { date: string; amount: number }[];
+  /**
+   * The rest of each bar, split-adjusted like `close`, for the price archive.
+   * Absent in cache files written before they were kept; null where Yahoo had none.
+   */
+  open?:   (number | null)[];
+  high?:   (number | null)[];
+  low?:    (number | null)[];
+  volume?: (number | null)[];
 }
 
 const CACHE_DAYS = 7;
@@ -55,7 +63,8 @@ export async function priceHistory(
   try {
     await yahooWindow.take();
     const r = await yf.chart(symbol, { period1: from, interval: '1d', events: 'div|split' });
-    const out: PriceHistory = { dates: [], close: [], adj: [], splits: [], dividends: [] };
+    const out: PriceHistory = { dates: [], close: [], adj: [], splits: [], dividends: [], open: [], high: [], low: [], volume: [] };
+    const orNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
     for (const q of r?.quotes ?? []) {
       const close = typeof q.close === 'number' && Number.isFinite(q.close) ? q.close : null;
       if (close === null || close <= 0) continue;
@@ -64,6 +73,10 @@ export async function priceHistory(
       out.dates.push(d.toISOString().slice(0, 10));
       out.close.push(close);
       out.adj.push(adj);
+      out.open!.push(orNull(q.open));
+      out.high!.push(orNull(q.high));
+      out.low!.push(orNull(q.low));
+      out.volume!.push(orNull(q.volume));
     }
     for (const s of r?.events?.splits ?? []) {
       const ratio = Number(s.numerator) / Number(s.denominator);

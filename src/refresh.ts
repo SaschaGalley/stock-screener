@@ -69,7 +69,7 @@ export async function fetchFinancialsBundle(symbol: string, runId?: number | nul
   }
   // Every path that fetches financials comes through here, so this is where
   // the rest of what was fetched is kept.
-  await archiveFetch(symbol, bundle.raw, runId);
+  await archiveFetch(symbol, bundle.raw, runId, finnhubMetrics?.raw ?? null);
   return bundle;
 }
 

@@ -1690,11 +1690,12 @@ cost history.
 | `observations` | `(symbol, metric, timestamp, value)` — the chart surface, ~325 values per symbol per run |
 | `documents` | Distill briefings, Perplexity syntheses, verdicts, search traces — one row per version that actually changed |
 | `fundamental_periods` | Reported figures keyed by fiscal period *and* observation date, so restatements are visible |
-| `macro_observations` | VIX, yield curve, HY spread, DXY, FRED rates — global, stored once rather than per symbol |
+| `macro_observations` | VIX, yield curve, HY spread, DXY, FRED rates as a refresh read them — global, one row per day |
 | `runs` / `run_steps` | Pipeline provenance; every row above can point at the run that produced it. Never pruned |
 | `price_bars` / `price_events` | Daily prices per ticker — stocks, the index, VIX, the dollar, the sector ETFs — with splits and dividends; ten years on a ticker's first refresh |
 | `analyst_actions` | Every rating action and price-target change Yahoo lists, by firm, back to 2012 for the large caps |
 | `insider_transactions` | Individual insider trades, appended as Yahoo's two-year window moves on |
+| `macro_series` | Every FRED series the models read, plus the short rates, the policy rate, inflation, its expectation and unemployment — by the date each value is for, back to 1990; and Damodaran's monthly implied premium |
 | `distill_entities`, `filings`, `settings` | Mappings and operational state |
 | `distill_dossiers` | Which dossier switches we have set upstream, and why any are out of sync — for companies *and* the sectors they sit in. Keyed by subject text, not by `symbols(id)`: deleting a stock is exactly when the switch has to be turned off, and a cascading row would erase that intent first |
 
@@ -1706,7 +1707,9 @@ years of insider trades, and keep technical indicators, one month's rating
 counts and six insider totals. Every path that fetches financials now archives
 the rest (`history-service.ts`): the bars and corporate actions, the statements
 in their reporting currency with their real period ends, the estimate and
-rating modules, the holders, every analyst action and insider trade. The first
+rating modules, the holders, every analyst action and insider trade, and
+Finnhub's two decades of annual and quarterly ratios (kept apart from its
+daily ones, so the quarter-megabyte series adds a row a quarter). The first
 refresh of a ticker fetches its last ten years once, and the benchmarks are
 kept current daily. Archiving is best effort — a failure is logged, never
 fatal to the refresh — and nothing is ever pruned: runs used to be cut to the

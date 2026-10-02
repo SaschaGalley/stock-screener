@@ -43,22 +43,30 @@ export function resetFinnhubClient(): void {
   finnhubWindow.reset();
 }
 
-/** `/stock/metric` for one symbol, trimmed to what is read and shared for an hour. */
-function stockMetric(symbol: string, apiKey: string): Promise<FinnhubMetricResponse> {
+/**
+ * `/stock/metric` for one symbol, trimmed to what is read and shared for an hour.
+ *
+ * The full answer — two decades of annual and quarterly ratios, a quarter of a
+ * megabyte — is handed to the caller that fetched it, for the archive, and only
+ * the trimmed one is kept in memory: an hour of a night's peer groups in full
+ * would be a hundred megabytes. A caller served from memory gets the trimmed
+ * answer and archives nothing that time; the stock's next refresh will.
+ */
+function stockMetric(symbol: string, apiKey: string): Promise<{ trimmed: FinnhubMetricResponse; full: FinnhubMetricResponse | null }> {
   const now = Date.now();
   const hit = metricMemo.get(symbol);
-  if (hit && now - hit.at < METRIC_TTL_MS) return hit.value;
+  if (hit && now - hit.at < METRIC_TTL_MS) return hit.value.then((trimmed) => ({ trimmed, full: null }));
   for (const [k, v] of metricMemo) if (now - v.at >= METRIC_TTL_MS) metricMemo.delete(k);
 
-  const value = (fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`, apiKey) as
-    Promise<FinnhubMetricResponse>)
-    // The full answer carries a decade of series; one of them is read.
-    .then((d) => ({ metric: d?.metric, series: { annual: { roic: d?.series?.annual?.roic ?? [] } } }));
+  const fetched = fetchFinnhub(`/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`, apiKey) as
+    Promise<FinnhubMetricResponse>;
+  // The full answer carries a decade of series; one of them is read.
+  const value = fetched.then((d) => ({ metric: d?.metric, series: { annual: { roic: d?.series?.annual?.roic ?? [] } } }));
   const entry = { at: now, value };
   // A failure is not an answer: the next caller asks again.
   value.catch(() => { if (metricMemo.get(symbol) === entry) metricMemo.delete(symbol); });
   metricMemo.set(symbol, entry);
-  return value;
+  return Promise.all([value, fetched]).then(([trimmed, full]) => ({ trimmed, full: full ?? null }));
 }
 
 function sentimentFromScore(score: number): NewsItem['sentiment'] {
@@ -98,7 +106,10 @@ export async function getNews(symbol: string, apiKey: string, days = 7): Promise
 
 interface FinnhubMetricResponse {
   metric?: Record<string, unknown>;
-  series?: { annual?: Record<string, Array<{ period?: string; v?: unknown }>> };
+  series?: {
+    annual?: Record<string, Array<{ period?: string; v?: unknown }>>;
+    quarterly?: Record<string, Array<{ period?: string; v?: unknown }>>;
+  };
 }
 
 /**
@@ -122,12 +133,14 @@ export interface FinnhubBasicMetrics {
   roic: number | null;
   epsGrowth3Y: number | null;
   dividendGrowthRate5Y: number | null;
+  /** The answer as received, when this call fetched it — for the archive. */
+  raw?: { metric: Record<string, unknown> | null; series: Record<string, unknown> | null } | null;
 }
 
 export async function getBasicFinancials(symbol: string, apiKey: string): Promise<FinnhubBasicMetrics> {
   const empty: FinnhubBasicMetrics = { roic: null, epsGrowth3Y: null, dividendGrowthRate5Y: null };
   try {
-    const data = await stockMetric(symbol, apiKey);
+    const { trimmed: data, full } = await stockMetric(symbol, apiKey);
     const m = data?.metric;
     if (!m) return empty;
 
@@ -137,6 +150,7 @@ export async function getBasicFinancials(symbol: string, apiKey: string): Promis
       roic:                latestAnnualRoic(data),
       epsGrowth3Y:         pct(m['epsGrowth3Y']),
       dividendGrowthRate5Y: pct(m['dividendGrowthRate5Y']),
+      raw: full ? { metric: full.metric ?? null, series: (full.series as Record<string, unknown> | undefined) ?? null } : null,
     };
   } catch {
     logger.warn('Could not fetch Finnhub basic financials');
@@ -243,7 +257,7 @@ export async function getSectorMedians(
 ): Promise<SectorMedians | null> {
   try {
     // 1. Our own metrics, for the market cap the peers are measured against
-    const metricFor = (p: string) => stockMetric(p, apiKey);
+    const metricFor = (p: string) => stockMetric(p, apiKey).then((r) => r.trimmed);
     const own = await metricFor(symbol).catch(() => null);
     const ownCap = toFiniteNumber(own?.metric?.marketCapitalization);
 

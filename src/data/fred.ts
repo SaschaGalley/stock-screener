@@ -5,6 +5,14 @@ import { logger } from '../utils/logger.js';
 
 const BASE = 'https://api.stlouisfed.org/fred/series/observations';
 
+/** The US series read by name — once, so the reads and the archive cannot name different ones. */
+export const FRED_SERIES = {
+  tenYear:   'DGS10',
+  aaa:       'DAAA',
+  curve:     'T10Y2Y',
+  highYield: 'BAMLH0A0HYM2',
+} as const;
+
 /** Fetch the most recent non-missing observation; returns the raw numeric value as published. */
 async function fetchLatestRaw(seriesId: string, apiKey: string): Promise<number | null> {
   try {
@@ -27,6 +35,26 @@ async function fetchLatestRaw(seriesId: string, apiKey: string): Promise<number 
     logger.warn(`FRED[${seriesId}]: ${(e as Error).message}`);
     return null;
   }
+}
+
+/**
+ * Every observation of a series from `since` on, as published and dated by
+ * FRED — for the macro archive, which keeps the date a value is for rather
+ * than the moment it was read. Missing values (".") are left out.
+ */
+export async function fetchSeriesSince(
+  seriesId: string, apiKey: string, since: string,
+): Promise<{ day: string; value: number }[]> {
+  const params = new URLSearchParams({
+    series_id: seriesId, api_key: apiKey, observation_start: since, file_type: 'json',
+  });
+  const res = await fetch(`${BASE}?${params}`, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`FRED ${seriesId} HTTP ${res.status}`);
+  const data = await res.json() as { observations?: Array<{ date: string; value: string }> };
+  return (data.observations ?? []).flatMap((o) => {
+    const n = Number(o.value);
+    return o.value !== '.' && Number.isFinite(n) && /^\d{4}-\d{2}-\d{2}$/.test(o.date) ? [{ day: o.date, value: n }] : [];
+  });
 }
 
 async function fetchLatestDecimal(seriesId: string, apiKey: string): Promise<number | null> {
@@ -68,6 +96,13 @@ export const LOCAL_TEN_YEAR = {
 } as const;
 
 export type RateCurrency = keyof typeof LOCAL_TEN_YEAR;
+
+/** Every FRED series the app reads, for the archive: a series added to the reads is archived with them. */
+export const READ_FRED_SERIES: readonly string[] = [
+  ...Object.values(FRED_SERIES),
+  ...RATING_BUCKETS.map((b) => b.fredSeries),
+  ...Object.values(LOCAL_TEN_YEAR).map((x) => x.series),
+];
 export const RATE_CURRENCIES = Object.keys(LOCAL_TEN_YEAR) as RateCurrency[];
 
 /**
@@ -245,8 +280,8 @@ export async function getMarketRates(apiKey?: string | null): Promise<FetchedRat
     const fred = (seriesId: string) => (apiKey ? fetchLatestDecimal(seriesId, apiKey) : Promise.resolve(null));
     const [, rfr, aaa, erp, spreads, locals] = await Promise.all([
       seedFromStore(),
-      fred('DGS10'),
-      fred('DAAA'),
+      fred(FRED_SERIES.tenYear),
+      fred(FRED_SERIES.aaa),
       getImpliedERP(),
       Promise.all(RATING_BUCKETS.map((b) => fred(b.fredSeries))),
       Promise.all(RATE_CURRENCIES.map((c) => fred(LOCAL_TEN_YEAR[c].series))),
@@ -311,8 +346,8 @@ export interface MacroSpreads {
 
 export async function getMacroSpreads(apiKey: string): Promise<MacroSpreads> {
   const [t10y2y, hy] = await Promise.all([
-    fetchLatestRaw('T10Y2Y',         apiKey),
-    fetchLatestRaw('BAMLH0A0HYM2',   apiKey),
+    fetchLatestRaw(FRED_SERIES.curve,     apiKey),
+    fetchLatestRaw(FRED_SERIES.highYield, apiKey),
   ]);
 
   return {
