@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
-  discountRange, multipleStats, normalPE, type ValuationHistoryPoint,
+  discountRange, growthVsPrice, multipleStats, normalPE, type ValuationHistoryPoint,
 } from '../src/analysis/valuation-history.js';
 import { ratioSeries, summarise, trendTable } from '../src/analysis/trends.js';
 
@@ -64,6 +64,22 @@ describe('a multiple against its own past', () => {
     assert.equal(s.latest, null);
     assert.equal(s.impliedPrice, null);
     assert.equal(s.median5, 15);
+  });
+});
+
+describe('earnings growth against price growth', () => {
+  it('compounds both over the same three years', () => {
+    // EPS doubles, price stays put: earnings +26 %/yr, price 0.
+    const pts = series(37, (k) => ({ eps: k === 0 ? 1 : k === 36 ? 2 : 1.5 }));
+    const g = growthVsPrice(pts);
+    assert.ok(g);
+    assert.ok(Math.abs(g.epsCagr - (2 ** (1 / 3) - 1)) < 1e-9);
+    assert.equal(g.priceCagr, 0);
+  });
+
+  it('says nothing when either end is a loss', () => {
+    assert.equal(growthVsPrice(series(37, (k) => ({ eps: k === 0 ? -0.5 : 1 }))), null);
+    assert.equal(growthVsPrice(series(20, () => ({ eps: 1 }))), null, 'and nothing without three years');
   });
 });
 

@@ -194,6 +194,7 @@ export default function VerdictHero({
                 {analyst.analystTargetMedian && <> · median <span className="font-mono">{fmtPrice(analyst.analystTargetMedian)}</span></>}
               </div>
             )}
+            <TargetDispersion a={analyst} />
             <div className="mt-auto pt-2">
               <RatingBar a={analyst} />
             </div>
@@ -248,6 +249,29 @@ function ScoreBar({ score, recommendation }: { score: number; recommendation: st
       {Array.from({ length: 10 }).map((_, i) => (
         <div key={i} className={`h-3 w-1.5 rounded-sm ${i < filled ? fill : 'bg-ink-700'}`} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * How far apart the analysts are. A mean target of $145 means one thing when
+ * every analyst sits between $135 and $155 and another when they range from $72
+ * to $248 — the second is a consensus in name only. Range over mean, because
+ * Yahoo gives the extremes but not the spread of the targets between them.
+ */
+function TargetDispersion({ a }: { a: Props['analyst'] }) {
+  const { analystTargetHigh: hi, analystTargetLow: lo, targetMeanPrice: mean } = a;
+  if (hi === null || lo === null || mean === null || mean <= 0 || (a.analystCount ?? 0) < 3) return null;
+  const spread = (hi - lo) / mean;
+  const [word, cls] = spread <= 0.35 ? ['einig', 'text-emerald-400']
+    : spread <= 0.7 ? ['gemischt', 'text-amber-400']
+    : ['weit auseinander', 'text-red-400'];
+  return (
+    <div
+      className="mt-1 cursor-help text-[11px] text-ink-500"
+      title="Spanne zwischen höchstem und tiefstem Kursziel, geteilt durch das mittlere. Je größer, desto weniger trägt der Mittelwert."
+    >
+      Streuung: Spanne {Math.round(spread * 100)} % des Mittels · <span className={cls}>{word}</span>
     </div>
   );
 }

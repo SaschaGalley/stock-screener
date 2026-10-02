@@ -232,6 +232,35 @@ export async function symbolFacts(
   return new Map(res.rows.map((r) => [r.symbol, { sector: r.sector, currency: r.currency }]));
 }
 
+/**
+ * The newest value of each metric for every symbol in one sector, reference
+ * universe included — the cross-section a stock's multiples are read against.
+ * Only readings from the last `maxAgeDays`: the universe refreshes a sixth of
+ * itself a night, and a multiple from a month ago is a different price.
+ */
+export async function latestValuesInSector(
+  sector: string, keys: string[], maxAgeDays: number,
+): Promise<{ symbol: string; industry: string | null; key: string; value: number }[]> {
+  const res = await query<{ symbol: string; industry: string | null; key: string; value: number }>(
+    `SELECT DISTINCT ON (o.symbol_id, m.key) s.symbol, s.industry, m.key, o.value
+       FROM observations o
+       JOIN metrics m ON m.id = o.metric_id
+       JOIN symbols s ON s.id = o.symbol_id
+      WHERE s.sector = $1 AND m.key = ANY($2) AND o.value IS NOT NULL
+        AND o.observed_at >= now() - make_interval(days => $3)
+      ORDER BY o.symbol_id, m.key, o.observed_at DESC`,
+    [sector, keys, maxAgeDays],
+  );
+  return res.rows;
+}
+
+/** Sector and industry as the profile last recorded them. */
+export async function symbolGroup(symbol: string): Promise<{ sector: string | null; industry: string | null } | null> {
+  return queryOne<{ sector: string | null; industry: string | null }>(
+    'SELECT sector, industry FROM symbols WHERE symbol = $1', [symbol.toUpperCase()],
+  );
+}
+
 /** Whether a symbol is in the database only as a member of the reference universe. */
 export async function isReferenceSymbol(symbol: string): Promise<boolean> {
   const row = await queryOne<{ reference: boolean }>('SELECT reference FROM symbols WHERE symbol = $1', [symbol.toUpperCase()]);

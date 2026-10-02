@@ -5,8 +5,8 @@ import { useMoney } from '../../currency';
 import { fmtSignedPct } from '../../format';
 import { CHART_COLORS, baseTextStyle } from '../charts/chartTheme';
 import {
-  HISTORY_MULTIPLES, discountRange, multipleStats, normalPE,
-  type HistoryMultiple, type ValuationHistory as History,
+  HISTORY_MULTIPLES, discountRange, growthVsPrice, multipleStats, normalPE,
+  type HistoryMultiple, type SectorMultiples, type ValuationHistory as History,
 } from '../../../../src/analysis/valuation-history';
 
 type View = 'fair' | 'earnings' | 'multiples';
@@ -30,6 +30,7 @@ interface Props {
  */
 export default function ValuationHistory({ symbol, liveFairValue }: Props) {
   const [history, setHistory] = useState<History | null | undefined>(undefined);
+  const [sector, setSector] = useState<SectorMultiples | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>('fair');
 
@@ -38,7 +39,7 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
     setHistory(undefined);
     setError(null);
     api.getValuationHistory(symbol)
-      .then((r) => { if (live) setHistory(r.history); })
+      .then((r) => { if (live) { setHistory(r.history); setSector(r.sector); } })
       .catch((e) => { if (live) setError((e as Error).message); });
     return () => { live = false; };
   }, [symbol]);
@@ -93,7 +94,7 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
       {view === 'earnings' && <EarningsView history={history} />}
       {view === 'multiples' && <MultiplesView history={history} />}
 
-      <MultiplesTable history={history} />
+      <MultiplesTable history={history} sector={sector} />
 
       <p className="text-[10px] leading-relaxed text-ink-500">
         {history.source === 'sec'
@@ -219,6 +220,7 @@ function EarningsView({ history }: { history: History }) {
   const justified = pts.map((p) => (pe !== null && p.eps !== null && p.eps > 0 ? p.eps * pe : null));
   const last = pts[pts.length - 1];
   const lastJustified = justified[justified.length - 1];
+  const g = growthVsPrice(pts);
 
   const base = baseOption(dates, (v) => fmtPrice(v));
   const option = {
@@ -251,6 +253,19 @@ function EarningsView({ history }: { history: History }) {
           ? <> — heute <strong className="text-ink-100">{fmtSignedPct(last.price / lastJustified - 1, 0)}</strong>.</>
           : '.'}
       </Lede>
+      {g && (
+        <Lede>
+          Über {g.years} Jahre wuchs der Gewinn je Aktie um{' '}
+          <strong className="text-ink-100">{fmtSignedPct(g.epsCagr, 0)}</strong> pro Jahr, der Kurs um{' '}
+          <strong className="text-ink-100">{fmtSignedPct(g.priceCagr, 0)}</strong>
+          {' — '}
+          {Math.abs(g.epsCagr - g.priceCagr) < 0.03
+            ? 'der Kurs ist dem Gewinn gefolgt.'
+            : g.priceCagr < g.epsCagr
+              ? 'der Kurs hinkt dem Gewinn hinterher, die Bewertung ist gesunken.'
+              : 'der Kurs ist dem Gewinn vorausgelaufen, die Bewertung ist gestiegen.'}
+        </Lede>
+      )}
       <Chart option={option} />
     </div>
   );
@@ -303,10 +318,12 @@ function MultiplesView({ history }: { history: History }) {
 }
 
 /**
- * Every multiple against its own past, in one table — the part of the view
- * that should not need a click.
+ * Every multiple against its own past and against its industry, in one table
+ * — the part of the view that should not need a click. The two comparisons
+ * answer different questions: a quality company is always dearer than its
+ * industry, and only its own history says whether it is dearer than usual.
  */
-function MultiplesTable({ history }: { history: History }) {
+function MultiplesTable({ history, sector }: { history: History; sector: SectorMultiples | null }) {
   const { fmtPrice } = useMoney();
   const rows = HISTORY_MULTIPLES
     .map((m) => ({ ...m, s: multipleStats(history.points, m.key) }))
@@ -319,9 +336,19 @@ function MultiplesTable({ history }: { history: History }) {
 
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Multiples gegen die eigene Historie</h3>
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Multiples gegen Historie und Branche</h3>
       <table className="w-full text-xs tabular">
         <thead>
+          <tr className="text-[10px] uppercase tracking-wider text-ink-600">
+            <th />
+            <th />
+            <th colSpan={5} className="border-b border-ink-800 pb-0.5 text-center font-normal">Gegen die eigene Historie</th>
+            {sector && (
+              <th colSpan={2} className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell" title={`${sector.level === 'industry' ? 'Branche' : 'Sektor'} im Universum: Watchlist und Referenzwerte`}>
+                {sector.level === 'industry' ? 'Branche' : 'Sektor'} · {sector.group}
+              </th>
+            )}
+          </tr>
           <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal" />
             <th className="py-1 text-right font-normal">Heute</th>
@@ -330,6 +357,12 @@ function MultiplesTable({ history }: { history: History }) {
             <th className="py-1 text-right font-normal">vs. {span}</th>
             <th className="hidden py-1 text-right font-normal sm:table-cell">Teurer als</th>
             <th className="py-1 text-right font-normal">Kurs beim {span}-Median</th>
+            {sector && (
+              <>
+                <th className="hidden py-1 text-right font-normal md:table-cell">Median</th>
+                <th className="hidden py-1 text-right font-normal md:table-cell">Teurer als</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -349,11 +382,40 @@ function MultiplesTable({ history }: { history: History }) {
                   {s.rank === null ? '—' : `${Math.round(s.rank * 100)} % der Monate`}
                 </td>
                 <td className="py-1 text-right font-mono text-ink-300">{s.impliedPrice === null ? '—' : fmtPrice(s.impliedPrice)}</td>
+                {sector && <SectorCells d={sector.multiples[key]} />}
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** The industry's median and the stock's rank in it, from today's recorded multiples. */
+function SectorCells({ d }: { d: SectorMultiples['multiples'][HistoryMultiple] }) {
+  if (!d) {
+    return (
+      <>
+        <td className="hidden py-1 text-right font-mono text-ink-600 md:table-cell">—</td>
+        <td className="hidden py-1 text-right font-mono text-ink-600 md:table-cell">—</td>
+      </>
+    );
+  }
+  return (
+    <>
+      <td
+        className="hidden py-1 text-right font-mono text-ink-300 md:table-cell"
+        title={`Mittlere Hälfte ${d.p25.toFixed(1)}x – ${d.p75.toFixed(1)}x, ${d.n} Werte`}
+      >
+        {d.median.toFixed(1)}x
+      </td>
+      <td
+        className={`hidden py-1 text-right font-mono md:table-cell ${d.rank === null ? 'text-ink-500' : d.rank > 0.75 ? 'text-red-400' : d.rank < 0.25 ? 'text-emerald-400' : 'text-ink-300'}`}
+        title={d.own !== null ? `Heute ${d.own.toFixed(1)}x, verglichen mit ${d.n} Werten` : 'Kein positiver Wert heute'}
+      >
+        {d.rank === null ? '—' : `${Math.round(d.rank * 100)} % von ${d.n}`}
+      </td>
+    </>
   );
 }

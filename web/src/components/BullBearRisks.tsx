@@ -1,11 +1,26 @@
 import type { ReactNode } from 'react';
+import { useMoney } from '../currency';
+import { fmtSignedPct } from '../format';
 import {
   CASE_SECTION_LABEL, CASE_TITLE, readCases,
   type CaseDirection, type CaseSection, type CaseView, type StoredCases,
 } from '../../../src/cases';
 
+/** A price this side of the case would put on the stock, with where it comes from. */
+export interface CaseScenario {
+  label: string;
+  value: number | null;
+  hint:  string;
+}
+
 interface Props {
   llm: StoredCases | null;
+  /**
+   * What each side is worth in numbers — the optimistic and pessimistic ends
+   * of the DCF's scenarios and of the analysts' targets. An argument without a
+   * price leaves the reader to guess how much it matters.
+   */
+  scenarios?: { price: number; bull: CaseScenario[]; bear: CaseScenario[] };
 }
 
 /**
@@ -21,14 +36,14 @@ interface Props {
  * Analyses from before the split carry one flat list per side; it renders
  * without a section heading rather than under a label it never had.
  */
-export default function BullBearRisks({ llm }: Props) {
+export default function BullBearRisks({ llm, scenarios }: Props) {
   if (!llm) return null;
   const cases = readCases(llm);
   return (
     <section className="space-y-3">
       <div className="grid gap-3 md:grid-cols-2">
-        <CaseCard direction="bull" side={cases.bull} />
-        <CaseCard direction="bear" side={cases.bear} />
+        <CaseCard direction="bull" side={cases.bull} price={scenarios?.price} scenarios={scenarios?.bull} />
+        <CaseCard direction="bear" side={cases.bear} price={scenarios?.price} scenarios={scenarios?.bear} />
       </div>
       {cases.undirected.length > 0 && (
         <article className="rounded-lg border border-ink-700 border-l-4 border-l-amber-500 bg-ink-900 px-4 py-3">
@@ -49,14 +64,34 @@ const ACCENT: Record<CaseDirection, { border: string; text: string; icon: string
   bear: { border: 'border-l-red-500',     text: 'text-red-400',     icon: '▼', arrow: '↓' },
 };
 
-function CaseCard({ direction, side }: { direction: CaseDirection; side: CaseView }) {
+function CaseCard({ direction, side, price, scenarios }: {
+  direction: CaseDirection; side: CaseView; price?: number; scenarios?: CaseScenario[];
+}) {
   const a = ACCENT[direction];
   const label = (section: CaseSection) => CASE_SECTION_LABEL[section][direction];
+  const { fmtPrice } = useMoney();
+  const shown = (scenarios ?? []).filter((s) => s.value !== null && s.value > 0);
   return (
     <article className={`flex flex-col rounded-lg border border-ink-700 ${a.border} border-l-4 bg-ink-900 p-4`}>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className={`text-base font-bold ${a.text}`}>{a.icon}</span>
         <h3 className="text-[15px] font-semibold text-ink-100">{CASE_TITLE[direction]}</h3>
+        {price !== undefined && shown.length > 0 && (
+          <div className="ml-auto flex flex-wrap justify-end gap-1.5">
+            {shown.map((s) => (
+              <span
+                key={s.label}
+                title={s.hint}
+                className="cursor-help rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 font-mono text-[11px] text-ink-300"
+              >
+                <span className="font-sans text-ink-500">{s.label}</span> {fmtPrice(s.value)}{' '}
+                <span className={s.value! >= price ? 'text-emerald-400' : 'text-red-400'}>
+                  {fmtSignedPct(s.value! / price - 1, 0)}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">

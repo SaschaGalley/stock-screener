@@ -48,7 +48,7 @@ import { cachedEvaluation, EVALUATED_SIGNALS } from './db/evaluate.js';
 import { currentScoreCard, rescoreIfScoringChanged, storedInputs } from './db/rescore.js';
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
-import { getValuationHistory } from './valuation-history-service.js';
+import { getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import { QuoteBrief, quoteBriefs, searchByQuery } from './data/yfinance.js';
 import { yahooTicker } from './data/universe.js';
 import { lastGoodSectorMedians } from './sector-medians.js';
@@ -1036,7 +1036,8 @@ export function createApp(): express.Express {
   app.get('/api/stocks/:symbol/valuation-history', async (req, res, next) => {
     try {
       const symbol = req.params.symbol.toUpperCase();
-      res.json({ symbol, history: await getValuationHistory(symbol) });
+      const [history, sector] = await Promise.all([getValuationHistory(symbol), sectorMultiples(symbol)]);
+      res.json({ symbol, history, sector });
     } catch (e) {
       next(e);
     }

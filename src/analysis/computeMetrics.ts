@@ -10,6 +10,7 @@ import {
   calculateBeneish, calculateCompositeFairValue,
 } from './metrics.js';
 import { baseFairValue } from './dcf.js';
+import { calculateHealthChecks } from './health.js';
 
 export interface ComputedMetrics {
   dcf:              ReturnType<typeof calculateDCF>;
@@ -31,6 +32,8 @@ export interface ComputedMetrics {
   sortino:          ReturnType<typeof calculateSortino>;
   beneish:          ReturnType<typeof calculateBeneish>;
   composite:        ReturnType<typeof calculateCompositeFairValue>;
+  /** The balance sheet as plain checks, and the cash runway of a company that burns cash. */
+  health:           ReturnType<typeof calculateHealthChecks>;
 }
 
 /**
@@ -132,5 +135,6 @@ export function computeAllMetrics(
     dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
     ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, rim, ncav,
     peerMultiples, interestCoverage, sortino, beneish, composite,
+    health: calculateHealthChecks(financials, interestCoverage),
   };
 }

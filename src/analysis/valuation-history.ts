@@ -129,6 +129,63 @@ export function multipleStats(points: ValuationHistoryPoint[], key: HistoryMulti
   };
 }
 
+/** A multiple across the stock's industry or sector, and where the stock sits in it. */
+export interface PeerDistribution {
+  median: number;
+  p25:    number;
+  p75:    number;
+  n:      number;
+  /** The stock's own current multiple, from the same readings. */
+  own:    number | null;
+  /** Share of the group with a lower multiple: 0.8 is "dearer than four in five". */
+  rank:   number | null;
+}
+
+export interface SectorMultiples {
+  /** The industry when it has enough members to say something, else the sector. */
+  level:     'industry' | 'sector';
+  group:     string;
+  multiples: Partial<Record<HistoryMultiple, PeerDistribution>>;
+}
+
+/**
+ * The group's distribution of one multiple. Positive readings only, like the
+ * stock's own history: a loss-maker has no P/E rather than a low one.
+ */
+export function peerDistribution(values: number[], own: number | null): PeerDistribution | null {
+  const xs = values.filter((v) => v > 0).sort((a, b) => a - b);
+  if (xs.length < 5) return null;
+  const o = own !== null && own > 0 ? own : null;
+  return {
+    median: quantile(xs, 0.5)!, p25: quantile(xs, 0.25)!, p75: quantile(xs, 0.75)!, n: xs.length,
+    own: o, rank: o === null ? null : rankOf(xs, o),
+  };
+}
+
+export interface GrowthVsPrice {
+  years:     number;
+  /** Compound annual growth of trailing EPS over the span. */
+  epsCagr:   number;
+  priceCagr: number;
+}
+
+/**
+ * Earnings growth against price growth over the same years — whether the
+ * price has followed the earnings, lagged them or run ahead. Null when EPS is
+ * not positive at both ends: a growth rate out of a loss is not a rate.
+ */
+export function growthVsPrice(points: ValuationHistoryPoint[], years = 3): GrowthVsPrice | null {
+  const end = points[points.length - 1];
+  const start = points[points.length - 1 - years * 12];
+  if (!end || !start || start.eps === null || end.eps === null || start.eps <= 0 || end.eps <= 0) return null;
+  if (start.price <= 0 || end.price <= 0) return null;
+  return {
+    years,
+    epsCagr:   (end.eps / start.eps) ** (1 / years) - 1,
+    priceCagr: (end.price / start.price) ** (1 / years) - 1,
+  };
+}
+
 /**
  * The P/E a stock has normally carried — the median of its positive P/Es over
  * the window. Earnings times this is the line a FAST-Graphs chart draws under

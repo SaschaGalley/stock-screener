@@ -12,6 +12,7 @@ import { verdictForScore } from "../format";
 import Section from "./Section";
 import ScoreBreakdown from "./sections/ScoreBreakdown";
 import MarginTrends from "./sections/MarginTrends";
+import BalanceChecks from "./sections/BalanceChecks";
 import ValuationHistory from "./sections/ValuationHistory";
 import CompositeChart from "./charts/CompositeChart";
 import ValuationDetail from "./sections/ValuationDetail";
@@ -268,7 +269,22 @@ export default function AnalysisView({
             />
 
             {/* TIER 2: THE CASE FOR AND AGAINST — what a reader wants right after the verdict. */}
-            {llm && <BullBearRisks llm={llm} />}
+            {llm && (
+              <BullBearRisks
+                llm={llm}
+                scenarios={{
+                  price: f.price,
+                  bull: [
+                    { label: 'DCF p90', value: m.dcf.fairValueBull, hint: 'Der Wert, den 90 % der DCF-Szenarien nicht erreichen — das optimistische Ende der Simulation' },
+                    { label: 'Kursziel hoch', value: f.analystTargetHigh, hint: 'Das höchste Kursziel der Analysten' },
+                  ],
+                  bear: [
+                    { label: 'DCF p10', value: m.dcf.fairValueBear, hint: 'Der Wert, den 90 % der DCF-Szenarien übertreffen — das pessimistische Ende der Simulation' },
+                    { label: 'Kursziel tief', value: f.analystTargetLow, hint: 'Das niedrigste Kursziel der Analysten' },
+                  ],
+                }}
+              />
+            )}
 
             {/* TIER 3: COMPOSITE BAR CHART (Primary + Conservative tiers) */}
             {(m.composite.primary.models.length > 0 ||
@@ -322,6 +338,7 @@ export default function AnalysisView({
 
             {/* TIER 5: QUALITY & RISK */}
             <Section title="Quality & Risk Scores">
+              <BalanceChecks health={m.health} />
               <QualityScores metrics={m} />
             </Section>
 

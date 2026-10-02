@@ -25,7 +25,7 @@ import type {
   BacktestResponse,
   VerdictChangesResponse,
 } from './types';
-import type { ValuationHistory } from '../../src/analysis/valuation-history';
+import type { SectorMultiples, ValuationHistory } from '../../src/analysis/valuation-history';
 
 const BASE = '/api';
 
@@ -94,7 +94,7 @@ export const api = {
 
   /** Five years rebuilt month by month — a few seconds the first time a stock is opened each day. */
   getValuationHistory: (symbol: string) =>
-    jsonFetch<{ symbol: string; history: ValuationHistory | null }>(
+    jsonFetch<{ symbol: string; history: ValuationHistory | null; sector: SectorMultiples | null }>(
       `${BASE}/stocks/${encodeURIComponent(symbol)}/valuation-history`,
     ),
 

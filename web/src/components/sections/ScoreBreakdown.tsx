@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
-import type { NarrativeDimension, NarrativeDimensions, ScoreCard, ScoreFinding, ScorePillar } from '../../types';
+import type { NarrativeDimension, NarrativeDimensions, ScoreCard, ScoreCriterion, ScoreFinding, ScorePillar } from '../../types';
 import { scoreBarColor, scoreColor } from '../stockList';
 import { verdictForScore } from '../../format';
 import { useStoredOpen } from '../Section';
+import CheckMark, { type CheckMarkKind } from '../CheckMark';
 
 /**
  * Why the number is the number — as a strip under the verdict.
@@ -140,7 +141,7 @@ function PillarCell({ p }: { p: ScorePillar }) {
         <div className={scoreBarColor(p.score)} style={{ width: `${width}%`, height: '100%' }} />
       </div>
       <div className="mt-0.5 font-mono text-[10px] text-ink-500">
-        {Math.round(p.effectiveWeight * 100)} % Gewicht
+        {Math.round(p.effectiveWeight * 100)} % Gewicht · {passed(p)}/{p.criteria.length} ✓
         {p.coverage < 1 && <span className="text-amber-600"> · {Math.round(p.coverage * 100)} % Abdeckung</span>}
       </div>
     </div>
@@ -180,11 +181,70 @@ function Dimensions({ dimensions }: { dimensions: NarrativeDimensions }) {
   );
 }
 
-/** Everything behind the strip: which lines moved it, the two prose reads, the method. */
+/**
+ * A criterion as a check. Points are centred on the reference universe, so
+ * 0.5 is the typical stock: clearly above it passes, clearly below fails, and
+ * the band between is neither — a checklist that called a 0.52 a pass would
+ * be counting noise.
+ */
+function markOf(c: ScoreCriterion): CheckMarkKind {
+  if (c.points === null) return 'none';
+  return c.points >= 0.6 ? 'pass' : c.points <= 0.4 ? 'fail' : 'mixed';
+}
+
+const passed = (p: ScorePillar) => p.criteria.filter((c) => markOf(c) === 'pass').length;
+
+const MARK_TITLE: Record<CheckMarkKind, string> = {
+  pass:  'Klar besser als die typische Aktie',
+  fail:  'Klar schlechter als die typische Aktie',
+  mixed: 'Etwa wie die typische Aktie',
+  none:  'Keine Daten — zählt nicht mit',
+};
+
+/**
+ * Every criterion of every pillar as a sentence with a mark — the pillar bars
+ * say how much, this says which. It used to live only in each bar's tooltip.
+ */
+function Checklist({ pillars }: { pillars: ScorePillar[] }) {
+  return (
+    <div>
+      <Heading>Prüfliste</Heading>
+      <div className="grid gap-x-6 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+        {pillars.map((p) => (
+          <div key={p.key}>
+            <div className="mb-1 flex items-baseline justify-between gap-2 text-[11px]">
+              <span className="font-semibold text-ink-200">{p.label}</span>
+              <span className="font-mono text-ink-500">
+                {passed(p)}/{p.criteria.length} ✓ · <span className={scoreColor(p.score)}>{p.score === null ? '—' : p.score.toFixed(1)}</span>
+              </span>
+            </div>
+            <ul className="space-y-1">
+              {p.criteria.map((c) => {
+                const kind = markOf(c);
+                return (
+                  <li key={c.key} className="flex gap-1.5 text-[11px] leading-snug">
+                    <CheckMark kind={kind} title={MARK_TITLE[kind]} />
+                    <span className={kind === 'none' ? 'text-ink-600' : 'text-ink-300'}>
+                      <span className="text-ink-400">{c.label}:</span> {c.note}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Everything behind the strip: the checklist, which lines moved it, the two prose reads, the method. */
 function Details({ card }: { card: ScoreCard }) {
   const { factor, final, narrative, dataNote } = card;
   return (
     <div className="mt-4 space-y-4 border-t border-ink-800 pt-4">
+      <Checklist pillars={factor.pillars} />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
           <Heading>Befunde</Heading>
@@ -247,8 +307,8 @@ function Details({ card }: { card: ScoreCard }) {
         <p>
           Kriterien ohne Daten werden fallen gelassen, die übrigen Gewichte neu
           normiert. Nichts wird mangels Wissens mit 5/10 bewertet — stattdessen
-          sinkt die Abdeckung, und mit ihr die Konfidenz. Die Kriterien einer
-          Säule stehen in ihrem Tooltip.
+          sinkt die Abdeckung, und mit ihr die Konfidenz. Ein Haken heißt: klar
+          besser als die typische Aktie des Referenzuniversums.
         </p>
       </div>
     </div>
