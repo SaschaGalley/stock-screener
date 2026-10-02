@@ -330,17 +330,17 @@ export interface VerdictChange {
   source:      'refresh' | 'analysis';
 }
 
-/** The newest verdict changes on the watchlist, newest first. */
-export async function recentVerdictChanges(limit = 30): Promise<VerdictChange[]> {
+/** The newest verdict changes on the watchlist — or of one stock — newest first. */
+export async function recentVerdictChanges(limit = 30, symbol?: string): Promise<VerdictChange[]> {
   const res = await query<{
     symbol: string; company_name: string | null; at: Date; from_verdict: string; to_verdict: string;
     from_score: number | null; to_score: number | null; source: 'refresh' | 'analysis';
   }>(
     `SELECT s.symbol, s.company_name, v.at, v.from_verdict, v.to_verdict, v.from_score, v.to_score, v.source
        FROM verdict_changes v JOIN symbols s ON s.id = v.symbol_id
-      WHERE NOT s.reference
+      WHERE NOT s.reference AND ($2::text IS NULL OR s.symbol = $2)
       ORDER BY v.at DESC LIMIT $1`,
-    [limit],
+    [limit, symbol?.toUpperCase() ?? null],
   );
   return res.rows.map((r) => ({
     symbol: r.symbol, companyName: r.company_name, at: r.at.toISOString(),

@@ -1,13 +1,15 @@
-import type { MutableRefObject } from 'react';
+import { Fragment, type MutableRefObject } from 'react';
 import type { OverviewRow } from '../types';
 import ScoreSparkline from './charts/ScoreSparkline';
 import RecommendationBadge from './RecommendationBadge';
 import StockListControls from './StockListControls';
-import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT, HEADER_HEIGHT } from './StockRowCells';
+import Tip from './Tip';
+import {
+  StockIdentity, StockScore, GroupName, GroupAverage, rowTitle, ROW_HEIGHT, HEADER_HEIGHT, GROUP_HEIGHT,
+} from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { ChartIcon, GearIcon, PulseIcon } from './icons';
-import VerdictChanges from './VerdictChanges';
-import { averageScore, scoreColor, type ListView } from './stockList';
+import { averageScore, groupRows, scoreColor, toggleGroup, type ListView } from './stockList';
 import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
 
 interface Props {
@@ -57,6 +59,17 @@ const COL = {
 const NAME_CELL = 'w-full max-w-0 xl:w-auto xl:max-w-none';
 
 /**
+ * A group heading's cells. Sticky under the column labels (`top-8` is
+ * `HEADER_HEIGHT`), so a long group still says what it is while you are in
+ * the middle of it. The cells carry the background, not the row: a sticky
+ * row is not a thing tables do.
+ */
+const GROUP_CELL = 'sticky top-8 z-[5] border-b border-ink-700 bg-ink-900 py-0 transition group-hover:bg-ink-800';
+
+/** Every column after name and score — what the heading's last cell spans. */
+const TRAILING_COLUMNS = 7;
+
+/**
  * The stock list at full width: every column the overview has room for.
  *
  * Its narrow twin is `StockRail`, and the two columns they share come from
@@ -78,6 +91,80 @@ export default function StockTable({
 
   const avg = averageScore(rows);
   const filtered = rows.length !== total;
+  const groups = groupRows(rows, view.group);
+
+  // One stock's row — the same under a group heading as in the plain list.
+  const renderRow = (r: OverviewRow) => (
+    <tr
+      key={r.symbol}
+      data-stock-row
+      data-symbol={r.symbol}
+      onClick={() => onSelect(r.symbol)}
+      title={rowTitle(r, fmtBig)}
+      className={`${ROW_HEIGHT} cursor-pointer border-b border-ink-800 transition hover:bg-ink-800`}
+    >
+      <td className={`${NAME_CELL} py-1 pr-2 pl-3`}>
+        <StockIdentity row={r} active={false} stages={activity[r.symbol]} />
+      </td>
+
+      <td className="px-2 py-1 text-right">
+        <StockScore row={r} split />
+      </td>
+
+      <td className={`${COL.trend} px-2 py-1`}>
+        <ScoreSparkline points={r.scoreHistory} />
+      </td>
+
+      <td className={`${COL.verdict} whitespace-nowrap px-2 py-1`}>
+        {r.recommendation ? (
+          <RecommendationBadge
+            rec={r.recommendation}
+            score={r.score}
+            heldBack={r.verdictCapped ? r.capReasons : []}
+            size="sm"
+          />
+        ) : (
+          <span className="text-[11px] text-ink-600">nicht analysiert</span>
+        )}
+        {r.verdictModel && (
+          <div className="font-mono text-[9px] leading-3 text-ink-600">{r.verdictModel}</div>
+        )}
+      </td>
+
+      <td className={`${COL.price} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-200`}>
+        {fmtPrice(r.price, r.currency)}
+      </td>
+
+      <td className={`${COL.target} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular`}>
+        <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean, r.currency)}</div>
+        <div className={`text-[10px] ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
+      </td>
+
+      <td className={`${COL.model} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular`}>
+        <div className="text-ink-300">
+          {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue, r.currency)}
+        </div>
+        <div className={`text-[10px] ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
+      </td>
+
+      <td className={`${COL.mcap} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-400`}>
+        {fmtBig(r.marketCap, r.currency)}
+      </td>
+
+      <td className={`${COL.age} whitespace-nowrap px-3 py-1 text-right text-[10px] text-ink-500`}>
+        <Tip className="block leading-4" content="Alter der Marktdaten">
+          {r.dataAgeHours === null
+            ? '—'
+            : r.dataAgeHours < 48
+              ? `${r.dataAgeHours.toFixed(0)}h`
+              : `${(r.dataAgeHours / 24).toFixed(0)}d`}
+        </Tip>
+        <Tip className="block leading-4 text-ink-600" content="Letztes AI-Verdict">
+          {r.verdictAt ? relativeTime(r.verdictAt) : '—'}
+        </Tip>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -125,8 +212,6 @@ export default function StockTable({
         </div>
       </div>
 
-      <VerdictChanges onSelect={onSelect} onOpenFeed={onOpenFeed} />
-
       <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-auto">
         {loading && total === 0 ? (
           <div className="p-8 text-center text-sm text-ink-500">Lade Übersicht…</div>
@@ -145,89 +230,42 @@ export default function StockTable({
                 <th className={`${COL.trend} px-2 py-2 text-left font-semibold`}>Verlauf</th>
                 <th className={`${COL.verdict} px-2 py-2 text-left font-semibold`}>Verdict</th>
                 <th className={`${COL.price} px-2 py-2 text-right font-semibold`}>Kurs</th>
-                <th className={`${COL.target} px-2 py-2 text-right font-semibold`} title="Analysten-Konsensziel und Abstand zum Kurs">
-                  Ø Ziel
+                <th className={`${COL.target} px-2 py-2 text-right font-semibold`}>
+                  <Tip content="Analysten-Konsensziel und Abstand zum Kurs">Ø Ziel</Tip>
                 </th>
-                <th className={`${COL.model} px-2 py-2 text-right font-semibold`} title="Composite Fair Value der Bewertungsmodelle">
-                  Modell-FV
+                <th className={`${COL.model} px-2 py-2 text-right font-semibold`}>
+                  <Tip content="Composite Fair Value der Bewertungsmodelle">Modell-FV</Tip>
                 </th>
                 <th className={`${COL.mcap} px-2 py-2 text-right font-semibold`}>MCap</th>
                 <th className={`${COL.age} px-3 py-2 text-right font-semibold`}>Aktualität</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
-                return (
-                  <tr
-                    key={r.symbol}
-                    data-stock-row
-                    data-symbol={r.symbol}
-                    onClick={() => onSelect(r.symbol)}
-                    title={rowTitle(r, fmtBig)}
-                    className={`${ROW_HEIGHT} cursor-pointer border-b border-ink-800 transition hover:bg-ink-800`}
-                  >
-                    <td className={`${NAME_CELL} py-2 pr-2 pl-3`}>
-                      <StockIdentity row={r} active={false} stages={activity[r.symbol]} />
-                    </td>
-
-                    <td className="px-2 py-2 text-right">
-                      <StockScore row={r} split />
-                    </td>
-
-                    <td className={`${COL.trend} px-2 py-1`}>
-                      <ScoreSparkline points={r.scoreHistory} />
-                    </td>
-
-                    <td className={`${COL.verdict} whitespace-nowrap px-2 py-2`}>
-                      {r.recommendation ? (
-                        <RecommendationBadge
-                          rec={r.recommendation}
-                          score={r.score}
-                          heldBack={r.verdictCapped ? r.capReasons : []}
-                        />
-                      ) : (
-                        <span className="text-[11px] text-ink-600">nicht analysiert</span>
-                      )}
-                      {r.verdictModel && (
-                        <div className="font-mono text-[9px] text-ink-600">{r.verdictModel}</div>
-                      )}
-                    </td>
-
-                    <td className={`${COL.price} whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular text-ink-200`}>
-                      {fmtPrice(r.price, r.currency)}
-                    </td>
-
-                    <td className={`${COL.target} whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular`}>
-                      <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean, r.currency)}</div>
-                      <div className={`text-[10px] ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
-                    </td>
-
-                    <td className={`${COL.model} whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular`}>
-                      <div className="text-ink-300">
-                        {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue, r.currency)}
-                      </div>
-                      <div className={`text-[10px] ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
-                    </td>
-
-                    <td className={`${COL.mcap} whitespace-nowrap px-2 py-2 text-right font-mono text-xs tabular text-ink-400`}>
-                      {fmtBig(r.marketCap, r.currency)}
-                    </td>
-
-                    <td className={`${COL.age} whitespace-nowrap px-3 py-2 text-right text-[10px] text-ink-500`}>
-                      <div title="Alter der Marktdaten">
-                        {r.dataAgeHours === null
-                          ? '—'
-                          : r.dataAgeHours < 48
-                            ? `${r.dataAgeHours.toFixed(0)}h`
-                            : `${(r.dataAgeHours / 24).toFixed(0)}d`}
-                      </div>
-                      <div className="text-ink-600" title="Letztes AI-Verdict">
-                        {r.verdictAt ? relativeTime(r.verdictAt) : '—'}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {groups
+                ? groups.map((g) => {
+                    const shut = view.collapsed.includes(g.key);
+                    return (
+                      <Fragment key={g.key}>
+                        <tr
+                          data-group-row
+                          onClick={() => onViewChange(toggleGroup(view, g.key))}
+                          className={`${GROUP_HEIGHT} group cursor-pointer`}
+                        >
+                          <td className={`${GROUP_CELL} pl-3 pr-2`}>
+                            <button type="button" aria-expanded={!shut} className="flex w-full min-w-0 focus:outline-none">
+                              <GroupName group={g} by={view.group} collapsed={shut} />
+                            </button>
+                          </td>
+                          <td className={`${GROUP_CELL} px-2 text-right`}>
+                            <GroupAverage group={g} />
+                          </td>
+                          <td colSpan={TRAILING_COLUMNS} className={GROUP_CELL} />
+                        </tr>
+                        {!shut && g.rows.map(renderRow)}
+                      </Fragment>
+                    );
+                  })
+                : rows.map(renderRow)}
             </tbody>
           </table>
         )}

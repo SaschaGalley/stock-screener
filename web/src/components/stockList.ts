@@ -1,5 +1,5 @@
 import type { OverviewRow } from '../types';
-import { recommendationTone, verdictForScore } from '../format';
+import { RECOMMENDATIONS, recommendationTone, verdictForScore } from '../format';
 
 /**
  * The one list of stocks, as a model.
@@ -22,14 +22,27 @@ export const SORTS: { key: SortKey; label: string }[] = [
   { key: 'symbol',     label: 'Symbol A–Z' },
 ];
 
+export type GroupKey = 'none' | 'sector' | 'verdict';
+
+export const GROUPINGS: { key: GroupKey; label: string }[] = [
+  { key: 'none',    label: 'keine' },
+  { key: 'sector',  label: 'Sektor' },
+  { key: 'verdict', label: 'Urteil' },
+];
+
 /** What the user has done to the list: the state both densities share. */
 export interface ListView {
   query:       string;
   sort:        SortKey;
   onlyWatched: boolean;
+  group:       GroupKey;
+  /** Keys of the groups folded shut — meaningful only under the `group` they were folded in. */
+  collapsed:   string[];
 }
 
-export const DEFAULT_LIST_VIEW: ListView = { query: '', sort: 'score', onlyWatched: false };
+export const DEFAULT_LIST_VIEW: ListView = {
+  query: '', sort: 'score', onlyWatched: false, group: 'none', collapsed: [],
+};
 
 /** Nulls always sink, whatever the column — an empty cell is not a low value. */
 function byNumberDesc(a: number | null, b: number | null): number {
@@ -108,6 +121,62 @@ export function applyListView(rows: OverviewRow[], view: ListView): OverviewRow[
     case 'symbol':    sorted.sort(bySymbol); break;
   }
   return sorted;
+}
+
+/** One heading of a grouped list and the rows under it, in list order. */
+export interface ListGroup {
+  key:   string;
+  label: string;
+  rows:  OverviewRow[];
+}
+
+const NO_SECTOR = 'Ohne Sektor';
+const NO_VERDICT = 'Nicht analysiert';
+
+/**
+ * The sorted list cut into headed runs.
+ *
+ * Grouping does not reorder anything inside a group: the sort the user chose
+ * still ranks the stocks under each heading. Only the headings get an order of
+ * their own — sectors alphabetically, so a sector is where you last saw it;
+ * verdicts strongest first, because that is the order the bands have. Rows with
+ * nothing to group by come last under a heading that says so, rather than
+ * vanishing from a list that claims to show everything.
+ *
+ * `null` for no grouping, so a caller cannot mistake one big group for none.
+ */
+export function groupRows(rows: OverviewRow[], by: GroupKey): ListGroup[] | null {
+  if (by === 'none') return null;
+  const pick = by === 'sector'
+    ? (r: OverviewRow) => r.sector ?? NO_SECTOR
+    : (r: OverviewRow) => r.recommendation ?? NO_VERDICT;
+
+  const groups = new Map<string, OverviewRow[]>();
+  for (const r of rows) {
+    const k = pick(r);
+    const list = groups.get(k);
+    if (list) list.push(r); else groups.set(k, [r]);
+  }
+
+  const rank = by === 'sector'
+    ? (k: string) => (k === NO_SECTOR ? 1 : 0)
+    : (k: string) => {
+        const i = RECOMMENDATIONS.indexOf(k as (typeof RECOMMENDATIONS)[number]);
+        return i === -1 ? RECOMMENDATIONS.length + (k === NO_VERDICT ? 1 : 0) : i;
+      };
+  return [...groups.keys()]
+    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, 'de'))
+    .map((k) => ({ key: k, label: k, rows: groups.get(k)! }));
+}
+
+/** Fold a group shut, or open it again. */
+export function toggleGroup(view: ListView, key: string): ListView {
+  return {
+    ...view,
+    collapsed: view.collapsed.includes(key)
+      ? view.collapsed.filter((k) => k !== key)
+      : [...view.collapsed, key],
+  };
 }
 
 /** Mean AI score over the rows that have one — the table header's one statistic. */

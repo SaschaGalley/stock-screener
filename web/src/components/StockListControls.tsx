@@ -1,10 +1,10 @@
-import { SORTS, type ListView } from './stockList';
+import { GROUPINGS, SORTS, type ListView } from './stockList';
 
 interface Props {
   view:     ListView;
   onChange: (next: ListView) => void;
   /**
-   * `bar` is the table's header: search, watchlist filter and sort side by side.
+   * `bar` is the table's header: search, watchlist filter, sort and grouping side by side.
    * `rail` is the narrow list beside an open analysis, and gets the search only
    * — the other two would cost two more rows of header, and the rail's job is
    * to show as many stocks as it can in the order the table was already put in.
@@ -21,7 +21,7 @@ interface Props {
 }
 
 /**
- * Search, sort and the watchlist filter.
+ * Search, sort, grouping and the watchlist filter.
  *
  * One component for both densities: they drive the same `ListView`, so a filter
  * typed in the rail is still applied when the table comes back, and a sort
@@ -74,6 +74,18 @@ export default function StockListControls({ view, onChange, layout, badge }: Pro
           className="min-w-0 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-[11px] text-ink-200 focus:border-accent focus:outline-none"
         >
           {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+      </label>
+      <label className="flex min-w-0 shrink items-center gap-1.5 text-[11px] text-ink-400">
+        <span className="shrink-0">Gruppierung</span>
+        <select
+          value={view.group}
+          // Folded groups belong to the grouping they were folded in; under
+          // another one the same key names a different heading, or none.
+          onChange={(e) => onChange({ ...view, group: e.target.value as ListView['group'], collapsed: [] })}
+          className="min-w-0 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-[11px] text-ink-200 focus:border-accent focus:outline-none"
+        >
+          {GROUPINGS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
         </select>
       </label>
     </div>

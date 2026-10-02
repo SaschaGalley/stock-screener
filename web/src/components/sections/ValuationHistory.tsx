@@ -9,6 +9,7 @@ import {
   type HistoryMultiple, type SectorMultiples, type ValuationHistory as History,
 } from '../../../../src/analysis/valuation-history';
 import type { FairRatio } from '../../../../src/analysis/fair-ratio';
+import Tip from '../Tip';
 
 type FairRatios = Partial<Record<HistoryMultiple, FairRatio>>;
 
@@ -455,10 +456,9 @@ function FairCell({ f }: { f: FairRatio | undefined }) {
   const gap = f.actual !== null ? f.actual / f.fair - 1 : null;
   return (
     <td
-      className={`hidden cursor-help py-1 text-right font-mono md:table-cell ${gap === null ? 'text-ink-300' : gap > 0.15 ? 'text-red-400' : gap < -0.15 ? 'text-emerald-400' : 'text-ink-300'}`}
-      title={fairHint(f)}
+      className={`hidden py-1 text-right font-mono md:table-cell ${gap === null ? 'text-ink-300' : gap > 0.15 ? 'text-red-400' : gap < -0.15 ? 'text-emerald-400' : 'text-ink-300'}`}
     >
-      {f.fair.toFixed(1)}x
+      <Tip content={fairHint(f)}>{f.fair.toFixed(1)}x</Tip>
     </td>
   );
 }

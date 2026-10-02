@@ -1,8 +1,11 @@
 import type { OverviewRow } from '../types';
 import StockLogo, { initialsFromName } from './StockLogo';
 import ConsensusBar from './ConsensusBar';
-import { scoreColor } from './stockList';
+import { averageScore, scoreColor, type GroupKey, type ListGroup } from './stockList';
 import ScoreSplit from './ScoreSplit';
+import RecommendationBadge from './RecommendationBadge';
+import Tip from './Tip';
+import { RECOMMENDATIONS } from '../format';
 
 /**
  * The part of a row that both densities show.
@@ -24,7 +27,18 @@ import ScoreSplit from './ScoreSplit';
  * not, so the two lists would drift apart by a pixel or two per row and the
  * stock you clicked would not be where you left it.
  */
-export const ROW_HEIGHT = 'h-14';
+export const ROW_HEIGHT = 'h-11';
+
+/*
+ * A row height is a minimum to a table, not a limit: one cell taller than the
+ * rest grows the whole row past `ROW_HEIGHT`. So every two-line cell — name
+ * over ticker, score over split, chip over model — sets its line heights
+ * outright and stays within the row less its `py-1`. An inherited line height
+ * is a ratio of whatever font size the parent happened to set.
+ */
+
+/** A group's heading row, in both densities — the same reasoning as above. */
+export const GROUP_HEIGHT = 'h-7';
 
 /**
  * And the column-label row above them, for the same reason plus one more: left
@@ -48,7 +62,7 @@ export function StockIdentity({ row, active, stages = [] }: IdentityProps) {
     // the two blocks are siblings in one flex row. In the table each sits in
     // its own cell and the cell does the aligning, so it costs nothing there.
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      <ConsensusBar consensus={row.consensus} height={34} />
+      <ConsensusBar consensus={row.consensus} height={30} />
       <StockLogo
         domain={row.logoDomain}
         symbol={row.symbol}
@@ -57,30 +71,31 @@ export function StockIdentity({ row, active, stages = [] }: IdentityProps) {
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className={`truncate text-sm font-medium ${active ? 'text-ink-50' : 'text-ink-100'}`}>
+          <span className={`truncate text-sm font-medium leading-5 ${active ? 'text-ink-50' : 'text-ink-100'}`}>
             {row.companyName}
           </span>
           {!row.watched && (
-            <span
-              className="shrink-0 rounded border border-ink-700 px-1 text-[9px] uppercase text-ink-500"
-              title="Nicht in der Watchlist — wird vom nächtlichen Lauf übersprungen"
+            <Tip
+              focusable={false}
+              className="shrink-0 rounded border border-ink-700 px-1 text-[9px] uppercase leading-3.5 text-ink-500"
+              content="Nicht in der Watchlist — wird vom nächtlichen Lauf übersprungen"
             >
               pausiert
-            </span>
+            </Tip>
           )}
         </div>
         {stages.length > 0 ? (
           // Takes the lower line rather than sitting beside the ticker: while
           // something is running that is the more useful of the two.
           <div
-            className="flex items-center gap-1 font-mono text-[10px] text-accent"
+            className="flex items-center gap-1 font-mono text-[10px] leading-4 text-accent"
             title={`Running: ${stages.join(', ')}`}
           >
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             {stages[0]}
           </div>
         ) : (
-          <div className="truncate font-mono text-[10px] text-ink-500">
+          <div className="truncate font-mono text-[10px] leading-4 text-ink-500">
             {row.symbol}{row.sector ? ` · ${row.sector}` : ''}
           </div>
         )}
@@ -107,19 +122,51 @@ export function StockScore({ row, split = false }: { row: OverviewRow; split?: b
   return (
     <span className="flex shrink-0 flex-col items-end">
       <span className="flex items-baseline justify-end gap-1">
-        <span
+        <Tip
+          focusable={false}
           className={`w-8 text-right text-[10px] tabular ${
             (delta ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'
           }`}
-          title={delta ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} seit dem ersten Verdict` : undefined}
+          content={delta ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} seit dem ersten Verdict` : null}
         >
           {delta ? `${delta > 0 ? '▲' : '▼'}${Math.abs(delta).toFixed(1)}` : ''}
-        </span>
-        <span className={`w-8 text-right font-mono text-base font-semibold tabular ${scoreColor(row.score)}`}>
+        </Tip>
+        <span className={`w-8 text-right font-mono text-base font-semibold leading-5 tabular ${scoreColor(row.score)}`}>
           {row.score === null ? '—' : row.score.toFixed(1)}
         </span>
       </span>
       {split && <ScoreSplit row={row} />}
+    </span>
+  );
+}
+
+/**
+ * A group's heading, left half: fold marker, name, how many.
+ *
+ * Grouped by verdict, the name is the verdict's own chip — the colour is
+ * already how the list says BUY, and a heading in plain text would be the one
+ * place it didn't.
+ */
+export function GroupName({ group, by, collapsed }: { group: ListGroup; by: GroupKey; collapsed: boolean }) {
+  const chip = by === 'verdict' && (RECOMMENDATIONS as readonly string[]).includes(group.key);
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-[11px]">
+      <span aria-hidden className={`w-2 shrink-0 text-ink-500 transition-transform ${collapsed ? '' : 'rotate-90'}`}>▸</span>
+      {chip
+        ? <RecommendationBadge rec={group.key} size="sm" />
+        : <span className="truncate font-semibold text-ink-200">{group.label}</span>}
+      <span className="shrink-0 font-mono text-[10px] text-ink-500">{group.rows.length}</span>
+    </span>
+  );
+}
+
+/** …and right half: the group's mean score, under the score column. */
+export function GroupAverage({ group }: { group: ListGroup }) {
+  const avg = averageScore(group.rows);
+  if (!avg) return null;
+  return (
+    <span className="whitespace-nowrap font-mono text-[11px] text-ink-500">
+      Ø <span className={`inline-block w-8 text-right font-semibold ${scoreColor(avg.avg)}`}>{avg.avg.toFixed(1)}</span>
     </span>
   );
 }

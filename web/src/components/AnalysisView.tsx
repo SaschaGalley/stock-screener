@@ -6,6 +6,7 @@ import type {
   CachedAnalysisEntry,
 } from "../types";
 import VerdictHero from "./VerdictHero";
+import VerdictChanges from "./VerdictChanges";
 import BullBearRisks from "./BullBearRisks";
 import StockHeader from "./StockHeader";
 import { verdictForScore } from "../format";
@@ -271,6 +272,7 @@ export default function AnalysisView({
               }}
               // How the verdict was arrived at — the calculation, not a retelling.
               breakdown={analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
+              verdictChanges={<VerdictChanges symbol={symbol} refreshKey={refreshKey} />}
             />
 
             {/* TIER 2: THE CASE FOR AND AGAINST — what a reader wants right after the verdict. */}

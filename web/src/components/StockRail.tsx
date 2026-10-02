@@ -1,11 +1,13 @@
-import { useState, type MutableRefObject } from 'react';
+import { Fragment, useState, type MutableRefObject } from 'react';
 import type { OverviewRow } from '../types';
 import { api } from '../api';
 import { fmtBig } from '../format';
 import StockListControls from './StockListControls';
-import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT, HEADER_HEIGHT } from './StockRowCells';
+import {
+  StockIdentity, StockScore, GroupName, GroupAverage, rowTitle, ROW_HEIGHT, HEADER_HEIGHT, GROUP_HEIGHT,
+} from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
-import { type ListView } from './stockList';
+import { groupRows, toggleGroup, type ListView } from './stockList';
 
 interface Props {
   /** Already filtered and sorted — see `applyListView`. */
@@ -55,12 +57,53 @@ export default function StockRail({
     }
   }
 
+  const groups = groupRows(rows, view.group);
+
+  // One stock — the same under a group heading as in the plain list.
+  const renderRow = (r: OverviewRow) => {
+    const active = r.symbol === selectedSymbol;
+    const isDeleting = deleting === r.symbol;
+    return (
+      <li
+        key={r.symbol}
+        data-stock-row
+        data-symbol={r.symbol}
+        data-selected={active}
+        className="group relative"
+      >
+        <button
+          onClick={() => onSelect(r.symbol)}
+          disabled={isDeleting}
+          title={active
+            ? `${rowTitle(r, fmtBig)} · Klick schließt die Analyse`
+            : rowTitle(r, fmtBig)}
+          className={`${ROW_HEIGHT} flex w-full items-center gap-2 border-b border-ink-800 py-1 pr-7 text-left transition disabled:opacity-50 ${
+            active
+              ? 'border-l-2 border-l-accent bg-accent-soft pl-[10px]'
+              : 'pl-3 hover:bg-ink-800'
+          }`}
+        >
+          <StockIdentity row={r} active={active} stages={activity[r.symbol]} />
+          <StockScore row={r} />
+        </button>
+        <button
+          onClick={(e) => handleDelete(r.symbol, e)}
+          disabled={isDeleting}
+          className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-600 opacity-0 transition hover:bg-red-900 hover:text-red-400 group-hover:opacity-100"
+          title={`Delete ${r.symbol} cache`}
+        >
+          {isDeleting ? '…' : '🗑'}
+        </button>
+      </li>
+    );
+  };
+
   return (
     <aside className="flex h-full w-80 flex-col border-r border-ink-700 bg-ink-900">
       {/* One control tall, matching the table's header exactly — see the
-          `badge` note in StockListControls. Sorting and the watchlist filter
-          live in the table, where you order the list; the rail inherits that
-          order and spends its height on stocks. */}
+          `badge` note in StockListControls. Sorting, grouping and the
+          watchlist filter live in the table, where you order the list; the
+          rail inherits that order and spends its height on stocks. */}
       <div className="border-b border-ink-700 px-3 py-2">
         <StockListControls
           view={view}
@@ -81,43 +124,28 @@ export default function StockRail({
               <span>Aktie</span>
               <span>Score</span>
             </li>
-            {rows.map((r) => {
-              const active = r.symbol === selectedSymbol;
-              const isDeleting = deleting === r.symbol;
-              return (
-                <li
-                  key={r.symbol}
-                  data-stock-row
-                  data-symbol={r.symbol}
-                  data-selected={active}
-                  className="group relative"
-                >
-                  <button
-                    onClick={() => onSelect(r.symbol)}
-                    disabled={isDeleting}
-                    title={active
-                      ? `${rowTitle(r, fmtBig)} · Klick schließt die Analyse`
-                      : rowTitle(r, fmtBig)}
-                    className={`${ROW_HEIGHT} flex w-full items-center gap-2 border-b border-ink-800 py-2 pr-7 text-left transition disabled:opacity-50 ${
-                      active
-                        ? 'border-l-2 border-l-accent bg-accent-soft pl-[10px]'
-                        : 'pl-3 hover:bg-ink-800'
-                    }`}
-                  >
-                    <StockIdentity row={r} active={active} stages={activity[r.symbol]} />
-                    <StockScore row={r} />
-                  </button>
-                  <button
-                    onClick={(e) => handleDelete(r.symbol, e)}
-                    disabled={isDeleting}
-                    className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-600 opacity-0 transition hover:bg-red-900 hover:text-red-400 group-hover:opacity-100"
-                    title={`Delete ${r.symbol} cache`}
-                  >
-                    {isDeleting ? '…' : '🗑'}
-                  </button>
-                </li>
-              );
-            })}
+            {groups
+              ? groups.map((g) => {
+                  const shut = view.collapsed.includes(g.key);
+                  return (
+                    <Fragment key={g.key}>
+                      {/* Sticky below the column labels, as in the table. */}
+                      <li data-group-row className="sticky top-8 z-[5]">
+                        <button
+                          type="button"
+                          aria-expanded={!shut}
+                          onClick={() => onViewChange(toggleGroup(view, g.key))}
+                          className={`${GROUP_HEIGHT} flex w-full items-center justify-between gap-2 border-b border-ink-700 bg-ink-900 pl-3 pr-7 transition hover:bg-ink-800`}
+                        >
+                          <GroupName group={g} by={view.group} collapsed={shut} />
+                          <GroupAverage group={g} />
+                        </button>
+                      </li>
+                      {!shut && g.rows.map(renderRow)}
+                    </Fragment>
+                  );
+                })
+              : rows.map(renderRow)}
           </ul>
         )}
       </div>

@@ -937,12 +937,14 @@ export function createApp(): express.Express {
     }
   });
 
-  // ── GET /api/verdict-changes?limit=30 ──────────────────────────────────────
-  // The moments a watchlist stock's verdict moved to another band, newest first.
+  // ── GET /api/verdict-changes?limit=30[&symbol=AAPL] ────────────────────────
+  // The moments a watchlist stock's verdict moved to another band, newest first;
+  // with `symbol`, only that stock's — the analysis shows its own.
   app.get('/api/verdict-changes', async (req, res, next) => {
     try {
       const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 30));
-      res.json({ changes: await recentVerdictChanges(limit) });
+      const symbol = typeof req.query.symbol === 'string' && req.query.symbol ? req.query.symbol : undefined;
+      res.json({ changes: await recentVerdictChanges(limit, symbol) });
     } catch (e) {
       next(e);
     }

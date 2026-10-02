@@ -221,9 +221,11 @@ export const api = {
   getConfig: () =>
     jsonFetch<ConfigResponse>(`${BASE}/config`),
 
-  /** The newest band changes on the watchlist. */
-  getVerdictChanges: (limit = 30) =>
-    jsonFetch<VerdictChangesResponse>(`${BASE}/verdict-changes?limit=${limit}`),
+  /** The newest band changes on the watchlist, or of one stock. */
+  getVerdictChanges: (limit = 30, symbol?: string) =>
+    jsonFetch<VerdictChangesResponse>(
+      `${BASE}/verdict-changes?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ''}`,
+    ),
 
   /** One test message to the configured webhook. */
   testAlert: () =>

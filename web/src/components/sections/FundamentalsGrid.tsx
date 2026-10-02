@@ -1,6 +1,7 @@
 import { fmt, fmtPct, fmtSignedPct } from '../../format';
 import { useMoney } from '../../currency';
 import { SEASONAL_GAP_THRESHOLD } from '../../../../src/analysis/run-rate';
+import Tip from '../Tip';
 
 interface Props {
   financials: any;
@@ -110,10 +111,12 @@ function Row({
     valueColor = accentByPct > 0 ? 'text-emerald-400' : accentByPct < 0 ? 'text-red-400' : 'text-ink-100';
   }
   return (
-    <tr className="border-b border-ink-800" title={hint}>
+    <tr className="border-b border-ink-800">
       <td className="py-1 pr-2 text-ink-400">
-        {label}
-        {hint && <span className="ml-1 cursor-help text-ink-600">ⓘ</span>}
+        <Tip content={hint}>
+          {label}
+          {hint && <span className="ml-1 text-ink-600">ⓘ</span>}
+        </Tip>
       </td>
       <td className={`py-1 text-right font-mono ${valueColor}`}>{value}</td>
     </tr>

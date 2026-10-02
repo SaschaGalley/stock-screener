@@ -1,4 +1,5 @@
 import type { OverviewRow } from '../types';
+import Tip from './Tip';
 
 /**
  * The two halves behind one headline, in the space of one line.
@@ -31,10 +32,10 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
   ].filter(Boolean).join('\n');
 
   return (
-    <div className="whitespace-nowrap font-mono text-[9px] font-normal text-ink-600" title={title}>
+    <Tip className="block whitespace-nowrap font-mono text-[9px] font-normal leading-3 text-ink-600" content={title}>
       Z {row.factorScore.toFixed(1)}
       {row.narrativeScore !== null && <> · T {row.narrativeScore.toFixed(1)}</>}
       {conf !== null && <> · {conf}%</>}
-    </div>
+    </Tip>
   );
 }

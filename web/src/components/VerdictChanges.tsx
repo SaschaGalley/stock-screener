@@ -1,63 +1,113 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { VerdictChangesResponse } from '../types';
-import { recommendationColor, relativeTime } from '../format';
+import { RECOMMENDATIONS, recommendationTone } from '../format';
+import Tip from './Tip';
 
-/** How far back the strip looks; older moves are history, not news. */
-const WINDOW_DAYS = 7;
-const MAX_SHOWN = 8;
-const RELOAD_MS = 10 * 60_000;
+/** The newest move is the sentence; this many before it go into the hover. */
+const EARLIER_SHOWN = 6;
+/** A move this recent is still news, and gets the marker to say so. */
+const FRESH_DAYS = 7;
+const DAY_MS = 86_400_000;
 
 type Change = VerdictChangesResponse['changes'][number];
 
 /**
- * What moved since last week, above the list.
+ * When this stock's verdict last moved to another band, as a sentence.
  *
- * Every band change on the watchlist is recorded when it happens; this strip
- * shows the recent ones so nobody has to compare two days of the table by
- * eye. A symbol that flipped back and forth shows both moves — the webhook
- * announces only the ones that held.
+ * It used to be a strip above the whole list — eight tickers with two chips
+ * and an arrow each — which drew the eye on every visit and still left the
+ * reader to work out what had happened. A move only means something next to
+ * the stock it happened to, so it lives here now, under the verdict it
+ * changed, in words: when, which way, how far the score went and what moved
+ * it. The earlier moves are a hover away.
  */
-export default function VerdictChanges({ onSelect, onOpenFeed }: { onSelect: (symbol: string) => void; onOpenFeed: () => void }) {
+export default function VerdictChanges({ symbol, refreshKey }: { symbol: string; refreshKey: number }) {
   const [changes, setChanges] = useState<Change[]>([]);
 
   useEffect(() => {
     let alive = true;
-    const load = () => {
-      api.getVerdictChanges(40)
-        .then((r) => { if (alive) setChanges(r.changes); })
-        .catch(() => { /* a missing strip is not an error worth showing */ });
-    };
-    load();
-    const t = window.setInterval(load, RELOAD_MS);
-    return () => { alive = false; window.clearInterval(t); };
-  }, []);
+    setChanges([]);
+    api.getVerdictChanges(EARLIER_SHOWN + 1, symbol)
+      .then((r) => { if (alive) setChanges(r.changes); })
+      .catch(() => { /* a missing line is not an error worth showing */ });
+    return () => { alive = false; };
+  }, [symbol, refreshKey]);
 
-  const since = Date.now() - WINDOW_DAYS * 86_400_000;
-  const recent = changes.filter((c) => Date.parse(c.at) >= since).slice(0, MAX_SHOWN);
-  if (recent.length === 0) return null;
+  const [last, ...earlier] = changes;
+  if (!last) return null;
+  const fresh = Date.now() - Date.parse(last.at) < FRESH_DAYS * DAY_MS;
 
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-ink-800 bg-ink-900/60 px-4 py-1.5 text-[11px]">
-      <span className="text-ink-500">Urteilswechsel ({WINDOW_DAYS} Tage)</span>
-      {recent.map((c) => (
-        <button
-          key={`${c.symbol}-${c.at}`}
-          onClick={() => onSelect(c.symbol)}
-          title={`${c.companyName ?? c.symbol}: ${c.from}${c.fromScore !== null ? ` (${c.fromScore.toFixed(1)})` : ''} → ${c.to}`
-            + `${c.toScore !== null ? ` (${c.toScore.toFixed(1)})` : ''} · ${c.source === 'analysis' ? 'Analyse' : 'Datenaktualisierung'}`}
-          className="inline-flex items-center gap-1 rounded px-1 py-0.5 transition hover:bg-ink-800"
-        >
-          <span className="font-mono text-ink-200">{c.symbol}</span>
-          <span className={`rounded px-1 text-[10px] font-bold ${recommendationColor(c.from)}`}>{c.from}</span>
-          <span className="text-ink-500">→</span>
-          <span className={`rounded px-1 text-[10px] font-bold ${recommendationColor(c.to)}`}>{c.to}</span>
-          <span className="text-ink-600">{relativeTime(c.at)}</span>
-        </button>
-      ))}
-      <button onClick={onOpenFeed} className="ml-auto text-ink-400 transition hover:text-ink-100">
-        Alles, was passiert ist →
-      </button>
-    </div>
+  const scores = last.fromScore !== null && last.toScore !== null
+    ? `Score ${last.fromScore.toFixed(1)} → ${last.toScore.toFixed(1)}, `
+    : '';
+  const sentence = (
+    <>
+      Urteil {when(last.at)} von <Label rec={last.from} /> auf <Label rec={last.to} /> {direction(last)}{' '}
+      <span className="text-ink-500">({scores}{cause(last, true)}).</span>
+    </>
   );
+
+  // A paragraph rather than a row of flex items, so a narrow card wraps the
+  // sentence under its own beginning instead of into a column beside a label.
+  return (
+    <p className="pt-3 text-[11px] leading-relaxed text-ink-400">
+      <span
+        aria-hidden
+        className={`mr-1.5 inline-block h-1.5 w-1.5 -translate-y-px rounded-full align-middle ${fresh ? 'bg-amber-400' : 'bg-ink-600'}`}
+      />
+      {earlier.length === 0 ? sentence : (
+        <Tip
+          content={
+            <>
+              <div className="mb-1 font-semibold text-ink-100">Frühere Wechsel</div>
+              <ul className="space-y-0.5">
+                {earlier.map((c) => (
+                  <li key={c.at}>
+                    <span className="font-mono text-ink-400">{new Date(c.at).toLocaleDateString('de-DE')}</span>{' '}
+                    <Label rec={c.from} /> → <Label rec={c.to} />
+                    {c.fromScore !== null && c.toScore !== null && (
+                      <span className="text-ink-400"> · {c.fromScore.toFixed(1)} → {c.toScore.toFixed(1)}</span>
+                    )}
+                    <span className="text-ink-500"> · {cause(c, false)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          }
+        >
+          {sentence}{' '}
+          <span className="whitespace-nowrap text-ink-500 underline decoration-dotted underline-offset-2">+{earlier.length} frühere</span>
+        </Tip>
+      )}
+    </p>
+  );
+}
+
+/** The label in its own colour — text, not a chip: it sits inside a sentence. */
+function Label({ rec }: { rec: string }) {
+  const tone = recommendationTone(rec);
+  const cls = tone === 'positive' ? 'text-emerald-400' : tone === 'negative' ? 'text-red-400' : 'text-amber-400';
+  return <span className={`font-semibold ${cls}`}>{rec}</span>;
+}
+
+/** Mid-sentence: „Urteil vor 3 Tagen …". */
+function when(iso: string): string {
+  const days = Math.floor((Date.now() - Date.parse(iso)) / DAY_MS);
+  if (days <= 0) return 'heute';
+  if (days === 1) return 'gestern';
+  if (days < 30) return `vor ${days} Tagen`;
+  return `am ${new Date(iso).toLocaleDateString('de-DE')}`;
+}
+
+/** The verb says which way it went, so the reader need not rank two labels. */
+function direction(c: Change): string {
+  const rank = (v: string) => RECOMMENDATIONS.indexOf(v as (typeof RECOMMENDATIONS)[number]);
+  return rank(c.to) < rank(c.from) ? 'angehoben' : 'gesenkt';
+}
+
+/** What moved it — as a clause in the sentence, or as a word in the list. */
+function cause(c: Change, clause: boolean): string {
+  if (c.source === 'analysis') return clause ? 'nach einer neuen Analyse' : 'Analyse';
+  return clause ? 'nach einer Datenaktualisierung' : 'Datenaktualisierung';
 }

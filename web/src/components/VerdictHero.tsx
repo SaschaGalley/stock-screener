@@ -3,6 +3,7 @@ import type { CompositeFairValue } from '../types';
 import { fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
 import { useMoney } from '../currency';
 import RecommendationBadge from './RecommendationBadge';
+import Tip from './Tip';
 
 interface Props {
   price: number;
@@ -27,6 +28,8 @@ interface Props {
    * verdict rather than a section of its own further down.
    */
   breakdown?: ReactNode;
+  /** When the verdict last changed band, under the verdict it changed. */
+  verdictChanges?: ReactNode;
   analyst: {
     targetMeanPrice: number | null;
     analystTargetLow: number | null;
@@ -42,7 +45,7 @@ interface Props {
 }
 
 export default function VerdictHero({
-  price, composite, llm, llmGeneratedAt, llmModel, flagsLabel, onOpenAnalysis, analyst, breakdown,
+  price, composite, llm, llmGeneratedAt, llmModel, flagsLabel, onOpenAnalysis, analyst, breakdown, verdictChanges,
 }: Props) {
   const { fmtPrice } = useMoney();
 
@@ -105,6 +108,7 @@ export default function VerdictHero({
             <p className="mt-3 text-sm leading-relaxed text-ink-300">
               {llm.thesis}
             </p>
+            <div className="mt-auto">{verdictChanges}</div>
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
@@ -115,6 +119,7 @@ export default function VerdictHero({
             >
               Analyse starten…
             </button>
+            {verdictChanges}
           </div>
         )}
       </Card>
@@ -267,12 +272,12 @@ function TargetDispersion({ a }: { a: Props['analyst'] }) {
     : spread <= 0.7 ? ['gemischt', 'text-amber-400']
     : ['weit auseinander', 'text-red-400'];
   return (
-    <div
-      className="mt-1 cursor-help text-[11px] text-ink-500"
-      title="Spanne zwischen höchstem und tiefstem Kursziel, geteilt durch das mittlere. Je größer, desto weniger trägt der Mittelwert."
+    <Tip
+      className="mt-1 block text-[11px] text-ink-500"
+      content="Spanne zwischen höchstem und tiefstem Kursziel, geteilt durch das mittlere. Je größer, desto weniger trägt der Mittelwert."
     >
       Streuung: Spanne {Math.round(spread * 100)} % des Mittels · <span className={cls}>{word}</span>
-    </div>
+    </Tip>
   );
 }
 

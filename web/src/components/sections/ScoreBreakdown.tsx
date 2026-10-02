@@ -4,6 +4,7 @@ import { scoreBarColor, scoreColor } from '../stockList';
 import { verdictForScore } from '../../format';
 import { useStoredOpen } from '../Section';
 import CheckMark, { type CheckMarkKind } from '../CheckMark';
+import Tip from '../Tip';
 
 /**
  * Why the number is the number — as a strip under the verdict.
@@ -78,22 +79,22 @@ function Formula({ card }: { card: ScoreCard }) {
   return (
     <div>
       <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 font-mono text-xs text-ink-400">
-        <span className="cursor-help text-sky-400" title={dataNote ?? undefined}>Zahlen {factor.score.toFixed(1)}</span>
+        <Tip className="text-sky-400" content={dataNote}>Zahlen {factor.score.toFixed(1)}</Tip>
         <span>× {fPct} %</span>
         {narrative && (
           <>
             <span>+</span>
-            <span className="cursor-help text-violet-400" title={narrative.summary}>
+            <Tip className="text-violet-400" content={narrative.summary}>
               Text {narrative.score === null ? 'Enthaltung' : narrative.score.toFixed(1)}
-            </span>
+            </Tip>
             <span>× {nPct} %</span>
           </>
         )}
         <span>→ {final.blend.toFixed(1)}</span>
         {final.adjustment !== 0 && (
-          <span className="cursor-help" title={final.adjustmentReason ?? undefined}>
+          <Tip content={final.adjustmentReason}>
             {final.adjustment > 0 ? '+' : '−'} {Math.abs(final.adjustment).toFixed(1)} Korrektur
-          </span>
+          </Tip>
         )}
         <span>=</span>
         <span className={`text-sm font-bold ${scoreColor(final.score)}`}>{final.score.toFixed(1)}</span>
@@ -101,12 +102,12 @@ function Formula({ card }: { card: ScoreCard }) {
         {/* Against the band of the *final* score, not the factor's: those two
             differ whenever the blend moved the number, which is not a cap. */}
         {verdictForScore(final.score) !== final.verdict && (
-          <span
+          <Tip
             className="rounded border border-amber-700 px-1 font-sans text-[9px] uppercase text-amber-400"
-            title={`Der Score allein wäre ${verdictForScore(final.score)}`}
+            content={`Der Score allein wäre ${verdictForScore(final.score)}`}
           >
             gedeckelt
-          </span>
+          </Tip>
         )}
       </div>
       <div className="mt-1.5 flex h-1 overflow-hidden rounded-full bg-ink-800">
@@ -128,9 +129,15 @@ function GroupLabel({ dot, children }: { dot: string; children: ReactNode }) {
 
 function PillarCell({ p }: { p: ScorePillar }) {
   const width = p.score === null ? 0 : (p.score / 10) * 100;
-  const title = p.criteria.map((c) => `${c.label}: ${c.note}`).join('\n');
+  const title = (
+    <ul className="space-y-0.5">
+      {p.criteria.map((c) => (
+        <li key={c.label}><span className="font-semibold text-ink-100">{c.label}:</span> {c.note}</li>
+      ))}
+    </ul>
+  );
   return (
-    <div title={title} className="cursor-help">
+    <Tip content={title} className="block">
       <div className="flex items-baseline justify-between gap-2 text-[11px]">
         <span className="truncate text-ink-300">{p.label}</span>
         <span className={`font-mono font-semibold ${scoreColor(p.score)}`}>
@@ -144,7 +151,7 @@ function PillarCell({ p }: { p: ScorePillar }) {
         {Math.round(p.effectiveWeight * 100)} % Gewicht · {passed(p)}/{p.criteria.length} ✓
         {p.coverage < 1 && <span className="text-amber-600"> · {Math.round(p.coverage * 100)} % Abdeckung</span>}
       </div>
-    </div>
+    </Tip>
   );
 }
 
@@ -168,13 +175,13 @@ function Dimensions({ dimensions }: { dimensions: NarrativeDimensions }) {
           : r < 0 ? 'border-red-800 text-red-400'
           : 'border-ink-600 text-ink-300';
         return (
-          <span
+          <Tip
             key={key}
-            title={d?.note || 'Die Quellen sagen dazu nichts'}
-            className={`cursor-help rounded border px-1.5 py-0.5 font-mono text-[10px] ${cls}`}
+            content={d?.note || 'Die Quellen sagen dazu nichts'}
+            className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${cls}`}
           >
             {DIMENSION_LABELS[key]} {r == null ? '–' : r > 0 ? `+${r}` : r}
-          </span>
+          </Tip>
         );
       })}
     </div>

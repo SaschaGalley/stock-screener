@@ -5,6 +5,7 @@ import {
   CASE_SECTION_LABEL, CASE_TITLE, readCases,
   type CaseDirection, type CaseSection, type CaseView, type StoredCases,
 } from '../../../src/cases';
+import Tip from './Tip';
 
 /** A price this side of the case would put on the stock, with where it comes from. */
 export interface CaseScenario {
@@ -79,16 +80,16 @@ function CaseCard({ direction, side, price, scenarios }: {
         {price !== undefined && shown.length > 0 && (
           <div className="ml-auto flex flex-wrap justify-end gap-1.5">
             {shown.map((s) => (
-              <span
+              <Tip
                 key={s.label}
-                title={s.hint}
-                className="cursor-help rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 font-mono text-[11px] text-ink-300"
+                content={s.hint}
+                className="rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 font-mono text-[11px] text-ink-300"
               >
                 <span className="font-sans text-ink-500">{s.label}</span> {fmtPrice(s.value)}{' '}
                 <span className={s.value! >= price ? 'text-emerald-400' : 'text-red-400'}>
                   {fmtSignedPct(s.value! / price - 1, 0)}
                 </span>
-              </span>
+              </Tip>
             ))}
           </div>
         )}
