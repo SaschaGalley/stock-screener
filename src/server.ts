@@ -49,6 +49,7 @@ import { currentScoreCard, rescoreIfScoringChanged, storedInputs } from './db/re
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
+import { analystTrackRecord, incomeFlows, stockHolders, stockTimeline } from './stock-history-service.js';
 import { QuoteBrief, quoteBriefs, searchByQuery } from './data/yfinance.js';
 import { yahooTicker } from './data/universe.js';
 import { lastGoodSectorMedians } from './sector-medians.js';
@@ -1044,6 +1045,27 @@ export function createApp(): express.Express {
       next(e);
     }
   });
+
+  // ── The archive, read back ──────────────────────────────────────────────────
+  // Four views over what the refresh archives (`history-service.ts`): how good
+  // the analysts' targets have been, what happened when, who holds the stock,
+  // and where the revenue goes. All reads, no fetches.
+  const archiveView = (path: string, read: (symbol: string, req: Request) => Promise<unknown>) =>
+    app.get(`/api/stocks/:symbol/${path}`, async (req, res, next) => {
+      try {
+        const symbol = req.params.symbol.toUpperCase();
+        res.json({ symbol, data: await read(symbol, req) });
+      } catch (e) {
+        next(e);
+      }
+    });
+  archiveView('analysts', (s) => analystTrackRecord(s));
+  archiveView('timeline', (s, req) => {
+    const days = Number(req.query.days ?? 365);
+    return stockTimeline(s, Number.isFinite(days) ? Math.min(3650, Math.max(30, days)) : 365);
+  });
+  archiveView('holders', (s) => stockHolders(s));
+  archiveView('income-flow', (s) => incomeFlows(s));
 
   // ── GET /api/stocks/:symbol/peers ──────────────────────────────────────────
   // Who to compare a stock with, for the dialog in its header: the Finnhub

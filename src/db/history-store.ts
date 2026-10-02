@@ -145,3 +145,66 @@ export async function lastMacroDay(series: string): Promise<string | null> {
   const row = await queryOne<{ day: Date | null }>('SELECT max(day) AS day FROM macro_series WHERE series = $1', [series]);
   return row?.day ? row.day.toISOString().slice(0, 10) : null;
 }
+
+// ── Reading the archive back ─────────────────────────────────────────────────
+
+const day = (d: Date | string | null) => (d === null ? null : d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+
+/** A ticker's daily closes, oldest first — split-adjusted, on today's basis. */
+export async function readPriceBars(ticker: string, from?: string): Promise<{ day: string; close: number; adjClose: number | null }[]> {
+  const res = await query<{ day: Date; close: number; adj_close: number | null }>(
+    `SELECT day, close, adj_close FROM price_bars
+      WHERE ticker = $1 AND ($2::date IS NULL OR day >= $2) ORDER BY day`,
+    [ticker.toUpperCase(), from ?? null],
+  );
+  return res.rows.map((r) => ({ day: day(r.day)!, close: r.close, adjClose: r.adj_close }));
+}
+
+export async function readPriceEvents(ticker: string): Promise<PriceEventRow[]> {
+  const res = await query<{ day: Date; kind: 'split' | 'dividend'; value: number }>(
+    'SELECT day, kind, value FROM price_events WHERE ticker = $1 ORDER BY day', [ticker.toUpperCase()],
+  );
+  return res.rows.map((r) => ({ day: day(r.day)!, kind: r.kind, value: r.value }));
+}
+
+export async function readAnalystActions(symbol: string): Promise<AnalystActionRow[]> {
+  const res = await query<{
+    graded_at: Date; firm: string; action: string | null; from_grade: string | null; to_grade: string | null;
+    price_target_action: string | null; price_target: number | null; prior_price_target: number | null;
+  }>(
+    `SELECT a.* FROM analyst_actions a JOIN symbols s ON s.id = a.symbol_id
+      WHERE s.symbol = $1 ORDER BY a.graded_at`,
+    [symbol.toUpperCase()],
+  );
+  return res.rows.map((r) => ({
+    gradedAt: r.graded_at.toISOString(), firm: r.firm, action: r.action, fromGrade: r.from_grade, toGrade: r.to_grade,
+    priceTargetAction: r.price_target_action, priceTarget: r.price_target, priorPriceTarget: r.prior_price_target,
+  }));
+}
+
+export async function readInsiderTransactions(symbol: string): Promise<InsiderTransactionRow[]> {
+  const res = await query<{
+    traded_on: Date | null; filer: string | null; relation: string | null; description: string | null;
+    shares: number | null; value: number | null; ownership: string | null;
+  }>(
+    `SELECT t.traded_on, t.filer, t.relation, t.description, t.shares, t.value, t.ownership
+       FROM insider_transactions t JOIN symbols s ON s.id = t.symbol_id
+      WHERE s.symbol = $1 ORDER BY t.traded_on DESC NULLS LAST`,
+    [symbol.toUpperCase()],
+  );
+  return res.rows.map((r) => ({
+    tradedOn: day(r.traded_on), filer: r.filer, relation: r.relation, description: r.description,
+    shares: r.shares, value: r.value, ownership: r.ownership,
+  }));
+}
+
+/** One stock's verdict changes, newest first. */
+export async function readVerdictChanges(symbol: string): Promise<{ at: string; from: string; to: string; fromScore: number | null; toScore: number | null }[]> {
+  const res = await query<{ at: Date; from_verdict: string; to_verdict: string; from_score: number | null; to_score: number | null }>(
+    `SELECT v.at, v.from_verdict, v.to_verdict, v.from_score, v.to_score
+       FROM verdict_changes v JOIN symbols s ON s.id = v.symbol_id
+      WHERE s.symbol = $1 ORDER BY v.at DESC`,
+    [symbol.toUpperCase()],
+  );
+  return res.rows.map((r) => ({ at: r.at.toISOString(), from: r.from_verdict, to: r.to_verdict, fromScore: r.from_score, toScore: r.to_score }));
+}

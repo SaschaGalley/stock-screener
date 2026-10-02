@@ -13,6 +13,10 @@ import Section from "./Section";
 import ScoreBreakdown from "./sections/ScoreBreakdown";
 import MarginTrends from "./sections/MarginTrends";
 import BalanceChecks from "./sections/BalanceChecks";
+import AnalystTrackRecord from "./sections/AnalystTrackRecord";
+import HoldersPanel from "./sections/HoldersPanel";
+import StockTimeline from "./sections/StockTimeline";
+import IncomeFlowChart from "./charts/IncomeFlowChart";
 import ValuationHistory from "./sections/ValuationHistory";
 import CompositeChart from "./charts/CompositeChart";
 import ValuationDetail from "./sections/ValuationDetail";
@@ -350,6 +354,15 @@ export default function AnalysisView({
               </Section>
             )}
 
+            {/* TIER 7b: HOW GOOD THE TARGETS IN THE CONSENSUS CARD HAVE BEEN */}
+            <Section
+              title="Analysten: Trefferquote"
+              subtitle="Jedes archivierte Kursziel gegen den Kurs ein Jahr später"
+              storageKey="analyst-record"
+            >
+              <AnalystTrackRecord symbol={symbol} />
+            </Section>
+
             {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}
             <Section title="Fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
               <div className="space-y-5">
@@ -362,6 +375,7 @@ export default function AnalysisView({
                       <MarginTrends history={f.fundamentalsHistory} />
                     </div>
                   )}
+                <IncomeFlowChart symbol={symbol} />
                 <FundamentalsGrid
                   financials={f}
                   ratios={m.ratios}
@@ -416,7 +430,15 @@ export default function AnalysisView({
 
             {/* TIER 10: OWNERSHIP & FLOW */}
             <Section title="Ownership & Insider Activity" defaultOpen={false}>
-              <OwnershipFlow financials={f} />
+              <div className="space-y-5">
+                <OwnershipFlow financials={f} />
+                <HoldersPanel symbol={symbol} />
+              </div>
+            </Section>
+
+            {/* TIER 10b: WHAT HAPPENED WHEN — every archived event on one axis */}
+            <Section title="Zeitleiste" subtitle="Analysten, Insider, Zahlen, Dividenden, Urteil, Ereignisse, Kurssprünge" storageKey="timeline">
+              <StockTimeline symbol={symbol} />
             </Section>
 
             {/* TIER 11: DISTILL + PERPLEXITY + NEWS + SEARCH TRACES */}

@@ -27,6 +27,9 @@ import type {
 } from './types';
 import type { HistoryMultiple, SectorMultiples, ValuationHistory } from '../../src/analysis/valuation-history';
 import type { FairRatio } from '../../src/analysis/fair-ratio';
+import type { Holders } from '../../src/analysis/holders';
+import type { Timeline } from '../../src/analysis/timeline';
+import type { IncomeFlows, TrackRecordView } from '../../src/stock-history-service';
 
 const BASE = '/api';
 
@@ -92,6 +95,16 @@ export const api = {
    */
   getPeers: (symbol: string) =>
     jsonFetch<PeersResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/peers`),
+
+  // The archive, read back — see `src/stock-history-service.ts`.
+  getAnalystRecord: (symbol: string) =>
+    jsonFetch<{ symbol: string; data: TrackRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/analysts`),
+  getTimeline: (symbol: string, days = 365) =>
+    jsonFetch<{ symbol: string; data: Timeline }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/timeline?days=${days}`),
+  getHolders: (symbol: string) =>
+    jsonFetch<{ symbol: string; data: Holders | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/holders`),
+  getIncomeFlow: (symbol: string) =>
+    jsonFetch<{ symbol: string; data: IncomeFlows | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/income-flow`),
 
   /** Five years rebuilt month by month — a few seconds the first time a stock is opened each day. */
   getValuationHistory: (symbol: string) =>
