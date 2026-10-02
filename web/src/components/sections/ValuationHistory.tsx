@@ -8,6 +8,9 @@ import {
   HISTORY_MULTIPLES, discountRange, growthVsPrice, multipleStats, normalPE,
   type HistoryMultiple, type SectorMultiples, type ValuationHistory as History,
 } from '../../../../src/analysis/valuation-history';
+import type { FairRatio } from '../../../../src/analysis/fair-ratio';
+
+type FairRatios = Partial<Record<HistoryMultiple, FairRatio>>;
 
 type View = 'fair' | 'earnings' | 'multiples';
 
@@ -31,6 +34,7 @@ interface Props {
 export default function ValuationHistory({ symbol, liveFairValue }: Props) {
   const [history, setHistory] = useState<History | null | undefined>(undefined);
   const [sector, setSector] = useState<SectorMultiples | null>(null);
+  const [fair, setFair] = useState<FairRatios>({});
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>('fair');
 
@@ -39,7 +43,7 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
     setHistory(undefined);
     setError(null);
     api.getValuationHistory(symbol)
-      .then((r) => { if (live) { setHistory(r.history); setSector(r.sector); } })
+      .then((r) => { if (live) { setHistory(r.history); setSector(r.sector); setFair(r.fair ?? {}); } })
       .catch((e) => { if (live) setError((e as Error).message); });
     return () => { live = false; };
   }, [symbol]);
@@ -94,7 +98,8 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
       {view === 'earnings' && <EarningsView history={history} />}
       {view === 'multiples' && <MultiplesView history={history} />}
 
-      <MultiplesTable history={history} sector={sector} />
+      <FairLede fair={fair} />
+      <MultiplesTable history={history} sector={sector} fair={fair} />
 
       <p className="text-[10px] leading-relaxed text-ink-500">
         {history.source === 'sec'
@@ -323,7 +328,7 @@ function MultiplesView({ history }: { history: History }) {
  * answer different questions: a quality company is always dearer than its
  * industry, and only its own history says whether it is dearer than usual.
  */
-function MultiplesTable({ history, sector }: { history: History; sector: SectorMultiples | null }) {
+function MultiplesTable({ history, sector, fair }: { history: History; sector: SectorMultiples | null; fair: FairRatios }) {
   const { fmtPrice } = useMoney();
   const rows = HISTORY_MULTIPLES
     .map((m) => ({ ...m, s: multipleStats(history.points, m.key) }))
@@ -333,6 +338,7 @@ function MultiplesTable({ history, sector }: { history: History; sector: SectorM
   // Five years where the filings reach that far; an annual series starts a
   // quarter after its first fiscal year and says so.
   const span = `${Math.min(5, Math.max(1, Math.round(Math.max(...rows.map((r) => r.s.months)) / 12)))}J`;
+  const hasFair = Object.keys(fair).length > 0;
 
   return (
     <div>
@@ -348,6 +354,7 @@ function MultiplesTable({ history, sector }: { history: History; sector: SectorM
                 {sector.level === 'industry' ? 'Branche' : 'Sektor'} · {sector.group}
               </th>
             )}
+            {hasFair && <th className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell">Modell</th>}
           </tr>
           <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal" />
@@ -363,6 +370,7 @@ function MultiplesTable({ history, sector }: { history: History; sector: SectorM
                 <th className="hidden py-1 text-right font-normal md:table-cell">Teurer als</th>
               </>
             )}
+            {hasFair && <th className="hidden py-1 text-right font-normal md:table-cell">Fair</th>}
           </tr>
         </thead>
         <tbody>
@@ -383,6 +391,7 @@ function MultiplesTable({ history, sector }: { history: History; sector: SectorM
                 </td>
                 <td className="py-1 text-right font-mono text-ink-300">{s.impliedPrice === null ? '—' : fmtPrice(s.impliedPrice)}</td>
                 {sector && <SectorCells d={sector.multiples[key]} />}
+                {hasFair && <FairCell f={fair[key]} />}
               </tr>
             );
           })}
@@ -417,5 +426,52 @@ function SectorCells({ d }: { d: SectorMultiples['multiples'][HistoryMultiple] }
         {d.rank === null ? '—' : `${Math.round(d.rank * 100)} % von ${d.n}`}
       </td>
     </>
+  );
+}
+
+const pctOf = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(0)} %`);
+
+/** The inputs and the fit behind a fair multiple, for its tooltip. */
+function fairHint(f: FairRatio): string {
+  const i = f.inputs;
+  return `Erwartet aus Umsatzwachstum ${pctOf(i.revenueGrowth)}, operativer Marge ${pctOf(i.operatingMargin)}, `
+    + `Bruttomarge ${pctOf(i.grossMargin)}, Beta ${i.beta?.toFixed(2) ?? '—'} und Sektor ${i.sector ?? '—'} — `
+    + `Regression über ${f.n} Werte des Universums, R² ${f.r2.toFixed(2)}.`;
+}
+
+/** The multiple the stock's growth, margins and risk would normally earn. */
+function FairCell({ f }: { f: FairRatio | undefined }) {
+  if (!f) return <td className="hidden py-1 text-right font-mono text-ink-600 md:table-cell">—</td>;
+  const gap = f.actual !== null ? f.actual / f.fair - 1 : null;
+  return (
+    <td
+      className={`hidden cursor-help py-1 text-right font-mono md:table-cell ${gap === null ? 'text-ink-300' : gap > 0.15 ? 'text-red-400' : gap < -0.15 ? 'text-emerald-400' : 'text-ink-300'}`}
+      title={fairHint(f)}
+    >
+      {f.fair.toFixed(1)}x
+    </td>
+  );
+}
+
+/**
+ * The fair multiple in a sentence — the P/S, which every company has, and
+ * whether today's is above or below what the fundamentals normally earn.
+ */
+function FairLede({ fair }: { fair: FairRatios }) {
+  const f = fair.ps ?? fair.pe;
+  if (!f || f.actual === null) return null;
+  const label = fair.ps ? 'KUV' : 'KGV';
+  const gap = f.actual / f.fair - 1;
+  return (
+    <p className="text-xs leading-relaxed text-ink-300" title={fairHint(f)}>
+      Wachstum, Margen und Risiko tragen über das ganze Universum gerechnet ein {label} von etwa{' '}
+      <strong className="text-ink-100">{f.fair.toFixed(1)}x</strong>; heute{' '}
+      <strong className="text-ink-100">{f.actual.toFixed(1)}x</strong>, {Math.abs(gap) < 0.1
+        ? 'also etwa das, was die Zahlen tragen.'
+        : gap > 0
+          ? `${Math.round(gap * 100)} % mehr, als die Zahlen allein tragen — der Markt zahlt einen Aufschlag, den sie nicht erklären.`
+          : `${Math.round(-gap * 100)} % weniger, als die Zahlen tragen — ein Abschlag, den sie nicht erklären.`}
+      <span className="text-ink-500"> (R² {f.r2.toFixed(2)})</span>
+    </p>
   );
 }

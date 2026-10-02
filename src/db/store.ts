@@ -241,20 +241,20 @@ export async function symbolFacts(
 }
 
 /**
- * The newest value of each metric for every symbol in one sector, reference
- * universe included — the cross-section a stock's multiples are read against.
+ * The newest value of each metric for every symbol in one sector — or in the
+ * whole universe when `sector` is null — reference universe included — the cross-section a stock's multiples are read against.
  * Only readings from the last `maxAgeDays`: the universe refreshes a sixth of
  * itself a night, and a multiple from a month ago is a different price.
  */
 export async function latestValuesInSector(
-  sector: string, keys: string[], maxAgeDays: number,
-): Promise<{ symbol: string; industry: string | null; key: string; value: number }[]> {
-  const res = await query<{ symbol: string; industry: string | null; key: string; value: number }>(
-    `SELECT DISTINCT ON (o.symbol_id, m.key) s.symbol, s.industry, m.key, o.value
+  sector: string | null, keys: string[], maxAgeDays: number,
+): Promise<{ symbol: string; sector: string | null; industry: string | null; key: string; value: number }[]> {
+  const res = await query<{ symbol: string; sector: string | null; industry: string | null; key: string; value: number }>(
+    `SELECT DISTINCT ON (o.symbol_id, m.key) s.symbol, s.sector, s.industry, m.key, o.value
        FROM observations o
        JOIN metrics m ON m.id = o.metric_id
        JOIN symbols s ON s.id = o.symbol_id
-      WHERE s.sector = $1 AND m.key = ANY($2) AND o.value IS NOT NULL
+      WHERE ($1::text IS NULL OR s.sector = $1) AND m.key = ANY($2) AND o.value IS NOT NULL
         AND o.observed_at >= now() - make_interval(days => $3)
       ORDER BY o.symbol_id, m.key, o.observed_at DESC`,
     [sector, keys, maxAgeDays],

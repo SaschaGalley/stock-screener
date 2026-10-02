@@ -1,5 +1,6 @@
 import EarningsSurpriseChart from '../charts/EarningsSurpriseChart';
 import ForwardGrowthChart from '../charts/ForwardGrowthChart';
+import ForecastChart from '../charts/ForecastChart';
 import { fmt } from '../../format';
 import { useMoney } from '../../currency';
 
@@ -11,6 +12,11 @@ export default function EarningsBlock({ financials: f }: Props) {
   const { fmtPrice, fmtBig } = useMoney();
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      {f.fundamentalsHistory && (
+        <div className="lg:col-span-2">
+          <ForecastChart history={f.fundamentalsHistory} estimates={f.earningsEstimates ?? []} />
+        </div>
+      )}
       {f.earningsSurprises?.length > 0 && (
         <div>
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">

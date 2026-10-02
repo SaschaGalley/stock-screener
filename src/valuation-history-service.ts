@@ -11,8 +11,10 @@
 import { getConfig } from './config.js';
 import { reconstructHistory } from './backtest/history.js';
 import type { HistoryMultiple, SectorMultiples, ValuationHistory } from './analysis/valuation-history.js';
+import { fairMultiple, fitFairRatio, type FairRatio, type FairRatioModel, type FairRatioRow } from './analysis/fair-ratio.js';
 import { peerDistribution } from './analysis/valuation-history.js';
-import { latestSnapshot, latestValuesInSector, readFinancialsLax, saveSnapshot, symbolGroup } from './db/store.js';
+import { latestSnapshot, latestSnapshotLax, latestValuesInSector, readFinancialsLax, saveSnapshot, symbolGroup } from './db/store.js';
+import type { ComputedMetrics } from './analysis/computeMetrics.js';
 import { logger } from './utils/logger.js';
 
 /** Bump when the shape or the reconstruction changes; older rows are rebuilt. */
@@ -87,4 +89,94 @@ export async function sectorMultiples(symbol: string): Promise<SectorMultiples |
     if (d) multiples[m] = d;
   }
   return { level, group: level === 'industry' ? g.industry! : g.sector, multiples };
+}
+
+// ── What the stock's growth, margins and risk would normally earn ───────────
+
+/** The inputs the fair-multiple regression reads, by observation key. */
+const FAIR_INPUT_KEYS = {
+  revenueGrowth:   'financials.revenueGrowth',
+  operatingMargin: 'financials.operatingMargin',
+  grossProfit:     'financials.grossProfit',
+  revenue:         'financials.revenue',
+  beta:            'financials.beta',
+} as const;
+/** The multiples it explains — the two a reader compares first, and the two Simply Wall St picks between. */
+const FAIR_MULTIPLES = ['pe', 'ps'] as const satisfies readonly HistoryMultiple[];
+const FAIR_MODEL_TTL_MS = 6 * 60 * 60 * 1000;
+
+type UniverseRow = { symbol: string; sector: string | null; values: Map<string, number> };
+let fairCache: { at: number; rows: Map<string, UniverseRow>; models: Partial<Record<HistoryMultiple, FairRatioModel | null>> } | null = null;
+
+async function fairModels() {
+  if (fairCache && Date.now() - fairCache.at < FAIR_MODEL_TTL_MS) return fairCache;
+  const keys = [...Object.values(FAIR_INPUT_KEYS), ...FAIR_MULTIPLES.map((m) => MULTIPLE_METRIC_KEYS[m])];
+  const raw = await latestValuesInSector(null, keys, SECTOR_WINDOW_DAYS);
+  const rows = new Map<string, UniverseRow>();
+  for (const r of raw) {
+    const row = rows.get(r.symbol) ?? { symbol: r.symbol, sector: r.sector, values: new Map() };
+    row.values.set(r.key, r.value);
+    rows.set(r.symbol, row);
+  }
+  const models: Partial<Record<HistoryMultiple, FairRatioModel | null>> = {};
+  for (const m of FAIR_MULTIPLES) {
+    models[m] = fitFairRatio([...rows.values()].map((r) => ({ ...inputsOf(r), multiple: r.values.get(MULTIPLE_METRIC_KEYS[m]) ?? null })));
+  }
+  fairCache = { at: Date.now(), rows, models };
+  return fairCache;
+}
+
+function inputsOf(r: UniverseRow): Omit<FairRatioRow, 'multiple'> {
+  const v = (k: string) => r.values.get(k) ?? null;
+  const gp = v(FAIR_INPUT_KEYS.grossProfit), rev = v(FAIR_INPUT_KEYS.revenue);
+  return {
+    revenueGrowth:   v(FAIR_INPUT_KEYS.revenueGrowth),
+    operatingMargin: v(FAIR_INPUT_KEYS.operatingMargin),
+    grossMargin:     gp !== null && rev !== null && rev > 0 ? gp / rev : null,
+    beta:            v(FAIR_INPUT_KEYS.beta),
+    sector:          r.sector,
+  };
+}
+
+/** The fair P/E and P/S for one stock, each with its fit — absent where the fit is too weak or the inputs missing. */
+export async function fairRatios(symbol: string): Promise<Partial<Record<HistoryMultiple, FairRatio>>> {
+  const { rows, models } = await fairModels();
+  // The stock's own inputs from the universe's readings, else from its newest
+  // stored payload: a watchlist stock not refreshed within the window still
+  // has a fair multiple to read, only the fit needs today's cross-section.
+  const own = rows.get(symbol.toUpperCase()) ?? await ownRow(symbol);
+  if (!own) return {};
+  const inputs = inputsOf(own);
+  if (inputs.revenueGrowth === null || inputs.operatingMargin === null) return {};
+  const out: Partial<Record<HistoryMultiple, FairRatio>> = {};
+  for (const m of FAIR_MULTIPLES) {
+    const model = models[m];
+    const fair = model ? fairMultiple(model, inputs) : null;
+    const actual = own.values.get(MULTIPLE_METRIC_KEYS[m]) ?? null;
+    const positive = actual !== null && actual > 0 ? actual : null;
+    // A fair P/E for a company without earnings is a number about nothing —
+    // the reason Simply Wall St reads a loss-maker by its P/S.
+    if (m === 'pe' && positive === null) continue;
+    if (model && fair !== null) out[m] = { fair, actual: positive, r2: model.r2, n: model.n, inputs };
+  }
+  return out;
+}
+
+/** A stock's inputs and multiples from its newest stored payload, in the universe's shape. */
+async function ownRow(symbol: string): Promise<UniverseRow | null> {
+  const [f, m] = await Promise.all([
+    readFinancialsLax(symbol),
+    latestSnapshotLax<ComputedMetrics>(symbol, 'metrics'),
+  ]);
+  if (!f) return null;
+  const values = new Map<string, number>();
+  const put = (k: string, v: number | null | undefined) => { if (typeof v === 'number' && Number.isFinite(v)) values.set(k, v); };
+  put(FAIR_INPUT_KEYS.revenueGrowth, f.revenueGrowth);
+  put(FAIR_INPUT_KEYS.operatingMargin, f.operatingMargin);
+  put(FAIR_INPUT_KEYS.grossProfit, f.grossProfit);
+  put(FAIR_INPUT_KEYS.revenue, f.revenue);
+  put(FAIR_INPUT_KEYS.beta, f.beta);
+  put(MULTIPLE_METRIC_KEYS.pe, m?.ratios?.pe);
+  put(MULTIPLE_METRIC_KEYS.ps, m?.evMultiples?.priceToSales);
+  return { symbol: symbol.toUpperCase(), sector: f.sector, values };
 }
