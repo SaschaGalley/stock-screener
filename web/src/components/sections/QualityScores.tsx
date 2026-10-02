@@ -28,12 +28,12 @@ function ScoreCard({
 }: { title: string; term: GlossaryKey; value: string; subtitle?: string; color: string; body?: React.ReactNode }) {
   return (
     <div className="rounded border border-ink-800 bg-ink-950 p-3">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500"><Term k={term}>{title}</Term></div>
+      <div className="text-2xs font-semibold uppercase tracking-wider text-ink-500"><Term k={term}>{title}</Term></div>
       <div className="mt-1 flex items-baseline gap-2">
         <span className={`font-mono text-xl font-bold tabular ${color}`}>{value}</span>
-        {subtitle && <span className="text-[11px] text-ink-400">{subtitle}</span>}
+        {subtitle && <span className="text-xs text-ink-400">{subtitle}</span>}
       </div>
-      {body && <div className="mt-2 text-[11px] text-ink-400">{body}</div>}
+      {body && <div className="mt-2 text-xs text-ink-400">{body}</div>}
     </div>
   );
 }

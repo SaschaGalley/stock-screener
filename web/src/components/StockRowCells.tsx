@@ -77,7 +77,7 @@ export function StockIdentity({ row, active, stages = [] }: IdentityProps) {
           {!row.watched && (
             <Tip
               focusable={false}
-              className="shrink-0 rounded border border-ink-700 px-1 text-[9px] uppercase leading-3.5 text-ink-500"
+              className="shrink-0 rounded border border-ink-700 px-1 text-3xs uppercase leading-3.5 text-ink-500"
               content="Nicht in der Watchlist — wird vom nächtlichen Lauf übersprungen"
             >
               pausiert
@@ -88,14 +88,14 @@ export function StockIdentity({ row, active, stages = [] }: IdentityProps) {
           // Takes the lower line rather than sitting beside the ticker: while
           // something is running that is the more useful of the two.
           <div
-            className="flex items-center gap-1 font-mono text-[10px] leading-4 text-accent"
+            className="flex items-center gap-1 font-mono text-2xs leading-4 text-accent"
             title={`Running: ${stages.join(', ')}`}
           >
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             {stages[0]}
           </div>
         ) : (
-          <div className="truncate font-mono text-[10px] leading-4 text-ink-500">
+          <div className="truncate font-mono text-2xs leading-4 text-ink-500">
             {row.symbol}{row.sector ? ` · ${row.sector}` : ''}
           </div>
         )}
@@ -124,7 +124,7 @@ export function StockScore({ row, split = false }: { row: OverviewRow; split?: b
       <span className="flex items-baseline justify-end gap-1">
         <Tip
           focusable={false}
-          className={`w-8 text-right text-[10px] tabular ${
+          className={`w-8 text-right text-2xs tabular ${
             (delta ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'
           }`}
           content={delta ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} seit dem ersten Verdict` : null}
@@ -150,12 +150,12 @@ export function StockScore({ row, split = false }: { row: OverviewRow; split?: b
 export function GroupName({ group, by, collapsed }: { group: ListGroup; by: GroupKey; collapsed: boolean }) {
   const chip = by === 'verdict' && (RECOMMENDATIONS as readonly string[]).includes(group.key);
   return (
-    <span className="flex min-w-0 items-center gap-2 text-[11px]">
+    <span className="flex min-w-0 items-center gap-2 text-xs">
       <span aria-hidden className={`w-2 shrink-0 text-ink-500 transition-transform ${collapsed ? '' : 'rotate-90'}`}>▸</span>
       {chip
         ? <RecommendationBadge rec={group.key} size="sm" />
         : <span className="truncate font-semibold text-ink-200">{group.label}</span>}
-      <span className="shrink-0 font-mono text-[10px] text-ink-500">{group.rows.length}</span>
+      <span className="shrink-0 font-mono text-2xs text-ink-500">{group.rows.length}</span>
     </span>
   );
 }
@@ -165,7 +165,7 @@ export function GroupAverage({ group }: { group: ListGroup }) {
   const avg = averageScore(group.rows);
   if (!avg) return null;
   return (
-    <span className="whitespace-nowrap font-mono text-[11px] text-ink-500">
+    <span className="whitespace-nowrap font-mono text-xs text-ink-500">
       Ø <span className={`inline-block w-8 text-right font-semibold ${scoreColor(avg.avg)}`}>{avg.avg.toFixed(1)}</span>
     </span>
   );

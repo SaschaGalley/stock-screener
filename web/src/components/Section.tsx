@@ -54,7 +54,7 @@ export default function Section({ title, subtitle, defaultOpen = true, children,
           <h2 className="text-sm font-semibold text-ink-100">
             {info ? <Term k={info} focusable={false}>{title}</Term> : title}
           </h2>
-          {subtitle && <span className="text-[11px] text-ink-500">{subtitle}</span>}
+          {subtitle && <span className="text-xs text-ink-500">{subtitle}</span>}
         </div>
         {rightHeader && <div className="flex items-center gap-2">{rightHeader}</div>}
       </button>

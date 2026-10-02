@@ -32,7 +32,7 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
   ].filter(Boolean).join('\n');
 
   return (
-    <Tip className="block whitespace-nowrap font-mono text-[9px] font-normal leading-3 text-ink-600" content={title}>
+    <Tip className="block whitespace-nowrap font-mono text-3xs font-normal leading-3 text-ink-500" content={title}>
       Z {row.factorScore.toFixed(1)}
       {row.narrativeScore !== null && <> · T {row.narrativeScore.toFixed(1)}</>}
       {conf !== null && <> · {conf}%</>}

@@ -59,12 +59,12 @@ export default function PeerCompare({ ratios, evMultiples: ev, financials: f, se
 
   return (
     <div>
-      <p className="mb-2 text-[11px] text-ink-500">
+      <p className="mb-2 text-xs text-ink-500">
         {sm.peerCount} peers: {peerNames}
       </p>
       <table className="w-full text-xs tabular">
         <thead>
-          <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1.5 pr-2 text-left font-medium">Metric</th>
             <th className="py-1.5 px-2 text-right font-medium">Own</th>
             <th className="py-1.5 px-2 text-right font-medium">Peer Median</th>

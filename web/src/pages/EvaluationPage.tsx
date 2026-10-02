@@ -80,7 +80,7 @@ export default function EvaluationPage({ onClose }: Props) {
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-base font-semibold text-ink-100">Auswertung</h2>
           {ev && (
-            <span className="text-[11px] text-ink-500">
+            <span className="text-xs text-ink-500">
               Scores {ev.from ?? '—'} bis {ev.to ?? '—'} · {ev.symbols} Aktien
               {data && ` · berechnet ${new Date(data.computedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}`}
             </span>
@@ -123,7 +123,7 @@ export default function EvaluationPage({ onClose }: Props) {
 
         {(data || bt) && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-[11px] text-ink-400">Aktien</span>
+            <span className="mr-1 text-xs text-ink-400">Aktien</span>
             {([
               ...(data ? [['watchlist', `Watchlist (${data.evaluation.symbols})`, 'Alle Signale, auch Text und alter LLM-Score']] : []),
               ...(data?.universe ? [['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale']] : []),
@@ -150,7 +150,7 @@ export default function EvaluationPage({ onClose }: Props) {
         {scope !== 'backtest' && scope !== 'calls' && ev && (
           <>
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-[11px] text-ink-400">Horizont</span>
+              <span className="mr-1 text-xs text-ink-400">Horizont</span>
               {HORIZONS.map((h) => (
                 <button
                   key={h}
@@ -180,14 +180,14 @@ export default function EvaluationPage({ onClose }: Props) {
             <section className="rounded-lg border border-ink-700 bg-ink-900">
               <header className="border-b border-ink-800 px-4 py-2.5">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Signale</h3>
-                <p className="mt-0.5 text-[11px] text-ink-500">
+                <p className="mt-0.5 text-xs text-ink-500">
                   IC gemittelt über alle Tage · t nur aus nicht überlappenden Fenstern · Im Sektor = IC gegen den eigenen Sektor ·
                   Treffer = Anteil der Tage mit positivem IC · Oben−Unten = Mehrrendite oberes minus unteres Drittel
                 </p>
               </header>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-sm">
-                  <thead className="text-[11px] text-ink-400">
+                  <thead className="text-xs text-ink-400">
                     <tr className="border-b border-ink-800">
                       <th className="px-4 py-2 text-left font-normal">Signal</th>
                       <th className="px-2 py-2 text-right font-normal">IC</th>
@@ -220,7 +220,7 @@ export default function EvaluationPage({ onClose }: Props) {
                           </td>
                           <td className="px-2 py-1.5 text-right font-mono text-ink-300">{pct(r.spread)}</td>
                           <td className="px-2 py-1.5 text-right font-mono text-ink-400">{r.days} / {r.independent}</td>
-                          <td className={`px-4 py-1.5 text-[11px] ${e.cls}`}>{e.label}</td>
+                          <td className={`px-4 py-1.5 text-xs ${e.cls}`}>{e.label}</td>
                         </tr>
                       );
                     })}
@@ -238,7 +238,7 @@ export default function EvaluationPage({ onClose }: Props) {
               <section className="rounded-lg border border-ink-700 bg-ink-900">
                 <header className="border-b border-ink-800 px-4 py-2.5">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Mehrrendite nach Urteil</h3>
-                  <p className="mt-0.5 text-[11px] text-ink-500">
+                  <p className="mt-0.5 text-xs text-ink-500">
                     Durchschnittliche Rendite gegenüber dem S&amp;P 500 über {horizon} Handelstage, nur nicht überlappende Fenster ·
                     in Klammern die Zahl der Aktien-Fenster
                   </p>
@@ -246,7 +246,7 @@ export default function EvaluationPage({ onClose }: Props) {
                 <div className="space-y-2 p-4">
                   {labels.map((l) => (
                     <div key={l.label} className="grid grid-cols-[110px_1fr_auto] items-center gap-3 text-sm">
-                      <span className={`rounded px-2 py-0.5 text-center text-[11px] font-bold ${recommendationColor(l.label)}`}>{l.label}</span>
+                      <span className={`rounded px-2 py-0.5 text-center text-xs font-bold ${recommendationColor(l.label)}`}>{l.label}</span>
                       <SignedBar value={l.meanExcess} scale={0.1} />
                       <span className="whitespace-nowrap text-right font-mono text-ink-300">
                         {pct(l.meanExcess)} <span className="text-ink-500">({l.count})</span>
@@ -261,7 +261,7 @@ export default function EvaluationPage({ onClose }: Props) {
               <section className="rounded-lg border border-ink-700 bg-ink-900">
                 <header className="border-b border-ink-800 px-4 py-2.5">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Säulengewichte: was die Daten nahelegen</h3>
-                  <p className="mt-0.5 text-[11px] text-ink-500">
+                  <p className="mt-0.5 text-xs text-ink-500">
                     IC jeder Säule über {data.weightHorizon} Handelstage{data.universe ? ' im Universum' : ''}, um seinen Standardfehler
                     zur Null geschrumpft; ein Gewicht kippt um den geschrumpften IC geteilt durch 0,05. Nur ein Vorschlag —
                     geändert werden die Gewichte im Code, nicht hier.
@@ -271,7 +271,7 @@ export default function EvaluationPage({ onClose }: Props) {
               </section>
             )}
 
-            <p className="text-[11px] leading-relaxed text-ink-500">
+            <p className="text-xs leading-relaxed text-ink-500">
               Die Scores vor dem Einbau des aktuellen Modells sind mit den heutigen Regeln nachgerechnet: die Daten sind
               die damaligen.{' '}
               {bt?.inForce.fit

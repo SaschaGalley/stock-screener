@@ -24,22 +24,22 @@ export default function ForwardGrowthChart({ estimates }: Props) {
           trigger: 'axis',
           backgroundColor: CHART_COLORS.bg,
           borderColor: '#1e293b',
-          textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+          textStyle: { color: CHART_COLORS.text, fontSize: 13 },
           valueFormatter: (v: number) => v == null ? 'N/A' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
         },
         legend: {
-          textStyle: { color: CHART_COLORS.text, fontSize: 11 },
+          textStyle: { color: CHART_COLORS.text, fontSize: 12 },
           right: 8, top: 0,
         },
         xAxis: {
           type: 'category',
           data: labels,
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 11 },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 12 },
           axisLine: { lineStyle: { color: '#334155' } },
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: '{value}%' },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 12, formatter: '{value}%' },
           splitLine: { lineStyle: { color: '#1e293b' } },
         },
         series: [

@@ -38,7 +38,7 @@ export default function IncomeFlowChart({ symbol }: { symbol: string }) {
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
           <Term k="concept.incomeFlow">Vom Umsatz zum Gewinn</Term>
         </h3>
         <div className="flex flex-wrap gap-1">
@@ -46,7 +46,7 @@ export default function IncomeFlowChart({ symbol }: { symbol: string }) {
             <button
               key={p.key}
               onClick={() => setKey(p.key)}
-              className={`rounded px-2 py-0.5 text-[11px] ${p.key === current.key ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'}`}
+              className={`rounded px-2 py-0.5 text-xs ${p.key === current.key ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'}`}
             >
               {p.label}
             </button>
@@ -65,7 +65,7 @@ export default function IncomeFlowChart({ symbol }: { symbol: string }) {
           option={{
             tooltip: {
               trigger: 'item', backgroundColor: CHART_COLORS.bg, borderColor: CHART_COLORS.grid,
-              textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+              textStyle: { color: CHART_COLORS.text, fontSize: 13 },
               formatter: (p: { dataType: string; data: { source?: string; target?: string; value?: number }; name: string; value: number }) =>
                 p.dataType === 'edge'
                   ? `${p.data.source} → ${p.data.target}: ${money(p.data.value ?? 0)} (${margin(p.data.value ?? 0)} vom Umsatz)`
@@ -80,7 +80,7 @@ export default function IncomeFlowChart({ symbol }: { symbol: string }) {
               links: links.map((l) => ({ source: l.source, target: l.target, value: l.value })),
               lineStyle: { color: 'gradient', opacity: 0.35, curveness: 0.5 },
               label: {
-                color: CHART_COLORS.text, fontSize: 11,
+                color: CHART_COLORS.text, fontSize: 12,
                 formatter: (p: { name: string; value: number }) => `${p.name}\n${money(p.value)}`,
               },
             }],
@@ -89,7 +89,7 @@ export default function IncomeFlowChart({ symbol }: { symbol: string }) {
         />
       </div>
       {f.operatingIncome < 0 && (
-        <p className="mt-1 text-[11px] text-ink-500">
+        <p className="mt-1 text-xs text-ink-500">
           Gelb: der operative Verlust — die Kosten, die der Bruttogewinn nicht deckt, finanziert aus anderen Quellen.
         </p>
       )}

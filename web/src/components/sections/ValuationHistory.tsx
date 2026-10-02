@@ -84,7 +84,7 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
             disabled={!!v.disabled}
             title={v.disabled}
             onClick={() => setView(v.key)}
-            className={`rounded border px-2.5 py-1 text-[11px] transition ${
+            className={`rounded border px-2.5 py-1 text-xs transition ${
               view === v.key
                 ? 'border-accent bg-accent-soft text-ink-100'
                 : v.disabled
@@ -104,7 +104,7 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
       <FairLede fair={fair} />
       <MultiplesTable history={history} sector={sector} fair={fair} />
 
-      <p className="text-[10px] leading-relaxed text-ink-500">
+      <p className="text-xs leading-relaxed text-ink-500">
         {history.source === 'sec'
           ? 'Jeder Monatsultimo aus den SEC-Filings rekonstruiert, die an dem Tag bekannt waren, und mit den heutigen Modellen gerechnet. '
             + 'Das Analysten-Kursziel ist aus der Rating-Historie rekonstruiert (je Haus das neueste der zwölf Monate davor). '
@@ -129,20 +129,20 @@ function baseOption(dates: string[], yFormatter: (v: number) => string) {
       trigger: 'axis',
       backgroundColor: CHART_COLORS.bg,
       borderColor: CHART_COLORS.grid,
-      textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+      textStyle: { color: CHART_COLORS.text, fontSize: 13 },
       valueFormatter: (v: unknown) => (typeof v === 'number' ? yFormatter(v) : '—'),
     },
-    legend: { textStyle: { color: CHART_COLORS.text, fontSize: 11 }, top: 0, right: 8 },
+    legend: { textStyle: { color: CHART_COLORS.text, fontSize: 12 }, top: 0, right: 8 },
     xAxis: {
       type: 'category',
       data: dates.map(monthLabel),
-      axisLabel: { color: CHART_COLORS.ink, fontSize: 10 },
+      axisLabel: { color: CHART_COLORS.ink, fontSize: 11 },
       axisLine: { lineStyle: { color: CHART_COLORS.grid } },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      axisLabel: { color: CHART_COLORS.ink, fontSize: 10, formatter: yFormatter },
+      axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: yFormatter },
       splitLine: { lineStyle: { color: CHART_COLORS.grid } },
     },
     textStyle: baseTextStyle,
@@ -321,7 +321,7 @@ function MultiplesView({ history }: { history: History }) {
           <button
             key={m.key}
             onClick={() => setKey(m.key)}
-            className={`rounded px-2 py-0.5 font-mono text-[11px] transition ${
+            className={`rounded px-2 py-0.5 font-mono text-xs transition ${
               key === m.key ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'
             }`}
           >
@@ -354,12 +354,12 @@ function MultiplesTable({ history, sector, fair }: { history: History; sector: S
 
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
         <Term k="concept.vh.multiplesTable">Multiples gegen Historie und Branche</Term>
       </h3>
       <table className="w-full text-xs tabular">
         <thead>
-          <tr className="text-[10px] uppercase tracking-wider text-ink-600">
+          <tr className="text-2xs uppercase tracking-wider text-ink-500">
             <th />
             <th />
             <th colSpan={5} className="border-b border-ink-800 pb-0.5 text-center font-normal">Gegen die eigene Historie</th>
@@ -370,7 +370,7 @@ function MultiplesTable({ history, sector, fair }: { history: History; sector: S
             )}
             {hasFair && <th className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell"><Term k="concept.vh.fairRatio">Modell</Term></th>}
           </tr>
-          <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal" />
             <th className="py-1 text-right font-normal">Heute</th>
             <th className="py-1 text-right font-normal"><Term k="concept.vh.median">Median 3J</Term></th>

@@ -35,7 +35,7 @@ export default function VerdictTrackRecord({ symbol }: { symbol: string }) {
         .
       </p>
       <CallTable calls={data.calls} />
-      <p className="text-[10px] leading-relaxed text-ink-500">
+      <p className="text-xs leading-relaxed text-ink-500">
         Ein Urteilswechsel zählt, sobald er die nächste Aktualisierung gehalten hat. Gemessen mit Dividenden gegen den S&amp;P 500
         (SPY){data.currency && data.restated && <>, die Aktie von {data.currency} in Dollar umgerechnet</>}. Ein Kaufurteil war richtig,
         wenn die Aktie den Index schlug, ein Verkaufsurteil, wenn sie ihm hinterherlief; Halten wird nur gemessen.
@@ -51,7 +51,7 @@ const fmtDay = (day: string) => `${Number(day.slice(8, 10))}.${Number(day.slice(
 
 /** The excess return, green where the call was right and red where it was wrong. */
 function Excess({ verdict, leg }: { verdict: string; leg: Leg | null | undefined }) {
-  if (!leg) return <span className="text-ink-600">läuft</span>;
+  if (!leg) return <span className="text-ink-500">läuft</span>;
   if (leg.excess === null) return <span className="text-ink-400" title="Ohne Indexvergleich">{pct(leg.stock)}</span>;
   const hit = callHit(verdict, leg);
   const cls = hit === null ? 'text-ink-300' : hit ? 'text-emerald-400' : 'text-red-400';
@@ -68,7 +68,7 @@ function CallTable({ calls }: { calls: CallOutcome[] }) {
     <div className="overflow-x-auto">
       <table className="w-full min-w-[560px] text-xs tabular">
         <thead>
-          <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal">Seit</th>
             <th className="py-1 pr-2 text-left font-normal">Urteil</th>
             <th className="py-1 text-right font-normal">Score</th>
@@ -84,8 +84,8 @@ function CallTable({ calls }: { calls: CallOutcome[] }) {
             <tr key={c.day} className="border-b border-ink-800">
               <td className="py-1 pr-2 font-mono text-ink-400">{fmtDay(c.day)}</td>
               <td className="py-1 pr-2">
-                {c.from && <span className="mr-1 text-[10px] text-ink-500">{c.from} →</span>}
-                <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${recommendationColor(c.verdict)}`}>{c.verdict}</span>
+                {c.from && <span className="mr-1 text-2xs text-ink-500">{c.from} →</span>}
+                <span className={`rounded px-1.5 py-0.5 text-2xs font-bold ${recommendationColor(c.verdict)}`}>{c.verdict}</span>
               </td>
               <td className="py-1 text-right font-mono text-ink-400">{c.score?.toFixed(1) ?? '—'}</td>
               <td className="py-1 text-right font-mono text-ink-400">{fmtPrice(c.price)}</td>
@@ -94,7 +94,7 @@ function CallTable({ calls }: { calls: CallOutcome[] }) {
               ))}
               <td className="py-1 text-right">
                 <Excess verdict={c.verdict} leg={c.held} />
-                {!c.until && <span className="ml-1 text-[10px] text-ink-500">(aktuell)</span>}
+                {!c.until && <span className="ml-1 text-2xs text-ink-500">(aktuell)</span>}
               </td>
             </tr>
           ))}

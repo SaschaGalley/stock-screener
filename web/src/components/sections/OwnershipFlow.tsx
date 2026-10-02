@@ -12,7 +12,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
     <div className="grid gap-4 lg:grid-cols-3">
       {/* Short interest */}
       <div>
-        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Short Interest</h3>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Short Interest</h3>
         {f.shortPercentOfFloat != null && Number.isFinite(f.shortPercentOfFloat) ? (
           <table className="w-full text-xs tabular">
             <tbody>
@@ -32,7 +32,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
 
       {/* Ownership */}
       <div>
-        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Ownership</h3>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Ownership</h3>
         {(f.institutionsPercentHeld != null || f.insidersPercentHeld != null) ? (
           <table className="w-full text-xs tabular">
             <tbody>
@@ -51,8 +51,8 @@ export default function OwnershipFlow({ financials: f }: Props) {
 
       {/* Insider activity */}
       <div>
-        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-          <Term k="concept.insiderActivity">Insider Activity</Term> <span className="text-ink-600">(6mo)</span>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+          <Term k="concept.insiderActivity">Insider Activity</Term> <span className="text-ink-500">(6mo)</span>
         </h3>
         {(f.insiderBuyCount > 0 || f.insiderSellCount > 0) ? (
           <table className="w-full text-xs tabular">
@@ -93,7 +93,7 @@ function Row({ label, term, value, accent, accentColor }: { label: string; term?
     <tr className="border-b border-ink-800">
       <td className="py-1 pr-2 text-ink-400"><Term k={term}>{label}</Term></td>
       <td className={`py-1 text-right font-mono ${accentColor ?? 'text-ink-100'}`}>{value}</td>
-      {accent !== undefined && <td className="py-1 pl-2 text-right text-[10px] text-ink-500">{accent}</td>}
+      {accent !== undefined && <td className="py-1 pl-2 text-right text-2xs text-ink-500">{accent}</td>}
     </tr>
   );
 }

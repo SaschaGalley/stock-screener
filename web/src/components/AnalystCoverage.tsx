@@ -133,13 +133,13 @@ export function CoverageStrip({ coverage, price, mean }: { coverage: CoverageVie
   const marker = (v: number, label: string, line: string, text: string) => (
     <div className="absolute top-0 bottom-0" style={{ left: x(v) }}>
       <div className={`absolute top-0 bottom-0 w-px ${line}`} />
-      <div className={`absolute top-full mt-0.5 -translate-x-1/2 whitespace-nowrap text-[9px] ${text}`}>{label}</div>
+      <div className={`absolute top-full mt-0.5 -translate-x-1/2 whitespace-nowrap text-3xs ${text}`}>{label}</div>
     </div>
   );
 
   return (
     <div className="mt-2 mb-3">
-      <Term k="concept.coverageStrip" className="mb-1 block text-[10px] text-ink-500">Kursziele je Haus</Term>
+      <Term k="concept.coverageStrip" className="mb-1 block text-2xs text-ink-500">Kursziele je Haus</Term>
       <div ref={ref} className="relative border-b border-ink-700" style={{ height }}>
         {width > 0 && (
           <>
@@ -178,8 +178,8 @@ export function CoverageTable({ coverage, price, analystCount }: { coverage: Cov
   return (
     <div className="rounded-lg border border-ink-800 bg-ink-900 p-4">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">Die Häuser einzeln</h3>
-        <span className="text-[11px] text-ink-500">
+        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">Die Häuser einzeln</h3>
+        <span className="text-xs text-ink-500">
           {coverage.firms.length} Häuser mit einem Wort in den letzten {Math.round(coverage.windowDays / 30)} Monaten
           {mean !== null && <> · Mittel ihrer Ziele <span className="font-mono text-ink-300">{fmtPrice(mean)}</span></>}
           {median !== null && <> · Median <span className="font-mono text-ink-300">{fmtPrice(median)}</span></>}
@@ -188,7 +188,7 @@ export function CoverageTable({ coverage, price, analystCount }: { coverage: Cov
       <div className="overflow-x-auto">
         <table className="w-full text-xs tabular">
           <thead>
-            <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
+            <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
               <th className="py-1 pr-2 text-left font-normal">Haus</th>
               <th className="py-1 pr-2 text-left font-normal">Rating</th>
               <th className="py-1 px-2 text-right font-normal">Kursziel</th>
@@ -234,7 +234,7 @@ export function CoverageTable({ coverage, price, analystCount }: { coverage: Cov
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-[10px] leading-relaxed text-ink-500">
+      <p className="mt-2 text-xs leading-relaxed text-ink-500">
         Aus Yahoos Analysten-Historie: das jeweils neueste Kursziel und Rating jedes Hauses, Ziele aus der Zeit vor einem
         Aktiensplit auf die heutige Basis umgerechnet. Die Kopfzahlen der Karte
         {analystCount ? ` (${analystCount} Analysten)` : ''} stammen aus Yahoos Konsensdaten, die keine Namen nennen;

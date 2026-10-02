@@ -51,7 +51,7 @@ export default function VerdictChanges({ symbol, refreshKey }: { symbol: string;
   // A paragraph rather than a row of flex items, so a narrow card wraps the
   // sentence under its own beginning instead of into a column beside a label.
   return (
-    <p className="pt-3 text-[11px] leading-relaxed text-ink-400">
+    <p className="pt-3 text-xs leading-relaxed text-ink-400">
       <span
         aria-hidden
         className={`mr-1.5 inline-block h-1.5 w-1.5 -translate-y-px rounded-full align-middle ${fresh ? 'bg-amber-400' : 'bg-ink-600'}`}

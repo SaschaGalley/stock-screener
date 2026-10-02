@@ -83,7 +83,7 @@ function CaseCard({ direction, side, price, scenarios }: {
               <Term
                 key={s.label}
                 text={s.hint}
-                className="rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 font-mono text-[11px] text-ink-300"
+                className="rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 font-mono text-xs text-ink-300"
               >
                 <span className="font-sans text-ink-500">{s.label}</span> {fmtPrice(s.value)}{' '}
                 <span className={s.value! >= price ? 'text-emerald-400' : 'text-red-400'}>
@@ -129,7 +129,7 @@ function CaseCard({ direction, side, price, scenarios }: {
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{children}</h4>
+    <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">{children}</h4>
   );
 }
 

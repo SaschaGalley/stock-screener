@@ -26,11 +26,11 @@ export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
   return (
     <div className="rounded-lg border border-ink-800 bg-ink-900 p-4">
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">Wie der Score entsteht</h3>
+        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">Wie der Score entsteht</h3>
         <button
           onClick={() => setDetails((x) => !x)}
           aria-expanded={details}
-          className="flex items-center gap-1 text-[11px] text-ink-400 transition hover:text-ink-100"
+          className="flex items-center gap-1 text-xs text-ink-400 transition hover:text-ink-100"
         >
           {details ? 'Weniger' : 'Befunde & Begründung'}
           <span className={`text-ink-500 transition-transform ${details ? 'rotate-180' : ''}`}>▾</span>
@@ -57,7 +57,7 @@ export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
       {factor.caps.length > 0 && (
         <ul className="mt-3 space-y-0.5">
           {factor.caps.map((c, i) => (
-            <li key={i} className="text-[11px] text-amber-400">⛔ {c.reason}</li>
+            <li key={i} className="text-xs text-amber-400">⛔ {c.reason}</li>
           ))}
         </ul>
       )}
@@ -99,14 +99,14 @@ function Formula({ card }: { card: ScoreCard }) {
         )}
         <span>=</span>
         <span className={`text-sm font-bold ${scoreColor(final.score)}`}>{final.score.toFixed(1)}</span>
-        <span className="font-sans text-[11px] font-semibold text-ink-200">{final.verdict}</span>
+        <span className="font-sans text-xs font-semibold text-ink-200">{final.verdict}</span>
         {/* Against the band of the *final* score, not the factor's: those two
             differ whenever the blend moved the number, which is not a cap. */}
         {verdictForScore(final.score) !== final.verdict && (
           <Term
             k="concept.capped"
             extra={`Der Score allein wäre ${verdictForScore(final.score)}.`}
-            className="rounded border border-amber-700 px-1 font-sans text-[9px] uppercase text-amber-400"
+            className="rounded border border-amber-700 px-1 font-sans text-3xs uppercase text-amber-400"
           >
             gedeckelt
           </Term>
@@ -122,7 +122,7 @@ function Formula({ card }: { card: ScoreCard }) {
 
 function GroupLabel({ dot, children }: { dot: string; children: ReactNode }) {
   return (
-    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+    <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-500">
       <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
       {children}
     </div>
@@ -143,7 +143,7 @@ function PillarCell({ p }: { p: ScorePillar }) {
   );
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-2 text-[11px]">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
         <Term text={PILLAR_GLOSSARY[p.key]} extra={criteria} className="truncate text-ink-300">{p.label}</Term>
         <span className={`font-mono font-semibold ${scoreColor(p.score)}`}>
           {p.score === null ? '—' : p.score.toFixed(1)}
@@ -152,7 +152,7 @@ function PillarCell({ p }: { p: ScorePillar }) {
       <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-ink-800">
         <div className={scoreBarColor(p.score)} style={{ width: `${width}%`, height: '100%' }} />
       </div>
-      <div className="mt-0.5 font-mono text-[10px] text-ink-500">
+      <div className="mt-0.5 font-mono text-2xs text-ink-500">
         {Math.round(p.effectiveWeight * 100)} % Gewicht · {passed(p)}/{p.criteria.length} ✓
         {p.coverage < 1 && <span className="text-amber-600"> · {Math.round(p.coverage * 100)} % Abdeckung</span>}
       </div>
@@ -184,7 +184,7 @@ function Dimensions({ dimensions }: { dimensions: NarrativeDimensions }) {
             key={key}
             text={DIMENSION_GLOSSARY[key]}
             extra={d?.note || 'Die Quellen sagen dazu nichts.'}
-            className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${cls}`}
+            className={`rounded border px-1.5 py-0.5 font-mono text-2xs ${cls}`}
           >
             {DIMENSION_LABELS[key]} {r == null ? '–' : r > 0 ? `+${r}` : r}
           </Term>
@@ -225,7 +225,7 @@ function Checklist({ pillars }: { pillars: ScorePillar[] }) {
       <div className="grid gap-x-6 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
         {pillars.map((p) => (
           <div key={p.key}>
-            <div className="mb-1 flex items-baseline justify-between gap-2 text-[11px]">
+            <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
               <span className="font-semibold text-ink-200">{p.label}</span>
               <span className="font-mono text-ink-500">
                 {passed(p)}/{p.criteria.length} ✓ · <span className={scoreColor(p.score)}>{p.score === null ? '—' : p.score.toFixed(1)}</span>
@@ -235,7 +235,7 @@ function Checklist({ pillars }: { pillars: ScorePillar[] }) {
               {p.criteria.map((c) => {
                 const kind = markOf(c);
                 return (
-                  <li key={c.key} className="flex gap-1.5 text-[11px] leading-snug">
+                  <li key={c.key} className="flex gap-1.5 text-xs leading-snug">
                     <CheckMark kind={kind} title={MARK_TITLE[kind]} />
                     <span className={kind === 'none' ? 'text-ink-600' : 'text-ink-300'}>
                       <span className="text-ink-400">{c.label}:</span> {c.note}
@@ -262,7 +262,7 @@ function Details({ card }: { card: ScoreCard }) {
         <div>
           <Heading>Befunde</Heading>
           {factor.findings.length === 0
-            ? <p className="text-[11px] text-ink-500">Keine Zeile bewegte den Score nennenswert.</p>
+            ? <p className="text-xs text-ink-500">Keine Zeile bewegte den Score nennenswert.</p>
             : (
               <ul className="space-y-1">
                 {factor.findings.map((f, i) => <FindingRow key={i} f={f} />)}
@@ -284,7 +284,7 @@ function Details({ card }: { card: ScoreCard }) {
             >
               {narrative.summary}
               {narrative.events.length > 0 && (
-                <ul className="mt-2 space-y-0.5 text-[10px] text-ink-500">
+                <ul className="mt-2 space-y-0.5 text-2xs text-ink-500">
                   {narrative.events.map((e, i) => <li key={i}>· {e}</li>)}
                 </ul>
               )}
@@ -293,7 +293,7 @@ function Details({ card }: { card: ScoreCard }) {
         </div>
       </div>
 
-      <div className="space-y-1.5 text-[11px] leading-relaxed text-ink-500">
+      <div className="space-y-1.5 text-xs leading-relaxed text-ink-500">
         {final.adjustmentReason && (
           <p className="rounded bg-ink-950 px-2 py-1 text-ink-300">
             <span className="text-ink-500">Korrektur:</span> {final.adjustmentReason}
@@ -330,7 +330,7 @@ function Details({ card }: { card: ScoreCard }) {
 
 function Heading({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+    <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-500">
       {children}
     </div>
   );
@@ -347,11 +347,11 @@ const FINDING_STYLE: Record<ScoreFinding['kind'], { mark: string; cls: string }>
 function FindingRow({ f }: { f: ScoreFinding }) {
   const style = FINDING_STYLE[f.kind];
   return (
-    <li className="flex gap-1.5 text-[11px] leading-snug">
+    <li className="flex gap-1.5 text-xs leading-snug">
       <span className={`shrink-0 font-mono ${style.cls}`}>{style.mark}</span>
       <span className="text-ink-300">
         {(f.kind === 'driver' || f.kind === 'drag') && (
-          <span className="mr-1 font-mono text-[10px] text-ink-500">
+          <span className="mr-1 font-mono text-2xs text-ink-500">
             {f.impact >= 0 ? '+' : '−'}{Math.abs(f.impact).toFixed(2)}
           </span>
         )}
@@ -364,10 +364,10 @@ function FindingRow({ f }: { f: ScoreFinding }) {
 function Note({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
     <div className="rounded border border-ink-800 bg-ink-950 p-3">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">
-        {title} <span className="font-normal normal-case tracking-normal text-ink-600">— {subtitle}</span>
+      <div className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
+        {title} <span className="font-normal normal-case tracking-normal text-ink-500">— {subtitle}</span>
       </div>
-      <div className="mt-1.5 text-[11px] leading-relaxed text-ink-300">{children}</div>
+      <div className="mt-1.5 text-xs leading-relaxed text-ink-300">{children}</div>
     </div>
   );
 }

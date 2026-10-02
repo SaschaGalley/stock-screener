@@ -25,7 +25,7 @@ export default function ForecastChart(input: ForecastInput) {
       trigger: 'axis',
       backgroundColor: CHART_COLORS.bg,
       borderColor: CHART_COLORS.grid,
-      textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+      textStyle: { color: CHART_COLORS.text, fontSize: 13 },
       formatter: (items: { dataIndex: number }[]) => {
         const r = rows[items[0]?.dataIndex ?? 0];
         const lines = [`GJ ${r.year}${r.estimate ? ` · Konsens${r.analysts ? ` (${r.analysts} Analysten)` : ''}` : ''}`,
@@ -35,22 +35,22 @@ export default function ForecastChart(input: ForecastInput) {
         return lines.join('<br/>');
       },
     },
-    legend: { textStyle: { color: CHART_COLORS.text, fontSize: 11 }, top: 0, right: 8, data: ['Umsatz', 'EPS'] },
+    legend: { textStyle: { color: CHART_COLORS.text, fontSize: 12 }, top: 0, right: 8, data: ['Umsatz', 'EPS'] },
     xAxis: {
       type: 'category',
       data: rows.map((r) => `${r.year}${r.estimate ? 'e' : ''}`),
-      axisLabel: { color: CHART_COLORS.ink, fontSize: 11 },
+      axisLabel: { color: CHART_COLORS.ink, fontSize: 12 },
       axisLine: { lineStyle: { color: CHART_COLORS.grid } },
     },
     yAxis: [
       {
         type: 'value',
-        axisLabel: { color: CHART_COLORS.ink, fontSize: 10, formatter: (v: number) => fmtBig(v) },
+        axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: (v: number) => fmtBig(v) },
         splitLine: { lineStyle: { color: CHART_COLORS.grid } },
       },
       {
         type: 'value',
-        axisLabel: { color: CHART_COLORS.ink, fontSize: 10, formatter: (v: number) => fmtPrice(v) },
+        axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: (v: number) => fmtPrice(v) },
         splitLine: { show: false },
       },
     ],
@@ -96,7 +96,7 @@ export default function ForecastChart(input: ForecastInput) {
 
   return (
     <div>
-      <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-ink-500">
         <Term k="concept.forecast">Vergangenheit &amp; Prognose</Term>
       </h3>
       <p className="mb-2 text-xs text-ink-400">

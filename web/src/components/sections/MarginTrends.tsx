@@ -23,12 +23,12 @@ export default function MarginTrends({ history }: { history: AnnualHistory }) {
 
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
         <Term k="concept.marginTrends">Margen &amp; Renditen im Verlauf</Term>
       </h3>
       <table className="w-full text-xs tabular">
         <thead>
-          <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal" />
             <th className="py-1 text-right font-normal">GJ {latestYear}</th>
             <th className="py-1 text-right font-normal">Ø 3J</th>
@@ -68,7 +68,7 @@ export default function MarginTrends({ history }: { history: AnnualHistory }) {
           })}
         </tbody>
       </table>
-      <p className="mt-1.5 text-[10px] text-ink-500">
+      <p className="mt-1.5 text-xs text-ink-500">
         Geschäftsjahre, nicht TTM. Der Pfeil vergleicht das letzte Jahr mit dem Schnitt der Jahre davor.
       </p>
     </div>

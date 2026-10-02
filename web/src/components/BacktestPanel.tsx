@@ -48,7 +48,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
 
   return (
     <>
-      <p className="text-[11px] leading-relaxed text-ink-400">
+      <p className="text-xs leading-relaxed text-ink-400">
         {bt.universe ?? 'S&P 500'}, Monatsenden {bt.from} bis {bt.to} · {bt.months} Stichtage · {bt.companies} Firmen
         {bt.departed && <> (davon {bt.departed.included} der {bt.departed.departed} seither ausgeschiedenen)</>} ·
         Prämienkorrektur im Median {(bt.premium.median * 100).toFixed(2).replace('.', ',')} Pkt. ·
@@ -56,7 +56,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       </p>
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[11px] text-ink-400">Horizont</span>
+        <span className="mr-1 text-xs text-ink-400">Horizont</span>
         {horizons.map((h) => (
           <button
             key={h}
@@ -93,7 +93,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         <section className="rounded-lg border border-ink-700 bg-ink-900">
           <header className="border-b border-ink-800 px-4 py-2.5">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Kandidaten — noch nicht im Score</h3>
-            <p className="mt-0.5 text-[11px] text-ink-500">
+            <p className="mt-0.5 text-xs text-ink-500">
               Signale, die keine Säule liest, auf dieselbe Probe gestellt, bevor jemand ein Gewicht für sie vorschlägt: die
               Käufe und Verkäufe der Insider am offenen Markt aus ihren Form-4-Meldungen, ab dem Tag der Meldung. Die
               meisten Werte haben in einem halben Jahr keinen Insider-Kauf; bei so vielen Gleichständen gibt es ein unteres
@@ -108,17 +108,17 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
           <header className="border-b border-ink-800 px-4 py-2.5">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Nach Indexgröße</h3>
-            <p className="mt-0.5 text-[11px] text-ink-500">
+            <p className="mt-0.5 text-xs text-ink-500">
               Dieselben Signale nur unter Large, Mid oder Small Caps gerankt — was die großen Werte einpreisen, kann weiter
               unten noch wirken. Rang-IC über {monthName(horizon)}, in Klammern t.
             </p>
           </header>
           <table className="w-full min-w-[560px] text-sm">
-            <thead className="text-[11px] text-ink-400">
+            <thead className="text-xs text-ink-400">
               <tr className="border-b border-ink-800">
                 <th className="px-4 py-1.5 text-left font-normal">Signal</th>
                 {bt.segments!.map((s) => (
-                  <th key={s.key} className="px-2 py-1.5 text-right font-normal">{s.label} <span className="text-ink-600">({s.companies})</span></th>
+                  <th key={s.key} className="px-2 py-1.5 text-right font-normal">{s.label} <span className="text-ink-500">({s.companies})</span></th>
                 ))}
               </tr>
             </thead>
@@ -146,7 +146,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         <section className="rounded-lg border border-ink-700 bg-ink-900">
           <header className="border-b border-ink-800 px-4 py-2.5">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Einzelkriterien</h3>
-            <p className="mt-0.5 text-[11px] text-ink-500">
+            <p className="mt-0.5 text-xs text-ink-500">
               Jede Kennzahl für sich, so gedreht, dass mehr besser ist — ein positiver IC heißt: das Kriterium wirkt in die
               Richtung, in der der Score es liest. Nur Kriterien mit mindestens 30 Aktien je Stichtag.
             </p>
@@ -161,7 +161,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Faktor-Score je Jahr (1 Monat)</h3>
           </header>
           <table className="w-full text-sm">
-            <thead className="text-[11px] text-ink-400">
+            <thead className="text-xs text-ink-400">
               <tr className="border-b border-ink-800">
                 <th className="px-4 py-1.5 text-left font-normal">Jahr</th>
                 <th className="px-2 py-1.5 text-right font-normal">IC</th>
@@ -200,7 +200,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
             <div className="space-y-2 p-4">
               {labels.map((l) => (
                 <div key={l.label} className="grid grid-cols-[110px_1fr_auto] items-center gap-3 text-sm">
-                  <span className={`rounded px-2 py-0.5 text-center text-[11px] font-bold ${recommendationColor(l.label)}`}>{l.label}</span>
+                  <span className={`rounded px-2 py-0.5 text-center text-xs font-bold ${recommendationColor(l.label)}`}>{l.label}</span>
                   <SignedBar value={l.meanExcess} scale={0.03} />
                   <span className="whitespace-nowrap text-right font-mono text-ink-300">
                     {pct(l.meanExcess)} <span className="text-ink-500">({l.count})</span>
@@ -214,7 +214,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
 
       {bt.fit && <WeightFit v={bt.fit} inForce={data.inForce} />}
 
-      <ul className="list-disc space-y-1 pl-5 text-[11px] leading-relaxed text-ink-500">
+      <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-ink-500">
         {bt.caveats.map((c) => <li key={c}>{c}</li>)}
       </ul>
     </>

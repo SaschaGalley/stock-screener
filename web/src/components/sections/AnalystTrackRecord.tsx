@@ -31,7 +31,7 @@ export default function AnalystTrackRecord({ symbol }: { symbol: string }) {
       <Summary r={data} />
       <ConsensusChart r={data} />
       <FirmTable firms={data.firms} />
-      <p className="text-[10px] leading-relaxed text-ink-500">
+      <p className="text-xs leading-relaxed text-ink-500">
         Jedes Kursziel aus Yahoos Analysten-Historie gegen den Schlusskurs zwölf Monate später; Ziele aus der Zeit
         vor einem Aktiensplit auf die heutige Basis umgerechnet. „Erreicht“: Der Kurs hat das Ziel innerhalb des
         Jahres an einem Schlusskurs berührt. „Richtung“: Der Kurs bewegte sich, wie das Ziel es nahelegte. Die
@@ -74,13 +74,13 @@ function ConsensusChart({ r }: { r: TrackRecordView }) {
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11px] text-ink-500">Kurs gegen das Kursziel, das ein Jahr vorher für diesen Tag galt</span>
+        <span className="text-xs text-ink-500">Kurs gegen das Kursziel, das ein Jahr vorher für diesen Tag galt</span>
         <div className="flex gap-1">
           {([5, 0] as const).map((y) => (
             <button
               key={y}
               onClick={() => setYears(y)}
-              className={`rounded px-2 py-0.5 text-[11px] ${years === y ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'}`}
+              className={`rounded px-2 py-0.5 text-xs ${years === y ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'}`}
             >
               {y ? '5 Jahre' : 'Alles'}
             </button>
@@ -95,12 +95,12 @@ function ConsensusChart({ r }: { r: TrackRecordView }) {
             grid: { top: 30, left: 56, right: 20, bottom: 26 },
             tooltip: {
               trigger: 'axis', backgroundColor: CHART_COLORS.bg, borderColor: CHART_COLORS.grid,
-              textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+              textStyle: { color: CHART_COLORS.text, fontSize: 13 },
               valueFormatter: (v: unknown) => (typeof v === 'number' ? fmtPrice(v) : '—'),
             },
-            legend: { textStyle: { color: CHART_COLORS.text, fontSize: 11 }, top: 0, right: 8 },
-            xAxis: { type: 'category', data: pts.map((p) => label(p.day)), axisLabel: { color: CHART_COLORS.ink, fontSize: 10 }, axisLine: { lineStyle: { color: CHART_COLORS.grid } } },
-            yAxis: { type: 'value', scale: true, axisLabel: { color: CHART_COLORS.ink, fontSize: 10, formatter: (v: number) => fmtPrice(v) }, splitLine: { lineStyle: { color: CHART_COLORS.grid } } },
+            legend: { textStyle: { color: CHART_COLORS.text, fontSize: 12 }, top: 0, right: 8 },
+            xAxis: { type: 'category', data: pts.map((p) => label(p.day)), axisLabel: { color: CHART_COLORS.ink, fontSize: 11 }, axisLine: { lineStyle: { color: CHART_COLORS.grid } } },
+            yAxis: { type: 'value', scale: true, axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: (v: number) => fmtPrice(v) }, splitLine: { lineStyle: { color: CHART_COLORS.grid } } },
             series: [
               line('Kurs', pts.map((p) => p.price), CHART_COLORS.text),
               line('Versprochen (Ziel von vor 12 M)', pts.map((p) => p.promised), CHART_COLORS.amber),
@@ -124,10 +124,10 @@ function FirmTable({ firms }: { firms: FirmRecord[] }) {
   const pct = (v: number | null) => (v === null ? '—' : `${Math.round(v * 100)} %`);
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Die Häuser einzeln</h3>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Die Häuser einzeln</h3>
       <table className="w-full text-xs tabular">
         <thead>
-          <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal">Haus</th>
             <th className="py-1 text-right font-normal"><Term k="concept.ar.targets">Ziele</Term></th>
             <th className="py-1 text-right font-normal"><Term k="concept.ar.medianError">Kurs vs. Ziel</Term></th>
@@ -156,7 +156,7 @@ function FirmTable({ firms }: { firms: FirmRecord[] }) {
         </tbody>
       </table>
       {rest > 0 && (
-        <button onClick={() => setAll((x) => !x)} className="mt-1 text-[11px] text-ink-400 hover:text-ink-100">
+        <button onClick={() => setAll((x) => !x)} className="mt-1 text-xs text-ink-400 hover:text-ink-100">
           {all ? 'Nur Häuser mit mindestens fünf Zielen' : `+ ${rest} Häuser mit weniger als fünf abgeschlossenen Zielen`}
         </button>
       )}

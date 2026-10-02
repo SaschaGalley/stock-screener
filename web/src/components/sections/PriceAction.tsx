@@ -21,7 +21,7 @@ export default function PriceAction({ marketSignals: ms }: Props) {
     <div className="space-y-4">
       {t.returns && (
         <div>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
             <Term k="concept.trailingReturns">Trailing Returns</Term>
           </h3>
           <div className="rounded border border-ink-700 bg-ink-950 p-2" style={{ height: 180 }}>
@@ -61,7 +61,7 @@ export default function PriceAction({ marketSignals: ms }: Props) {
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
       <table className="w-full text-xs tabular">
         <tbody>{children}</tbody>
       </table>
@@ -77,7 +77,7 @@ function Row({ label, term, value, accent, accentColor }: {
       <td className="py-1 pr-2 text-ink-400"><Term k={term}>{label}</Term></td>
       <td className={`py-1 text-right font-mono ${accentColor ?? 'text-ink-100'}`}>{value}</td>
       {accent !== undefined && (
-        <td className="py-1 pl-2 text-right text-[10px] text-ink-500">{accent}</td>
+        <td className="py-1 pl-2 text-right text-2xs text-ink-500">{accent}</td>
       )}
     </tr>
   );

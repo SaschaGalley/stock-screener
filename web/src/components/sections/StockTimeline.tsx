@@ -46,7 +46,7 @@ export default function StockTimeline({ symbol }: { symbol: string }) {
           <button
             key={k}
             onClick={() => toggle(k)}
-            className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] transition ${
+            className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs transition ${
               off.has(k) ? 'border-ink-800 text-ink-600' : 'border-ink-700 bg-ink-950 text-ink-300'
             }`}
           >
@@ -59,7 +59,7 @@ export default function StockTimeline({ symbol }: { symbol: string }) {
             <button
               key={r.days}
               onClick={() => { setDays(r.days); setLimit(PAGE); }}
-              className={`rounded px-2 py-0.5 text-[11px] ${days === r.days ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'}`}
+              className={`rounded px-2 py-0.5 text-xs ${days === r.days ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'}`}
             >
               {r.label}
             </button>
@@ -71,14 +71,14 @@ export default function StockTimeline({ symbol }: { symbol: string }) {
       {data === undefined && <p className="text-xs text-ink-500">Lade Zeitleiste …</p>}
       {data && data.upcoming.length > 0 && (
         <div className="rounded border border-ink-800 bg-ink-950 px-3 py-2 text-xs text-ink-300">
-          <span className="text-[10px] uppercase tracking-wider text-ink-500">Demnächst · </span>
+          <span className="text-2xs uppercase tracking-wider text-ink-500">Demnächst · </span>
           {data.upcoming.map((e) => `${e.title} am ${fmtDay(e.day)}`).join(' · ')}
         </div>
       )}
       {data && shown.length === 0 && <p className="text-xs text-ink-500">Keine Ereignisse im gewählten Zeitraum.</p>}
       {data && <Grouped events={shown.slice(0, limit)} />}
       {data && shown.length > limit && (
-        <button onClick={() => setLimit((l) => l + PAGE)} className="text-[11px] text-ink-400 hover:text-ink-100">
+        <button onClick={() => setLimit((l) => l + PAGE)} className="text-xs text-ink-400 hover:text-ink-100">
           + {shown.length - limit} weitere
         </button>
       )}
@@ -101,14 +101,14 @@ function Grouped({ events }: { events: TimelineEvent[] }) {
     <div className="space-y-3">
       {groups.map((g) => (
         <div key={g.month}>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+          <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-ink-500">
             {MONTHS[Number(g.month.slice(5, 7)) - 1]} {g.month.slice(0, 4)}
           </div>
           <ul className="space-y-1 border-l border-ink-800 pl-3">
             {g.events.map((e, i) => (
               <li key={i} className="relative flex gap-2 text-xs leading-snug">
                 <span className={`absolute -left-[15.5px] top-1.5 h-1.5 w-1.5 rounded-full ${KIND_DOT[e.kind]}`} />
-                <span className="w-9 shrink-0 font-mono text-[11px] text-ink-500">{e.day.slice(8, 10)}.{e.day.slice(5, 7)}.</span>
+                <span className="w-9 shrink-0 font-mono text-xs text-ink-500">{e.day.slice(8, 10)}.{e.day.slice(5, 7)}.</span>
                 <span className={`shrink-0 ${TONE_TEXT[e.tone]}`}>{TONE_MARK[e.tone]}</span>
                 <span className="min-w-0 text-ink-300">
                   {e.url

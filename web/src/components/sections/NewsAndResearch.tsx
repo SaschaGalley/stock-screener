@@ -55,10 +55,10 @@ export default function NewsAndResearch({ symbol, news, perplexity, pplx, distil
       {searches && searches.providers.length > 0 && (
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
               Search Traces
             </h3>
-            <span className="text-[10px] text-ink-600">
+            <span className="text-2xs text-ink-500">
               {searches.providers.length} provider{searches.providers.length === 1 ? '' : 's'} · debug context
             </span>
           </div>
@@ -72,14 +72,14 @@ export default function NewsAndResearch({ symbol, news, perplexity, pplx, distil
 
       {news.length > 0 && (
         <div>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Recent News</h3>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Recent News</h3>
           <ul className="space-y-2">
             {news.slice(0, 8).map((n, i) => (
               <li key={i} className="rounded border border-ink-800 bg-ink-950 p-2.5 text-xs">
                 <a href={n.url} target="_blank" rel="noopener noreferrer" className="font-medium text-ink-100 hover:underline">
                   {n.headline}
                 </a>
-                <div className="mt-1 flex items-center justify-between text-[10px] text-ink-500">
+                <div className="mt-1 flex items-center justify-between text-2xs text-ink-500">
                   <span>{n.source}</span>
                   <span>{new Date(n.datetime * 1000).toLocaleDateString()}</span>
                 </div>
@@ -169,12 +169,12 @@ function DistillSection({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
           Distill Briefing
         </h3>
         <div className="flex items-center gap-2">
           {distill?.fetchedAt && (
-            <span className="text-[10px] text-ink-600">
+            <span className="text-2xs text-ink-500">
               {new Date(distill.fetchedAt).toLocaleString()}
             </span>
           )}
@@ -183,13 +183,13 @@ function DistillSection({
       </div>
 
       {busy && (
-        <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-[11px] text-ink-300">
+        <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-xs text-ink-300">
           ⟳ Refreshing… first-time tickers can take a few minutes while the
           backlog is distilled.
         </div>
       )}
       {error && (
-        <div className="mb-2 rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-[11px] text-amber-300">
+        <div className="mb-2 rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-xs text-amber-300">
           ⚠ {error}
         </div>
       )}
@@ -201,7 +201,7 @@ function DistillSection({
       )}
 
       {blocks.length === 0 && !briefing ? (
-        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
+        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-xs text-ink-500">
           Nichts von Distill — weder ein Dossier noch frische Insights. Der Sweep
           baut Dossiers einmal pro Nacht für eingeschaltete Entities.
         </div>
@@ -258,12 +258,12 @@ function PerplexitySection({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
           Perplexity Research
         </h3>
         <div className="flex items-center gap-2">
           {perplexity && (
-            <span className="text-[10px] text-ink-600">
+            <span className="text-2xs text-ink-500">
               {perplexity.model} · {new Date(perplexity.fetchedAt).toLocaleString()}
             </span>
           )}
@@ -277,12 +277,12 @@ function PerplexitySection({
       </div>
 
       {busy && (
-        <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-[11px] text-ink-300">
+        <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-xs text-ink-300">
           ⟳ Frage Perplexity ab… dauert meist 10–30 Sekunden.
         </div>
       )}
       {error && (
-        <div className="mb-2 rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-[11px] text-amber-300">
+        <div className="mb-2 rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-xs text-amber-300">
           ⚠ {error}
         </div>
       )}
@@ -298,10 +298,10 @@ function PerplexitySection({
           </div>
           {perplexity.citations?.length > 0 && (
             <details className="mt-2">
-              <summary className="cursor-pointer text-[10px] text-ink-500">
+              <summary className="cursor-pointer text-2xs text-ink-500">
                 {perplexity.citations.length} sources
               </summary>
-              <ul className="mt-1 space-y-0.5 pl-4 text-[10px] text-ink-500">
+              <ul className="mt-1 space-y-0.5 pl-4 text-2xs text-ink-500">
                 {perplexity.citations.map((u, i) => (
                   <li key={i}><a href={u} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">{u}</a></li>
                 ))}
@@ -310,7 +310,7 @@ function PerplexitySection({
           )}
         </div>
       ) : (
-        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-[11px] text-ink-500">
+        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-xs text-ink-500">
           Noch keine Perplexity-Recherche für {symbol}. Die nächste Analyse holt eine,
           oder ↻ Refresh sofort.
         </div>
@@ -332,7 +332,7 @@ function RefreshButton({ busy, disabled, onClick, title }: {
       title={disabled
         ? 'Refresh unavailable — see the hint below for the fix.'
         : title ?? 'Trigger a Distill refresh — drains pending insights and (re)generates the briefing.'}
-      className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-[10px] font-medium text-ink-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
+      className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-2xs font-medium text-ink-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
     >
       {busy ? '⟳' : '↻'} Refresh
     </button>
@@ -353,7 +353,7 @@ function PersistentHint({ kind, detail }: {
       'This ticker does not map to exactly one Distill entity. Add the ISIN or pick the entity in Distill — guessing would attach another company’s briefing.',
   };
   return (
-    <div className="mt-1 text-[10px] italic text-ink-500">
+    <div className="mt-1 text-2xs italic text-ink-500">
       {detail ?? messages[kind]}
     </div>
   );
@@ -389,29 +389,29 @@ function DossierBlock({ block, symbol }: { block: DistillDossierBlock; symbol: s
       <summary className="cursor-pointer px-3 py-2 text-xs">
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-semibold text-ink-100">
-            <span className={`mr-1.5 rounded px-1 py-px text-[9px] uppercase tracking-wider ${
+            <span className={`mr-1.5 rounded px-1 py-px text-3xs uppercase tracking-wider ${
               isSector ? 'bg-ink-800 text-ink-400' : 'bg-accent-soft text-accent'
             }`}>
               {isSector ? 'Sektor' : 'Firma'}
             </span>
             {block.displayName}
           </span>
-          <span className="shrink-0 text-[10px] text-ink-500">
+          <span className="shrink-0 text-2xs text-ink-500">
             {window}
             {block.stale && <span className="ml-1 text-ink-600" title="A late document landed in an already-built tile — the window above still holds.">· stale</span>}
           </span>
         </div>
         {isSector && (
-          <div className="mt-0.5 text-[10px] text-ink-500">
+          <div className="mt-0.5 text-2xs text-ink-500">
             Branchenbild, nicht {symbol} — Hintergrund, vor dem die Aktie gelesen wird.
           </div>
         )}
       </summary>
-      <div className="border-t border-ink-800 px-3 py-2 text-[12px] leading-relaxed text-ink-200">
+      <div className="border-t border-ink-800 px-3 py-2 text-xs leading-relaxed text-ink-200">
         {block.content?.trim()
           ? renderDistillBody(block.content, 'markdown')
           : (
-            <p className="text-[11px] italic text-ink-500">
+            <p className="text-xs italic text-ink-500">
               Noch kein Dossier gebaut — der Sweep zieht es heute Nacht nach. Unten steht
               das Rohmaterial, das stattdessen ins Prompt geht.
             </p>
@@ -433,14 +433,14 @@ function InsightList({ insights, truncated }: { insights: DistillInsight[]; trun
   if (insights.length === 0) return null;
   return (
     <div className="mt-3 border-t border-dashed border-ink-800 pt-2">
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">
+      <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-ink-500">
         Nicht im Dossier · {insights.length} roh
-        {truncated && <span className="ml-1 font-normal normal-case tracking-normal text-ink-600">(gekappt — es gibt mehr)</span>}
+        {truncated && <span className="ml-1 font-normal normal-case tracking-normal text-ink-500">(gekappt — es gibt mehr)</span>}
       </div>
       <ul className="space-y-1">
         {insights.map((i) => (
-          <li key={i.id} className="text-[11px] text-ink-400">
-            <span className="font-mono text-ink-600">{i.at?.slice(0, 10) ?? '—'}</span>
+          <li key={i.id} className="text-xs text-ink-400">
+            <span className="font-mono text-ink-500">{i.at?.slice(0, 10) ?? '—'}</span>
             {i.sourceName && <span className="ml-1 text-ink-500">{i.sourceName}</span>}
             {i.documentUrl ? (
               <a
@@ -469,7 +469,7 @@ function DistillBriefingBlock({ briefing }: { briefing: DistillBriefing }) {
       <summary className="cursor-pointer px-3 py-2 text-xs">
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-semibold text-ink-100">{briefing.briefingTypeName}</span>
-          <span className="shrink-0 text-[10px] text-ink-500">
+          <span className="shrink-0 text-2xs text-ink-500">
             {briefing.createdAt.slice(0, 10)} · {briefing.insightCount} insights · {briefing.model}
             {briefing.costUsd !== null && (
               <span className="ml-1 font-mono tabular" title="LLM cost for this briefing">
@@ -478,9 +478,9 @@ function DistillBriefingBlock({ briefing }: { briefing: DistillBriefing }) {
             )}
           </span>
         </div>
-        <div className="mt-0.5 truncate text-[10px] text-ink-500">{briefing.title}</div>
+        <div className="mt-0.5 truncate text-2xs text-ink-500">{briefing.title}</div>
       </summary>
-      <div className="border-t border-ink-800 px-3 py-2 text-[12px] leading-relaxed text-ink-200">
+      <div className="border-t border-ink-800 px-3 py-2 text-xs leading-relaxed text-ink-200">
         {renderDistillBody(briefing.body, briefing.format)}
       </div>
     </details>
@@ -522,7 +522,7 @@ function renderDistillBody(body: string, format: 'plain' | 'markdown'): React.Re
       out.push(
         <p
           key={i}
-          className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-ink-400 first:mt-0"
+          className="mt-3 text-xs font-semibold uppercase tracking-wider text-ink-400 first:mt-0"
         >
           {heading[2]}
         </p>,
@@ -557,16 +557,16 @@ function SearchProviderBlock({ trace }: { trace: SearchProviderTrace }) {
     <details className={`rounded border border-l-2 border-ink-800 bg-ink-950 ${meta.tint}`}>
       <summary className="cursor-pointer px-3 py-1.5 text-xs">
         <span className="font-semibold text-ink-100">{meta.label}</span>
-        <span className="ml-2 text-[10px] text-ink-500">
+        <span className="ml-2 text-2xs text-ink-500">
           {trace.queries.length} quer{trace.queries.length === 1 ? 'y' : 'ies'}
           {trace.results.length > 0 ? ` · ${trace.results.length} result${trace.results.length === 1 ? '' : 's'}` : ' · server-side fetch'}
           {' · '}{new Date(trace.fetchedAt).toLocaleString()}
         </span>
       </summary>
-      <div className="space-y-3 px-3 py-2 text-[11px]">
+      <div className="space-y-3 px-3 py-2 text-xs">
         {trace.queries.length > 0 && (
           <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">Queries</div>
+            <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-ink-500">Queries</div>
             <ul className="list-disc pl-4 text-ink-300">
               {trace.queries.map((q, i) => (
                 <li key={i} className="font-mono">{q}</li>
@@ -577,7 +577,7 @@ function SearchProviderBlock({ trace }: { trace: SearchProviderTrace }) {
 
         {trace.results.length > 0 ? (
           <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500">Results</div>
+            <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-ink-500">Results</div>
             <ul className="space-y-1.5">
               {trace.results.slice(0, 20).map((r, i) => (
                 <li key={i} className="rounded border border-ink-800 bg-ink-900 p-2">
@@ -585,22 +585,22 @@ function SearchProviderBlock({ trace }: { trace: SearchProviderTrace }) {
                      className="block truncate font-medium text-ink-100 hover:underline">
                     {r.title || r.url}
                   </a>
-                  <div className="mt-0.5 truncate text-[10px] text-ink-500">{r.url}</div>
+                  <div className="mt-0.5 truncate text-2xs text-ink-500">{r.url}</div>
                   {r.content && (
-                    <div className="mt-1 line-clamp-3 text-[10px] text-ink-400">{r.content}</div>
+                    <div className="mt-1 line-clamp-3 text-2xs text-ink-400">{r.content}</div>
                   )}
                   {r.score !== undefined && (
-                    <div className="mt-1 font-mono text-[9px] text-ink-600">score {r.score.toFixed(3)}</div>
+                    <div className="mt-1 font-mono text-3xs text-ink-500">score {r.score.toFixed(3)}</div>
                   )}
                 </li>
               ))}
             </ul>
             {trace.results.length > 20 && (
-              <div className="mt-1 text-[10px] text-ink-600">+{trace.results.length - 20} more …</div>
+              <div className="mt-1 text-2xs text-ink-500">+{trace.results.length - 20} more …</div>
             )}
           </div>
         ) : isNative ? (
-          <div className="text-[10px] italic text-ink-500">
+          <div className="text-2xs italic text-ink-500">
             Native provider — the LLM vendor fetched these URLs server-side and didn't surface them via the SDK.
             Only the issued queries are observable.
           </div>

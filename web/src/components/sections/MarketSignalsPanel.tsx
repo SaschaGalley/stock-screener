@@ -19,7 +19,7 @@ export default function MarketSignalsPanel({ marketSignals: ms }: Props) {
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
       {children}
     </div>
   );
@@ -83,7 +83,7 @@ function Revisions({ r }: { r: any }) {
     <Block title="Earnings Revisions Momentum">
       <table className="w-full text-xs tabular">
         <thead>
-          <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-medium">Period</th>
             <th className="py-1 px-2 text-right font-medium">Estimate</th>
             <th className="py-1 px-2 text-right font-medium">30d Drift</th>
@@ -144,7 +144,7 @@ function Row({ label, value, accent, accentColor }: { label: string; value: stri
       <td className="py-1 pr-2 text-ink-400">{label}</td>
       <td className={`py-1 text-right font-mono ${accentColor ?? 'text-ink-100'}`}>{value}</td>
       {accent !== undefined && (
-        <td className="py-1 pl-2 text-right text-[10px] text-ink-500">{accent}</td>
+        <td className="py-1 pl-2 text-right text-2xs text-ink-500">{accent}</td>
       )}
     </tr>
   );

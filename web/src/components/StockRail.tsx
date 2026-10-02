@@ -121,7 +121,7 @@ export default function StockRail({
           </div>
         ) : (
           <ul>
-            <li className={`${HEADER_HEIGHT} sticky top-0 z-10 flex items-center justify-between border-b border-ink-700 bg-ink-900 px-3 text-[10px] font-semibold uppercase tracking-wider text-ink-500`}>
+            <li className={`${HEADER_HEIGHT} sticky top-0 z-10 flex items-center justify-between border-b border-ink-700 bg-ink-900 px-3 text-2xs font-semibold uppercase tracking-wider text-ink-500`}>
               <span>Aktie</span>
               <Term k="list.score">Score</Term>
             </li>

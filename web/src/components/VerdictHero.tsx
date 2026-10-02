@@ -81,9 +81,10 @@ export default function VerdictHero({
         // question this card cannot answer on its own — which of the stored
         // analyses am I reading — and it doubles as the way to change it.
         meta={
-          <span className="flex items-center gap-2">
+          <span className="flex min-w-0 items-center gap-2">
             {llm && llmGeneratedAt && (
               <time
+                className="shrink-0"
                 dateTime={llmGeneratedAt}
                 title={`Generiert am ${new Date(llmGeneratedAt).toLocaleString()}${llmModel ? ` · ${llmModel}` : ''}`}
               >
@@ -93,7 +94,7 @@ export default function VerdictHero({
             <button
               onClick={onOpenAnalysis}
               title="Gespeicherte Analysen · neu rechnen"
-              className="flex max-w-[16rem] items-center gap-1 truncate rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 font-mono text-[10px] text-ink-300 transition hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100"
+              className="flex max-w-[16rem] items-center gap-1 truncate rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 font-mono text-2xs text-ink-300 transition hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100"
             >
               <span className="truncate">{flagsLabel}</span>
               <span aria-hidden className="shrink-0 text-ink-500">▾</span>
@@ -139,7 +140,7 @@ export default function VerdictHero({
           <div className="flex h-full flex-col">
             <div className={`rounded border px-3 py-2 ${mosBgColor(compositeMoS)}`}>
               <div className="flex items-baseline justify-between">
-                <span className="text-[11px] uppercase tracking-wider text-ink-400">
+                <span className="text-xs uppercase tracking-wider text-ink-400">
                   Primary · {composite.primary.models.length} models
                 </span>
                 <Term k="concept.upside" className={`font-mono text-sm font-semibold ${mosColor(compositeMoS)}`}>
@@ -149,7 +150,7 @@ export default function VerdictHero({
               <div className="mt-1 font-mono text-2xl font-bold text-ink-50 tabular">
                 {fmtPrice(composite.primary.median)}
               </div>
-              <div className="mt-1 text-[11px] text-ink-400">
+              <div className="mt-1 text-xs text-ink-400">
                 <Term k="concept.modelRange">Range</Term>: <span className="font-mono">{fmtPrice(composite.primary.min)} – {fmtPrice(composite.primary.max)}</span>
               </div>
             </div>
@@ -157,15 +158,15 @@ export default function VerdictHero({
             {composite.conservative.median !== null && (
               <div className="mt-2 flex items-baseline justify-between rounded border border-ink-700 bg-ink-950 px-3 py-1.5 text-xs">
                 <div>
-                  <Term k="metrics.composite.conservative.median" className="text-[10px] uppercase tracking-wider text-ink-500">Conservative lens</Term>
+                  <Term k="metrics.composite.conservative.median" className="text-2xs uppercase tracking-wider text-ink-500">Conservative lens</Term>
                   <span className="ml-1 text-ink-600">·</span>
-                  <span className="ml-1 text-[10px] text-ink-500">{composite.conservative.models.length} models</span>
+                  <span className="ml-1 text-2xs text-ink-500">{composite.conservative.models.length} models</span>
                 </div>
                 <span className="font-mono text-ink-300">{fmtPrice(composite.conservative.median)}</span>
               </div>
             )}
 
-            <div className="mt-auto pt-2 flex items-center gap-1.5 text-[11px] text-ink-500">
+            <div className="mt-auto pt-2 flex items-center gap-1.5 text-xs text-ink-500">
               <Term k="metrics.composite.confidence">
                 conf {Number.isFinite(composite.confidence) ? composite.confidence.toFixed(1) : '—'}/10
               </Term>
@@ -192,7 +193,7 @@ export default function VerdictHero({
           <div className="flex h-full flex-col">
             <div className={`rounded border px-3 py-2 ${mosBgColor(analystMoS)}`}>
               <div className="flex items-baseline justify-between">
-                <Term k="financials.targetMeanPrice" className="text-[11px] uppercase tracking-wider text-ink-400">Avg Target</Term>
+                <Term k="financials.targetMeanPrice" className="text-xs uppercase tracking-wider text-ink-400">Avg Target</Term>
                 <Term k="concept.upside" className={`font-mono text-sm font-semibold ${mosColor(analystMoS)}`}>
                   {fmtSignedPct(analystMoS)}
                 </Term>
@@ -202,7 +203,7 @@ export default function VerdictHero({
                   {fmtPrice(analyst.targetMeanPrice)}
                 </span>
                 {analyst.analystCount && (
-                  <span className="text-[11px] text-ink-500">{analyst.analystCount} analysts</span>
+                  <span className="text-xs text-ink-500">{analyst.analystCount} analysts</span>
                 )}
               </div>
             </div>
@@ -220,7 +221,7 @@ export default function VerdictHero({
                 <button
                   onClick={() => setShowFirms((x) => !x)}
                   aria-expanded={showFirms}
-                  className="mt-2 text-[11px] text-ink-400 transition hover:text-ink-100"
+                  className="mt-2 text-xs text-ink-400 transition hover:text-ink-100"
                 >
                   {showFirms ? 'Häuser ausblenden ▴' : `Alle ${coverage.firms.length} Häuser einzeln ▾`}
                 </button>
@@ -249,9 +250,10 @@ export default function VerdictHero({
 function Card({ title, info, meta, children }: { title: string; info?: GlossaryKey; meta?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col rounded-lg border border-ink-800 bg-ink-900 p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-500"><Term k={info}>{title}</Term></h3>
-        {meta && <span className="shrink-0 text-[10px] text-ink-500">{meta}</span>}
+      {/* Wraps, so a long analysis label moves under the title on a phone instead of widening every card. */}
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500"><Term k={info}>{title}</Term></h3>
+        {meta && <span className="min-w-0 text-2xs text-ink-500">{meta}</span>}
       </div>
       <div className="flex-1">{children}</div>
     </div>
@@ -261,7 +263,7 @@ function Card({ title, info, meta, children }: { title: string; info?: GlossaryK
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded border border-ink-800 bg-ink-950 px-2 py-1.5">
-      <div className="text-[10px] uppercase tracking-wider text-ink-500">{label}</div>
+      <div className="text-2xs uppercase tracking-wider text-ink-500">{label}</div>
       <div className="font-mono text-xs text-ink-200">{value}</div>
     </div>
   );
@@ -301,7 +303,7 @@ function TargetDispersion({ a }: { a: Props['analyst'] }) {
     : spread <= 0.7 ? ['gemischt', 'text-amber-400']
     : ['weit auseinander', 'text-red-400'];
   return (
-    <Term k="concept.targetDispersion" className="mt-1 block text-[11px] text-ink-500">
+    <Term k="concept.targetDispersion" className="mt-1 block text-xs text-ink-500">
       Streuung: Spanne {Math.round(spread * 100)} % des Mittels · <span className={cls}>{word}</span>
     </Term>
   );
@@ -331,7 +333,7 @@ function RatingBar({ a }: { a: Props['analyst'] }) {
         {s  > 0 && <div style={{ width: `${(s  / total) * 100}%`, opacity: 0.7 }} className="bg-red-500" />}
         {ss > 0 && <div style={{ width: `${(ss / total) * 100}%` }} className="bg-red-500" />}
       </div>
-      <div className="flex justify-between text-[10px] text-ink-500">
+      <div className="flex justify-between text-2xs text-ink-500">
         <Term k="concept.ratingCounts">SB {sb} · B {b} · H {h} · S {s} · SS {ss}</Term>
         <span className={buyPct >= 60 ? 'text-emerald-400' : buyPct >= 40 ? 'text-amber-400' : 'text-red-400'}>
           {Math.round(buyPct)}% bullish

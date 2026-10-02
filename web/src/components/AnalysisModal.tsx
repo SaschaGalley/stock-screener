@@ -229,7 +229,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
                           });
                           onClose();
                         }}
-                        className={`block w-full overflow-hidden rounded border py-1.5 pl-2 pr-9 text-left text-[11px] transition ${
+                        className={`block w-full overflow-hidden rounded border py-1.5 pl-2 pr-9 text-left text-xs transition ${
                           isCurrent
                             ? 'border-accent bg-accent-soft text-ink-100'
                             : a.olderThanData
@@ -251,7 +251,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
                             {a.flags.model} · {a.flags.search} · {a.flags.pplx ?? 'no-pplx'}
                           </span>
                         </div>
-                        <div className="mt-0.5 text-[10px] text-ink-500">
+                        <div className="mt-0.5 text-2xs text-ink-500">
                           {a.olderThanData
                             ? <span className="text-amber-400/80">{formatAge(a.generatedAt)} · vor der Aktualisierung</span>
                             : formatAge(a.generatedAt)}
@@ -270,7 +270,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
           </Section>
 
           <div className="border-t border-ink-800 pt-4">
-            <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-ink-400">
+            <h3 className="mb-3 text-2xs font-semibold uppercase tracking-wider text-ink-400">
               Neu rechnen
             </h3>
 
@@ -301,13 +301,13 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
                       />
                       <button
                         onClick={addCustomModel}
-                        className="rounded bg-accent px-2 py-1 text-[11px] font-medium text-white hover:bg-accent-dark"
+                        className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-dark"
                       >+</button>
                     </div>
                   ) : (
                     <button
                       onClick={() => setAdding(true)}
-                      className="w-full rounded border border-dashed border-ink-700 px-2 py-1.5 text-[11px] text-ink-500 transition hover:border-ink-600 hover:text-ink-300"
+                      className="w-full rounded border border-dashed border-ink-700 px-2 py-1.5 text-xs text-ink-500 transition hover:border-ink-600 hover:text-ink-300"
                     >
                       + eigene Modell-ID
                     </button>
@@ -348,7 +348,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
         <footer className="shrink-0 space-y-2 border-t border-ink-700 p-4">
           {cachedMatch ? (
             <div
-              className={`rounded border px-2.5 py-2 text-[11px] ${
+              className={`rounded border px-2.5 py-2 text-xs ${
                 cachedMatch.olderThanData
                   ? 'border-amber-700 bg-amber-950 text-amber-300'
                   : 'border-emerald-700 bg-emerald-900 text-emerald-400'
@@ -359,7 +359,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
                 : `✓ Vorhanden (${formatAge(cachedMatch.generatedAt)})`}
             </div>
           ) : (
-            <div className="rounded border border-amber-700 bg-amber-900 px-2.5 py-2 text-[11px] text-amber-400">
+            <div className="rounded border border-amber-700 bg-amber-900 px-2.5 py-2 text-xs text-amber-400">
               ○ Für diese Kombination liegt noch nichts vor
             </div>
           )}
@@ -388,8 +388,8 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
-      {hint && <p className="mb-1.5 mt-0.5 text-[10px] text-ink-600">{hint}</p>}
+      <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      {hint && <p className="mb-1.5 mt-0.5 text-xs text-ink-500">{hint}</p>}
       <div className={hint ? '' : 'mt-1.5'}>{children}</div>
     </div>
   );
@@ -412,7 +412,7 @@ function ModelOption({ option, selected, onSelect, onDelete }: {
         }`}
       >
         <div className="truncate font-medium">{option.label}</div>
-        {option.sublabel && <div className="truncate text-[10px] text-ink-500">{option.sublabel}</div>}
+        {option.sublabel && <div className="truncate text-2xs text-ink-500">{option.sublabel}</div>}
       </button>
       {onDelete && (
         <button
@@ -454,14 +454,14 @@ function SearchButtonGroup({ selected, modelProvider, onToggle }: {
             }`}
           >
             <span className="block font-medium">{o.label}</span>
-            <span className="block text-[10px] text-ink-500">
+            <span className="block text-2xs text-ink-500">
               {disabled ? `braucht ein ${o.requires}-Modell` : o.help}
             </span>
           </button>
         );
       })}
       {selected.length === 0 && (
-        <div className="px-2 py-1 text-[10px] italic text-ink-500">
+        <div className="px-2 py-1 text-2xs italic text-ink-500">
           Ohne Websuche — das Modell verlässt sich auf seine Trainingsdaten.
         </div>
       )}

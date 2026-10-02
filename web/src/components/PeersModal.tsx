@@ -139,13 +139,13 @@ export default function PeersModal({ symbol, onClose, onOpen, onAdded }: Props) 
               Peers &amp; Konkurrenten <span className="font-mono text-ink-400">{symbol}</span>
             </h2>
             {data && (
-              <p className="mt-0.5 text-[11px] text-ink-500">
+              <p className="mt-0.5 text-xs text-ink-500">
                 {addable === 0 ? 'Alle schon auf der Liste' : `${addable} noch nicht auf der Liste`}
               </p>
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <div className="flex overflow-hidden rounded border border-ink-700 text-[11px]" role="group" aria-label="Sortierung">
+            <div className="flex overflow-hidden rounded border border-ink-700 text-xs" role="group" aria-label="Sortierung">
               {SORTS.map((s) => (
                 <button
                   key={s.key}
@@ -201,7 +201,7 @@ export default function PeersModal({ symbol, onClose, onOpen, onAdded }: Props) 
           )}
         </div>
 
-        <footer className="shrink-0 border-t border-ink-800 px-4 py-2.5 text-[11px] leading-snug text-ink-500">
+        <footer className="shrink-0 border-t border-ink-800 px-4 py-2.5 text-xs leading-snug text-ink-500">
           Hinzufügen holt nur die Daten, ohne LLM-Aufruf. Die nächtliche Pipeline analysiert neue Aktien danach mit.
           Scores aus dem Universum rechnen nur mit Zahlen, ohne Text-Analyse.
         </footer>
@@ -218,8 +218,8 @@ function Group({ title, hint, empty, children }: {
 }) {
   return (
     <section>
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-400">{title}</h3>
-      <p className="mb-2 mt-0.5 text-[10px] leading-snug text-ink-500">{hint}</p>
+      <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-400">{title}</h3>
+      <p className="mb-2 mt-0.5 text-xs leading-snug text-ink-500">{hint}</p>
       {children.length === 0
         ? <p className="text-xs text-ink-500">{empty}</p>
         : <ul className="divide-y divide-ink-800 rounded border border-ink-800 bg-ink-950">{children}</ul>}
@@ -257,7 +257,7 @@ function PeerLine({ row, self = false, add, onAdd, onOpen }: {
       />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm text-ink-100">{name}</div>
-        <div className="truncate font-mono text-[10px] text-ink-500">
+        <div className="truncate font-mono text-2xs text-ink-500">
           {row.symbol}{note ? ` · ${note}` : ''}
         </div>
       </div>

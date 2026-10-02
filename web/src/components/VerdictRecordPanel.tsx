@@ -46,7 +46,7 @@ export default function VerdictRecordPanel() {
             {label}
           </button>
         ))}
-        <span className="ml-2 text-[11px] text-ink-500">
+        <span className="ml-2 text-xs text-ink-500">
           {r.calls} Urteile{r.from && ` seit ${r.from}`}
           {data.unpriced > 0 && ` · ${data.unpriced} Werte noch ohne archivierte Kurse`}
           {` · berechnet ${new Date(data.computedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}`}
@@ -71,9 +71,9 @@ function Cell({ s, verdict }: { s: LegStats; verdict: string }) {
     <td className="px-2 py-1.5 text-right" title={`Mittelwert ${pct(s.meanExcess)} · ${s.n} Urteile`}>
       <span className={`font-mono ${tone}`}>{pct(s.medianExcess)}</span>
       {directional && s.hitRate !== null && (
-        <span className="ml-1.5 font-mono text-[11px] text-ink-400">{Math.round(s.hitRate * 100)} %</span>
+        <span className="ml-1.5 font-mono text-xs text-ink-400">{Math.round(s.hitRate * 100)} %</span>
       )}
-      <span className="ml-1 text-[10px] text-ink-600">{s.n}</span>
+      <span className="ml-1 text-2xs text-ink-500">{s.n}</span>
     </td>
   );
 }
@@ -82,7 +82,7 @@ function RecordTable({ r }: { r: VerdictRecord }) {
   return (
     <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
       <table className="w-full min-w-[640px] text-sm">
-        <thead className="text-[11px] text-ink-400">
+        <thead className="text-xs text-ink-400">
           <tr className="border-b border-ink-800">
             <th className="px-4 py-1.5 text-left font-normal">Urteil</th>
             <th className="px-2 py-1.5 text-right font-normal">Urteile</th>
@@ -94,7 +94,7 @@ function RecordTable({ r }: { r: VerdictRecord }) {
           {r.byVerdict.map((v) => (
               <tr key={v.verdict} className="border-b border-ink-800/60">
                 <td className="px-4 py-1.5">
-                  <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${recommendationColor(v.verdict)}`}>{v.verdict}</span>
+                  <span className={`rounded px-2 py-0.5 text-xs font-bold ${recommendationColor(v.verdict)}`}>{v.verdict}</span>
                 </td>
                 <td className="px-2 py-1.5 text-right font-mono text-ink-400">{v.calls}</td>
                 {RECORD_HORIZONS.map((h) => <Cell key={h} s={v.horizons[h]} verdict={v.verdict} />)}
@@ -111,7 +111,7 @@ function RecordTable({ r }: { r: VerdictRecord }) {
           </tr>
         </tbody>
       </table>
-      <p className="border-t border-ink-800 px-4 py-2 text-[11px] leading-relaxed text-ink-500">
+      <p className="border-t border-ink-800 px-4 py-2 text-xs leading-relaxed text-ink-500">
         Je Zelle die mittlere (Median-)Mehrrendite gegenüber dem Index, bei Kauf und Verkauf dahinter der Anteil richtiger Urteile und
         klein die Zahl der Urteile, deren Zeitraum schon abgelaufen ist. Ein Verkaufsurteil mit negativer Mehrrendite war richtig.
       </p>

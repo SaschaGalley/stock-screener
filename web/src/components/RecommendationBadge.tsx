@@ -25,7 +25,7 @@ export default function RecommendationBadge({
 }) {
   const capped = heldBack.length > 0;
   const wouldBe = capped && typeof score === 'number' ? verdictForScore(score) : null;
-  const chip = size === 'sm' ? 'px-2 py-0.5 text-[11px] leading-4' : 'px-2.5 py-1 text-xs';
+  const chip = size === 'sm' ? 'px-2 py-0.5 text-xs leading-4' : 'px-2.5 py-1 text-xs';
 
   return (
     <span className="inline-flex items-center gap-1">
@@ -34,7 +34,7 @@ export default function RecommendationBadge({
       </span>
       {capped && (
         <Tip
-          className="text-[11px] text-amber-400"
+          className="text-xs text-amber-400"
           content={
             <>
               <div className="font-semibold text-ink-100">

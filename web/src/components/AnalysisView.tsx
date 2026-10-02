@@ -305,7 +305,7 @@ export default function AnalysisView({
                 info="section.fairValue"
                 subtitle={`Primary ${sym}${m.composite.primary.median?.toFixed(0) ?? "—"} · Conservative ${sym}${m.composite.conservative.median?.toFixed(0) ?? "—"}`}
               >
-                <div className="mb-2 text-[11px] text-ink-500">
+                <div className="mb-2 text-xs text-ink-500">
                   <span className="mr-3">
                     <span className="inline-block h-2 w-3 rounded-sm bg-emerald-500 align-middle"></span>{" "}
                     Primary (filled) · market-aligned
@@ -391,7 +391,7 @@ export default function AnalysisView({
                   (f.fundamentalsHistory.revenue?.length > 0 ||
                     f.fundamentalsHistory.netIncome?.length > 0 ||
                     f.fundamentalsHistory.eps?.length > 0) && (
-                    <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
+                    <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
                       <FundamentalsHistoryChart history={f.fundamentalsHistory} />
                       <MarginTrends history={f.fundamentalsHistory} />
                     </div>

@@ -20,7 +20,7 @@ export default function EarningsBlock({ financials: f }: Props) {
       )}
       {f.earningsSurprises?.length > 0 && (
         <div>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
             <Term k="concept.surprises">Past Surprises (last 4 qtrs)</Term>
           </h3>
           <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 200 }}>
@@ -28,7 +28,7 @@ export default function EarningsBlock({ financials: f }: Props) {
           </div>
           <table className="mt-2 w-full text-xs tabular">
             <thead>
-              <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
+              <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
                 <th className="py-1 pr-2 text-left font-medium">Qtr</th>
                 <th className="py-1 px-2 text-right font-medium">Estimate</th>
                 <th className="py-1 px-2 text-right font-medium">Actual</th>
@@ -53,7 +53,7 @@ export default function EarningsBlock({ financials: f }: Props) {
 
       {f.earningsEstimates?.length > 0 && (
         <div>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
             <Term k="concept.forwardEstimates">Forward Estimates (analyst consensus)</Term>
           </h3>
           <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 200 }}>
@@ -61,7 +61,7 @@ export default function EarningsBlock({ financials: f }: Props) {
           </div>
           <table className="mt-2 w-full text-xs tabular">
             <thead>
-              <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
+              <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
                 <th className="py-1 pr-2 text-left font-medium">Period</th>
                 <th className="py-1 px-2 text-right font-medium">EPS</th>
                 <th className="py-1 px-2 text-right font-medium">YoY</th>

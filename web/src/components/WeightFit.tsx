@@ -83,7 +83,7 @@ export default function WeightFit({ v, inForce }: { v: Validation; inForce: InFo
     <section className="rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Gewichte: angepasst und auf ungesehenen Jahren geprüft</h3>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-ink-500">
+        <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
           Jedes Gewicht wird um den IC seines Kriteriums über {months(v.horizon)} gekippt, zur Null geschrumpft um seinen
           Standardfehler — erst die Kriterien in ihrer Säule, dann die Säulen. Wie weit, liest die Regel aus der Streuung der
           ICs jenseits ihres Rauschens: Unterscheiden sich die Kriterien nicht mehr, als Zufall erklärt, bewegt sich nichts.
@@ -111,7 +111,7 @@ export default function WeightFit({ v, inForce }: { v: Validation; inForce: InFo
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] whitespace-nowrap text-sm">
-          <thead className="text-[11px] text-ink-400">
+          <thead className="text-xs text-ink-400">
             <tr className="border-b border-ink-800">
               <th className="px-4 py-2 text-left font-normal">Richtung</th>
               <th className="px-2 py-2 text-left font-normal">angepasst auf</th>
@@ -133,7 +133,7 @@ export default function WeightFit({ v, inForce }: { v: Validation; inForce: InFo
 
       <div className="overflow-x-auto border-t border-ink-800">
         <table className="w-full min-w-[720px] whitespace-nowrap text-sm">
-          <thead className="text-[11px] text-ink-400">
+          <thead className="text-xs text-ink-400">
             <tr className="border-b border-ink-800">
               <th className="px-4 py-2 text-left font-normal">Säule / Kriterium</th>
               <th className="px-2 py-2 text-right font-normal">Urteil</th>
@@ -168,7 +168,7 @@ export default function WeightFit({ v, inForce }: { v: Validation; inForce: InFo
           </tbody>
         </table>
       </div>
-      <p className="border-t border-ink-800 px-4 py-2 text-[11px] leading-relaxed text-ink-500">
+      <p className="border-t border-ink-800 px-4 py-2 text-xs leading-relaxed text-ink-500">
         IC je Hälfte farbig, wo er mindestens einen Standardfehler von null entfernt liegt. {' '}
         {unmeasured.map((r) => `${r.label} (${share(r.judgment)})`).join(' und ')}: im Backtest nicht messbar, sie behalten ihr
         Urteilsgewicht.

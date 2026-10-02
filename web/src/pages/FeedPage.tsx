@@ -65,7 +65,7 @@ export default function FeedPage({ onClose, onSelect }: { onClose: () => void; o
       <div className="mx-auto max-w-4xl space-y-4 p-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-base font-semibold text-ink-100">Was ist passiert</h2>
-          {feed && <span className="text-[11px] text-ink-500">{feed.symbols} Werte der Watchlist</span>}
+          {feed && <span className="text-xs text-ink-500">{feed.symbols} Werte der Watchlist</span>}
           <div className="ml-auto flex items-center gap-1">
             {RANGES.map((r) => (
               <button
@@ -110,7 +110,7 @@ export default function FeedPage({ onClose, onSelect }: { onClose: () => void; o
               <button
                 key={k}
                 onClick={() => toggle(k)}
-                className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] transition ${
+                className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs transition ${
                   off.has(k) ? 'border-ink-800 text-ink-600' : 'border-ink-700 bg-ink-950 text-ink-300'
                 }`}
               >
@@ -128,7 +128,7 @@ export default function FeedPage({ onClose, onSelect }: { onClose: () => void; o
         <div className="space-y-4">
           {byDay.map((g) => (
             <section key={g.day}>
-              <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{fmtDay(g.day)}{g.day.slice(0, 4) !== new Date().toISOString().slice(0, 4) ? g.day.slice(0, 4) : ''}</h3>
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">{fmtDay(g.day)}{g.day.slice(0, 4) !== new Date().toISOString().slice(0, 4) ? g.day.slice(0, 4) : ''}</h3>
               <ul className="space-y-1 border-l border-ink-800 pl-3">
                 {g.events.map((e, i) => (
                   <li key={i} className="relative flex gap-2 text-xs leading-snug">
@@ -136,7 +136,7 @@ export default function FeedPage({ onClose, onSelect }: { onClose: () => void; o
                     <button
                       onClick={() => onSelect(e.symbol)}
                       title={e.name ?? e.symbol}
-                      className="w-16 shrink-0 truncate text-left font-mono text-[11px] text-ink-200 hover:text-accent"
+                      className="w-16 shrink-0 truncate text-left font-mono text-xs text-ink-200 hover:text-accent"
                     >
                       {e.symbol}
                     </button>

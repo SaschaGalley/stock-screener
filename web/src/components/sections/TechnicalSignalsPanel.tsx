@@ -27,12 +27,12 @@ export default function TechnicalSignalsPanel({ signals }: Props) {
 function IndicatorTable({ title, group }: { title: string; group: SignalGroup }) {
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
         {title}
       </h3>
       <table className="w-full text-xs tabular">
         <thead>
-          <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-medium">Indicator</th>
             <th className="py-1 px-2 text-right font-medium">Value</th>
             <th className="py-1 pl-2 text-right font-medium">Signal</th>
@@ -68,7 +68,7 @@ function SignalBadge({ signal }: { signal: 'buy' | 'sell' | 'neutral' }) {
       : 'bg-ink-800 text-ink-500';
   const label = signal.toUpperCase();
   return (
-    <span className={`inline-block rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${cls}`}>
+    <span className={`inline-block rounded px-1.5 py-0.5 font-mono text-2xs font-semibold ${cls}`}>
       {label}
     </span>
   );

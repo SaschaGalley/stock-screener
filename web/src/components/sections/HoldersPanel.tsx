@@ -42,7 +42,7 @@ function Breakdown({ h }: { h: Holders }) {
         <div className="bg-sky-500" style={{ width: `${inst * 100}%` }} title={`Institutionen ${pct(inst)}`} />
         <div className="bg-ink-600" style={{ width: `${rest * 100}%` }} title={`Übrige ${pct(rest)}`} />
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-ink-400">
+      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-ink-400">
         <span><span className="text-violet-400">■</span> Insider {pct(insiders)}</span>
         <span><span className="text-sky-400">■</span> Institutionen {pct(institutions)}{institutionsCount ? ` · ${institutionsCount.toLocaleString('de-DE')} Halter` : ''}</span>
         <span><span className="text-ink-500">■</span> Übrige {pct(rest)}</span>
@@ -62,10 +62,10 @@ function HolderTable({ title, rows }: { title: string; rows: Holder[] }) {
   if (rows.length === 0) return null;
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
       <table className="w-full text-xs tabular">
         <thead>
-          <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal" />
             <th className="py-1 text-right font-normal"><Term k="concept.holders.share">Anteil</Term></th>
             <th className="py-1 text-right font-normal">Wert</th>
@@ -98,9 +98,9 @@ function Trades({ trades, insiders }: { trades: InsiderTrade[]; insiders: Holder
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500"><Term k="concept.insiderTrades">Insider-Transaktionen</Term></h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500"><Term k="concept.insiderTrades">Insider-Transaktionen</Term></h3>
         {hidden > 0 && (
-          <button onClick={() => setAll((x) => !x)} className="text-[11px] text-ink-400 hover:text-ink-100">
+          <button onClick={() => setAll((x) => !x)} className="text-xs text-ink-400 hover:text-ink-100">
             {all ? 'Nur Käufe und Verkäufe' : `+ ${hidden} Zuteilungen, Schenkungen, Ausübungen`}
           </button>
         )}

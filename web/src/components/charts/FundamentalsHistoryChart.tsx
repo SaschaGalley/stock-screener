@@ -135,7 +135,7 @@ export default function FundamentalsHistoryChart({ history, initialMode = 'incom
 
   return (
     <div>
-      <div className="mb-3 flex items-center gap-1">
+      <div className="mb-3 flex flex-wrap items-center gap-1">
         {(Object.keys(MODE_PRESETS) as (keyof typeof MODE_PRESETS)[]).map((k) => {
           const active = k === mode;
           const has = MODE_PRESETS[k].series.some((s) => s.points(history).length > 0);
@@ -144,7 +144,7 @@ export default function FundamentalsHistoryChart({ history, initialMode = 'incom
               key={k}
               disabled={!has}
               onClick={() => setMode(k)}
-              className={`rounded border px-2.5 py-1 text-[11px] transition ${
+              className={`rounded border px-2.5 py-1 text-xs transition ${
                 active
                   ? 'border-accent bg-accent-soft text-ink-100'
                   : has
@@ -167,24 +167,24 @@ export default function FundamentalsHistoryChart({ history, initialMode = 'incom
               trigger: 'axis',
               backgroundColor: CHART_COLORS.bg,
               borderColor: CHART_COLORS.grid,
-              textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+              textStyle: { color: CHART_COLORS.text, fontSize: 13 },
               valueFormatter: (v: any) => v == null ? '—' : fmtChartValue(v, unit, cur),
             },
             legend: {
-              textStyle: { color: CHART_COLORS.text, fontSize: 11 },
+              textStyle: { color: CHART_COLORS.text, fontSize: 12 },
               top: 0,
               right: 8,
             },
             xAxis: {
               type: 'category',
               data: years.map((y) => String(y)),
-              axisLabel: { color: CHART_COLORS.ink, fontSize: 11 },
+              axisLabel: { color: CHART_COLORS.ink, fontSize: 12 },
               axisLine:  { lineStyle: { color: CHART_COLORS.grid } },
             },
             yAxis: {
               type: 'value',
               axisLabel: {
-                color: CHART_COLORS.ink, fontSize: 10,
+                color: CHART_COLORS.ink, fontSize: 11,
                 formatter: (v: number) => fmtChartValue(v, unit, cur),
               },
               splitLine: { lineStyle: { color: CHART_COLORS.grid } },

@@ -55,12 +55,12 @@ export default function ValuationDetail({ metrics, price }: Props) {
     <div className="grid gap-4 lg:grid-cols-2">
       {/* Single-equation models */}
       <div>
-        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
           <Term k="concept.singleEquation">Single-Equation Models</Term>
         </h3>
         <table className="w-full text-xs tabular">
           <thead>
-            <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
+            <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
               <th className="py-1.5 pr-2 text-left font-medium">Model</th>
               <th className="py-1.5 px-2 text-right font-medium">Fair Value</th>
               <th className="py-1.5 pl-2 text-right font-medium"><Term k="concept.vsPrice">vs Price</Term></th>
@@ -73,7 +73,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
                 <tr key={r.label} className="border-b border-ink-800">
                   <td className="py-1.5 pr-2 text-ink-200">
                     <div><Term k={r.term}>{r.label}</Term></div>
-                    {r.note && <div className="text-[10px] text-ink-500">{r.note}</div>}
+                    {r.note && <div className="text-2xs text-ink-500">{r.note}</div>}
                   </td>
                   <td className="py-1.5 px-2 text-right font-mono text-ink-100">
                     {r.value !== null ? fmtPrice(r.value) : <span className="text-ink-600">—</span>}
@@ -87,7 +87,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
           </tbody>
         </table>
         {dcf.fairValue !== null && (
-          <p className="mt-2 text-[10px] text-ink-500">
+          <p className="mt-2 text-xs text-ink-500">
             DCF assumptions: {dcf.assumptions}
           </p>
         )}
@@ -96,13 +96,13 @@ export default function ValuationDetail({ metrics, price }: Props) {
       {/* Peer multiples + reverse DCF */}
       <div className="space-y-4">
         <div>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-            <Term k="metrics.peerMultiples.medianFairPrice">Peer-Multiples Fair Value</Term> <span className="text-ink-600">({peerMultiples.count} multiples)</span>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+            <Term k="metrics.peerMultiples.medianFairPrice">Peer-Multiples Fair Value</Term> <span className="text-ink-500">({peerMultiples.count} multiples)</span>
           </h3>
           {peerMultiples.byMultiple.length > 0 ? (
             <table className="w-full text-xs tabular">
               <thead>
-                <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
+                <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
                   <th className="py-1.5 pr-2 text-left font-medium">Multiple</th>
                   <th className="py-1.5 px-2 text-right font-medium"><Term k="concept.sectorMedian">Sector Median</Term></th>
                   <th className="py-1.5 px-2 text-right font-medium"><Term k="concept.impliedFair">Implied Fair</Term></th>
@@ -130,7 +130,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
                   );
                 })}
                 <tr className="border-t border-ink-700">
-                  <td className="py-1.5 pr-2 text-[11px] font-medium text-ink-300">Median</td>
+                  <td className="py-1.5 pr-2 text-xs font-medium text-ink-300">Median</td>
                   <td />
                   <td className="py-1.5 px-2 text-right font-mono font-semibold text-ink-50">
                     {fmtPrice(peerMultiples.medianFairPrice)}
@@ -147,7 +147,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
         </div>
 
         <div>
-          <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">
             <Term k="metrics.reverseDCF.impliedGrowthRate">Reverse DCF</Term>
           </h3>
           {reverseDCF.isPossible && reverseDCF.impliedGrowthRate !== null ? (
@@ -158,7 +158,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
                   {(reverseDCF.impliedGrowthRate * 100).toFixed(1)}%/yr
                 </span>
               </div>
-              <p className="mt-1.5 text-[11px] text-ink-400">{reverseDCF.interpretation}</p>
+              <p className="mt-1.5 text-xs text-ink-400">{reverseDCF.interpretation}</p>
             </div>
           ) : (
             <p className="text-xs text-ink-500">{reverseDCF.interpretation}</p>
@@ -166,7 +166,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
         </div>
 
         <div>
-          <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">
             <Term k="metrics.reverseDCF.impliedMargin.requiredMargin">Margin the price requires</Term>
           </h3>
           {impliedMargin ? (
@@ -177,13 +177,13 @@ export default function ValuationDetail({ metrics, price }: Props) {
                   {fmtPct(impliedMargin.requiredMargin)}
                 </span>
               </div>
-              <p className="mt-1.5 text-[11px] text-ink-400">
+              <p className="mt-1.5 text-xs text-ink-400">
                 {impliedMargin.interpretation}
                 {impliedMargin.achievableMargin !== null && (
                   <> Best margin shown: {fmtPct(impliedMargin.achievableMargin)} ({impliedMargin.achievableBasis}).</>
                 )}
               </p>
-              <p className="mt-1 text-[10px] text-ink-500">
+              <p className="mt-1 text-xs text-ink-500">
                 On {fmtBig(impliedMargin.revenueBase)} trailing revenue growing {fmtPct(impliedMargin.revenueGrowth)}/yr
                 ({impliedMargin.growthSource}), fading to terminal, at WACC {fmtPct(impliedMargin.discountRate)} —
                 the forward DCF's own path, reinvestment and taxes, solved for the margin it settles at by year five.

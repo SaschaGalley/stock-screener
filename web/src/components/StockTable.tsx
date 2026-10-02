@@ -125,10 +125,10 @@ export default function StockTable({
             size="sm"
           />
         ) : (
-          <span className="text-[11px] text-ink-600">nicht analysiert</span>
+          <span className="text-xs text-ink-500">nicht analysiert</span>
         )}
         {r.verdictModel && (
-          <div className="font-mono text-[9px] leading-3 text-ink-600">{r.verdictModel}</div>
+          <div className="font-mono text-3xs leading-3 text-ink-500">{r.verdictModel}</div>
         )}
       </td>
 
@@ -138,21 +138,21 @@ export default function StockTable({
 
       <td className={`${COL.target} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular`}>
         <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean, r.currency)}</div>
-        <div className={`text-[10px] ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
+        <div className={`text-2xs ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
       </td>
 
       <td className={`${COL.model} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular`}>
         <div className="text-ink-300">
           {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue, r.currency)}
         </div>
-        <div className={`text-[10px] ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
+        <div className={`text-2xs ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
       </td>
 
       <td className={`${COL.mcap} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-400`}>
         {fmtBig(r.marketCap, r.currency)}
       </td>
 
-      <td className={`${COL.age} whitespace-nowrap px-3 py-1 text-right text-[10px] text-ink-500`}>
+      <td className={`${COL.age} whitespace-nowrap px-3 py-1 text-right text-2xs text-ink-500`}>
         <Tip className="block leading-4" content="Alter der Marktdaten">
           {r.dataAgeHours === null
             ? '—'
@@ -160,7 +160,7 @@ export default function StockTable({
               ? `${r.dataAgeHours.toFixed(0)}h`
               : `${(r.dataAgeHours / 24).toFixed(0)}d`}
         </Tip>
-        <Tip className="block leading-4 text-ink-600" content="Letztes AI-Verdict">
+        <Tip className="block leading-4 text-ink-500" content="Letztes AI-Verdict">
           {r.verdictAt ? relativeTime(r.verdictAt) : '—'}
         </Tip>
       </td>
@@ -177,7 +177,7 @@ export default function StockTable({
           </span>
         </h2>
         {avg && (
-          <span className="text-[11px] text-ink-500">
+          <span className="text-xs text-ink-500">
             Ø Score <span className={scoreColor(avg.avg)}>{avg.avg.toFixed(1)}</span>
             {/* The count is the first thing a phone's header line can spare. */}
             <span className="hidden sm:inline"> über {avg.count} bewertete</span>
@@ -224,7 +224,7 @@ export default function StockTable({
           </div>
         ) : (
           <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-ink-900 text-[10px] uppercase tracking-wider text-ink-500">
+            <thead className="sticky top-0 z-10 bg-ink-900 text-2xs uppercase tracking-wider text-ink-500">
               <tr className={`${HEADER_HEIGHT} border-b border-ink-700`}>
                 <th className="px-3 py-2 text-left font-semibold">Aktie</th>
                 <th className="px-2 py-2 text-right font-semibold"><Term k="list.score">Score</Term></th>

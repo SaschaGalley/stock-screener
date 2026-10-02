@@ -46,7 +46,7 @@ export default function StockListControls({ view, onChange, layout, badge }: Pro
       <div className="relative">
         {search}
         {badge && (
-          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] text-ink-600">
+          <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-2xs text-ink-500">
             {badge}
           </span>
         )}
@@ -57,7 +57,7 @@ export default function StockListControls({ view, onChange, layout, badge }: Pro
   return (
     <div className="flex flex-wrap items-center gap-3">
       {search}
-      <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-400">
+      <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-400">
         <input
           type="checkbox"
           checked={view.onlyWatched}
@@ -66,24 +66,24 @@ export default function StockListControls({ view, onChange, layout, badge }: Pro
         />
         nur Watchlist
       </label>
-      <label className="flex min-w-0 shrink items-center gap-1.5 text-[11px] text-ink-400">
+      <label className="flex min-w-0 shrink items-center gap-1.5 text-xs text-ink-400">
         <span className="shrink-0">Sortierung</span>
         <select
           value={view.sort}
           onChange={(e) => onChange({ ...view, sort: e.target.value as ListView['sort'] })}
-          className="min-w-0 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-[11px] text-ink-200 focus:border-accent focus:outline-none"
+          className="min-w-0 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-xs text-ink-200 focus:border-accent focus:outline-none"
         >
           {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
       </label>
-      <label className="flex min-w-0 shrink items-center gap-1.5 text-[11px] text-ink-400">
+      <label className="flex min-w-0 shrink items-center gap-1.5 text-xs text-ink-400">
         <span className="shrink-0">Gruppierung</span>
         <select
           value={view.group}
           // Folded groups belong to the grouping they were folded in; under
           // another one the same key names a different heading, or none.
           onChange={(e) => onChange({ ...view, group: e.target.value as ListView['group'], collapsed: [] })}
-          className="min-w-0 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-[11px] text-ink-200 focus:border-accent focus:outline-none"
+          className="min-w-0 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-xs text-ink-200 focus:border-accent focus:outline-none"
         >
           {GROUPINGS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
         </select>

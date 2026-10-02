@@ -36,7 +36,7 @@ export default function ScoreSparkline({ points, width = 116, height = 34 }: Pro
     return (
       <div
         style={{ width, height }}
-        className="flex items-center justify-center text-[10px] text-ink-600"
+        className="flex items-center justify-center text-2xs text-ink-600"
         title="Noch keine Verlaufspunkte — entsteht ab dem nächsten Lauf"
       >
         —
@@ -64,7 +64,7 @@ export default function ScoreSparkline({ points, width = 116, height = 34 }: Pro
           trigger: 'axis',
           backgroundColor: CHART_COLORS.bg,
           borderColor: CHART_COLORS.grid,
-          textStyle: { color: CHART_COLORS.text, fontSize: 11 },
+          textStyle: { color: CHART_COLORS.text, fontSize: 12 },
           formatter: (params: { dataIndex: number }[]) => {
             const p = points[params[0].dataIndex];
             return `${new Date(p.at).toLocaleDateString()}<br/><b>${p.score.toFixed(1)}</b>/10`;

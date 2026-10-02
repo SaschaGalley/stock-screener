@@ -49,7 +49,7 @@ export default function AnalyzeForm({ onAdd, analyzing, hint }: Props) {
       onSubmit={submit}
       className="border-t border-ink-800 bg-ink-900 px-4 py-3"
     >
-      <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-ink-500">
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-2xs uppercase tracking-wider text-ink-500">
         <span className="shrink-0">Aktie hinzufügen</span>
         <span className="truncate">
           {error
@@ -67,7 +67,7 @@ export default function AnalyzeForm({ onAdd, analyzing, hint }: Props) {
             disabled={busy}
           />
           {inputType && (
-            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded bg-ink-800 px-1.5 py-0.5 font-mono text-[10px] uppercase text-ink-400">
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded bg-ink-800 px-1.5 py-0.5 font-mono text-2xs uppercase text-ink-400">
               {inputType}
             </span>
           )}

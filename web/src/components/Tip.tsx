@@ -106,7 +106,7 @@ export default function Tip({ content, children, className = '', focusable = tru
           id={id}
           role="tooltip"
           style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? 'visible' : 'hidden' }}
-          className="pointer-events-none fixed z-50 max-w-sm whitespace-pre-line rounded-md border border-ink-600 bg-ink-800 px-2.5 py-1.5 text-left font-sans text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-200 shadow-lg shadow-black/40"
+          className="pointer-events-none fixed z-50 max-w-[26rem] whitespace-pre-line rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-left font-sans text-[13px] font-normal normal-case leading-normal tracking-normal text-ink-100 shadow-lg shadow-black/40"
         >
           {content}
         </div>,

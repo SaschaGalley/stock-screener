@@ -53,7 +53,7 @@ function Card({ title, hint, children }: { title: string; hint?: string; childre
     <section className="rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">{title}</h3>
-        {hint && <p className="mt-0.5 text-[11px] text-ink-500">{hint}</p>}
+        {hint && <p className="mt-0.5 text-xs text-ink-500">{hint}</p>}
       </header>
       <div className="space-y-3 p-4">{children}</div>
     </section>
@@ -73,7 +73,7 @@ function Toggle({ checked, onChange, label, hint }: {
       />
       <span>
         <span className="text-sm text-ink-200">{label}</span>
-        {hint && <span className="block text-[11px] text-ink-500">{hint}</span>}
+        {hint && <span className="block text-xs text-ink-500">{hint}</span>}
       </span>
     </label>
   );
@@ -215,9 +215,9 @@ export default function AdminPage({ onClose }: Props) {
       <div className="mx-auto max-w-5xl space-y-4 p-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-base font-semibold text-ink-100">Administration</h2>
-          <span className="text-[11px] text-ink-500">Dateien: <span className="font-mono">{meta.dataDir}</span></span>
+          <span className="text-xs text-ink-500">Dateien: <span className="font-mono">{meta.dataDir}</span></span>
           <div className="ml-auto flex items-center gap-2">
-            {dirty && <span className="text-[11px] text-amber-400">ungespeicherte Änderungen</span>}
+            {dirty && <span className="text-xs text-amber-400">ungespeicherte Änderungen</span>}
             <button
               onClick={save}
               disabled={!dirty || saving}
@@ -263,15 +263,15 @@ export default function AdminPage({ onClose }: Props) {
                 : 'Kein Cron installiert'}
           />
           <div className="flex flex-wrap items-center gap-2">
-            <label className="text-[11px] text-ink-400">Cron</label>
+            <label className="text-xs text-ink-400">Cron</label>
             <input
               value={config.schedule.cron}
               onChange={(e) => patch((d) => { d.schedule.cron = e.target.value; })}
               className={`${inputCls} w-40 font-mono`}
               placeholder="0 0 * * *"
             />
-            <span className="text-[11px] text-ink-500">{describeCron(config.schedule.cron)}</span>
-            <label className="ml-3 text-[11px] text-ink-400">Zeitzone</label>
+            <span className="text-xs text-ink-500">{describeCron(config.schedule.cron)}</span>
+            <label className="ml-3 text-xs text-ink-400">Zeitzone</label>
             <input
               value={config.schedule.timezone}
               onChange={(e) => patch((d) => { d.schedule.timezone = e.target.value; })}
@@ -283,7 +283,7 @@ export default function AdminPage({ onClose }: Props) {
               <button
                 key={p.cron}
                 onClick={() => patch((d) => { d.schedule.cron = p.cron; })}
-                className={`rounded border px-2 py-0.5 text-[11px] transition ${
+                className={`rounded border px-2 py-0.5 text-xs transition ${
                   config.schedule.cron === p.cron
                     ? 'border-accent bg-accent-soft text-ink-100'
                     : 'border-ink-700 text-ink-400 hover:bg-ink-800'
@@ -313,7 +313,7 @@ export default function AdminPage({ onClose }: Props) {
               label="Distill einbeziehen"
               hint={meta.keys.distill ? meta.distillApiUrl : 'DISTILL_API_KEY fehlt — Schritt wird übersprungen'}
             />
-            <p className="text-[11px] leading-relaxed text-ink-500">
+            <p className="text-xs leading-relaxed text-ink-500">
               Holt das Firmen-Dossier, die Dossiers der Sektoren der Aktie und die rohen
               Insights, die keines davon wiedergibt. Kostenlos — es gibt nichts mehr
               einzustellen, weil kein bezahlter Aufruf mehr nötig ist.
@@ -328,7 +328,7 @@ export default function AdminPage({ onClose }: Props) {
               hint="Läuft direkt nach Daten + Distill derselben Aktie."
             />
             <div className="flex items-center gap-2">
-              <label className="text-[11px] text-ink-400">max. Alter</label>
+              <label className="text-xs text-ink-400">max. Alter</label>
               <input
                 type="number"
                 min={1}
@@ -339,10 +339,10 @@ export default function AdminPage({ onClose }: Props) {
                 })}
                 className={`${inputCls} w-16 text-right font-mono`}
               />
-              <span className="text-[11px] text-ink-500">Tage</span>
+              <span className="text-xs text-ink-500">Tage</span>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-[11px] text-ink-400">Modell</label>
+              <label className="text-xs text-ink-400">Modell</label>
               <select
                 value={analysis.model}
                 onChange={(e) => patch((d) => { d.steps.analysis.model = e.target.value; })}
@@ -355,7 +355,7 @@ export default function AdminPage({ onClose }: Props) {
               </select>
             </div>
             <div>
-              <div className="mb-1 text-[11px] text-ink-400">Websuche</div>
+              <div className="mb-1 text-xs text-ink-400">Websuche</div>
               <div className="flex flex-wrap gap-1.5">
                 {SEARCH_CHOICES.map((choice) => {
                   const on = analysis.search.includes(choice);
@@ -367,7 +367,7 @@ export default function AdminPage({ onClose }: Props) {
                         if (on) list.delete(choice); else list.add(choice);
                         d.steps.analysis.search = [...list].sort();
                       })}
-                      className={`rounded border px-2 py-0.5 text-[11px] transition ${
+                      className={`rounded border px-2 py-0.5 text-xs transition ${
                         on ? 'border-accent bg-accent-soft text-ink-100' : 'border-ink-700 text-ink-400 hover:bg-ink-800'
                       }`}
                     >
@@ -378,7 +378,7 @@ export default function AdminPage({ onClose }: Props) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-[11px] text-ink-400">Perplexity</label>
+              <label className="text-xs text-ink-400">Perplexity</label>
               <select
                 value={analysis.pplx ?? 'none'}
                 onChange={(e) => patch((d) => {
@@ -393,7 +393,7 @@ export default function AdminPage({ onClose }: Props) {
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-[11px] text-ink-400">Perplexity-Cache</label>
+              <label className="text-xs text-ink-400">Perplexity-Cache</label>
               <input
                 type="number"
                 min={1}
@@ -404,9 +404,9 @@ export default function AdminPage({ onClose }: Props) {
                 })}
                 className={`${inputCls} w-16 text-right font-mono`}
               />
-              <span className="text-[11px] text-ink-500">Tage</span>
+              <span className="text-xs text-ink-500">Tage</span>
             </div>
-            <p className="text-[11px] leading-relaxed text-ink-500">
+            <p className="text-xs leading-relaxed text-ink-500">
               Gilt für jede Analyse, auch für manuelle Re-runs — jeder Aufruf kostet.
               ↻ Refresh unter Research &amp; News fragt sofort neu.
             </p>
@@ -425,7 +425,7 @@ export default function AdminPage({ onClose }: Props) {
             hint="Nur bei vollständigen Läufen, nicht bei einzeln gestarteten Aktien."
           />
           <div className="flex items-center gap-2">
-            <label className="text-[11px] text-ink-400">Pro Nacht</label>
+            <label className="text-xs text-ink-400">Pro Nacht</label>
             <input
               type="number"
               min={0}
@@ -436,17 +436,17 @@ export default function AdminPage({ onClose }: Props) {
               })}
               className={`${inputCls} w-20 text-right font-mono`}
             />
-            <span className="text-[11px] text-ink-500">
+            <span className="text-xs text-ink-500">
               Aktien{config.universe.batchSize > 0 && meta.universeSize > 0
                 && ` · jede der ${meta.universeSize} etwa alle ${Math.max(1, Math.round(meta.universeSize / config.universe.batchSize))} Nächte`}
             </span>
           </div>
           {meta.universeSize > 0 && (
-            <p className="text-[11px] text-ink-400">
+            <p className="text-xs text-ink-400">
               {meta.universeFresh} von {meta.universeSize} in den letzten 7 Tagen aktualisiert
             </p>
           )}
-          <div className="rounded border border-ink-800 bg-ink-950/40 px-3 py-2 text-[11px] leading-relaxed text-ink-400">
+          <div className="rounded border border-ink-800 bg-ink-950/40 px-3 py-2 text-xs leading-relaxed text-ink-400">
             Kalibrierung {meta.calibration.generatedAt
               ? `vom ${new Date(meta.calibration.generatedAt).toLocaleDateString('de-DE')}`
               : 'fehlt'}
@@ -467,7 +467,7 @@ export default function AdminPage({ onClose }: Props) {
           hint="Ein Urteilswechsel auf der Watchlist wird gemeldet, sobald er einen weiteren Nachtlauf gehalten hat — ein Score auf der Bandgrenze meldet sich so nicht jede Nacht. Alle Wechsel stehen außerdem über der Übersicht. Dazu nach dem Nachtlauf der Watchlist ein Überblick über alles andere, was seit dem letzten passiert ist."
         >
           <div className="flex flex-wrap items-center gap-2">
-            <label className="text-[11px] text-ink-400">Format</label>
+            <label className="text-xs text-ink-400">Format</label>
             <select
               value={config.alerts.format}
               onChange={(e) => patch((d) => { d.alerts.format = e.target.value as typeof d.alerts.format; })}
@@ -476,7 +476,7 @@ export default function AdminPage({ onClose }: Props) {
               <option value="json">JSON (Slack, Discord, …)</option>
               <option value="ntfy">ntfy</option>
             </select>
-            <label className="text-[11px] text-ink-400">{config.alerts.format === 'ntfy' ? 'Topic-URL' : 'Webhook-URL'}</label>
+            <label className="text-xs text-ink-400">{config.alerts.format === 'ntfy' ? 'Topic-URL' : 'Webhook-URL'}</label>
             <input
               value={config.alerts.webhookUrl}
               onChange={(e) => patch((d) => { d.alerts.webhookUrl = e.target.value.trim(); })}
@@ -503,7 +503,7 @@ export default function AdminPage({ onClose }: Props) {
               />
               Täglicher Überblick nach dem Nachtlauf
             </label>
-            <span className="text-[11px] text-ink-500">
+            <span className="text-xs text-ink-500">
               Herabstufungen und Kursziele, Insider-Trades, Quartalszahlen, Kurssprünge und Recherche-Funde der Watchlist,
               jedes Ereignis einmal; dazu die Quartalszahlen der nächsten drei Tage. Nichts Neues, keine Nachricht.
             </span>
@@ -516,7 +516,7 @@ export default function AdminPage({ onClose }: Props) {
               Überblick testen
             </button>
           </div>
-          <p className="text-[11px] leading-relaxed text-ink-500">
+          <p className="text-xs leading-relaxed text-ink-500">
             {config.alerts.format === 'ntfy'
               ? <>Leer = aus. Die URL des ntfy-Topics, auf ntfy.sh oder einem eigenen Server; die ntfy-App abonniert dasselbe
                   Topic. Titel ist der Wechsel (<span className="font-mono">MSFT: HOLD → BUY</span>), darunter der Score, dazu 📈 oder 📉.
@@ -535,7 +535,7 @@ export default function AdminPage({ onClose }: Props) {
           <div className="flex gap-2">
             <button
               onClick={() => patch((d) => { d.watchlist = {}; })}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-ink-300 hover:bg-ink-800"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-ink-300 hover:bg-ink-800"
             >
               alle aktivieren
             </button>
@@ -543,7 +543,7 @@ export default function AdminPage({ onClose }: Props) {
               onClick={() => patch((d) => {
                 d.watchlist = Object.fromEntries(meta.symbols.map((s) => [s.symbol, false]));
               })}
-              className="rounded border border-ink-700 px-2 py-1 text-[11px] text-ink-300 hover:bg-ink-800"
+              className="rounded border border-ink-700 px-2 py-1 text-xs text-ink-300 hover:bg-ink-800"
             >
               alle deaktivieren
             </button>
@@ -565,12 +565,12 @@ export default function AdminPage({ onClose }: Props) {
                     className="accent-[var(--color-accent)]"
                   />
                   <span className="truncate text-xs text-ink-200">{s.companyName}</span>
-                  <span className="ml-auto shrink-0 font-mono text-[10px] text-ink-500">{s.symbol}</span>
+                  <span className="ml-auto shrink-0 font-mono text-2xs text-ink-500">{s.symbol}</span>
                   <button
                     onClick={(e) => { e.preventDefault(); runNow([s.symbol]); }}
                     disabled={jobs?.running}
                     title={`Nur ${s.symbol} jetzt laufen lassen`}
-                    className="shrink-0 rounded px-1 text-[10px] text-ink-600 hover:bg-ink-800 hover:text-ink-200 disabled:opacity-30"
+                    className="shrink-0 rounded px-1 text-2xs text-ink-600 hover:bg-ink-800 hover:text-ink-200 disabled:opacity-30"
                   >
                     ▶
                   </button>
@@ -604,7 +604,7 @@ export default function AdminPage({ onClose }: Props) {
               </button>
             )}
             {jobs?.current && (
-              <span className="text-[11px] text-ink-400">
+              <span className="text-xs text-ink-400">
                 {jobs.current.symbols.length}/{jobs.current.totals.symbols} erledigt ·{' '}
                 {fmtDuration(jobs.current.startedAt, null)} ·{' '}
                 <span className="text-ink-500">
@@ -619,7 +619,7 @@ export default function AdminPage({ onClose }: Props) {
           </div>
 
           {(jobs?.runs.length ?? 0) === 0 ? (
-            <p className="text-[11px] text-ink-500">Noch keine Läufe aufgezeichnet.</p>
+            <p className="text-xs text-ink-500">Noch keine Läufe aufgezeichnet.</p>
           ) : (
             <ul className="divide-y divide-ink-800">
               {jobs!.runs.map((run) => (
@@ -640,7 +640,7 @@ export default function AdminPage({ onClose }: Props) {
             {Object.entries(meta.keys).map(([name, present]) => (
               <span
                 key={name}
-                className={`rounded border px-2 py-0.5 text-[11px] ${
+                className={`rounded border px-2 py-0.5 text-xs ${
                   present
                     ? 'border-emerald-700 bg-emerald-950 text-emerald-400'
                     : 'border-ink-700 bg-ink-950 text-ink-500'
@@ -676,32 +676,32 @@ function RunRow({ run, expanded, onToggle }: { run: JobRun; expanded: boolean; o
   return (
     <li className="py-1.5">
       <button onClick={onToggle} className="flex w-full items-center gap-2 text-left">
-        <span className="text-[10px] text-ink-600">{expanded ? '▾' : '▸'}</span>
-        <span className={`w-16 shrink-0 text-[11px] font-semibold ${RUN_STATUS_STYLE[run.status]}`}>
+        <span className="text-2xs text-ink-600">{expanded ? '▾' : '▸'}</span>
+        <span className={`w-16 shrink-0 text-xs font-semibold ${RUN_STATUS_STYLE[run.status]}`}>
           {run.status}
         </span>
-        <span className="w-32 shrink-0 font-mono text-[11px] text-ink-400">{fmtDateTime(run.startedAt)}</span>
-        <span className="shrink-0 rounded border border-ink-700 px-1 text-[10px] text-ink-500">{run.trigger}</span>
-        <span className="truncate text-[11px] text-ink-500">
+        <span className="w-32 shrink-0 font-mono text-xs text-ink-400">{fmtDateTime(run.startedAt)}</span>
+        <span className="shrink-0 rounded border border-ink-700 px-1 text-2xs text-ink-500">{run.trigger}</span>
+        <span className="truncate text-xs text-ink-500">
           {run.symbols.length}/{run.totals.symbols} Aktien · Daten {run.totals.data} · Distill {run.totals.distill} · Analyse {run.totals.analysis}
           {run.totals.reference > 0 && ` · Referenz ${run.totals.reference}`}
           {run.totals.failed > 0 && <span className="text-red-400"> · {run.totals.failed} Fehler</span>}
         </span>
-        <span className="ml-auto shrink-0 text-[11px] text-ink-500">{fmtDuration(run.startedAt, run.finishedAt)}</span>
+        <span className="ml-auto shrink-0 text-xs text-ink-500">{fmtDuration(run.startedAt, run.finishedAt)}</span>
       </button>
 
       {expanded && (
         <div className="mt-1.5 space-y-1 pl-6">
-          {run.error && <div className="text-[11px] text-red-400">⚠ {run.error}</div>}
-          {run.symbols.length === 0 && <div className="text-[11px] text-ink-500">Keine Aktien verarbeitet.</div>}
+          {run.error && <div className="text-xs text-red-400">⚠ {run.error}</div>}
+          {run.symbols.length === 0 && <div className="text-xs text-ink-500">Keine Aktien verarbeitet.</div>}
           {run.symbols.map((s) => (
-            <div key={s.symbol} className="flex flex-wrap items-baseline gap-x-2 text-[11px]">
+            <div key={s.symbol} className="flex flex-wrap items-baseline gap-x-2 text-xs">
               <span className="w-16 shrink-0 font-mono text-ink-300">{s.symbol}</span>
               {s.steps.map((step) => (
                 <span key={step.step} className="text-ink-500">
                   <span className={STEP_STATUS_STYLE[step.status]}>{step.step}</span>
                   {': '}{step.detail}
-                  {step.ms > 0 && <span className="text-ink-600"> ({(step.ms / 1000).toFixed(1)}s)</span>}
+                  {step.ms > 0 && <span className="text-ink-500"> ({(step.ms / 1000).toFixed(1)}s)</span>}
                   <span className="mx-1 text-ink-700">|</span>
                 </span>
               ))}

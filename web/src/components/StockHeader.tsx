@@ -245,7 +245,7 @@ function KV({
 }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-ink-500">
+      <div className="text-2xs uppercase tracking-wider text-ink-500">
         <Term k={term}>{label}</Term>
       </div>
       <div
@@ -253,7 +253,7 @@ function KV({
       >
         {value}
       </div>
-      {subtle && <div className="text-[10px] text-ink-600">{subtle}</div>}
+      {subtle && <div className="text-2xs text-ink-500">{subtle}</div>}
     </div>
   );
 }
@@ -318,11 +318,11 @@ function RefreshMenu({
       >
         {busy ? '⟳' : '↻'}
         <span className="hidden sm:inline">{busy ? 'Aktualisiere…' : 'Refresh'}</span>
-        <span aria-hidden className="text-[10px] text-ink-500">▾</span>
+        <span aria-hidden className="text-2xs text-ink-500">▾</span>
         {staleNote && !busy && (
           <span
             aria-label="veraltet"
-            className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold leading-none text-ink-950"
+            className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-2xs font-bold leading-none text-ink-950"
           >
             !
           </span>
@@ -335,7 +335,7 @@ function RefreshMenu({
           className="absolute right-0 top-full z-30 mt-1 w-80 overflow-hidden rounded-lg border border-ink-700 bg-ink-900 shadow-2xl"
         >
           {staleNote && (
-            <p className="border-b border-ink-800 bg-amber-950 px-3 py-2 text-[11px] leading-snug text-amber-300">
+            <p className="border-b border-ink-800 bg-amber-950 px-3 py-2 text-xs leading-snug text-amber-300">
               {staleNote}
             </p>
           )}
@@ -382,10 +382,10 @@ function MenuItem({ title, detail, flagged = false, disabled = false, onClick }:
       <span className="flex items-center gap-1.5 text-xs font-medium text-ink-100">
         {title}
         {flagged && (
-          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-ink-950">!</span>
+          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-3xs font-bold text-ink-950">!</span>
         )}
       </span>
-      <span className="mt-0.5 block text-[10px] leading-snug text-ink-500">{detail}</span>
+      <span className="mt-0.5 block text-2xs leading-snug text-ink-500">{detail}</span>
     </button>
   );
 }

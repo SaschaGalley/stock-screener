@@ -47,7 +47,7 @@ export function IcTable({ signals, rows, periodLabel }: {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] text-sm">
-        <thead className="text-[11px] text-ink-400">
+        <thead className="text-xs text-ink-400">
           <tr className="border-b border-ink-800">
             <th className="px-4 py-2 text-left font-normal">Signal</th>
             <th className="px-2 py-2 text-right font-normal">IC</th>
@@ -80,7 +80,7 @@ export function IcTable({ signals, rows, periodLabel }: {
                 </td>
                 <td className="px-2 py-1.5 text-right font-mono text-ink-300">{pct(r.spread)}</td>
                 <td className="px-2 py-1.5 text-right font-mono text-ink-400">{r.days} / {r.independent}</td>
-                <td className={`px-4 py-1.5 text-[11px] ${e.cls}`}>{e.label}</td>
+                <td className={`px-4 py-1.5 text-xs ${e.cls}`}>{e.label}</td>
               </tr>
             );
           })}
@@ -95,7 +95,7 @@ export function WeightsTable({ weights }: { weights: (WeightRow & { title?: stri
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] text-sm">
-        <thead className="text-[11px] text-ink-400">
+        <thead className="text-xs text-ink-400">
           <tr className="border-b border-ink-800">
             <th className="px-4 py-2 text-left font-normal">Säule</th>
             <th className="px-2 py-2 text-right font-normal">Heute</th>

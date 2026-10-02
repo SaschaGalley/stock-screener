@@ -50,7 +50,7 @@ export default function CompositeChart({ composite, price }: Props) {
           trigger: 'item',
           backgroundColor: CHART_COLORS.bg,
           borderColor: CHART_COLORS.grid,
-          textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+          textStyle: { color: CHART_COLORS.text, fontSize: 13 },
           // Wide enough for the model's explanation to wrap rather than run off.
           extraCssText: 'max-width: 340px; white-space: normal;',
           formatter: (p: any) => {
@@ -59,21 +59,21 @@ export default function CompositeChart({ composite, price }: Props) {
             const term = MODEL_TERMS[row.name];
             return `${p.name} (${tierLabel}): <b>${cur}${p.value.toFixed(2)}</b><br/>vs price ${cur}${price.toFixed(2)}: ` +
               `${((p.value - price) / price * 100).toFixed(1)}%` +
-              (term ? `<div style="margin-top:6px;font-size:11px;line-height:1.4;opacity:.8">${GLOSSARY[term]}</div>` : '');
+              (term ? `<div style="margin-top:6px;font-size:12px;line-height:1.45;opacity:.85">${GLOSSARY[term]}</div>` : '');
           },
         },
         xAxis: {
           type: 'value',
           min: xMin,
           max: xMax,
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 10, formatter: (v: number) => `${cur}${v.toFixed(0)}` },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: (v: number) => `${cur}${v.toFixed(0)}` },
           splitLine: { lineStyle: { color: CHART_COLORS.grid } },
         },
         yAxis: {
           type: 'category',
           data: labels,
           axisLabel: {
-            color: CHART_COLORS.ink, fontSize: 11,
+            color: CHART_COLORS.ink, fontSize: 12,
             formatter: (label: string) => {
               const isPrimary = composite.primary.models.some((m) => m.name === label);
               return isPrimary ? `{primary|${label}}` : `{cons|${label}}`;
@@ -95,7 +95,7 @@ export default function CompositeChart({ composite, price }: Props) {
               show: true,
               position: 'right',
               color: CHART_COLORS.text,
-              fontSize: 10,
+              fontSize: 11,
               fontFamily: 'monospace',
               formatter: (p: any) => `${cur}${p.value.toFixed(0)}`,
             },
@@ -104,7 +104,7 @@ export default function CompositeChart({ composite, price }: Props) {
               lineStyle: { color: CHART_COLORS.text, type: 'dashed', width: 1.5 },
               label: {
                 color: CHART_COLORS.text,
-                fontSize: 10,
+                fontSize: 11,
                 fontFamily: 'monospace',
                 formatter: () => `Price ${cur}${price.toFixed(2)}`,
                 position: 'end',

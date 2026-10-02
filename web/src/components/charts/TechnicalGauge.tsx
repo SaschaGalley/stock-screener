@@ -32,7 +32,7 @@ export default function TechnicalGauge({ group, title, term }: Props) {
 
   return (
     <div className="rounded border border-ink-700 bg-ink-950 p-3">
-      <div className="text-center text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+      <div className="text-center text-xs font-semibold uppercase tracking-wider text-ink-500">
         <Term k={term}>{title}</Term>
       </div>
       <div style={{ height: 180 }}>
@@ -68,7 +68,7 @@ export default function TechnicalGauge({ group, title, term }: Props) {
                 },
                 axisLabel: {
                   color: CHART_COLORS.ink,
-                  fontSize: 9,
+                  fontSize: 10,
                   distance: -28,
                   formatter: (v: number) => {
                     if (v < 0.05) return 'Sell';
@@ -103,7 +103,7 @@ export default function TechnicalGauge({ group, title, term }: Props) {
           }}
         />
       </div>
-      <div className="mt-1 flex items-center justify-around text-[10px]">
+      <div className="mt-1 flex items-center justify-around text-2xs">
         <span className="text-emerald-400">{group.buy} buy</span>
         <span className="text-ink-500">{group.neutral} neutral</span>
         <span className="text-red-400">{group.sell} sell</span>

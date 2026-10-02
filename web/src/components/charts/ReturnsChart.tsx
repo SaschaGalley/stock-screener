@@ -28,18 +28,18 @@ export default function ReturnsChart({ returns }: Props) {
           trigger: 'axis',
           backgroundColor: CHART_COLORS.bg,
           borderColor: '#1e293b',
-          textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+          textStyle: { color: CHART_COLORS.text, fontSize: 13 },
           valueFormatter: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
         },
         xAxis: {
           type: 'category',
           data: labels,
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 11 },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 12 },
           axisLine: { lineStyle: { color: '#334155' } },
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: '{value}%' },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 12, formatter: '{value}%' },
           splitLine: { lineStyle: { color: '#1e293b' } },
         },
         series: [{

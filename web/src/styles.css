@@ -21,11 +21,17 @@
     --color-border-soft: #1f242e;
     --color-border-strong: #404757;
 
-    /* Text — soft pastel cream-blue */
-    --color-text: #cad1da; /* body */
-    --color-text-strong: #e6ebf2; /* headings */
-    --color-text-muted: #7d8693; /* secondary */
-    --color-text-faint: #555c69; /* labels */
+    /* Text — soft pastel cream-blue, one step per role. The figure after each
+     is its contrast against --color-bg-base; small text needs about 4.5 to
+     be read without effort, so only the ghost tone (dashes, separators,
+     switched-off filters) sits below it. Labels used to be #555c69 at 2.5,
+     and three quarters of the app's small print was written in it. */
+    --color-text-strong: #e6ebf2; /* headings — 14.2 */
+    --color-text: #cad1da; /* body — 11.1 */
+    --color-text-secondary: #a9b0ba; /* secondary — 7.8 */
+    --color-text-muted: #939aa5; /* muted — 6.0 */
+    --color-text-faint: #808793; /* labels, captions — 4.7 */
+    --color-text-ghost: #686f7d; /* placeholders, separators, off — 3.4 */
 
     /* Accent — pastel steel blue (was bright #3b82f6 originally) */
     --color-accent: #7da4d4; /* main */
@@ -119,7 +125,7 @@ body {
 }
 .prose-stock p {
     margin: 0.3rem 0;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
 }
 .prose-stock ul,
 .prose-stock ol {
@@ -127,7 +133,7 @@ body {
 }
 .prose-stock li {
     margin: 0.1rem 0;
-    color: var(--color-text-muted);
+    color: var(--color-text-secondary);
 }
 .prose-stock table {
     border-collapse: collapse;
