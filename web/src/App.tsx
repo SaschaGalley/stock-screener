@@ -10,6 +10,7 @@ import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
 import AdminPage from './pages/AdminPage';
 import EvaluationPage from './pages/EvaluationPage';
+import FeedPage from './pages/FeedPage';
 import { applyListView, DEFAULT_LIST_VIEW, type ListView } from './components/stockList';
 import { EMPTY_ANCHOR, type ListScrollAnchor } from './components/useListScroll';
 import type { Settings, OverviewRow, ProgressEvent, SearchChoice } from './types';
@@ -31,7 +32,7 @@ const DEFAULT_SETTINGS: Settings = {
  * branch. No hash is the list — the app's resting state is the whole list, not
  * an empty detail pane waiting to be told what to show.
  */
-type ViewName = 'overview' | 'analysis' | 'admin' | 'evaluation';
+type ViewName = 'overview' | 'analysis' | 'admin' | 'evaluation' | 'feed';
 
 interface RouteState {
   view:   ViewName;
@@ -46,6 +47,7 @@ function readRoute(): RouteState {
   if (key === 'overview') return { view: 'overview', symbol: null };
   if (key === 'admin')    return { view: 'admin', symbol: null };
   if (key === 'evaluation') return { view: 'evaluation', symbol: null };
+  if (key === 'feed')     return { view: 'feed', symbol: null };
   if (key === 'stock')    return { view: 'analysis', symbol: tail ? tail.toUpperCase() : null };
   return { view: 'analysis', symbol: raw.toUpperCase() };   // legacy `#AAPL`
 }
@@ -53,6 +55,7 @@ function readRoute(): RouteState {
 function routeToHash(route: RouteState): string {
   if (route.view === 'admin')    return '#/admin';
   if (route.view === 'evaluation') return '#/evaluation';
+  if (route.view === 'feed')     return '#/feed';
   if (route.view === 'analysis' && route.symbol) return `#/stock/${route.symbol}`;
   return '#/overview';
 }
@@ -161,6 +164,11 @@ export default function App() {
   const openEvaluation = useCallback(() => {
     setStocksDrawer(false);
     navigate('evaluation');
+  }, [navigate]);
+
+  const openFeed = useCallback(() => {
+    setStocksDrawer(false);
+    navigate('feed');
   }, [navigate]);
 
   // React to back/forward navigation
@@ -381,8 +389,9 @@ export default function App() {
    */
   const isAdmin      = route.view === 'admin';
   const isEvaluation = route.view === 'evaluation';
+  const isFeed       = route.view === 'feed';
   const isAnalysis   = route.view === 'analysis' && selected !== null;
-  const isTable      = !isAdmin && !isEvaluation && !isAnalysis;
+  const isTable      = !isAdmin && !isEvaluation && !isFeed && !isAnalysis;
 
   // Esc is the keyboard counterpart of the ✕ — for the analysis and the
   // administration alike. Skipped while a field has focus, where Esc means
@@ -427,6 +436,7 @@ export default function App() {
 
       {isAdmin && <AdminPage onClose={closeOverlay} />}
       {isEvaluation && <EvaluationPage onClose={closeOverlay} />}
+      {isFeed && <FeedPage onClose={closeOverlay} onSelect={handleSelectSymbol} />}
 
       {/* The list at full width. Cheap to rebuild, so it mounts and unmounts. */}
       {isTable && (
@@ -439,6 +449,7 @@ export default function App() {
           onSelect={handleSelectSymbol}
           onOpenAdmin={openAdmin}
           onOpenEvaluation={openEvaluation}
+          onOpenFeed={openFeed}
           activity={activity}
           scrollAnchor={listScrollRef}
         />

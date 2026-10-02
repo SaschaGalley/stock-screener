@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { BacktestResponse, EvaluationResponse } from '../types';
 import { CloseIcon } from '../components/icons';
 import BacktestPanel from '../components/BacktestPanel';
+import VerdictRecordPanel from '../components/VerdictRecordPanel';
 import { SignedBar, WeightsTable, evidence, pct } from '../components/evaluationParts';
 import { recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
@@ -25,7 +26,7 @@ import { RECOMMENDATIONS } from '../../../src/verdict';
 
 const HORIZONS = [5, 20, 60];
 
-type Scope = 'watchlist' | 'universe' | 'backtest';
+type Scope = 'watchlist' | 'universe' | 'backtest' | 'calls';
 
 interface Props {
   onClose: () => void;
@@ -102,7 +103,7 @@ export default function EvaluationPage({ onClose }: Props) {
           </div>
         </div>
 
-        <p className="text-sm leading-relaxed text-ink-300">
+        {scope !== 'calls' && <p className="text-sm leading-relaxed text-ink-300">
           Sortiert an jedem Handelstag alle Aktien nach dem Score, den sie <em>vorher</em> hatten, und nach
           ihrer Rendite gegenüber dem S&amp;P 500 in den folgenden Handelstagen — in Dollar, damit eine
           Euro-Aktie nicht mit dem Wechselkurs punktet — und misst, wie gut die beiden Reihenfolgen
@@ -111,22 +112,23 @@ export default function EvaluationPage({ onClose }: Props) {
           {' '}— belastbar wird das erst nach vielen unabhängigen Zeitfenstern, also nach Monaten.
           „Im Sektor“ vergleicht jede Aktie nur mit ihrem eigenen Sektor: was dort bleibt, ist Aktienauswahl
           statt einer Wette auf die Branche.
-        </p>
+        </p>}
 
         {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
-        {!data && loading && scope !== 'backtest' && (
+        {!data && loading && scope !== 'backtest' && scope !== 'calls' && (
           <div className="p-8 text-center text-sm text-ink-500">
             Lade Kurse und rechne — mit dem Referenzuniversum dauert der erste Aufruf ein bis zwei Minuten…
           </div>
         )}
 
-        {(data?.universe || bt) && (
+        {(data || bt) && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 text-[11px] text-ink-400">Aktien</span>
             {([
               ...(data ? [['watchlist', `Watchlist (${data.evaluation.symbols})`, 'Alle Signale, auch Text und alter LLM-Score']] : []),
               ...(data?.universe ? [['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale']] : []),
               ...(bt ? [['backtest', 'Backtest (S&P 500 seit 2013)', 'Faktor-Score an jedem Monatsende aus den SEC-Abschlüssen nachgerechnet']] : []),
+              ['calls', 'Unsere Urteile', 'Jeder Urteilswechsel gegen den Index danach: Trefferquote nach 1, 3, 6 und 12 Monaten'],
             ] as [Scope, string, string][]).map(([s, label, title]) => (
               <button
                 key={s}
@@ -143,8 +145,9 @@ export default function EvaluationPage({ onClose }: Props) {
         )}
 
         {scope === 'backtest' && bt && <BacktestPanel data={bt} />}
+        {scope === 'calls' && <VerdictRecordPanel />}
 
-        {scope !== 'backtest' && ev && (
+        {scope !== 'backtest' && scope !== 'calls' && ev && (
           <>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-[11px] text-ink-400">Horizont</span>

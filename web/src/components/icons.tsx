@@ -67,6 +67,25 @@ export function ChartIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
   );
 }
 
+/** A pulse line: what has been happening. */
+export function PulseIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 12h4l3 7 4-14 3 7h4" />
+    </svg>
+  );
+}
+
 export function PeersIcon({ size = 16, strokeWidth = 1.8 }: IconProps) {
   return (
     <svg

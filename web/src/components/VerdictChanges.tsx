@@ -18,7 +18,7 @@ type Change = VerdictChangesResponse['changes'][number];
  * eye. A symbol that flipped back and forth shows both moves — the webhook
  * announces only the ones that held.
  */
-export default function VerdictChanges({ onSelect }: { onSelect: (symbol: string) => void }) {
+export default function VerdictChanges({ onSelect, onOpenFeed }: { onSelect: (symbol: string) => void; onOpenFeed: () => void }) {
   const [changes, setChanges] = useState<Change[]>([]);
 
   useEffect(() => {
@@ -55,6 +55,9 @@ export default function VerdictChanges({ onSelect }: { onSelect: (symbol: string
           <span className="text-ink-600">{relativeTime(c.at)}</span>
         </button>
       ))}
+      <button onClick={onOpenFeed} className="ml-auto text-ink-400 transition hover:text-ink-100">
+        Alles, was passiert ist →
+      </button>
     </div>
   );
 }

@@ -2,30 +2,15 @@ import { useMemo, useState } from 'react';
 import { api } from '../../api';
 import { useArchive } from '../useArchive';
 import {
-  TIMELINE_KINDS, TIMELINE_LABEL, type TimelineEvent, type TimelineKind, type Tone,
+  TIMELINE_KINDS, TIMELINE_LABEL, type TimelineEvent, type TimelineKind,
 } from '../../../../src/analysis/timeline';
+import { KIND_DOT, TONE_MARK, TONE_TEXT } from '../timelineStyle';
 
 const RANGES = [{ days: 90, label: '3 M' }, { days: 365, label: '1 J' }, { days: 1095, label: '3 J' }] as const;
 /** News outnumber everything else several times over; shown on request. */
 const DEFAULT_OFF: TimelineKind[] = ['news'];
 const PAGE = 60;
 
-const KIND_DOT: Record<TimelineKind, string> = {
-  analyst:  'bg-sky-500',
-  insider:  'bg-violet-500',
-  earnings: 'bg-emerald-500',
-  dividend: 'bg-ink-500',
-  verdict:  'bg-amber-500',
-  event:    'bg-cyan-500',
-  news:     'bg-ink-600',
-  move:     'bg-red-500',
-};
-const TONE_TEXT: Record<Tone, string> = {
-  positive: 'text-emerald-400',
-  negative: 'text-red-400',
-  neutral:  'text-ink-500',
-};
-const TONE_MARK: Record<Tone, string> = { positive: '▲', negative: '▼', neutral: '·' };
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 

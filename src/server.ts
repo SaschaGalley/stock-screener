@@ -49,7 +49,9 @@ import { currentScoreCard, rescoreIfScoringChanged, storedInputs } from './db/re
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
-import { analystTrackRecord, incomeFlows, stockHolders, stockTimeline } from './stock-history-service.js';
+import {
+  analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord, watchlistFeed,
+} from './stock-history-service.js';
 import { QuoteBrief, quoteBriefs, searchByQuery } from './data/yfinance.js';
 import { yahooTicker } from './data/universe.js';
 import { lastGoodSectorMedians } from './sector-medians.js';
@@ -911,6 +913,29 @@ export function createApp(): express.Express {
     }
   });
 
+  // ── GET /api/feed?days=7 ───────────────────────────────────────────────────
+  // What happened across the watchlist: every stock's timeline over the last
+  // days on one axis, and the reports due in the next two weeks.
+  app.get('/api/feed', async (req, res, next) => {
+    try {
+      const days = Number(req.query.days ?? 7);
+      res.json(await watchlistFeed(Number.isFinite(days) ? Math.min(90, Math.max(1, Math.round(days))) : 7, req.query.fresh === '1'));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/verdict-record?fresh=1 ────────────────────────────────────────
+  // Every published verdict as a dated call, and how it did against the index
+  // (`analysis/verdict-record.ts`). Cached for hours, like the evaluation.
+  app.get('/api/verdict-record', async (req, res, next) => {
+    try {
+      res.json(await verdictRecordSummary(req.query.fresh === '1'));
+    } catch (e) {
+      next(e);
+    }
+  });
+
   // ── GET /api/verdict-changes?limit=30 ──────────────────────────────────────
   // The moments a watchlist stock's verdict moved to another band, newest first.
   app.get('/api/verdict-changes', async (req, res, next) => {
@@ -1047,9 +1072,10 @@ export function createApp(): express.Express {
   });
 
   // ── The archive, read back ──────────────────────────────────────────────────
-  // Four views over what the refresh archives (`history-service.ts`): how good
-  // the analysts' targets have been, what happened when, who holds the stock,
-  // and where the revenue goes. All reads, no fetches.
+  // Views over what the refresh archives (`history-service.ts`) and the scores
+  // it stored: how good the analysts' targets have been, how good our own
+  // verdicts, what happened when, who holds the stock, and where the revenue
+  // goes. All reads, no fetches.
   const archiveView = (path: string, read: (symbol: string, req: Request) => Promise<unknown>) =>
     app.get(`/api/stocks/:symbol/${path}`, async (req, res, next) => {
       try {
@@ -1060,6 +1086,7 @@ export function createApp(): express.Express {
       }
     });
   archiveView('analysts', (s) => analystTrackRecord(s));
+  archiveView('verdicts', (s) => verdictTrackRecord(s));
   archiveView('timeline', (s, req) => {
     const days = Number(req.query.days ?? 365);
     return stockTimeline(s, Number.isFinite(days) ? Math.min(3650, Math.max(30, days)) : 365);

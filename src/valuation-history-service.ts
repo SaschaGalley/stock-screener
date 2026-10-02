@@ -18,7 +18,7 @@ import type { ComputedMetrics } from './analysis/computeMetrics.js';
 import { logger } from './utils/logger.js';
 
 /** Bump when the shape or the reconstruction changes; older rows are rebuilt. */
-export const VALUATION_HISTORY_VERSION = 1;
+export const VALUATION_HISTORY_VERSION = 2;
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** One rebuild per symbol at a time — a page opened twice should not pay twice. */

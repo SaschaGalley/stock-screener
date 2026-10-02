@@ -38,6 +38,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
   const labels = bt.evaluation.labels.filter((l) => l.horizon === horizon)
     .sort((a, b) => RECOMMENDATIONS.indexOf(a.label as never) - RECOMMENDATIONS.indexOf(b.label as never));
   const monthName = (h: number) => (h === 1 ? '1 Monat' : `${h} Monate`);
+  const withConsensus = bt.byYear.some((y) => y.analysts != null);
 
   return (
     <>
@@ -106,6 +107,11 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
                 <th className="px-2 py-1.5 text-right font-normal">IC</th>
                 <th className="w-28 px-2 py-1.5 font-normal" />
                 <th className="px-4 py-1.5 text-right font-normal">Im Sektor</th>
+                {withConsensus && (
+                  <th className="px-4 py-1.5 text-right font-normal" title="Anteil der Aktien-Monate mit rekonstruiertem Konsens-Kursziel">
+                    Konsens
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -115,6 +121,11 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
                   <td className="px-2 py-1 text-right font-mono">{y.ic?.toFixed(3) ?? '—'}</td>
                   <td className="px-2 py-1"><SignedBar value={y.ic} scale={0.1} /></td>
                   <td className="px-4 py-1 text-right font-mono text-ink-300">{y.neutralIc?.toFixed(3) ?? '—'}</td>
+                  {withConsensus && (
+                    <td className="px-4 py-1 text-right font-mono text-ink-400">
+                      {y.analysts != null ? `${Math.round(y.analysts * 100)} %` : '—'}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

@@ -6,16 +6,21 @@
  * Both feed the same `computeAllMetrics` and `computeFactorScore`, so what the
  * backtest measures is the scoring code, not a re-implementation of it.
  *
- * What cannot be rebuilt is left empty, and the criteria that read it abstain:
- * analyst estimates, ratings, targets and surprises were never archived, so
- * the consensus and revisions pillars are silent and the DCF starts from the
- * trailing year's growth instead of the consensus.
+ * The analyst consensus is rebuilt from Yahoo's rating history when it is
+ * passed (`analysis/analyst-history.ts`): each firm's newest target and grade
+ * from the year before the day. What cannot be rebuilt is left empty, and the
+ * criteria that read it abstain: estimates, their revisions and earnings
+ * surprises were never published as a history, so the revisions pillar has
+ * only the rating drift and the DCF starts from the trailing year's growth
+ * instead of the consensus.
  */
 
 import {
   CompanyFacts, Fact, fiscalYears, instantAt, latestInstant, trailingTwelveMonths,
 } from '../data/edgar-facts.js';
 import { auditFinancials, isFundamentalsStale } from '../analysis/data-quality.js';
+import { consensusAt, ratingDeltaAt } from '../analysis/analyst-history.js';
+import type { AnalystAction } from '../analysis/analyst-accuracy.js';
 import type { MarketSignals, StockFinancials } from '../types.js';
 import { indexAtOrBefore, PriceHistory, splitFactorAfter } from './prices.js';
 
@@ -111,11 +116,13 @@ export interface PayloadAt {
 
 /**
  * The payload on `asOf` (YYYY-MM-DD): statements filed before that day, prices
- * up to its close. Null when there is too little to score — no price history
- * of a year, no revenue, or statements older than half a year.
+ * up to its close, and — given the rating history — the analysts' word from
+ * before it. Null when there is too little to score — no price history of a
+ * year, no revenue, or statements older than half a year.
  */
 export function payloadAt(
   c: Company, facts: CompanyFacts, px: PriceHistory, bench: PriceHistory, sectorEtf: PriceHistory | null, asOf: string,
+  analysts: readonly AnalystAction[] | null = null,
 ): PayloadAt | null {
   const i = indexAtOrBefore(px.dates, asOf);
   if (i < YEAR) return null;
@@ -226,6 +233,11 @@ export function payloadAt(
     if (r !== null) monthlyReturns.push(r);
   }
 
+  // Targets are on the basis of their day, the prices on today's.
+  const splits = px.splits.map((x) => ({ day: x.date, ratio: x.ratio }));
+  const cons = analysts ? consensusAt(analysts, asOf, splits) : null;
+  const ratings = cons?.ratings ?? null;
+
   const gicsIndustry = YAHOO_LENDER_INDUSTRY[c.subIndustry] ?? c.subIndustry;
   const asOfMs = Date.parse(`${asOf}T23:00:00Z`);
 
@@ -278,8 +290,11 @@ export function payloadAt(
     dilutedShareRatio: null,
     enterpriseValue: marketCap + debt - cash,
     sharesOutstanding: shares,
-    targetMeanPrice: null, analystTargetHigh: null, analystTargetLow: null, analystTargetMedian: null,
-    analystCount: null, analystStrongBuy: null, analystBuy: null, analystHold: null, analystSell: null, analystStrongSell: null,
+    targetMeanPrice: cons?.targetMean ?? null, analystTargetHigh: cons?.targetHigh ?? null,
+    analystTargetLow: cons?.targetLow ?? null, analystTargetMedian: cons?.targetMedian ?? null,
+    analystCount: cons?.targetMean != null ? cons.targetFirms : null,
+    analystStrongBuy: ratings?.strongBuy ?? null, analystBuy: ratings?.buy ?? null, analystHold: ratings?.hold ?? null,
+    analystSell: ratings?.sell ?? null, analystStrongSell: ratings?.strongSell ?? null,
     fiftyTwoWeekHigh: Math.max(...window52), fiftyTwoWeekLow: Math.min(...window52),
     beta: monthlyBeta(px, bench, asOf),
     dividendYield: dividends !== null && marketCap > 0 ? Math.abs(dividends) / marketCap : null,
@@ -337,7 +352,7 @@ export function payloadAt(
       drawdownFromHighPct: high > 0 ? px.adj[i] / high - 1 : null,
       rsVsSector3M: rsSector,
     },
-    revisions: { perPeriod: [], analystRatingMoMDelta: null },
+    revisions: { perPeriod: [], analystRatingMoMDelta: analysts ? ratingDeltaAt(analysts, asOf, splits) : null },
     options: null,
     macro: {},
   } as unknown as MarketSignals;

@@ -22,6 +22,11 @@ export const MINOR_UNIT_CURRENCIES: Readonly<Record<string, { major: string; per
   ILA: { major: 'ILS', perMajor: 100 },
 };
 
+/** Yahoo's pseudo-ticker for the rate `from → to`: "EURUSD=X" is the dollars one euro buys. */
+export function fxTicker(from: string, to: string): string {
+  return `${from}${to}=X`;
+}
+
 /** The currency a quote currency counts in: GBP for pence, the code itself otherwise. */
 export function majorCurrency(code: string | null | undefined): string | null {
   if (!code) return null;

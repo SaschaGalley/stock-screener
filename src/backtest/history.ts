@@ -8,15 +8,16 @@
  * reconstruction for a single stock and keeps what the detail page wants: the
  * price, the composite fair value, earnings per share and four multiples.
  *
- * What it cannot rebuild, it leaves out, and the reader is told so:
- *   - Analyst targets were never archived, so the analyst contributor drops
- *     out of the composite, and the DCF starts from trailing growth.
+ * The analyst contributor is the consensus of each month-end rebuilt from the
+ * archived rating history (`analysis/analyst-history.ts`). What it cannot
+ * rebuild, it leaves out, and the reader is told so:
+ *   - Estimates have no history, so the DCF starts from trailing growth.
  *   - Peer multiples need the peers' own reconstruction; one stock alone has
- *     none, so that contributor drops out too.
+ *     none, so that contributor drops out.
  *   - The premium adjustment is today's, applied to every month.
  * Every month is computed the same way, so the series is consistent with
  * itself — which is what "historically traded 20–44 % below" needs — but its
- * last point is not the headline composite, which has the analysts and peers.
+ * last point is not the headline composite, which has the peers.
  *
  * A company without XBRL filings (a foreign private issuer, most European
  * listings) gets the `annual` series instead: Yahoo's fiscal years, each held
@@ -36,6 +37,7 @@ import { payloadAt } from './payload.js';
 import { indexAtOrBefore, monthEnds, priceHistory, type PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
 import { savePriceHistory } from '../history-service.js';
+import { readAnalystActions } from '../db/history-store.js';
 
 const BENCHMARK = '^GSPC';
 export const HISTORY_YEARS = 5;
@@ -85,10 +87,11 @@ async function fromFilings(
 
   const priceFrom = px.dates[0];
   const etf = sectorToEtf(f.sector);
-  const [bench, etfPx, ratesOn] = await Promise.all([
+  const [bench, etfPx, ratesOn, analysts] = await Promise.all([
     priceHistory(BENCHMARK, priceFrom, join(dir, 'prices')),
     etf ? priceHistory(etf, priceFrom, join(dir, 'prices')) : Promise.resolve(null),
     rateHistory(priceFrom, fredApiKey),
+    readAnalystActions(f.symbol).catch(() => []),
   ]);
   if (!bench) return null;
 
@@ -100,7 +103,7 @@ async function fromFilings(
   };
 
   return days.flatMap((day) => {
-    const p = payloadAt(company, facts, px, bench, etfPx, day);
+    const p = payloadAt(company, facts, px, bench, etfPx, day, analysts.length ? analysts : null);
     if (!p) return [];
     const m = computeAllMetrics(p.financials, ratesOn(day), null);
     return [{

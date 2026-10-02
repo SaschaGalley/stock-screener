@@ -232,12 +232,12 @@ export async function promoteSymbol(symbol: string): Promise<void> {
 /** Sector and listing currency per symbol, as the profile last recorded them. */
 export async function symbolFacts(
   symbols: string[],
-): Promise<Map<string, { sector: string | null; currency: string | null }>> {
-  const res = await query<{ symbol: string; sector: string | null; currency: string | null }>(
-    'SELECT symbol, sector, currency FROM symbols WHERE symbol = ANY($1)',
+): Promise<Map<string, { sector: string | null; currency: string | null; name: string | null }>> {
+  const res = await query<{ symbol: string; sector: string | null; currency: string | null; company_name: string | null }>(
+    'SELECT symbol, sector, currency, company_name FROM symbols WHERE symbol = ANY($1)',
     [symbols.map((s) => s.toUpperCase())],
   );
-  return new Map(res.rows.map((r) => [r.symbol, { sector: r.sector, currency: r.currency }]));
+  return new Map(res.rows.map((r) => [r.symbol, { sector: r.sector, currency: r.currency, name: r.company_name }]));
 }
 
 /**
@@ -1198,6 +1198,35 @@ export async function readSeries(
   return keys.map((k) => out.get(k)).filter((s): s is Series => s !== undefined);
 }
 
+/** The same series for every symbol that has them, in one query — a cross-section's read. */
+export async function readSeriesForAll(keys: string[]): Promise<Map<string, Series[]>> {
+  if (keys.length === 0) return new Map();
+  const res = await query<{
+    symbol: string; key: string; label: string; unit: string | null;
+    observed_at: Date; value: number | null; value_text: string | null;
+  }>(
+    `SELECT s.symbol, m.key, m.label, m.unit, o.observed_at, o.value, o.value_text
+       FROM observations o
+       JOIN metrics m ON m.id = o.metric_id
+       JOIN symbols s ON s.id = o.symbol_id
+      WHERE m.key = ANY($1::text[])
+      ORDER BY s.symbol, m.key, o.observed_at`,
+    [keys],
+  );
+  const out = new Map<string, Series[]>();
+  for (const r of res.rows) {
+    const list = out.get(r.symbol) ?? [];
+    let series = list.find((x) => x.key === r.key);
+    if (!series) {
+      series = { key: r.key, label: r.label, unit: r.unit, points: [] };
+      list.push(series);
+      out.set(r.symbol, list);
+    }
+    series.points.push({ at: r.observed_at.toISOString(), value: r.value, text: r.value_text });
+  }
+  return out;
+}
+
 /**
  * Newest value of one metric for every symbol at once.
  *
@@ -1351,14 +1380,15 @@ export async function recordFundamentals(
  */
 export async function readFundamentals(
   symbol: string, periodType: 'annual' | 'quarter' | 'estimate',
-): Promise<{ periodEnd: string; key: string; value: number; observedAt: string }[]> {
+): Promise<{ periodEnd: string; key: string; value: number; observedAt: string; firstSeenAt: string }[]> {
   const id = await symbolId(symbol);
   if (id === null) return [];
   const res = await query<{
-    period_end: Date; key: string; value: number; observed_at: Date;
+    period_end: Date; key: string; value: number; observed_at: Date; first_seen: Date;
   }>(
     `SELECT DISTINCT ON (fp.period_end, fp.metric_id)
-            fp.period_end, m.key, fp.value, fp.observed_at
+            fp.period_end, m.key, fp.value, fp.observed_at,
+            MIN(fp.observed_at) OVER (PARTITION BY fp.period_end, fp.metric_id) AS first_seen
        FROM fundamental_periods fp
        JOIN metrics m ON m.id = fp.metric_id
       WHERE fp.symbol_id = $1 AND fp.period_type = $2
@@ -1370,6 +1400,9 @@ export async function readFundamentals(
     key: r.key.replace(/^fundamentals\./, ''),
     value: r.value,
     observedAt: r.observed_at.toISOString(),
+    // When the period was first stored: within a night of its report, for a
+    // quarter that came in while the refresh was running.
+    firstSeenAt: r.first_seen.toISOString(),
   }));
 }
 

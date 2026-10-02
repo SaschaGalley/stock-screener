@@ -104,8 +104,9 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
       <p className="text-[10px] leading-relaxed text-ink-500">
         {history.source === 'sec'
           ? 'Jeder Monatsultimo aus den SEC-Filings rekonstruiert, die an dem Tag bekannt waren, und mit den heutigen Modellen gerechnet. '
-            + 'Analysten-Kursziele und Peer-Multiples wurden nie archiviert und fehlen darin — der rekonstruierte Fair Value liegt deshalb '
-            + 'meist unter dem heutigen Headline-Wert, ist aber über alle Monate gleich gerechnet.'
+            + 'Das Analysten-Kursziel ist aus der Rating-Historie rekonstruiert (je Haus das neueste der zwölf Monate davor). '
+            + 'Peer-Multiples lassen sich für einen Wert allein nicht nachrechnen und fehlen — der rekonstruierte Fair Value weicht '
+            + 'deshalb vom heutigen Headline-Wert ab, ist aber über alle Monate gleich gerechnet.'
           : 'Ohne SEC-Filings: aus den von Yahoo gemeldeten Geschäftsjahren, jedes ab einem Quartal nach Jahresende. '
             + 'Für einen rekonstruierten Fair Value reicht das nicht.'}
       </p>
@@ -163,8 +164,17 @@ function Lede({ children }: { children: React.ReactNode }) {
 }
 
 /** "64 % darüber" / "20 % darunter" — the margin of safety read as a position. */
+/**
+ * Where the price sat against the fair value, from the margin of safety
+ * (fair − price) / price. The words measure from the fair value — "62 % unter
+ * dem Fair Value" is a price at 38 % of it — since a margin of 164 % read as
+ * "164 % darunter" puts the price below zero.
+ */
+const priceGap = (mos: number) => 1 / (1 + mos) - 1;
+
 function gapWords(mos: number): string {
-  return `${Math.round(Math.abs(mos) * 100)} % ${mos >= 0 ? 'darunter' : 'darüber'}`;
+  const g = priceGap(mos);
+  return `${Math.round(Math.abs(g) * 100)} % ${g <= 0 ? 'darunter' : 'darüber'}`;
 }
 
 // ── Views ────────────────────────────────────────────────────────────────────
@@ -209,9 +219,9 @@ function FairValueView({ history, liveFairValue }: { history: History; liveFairV
   );
 }
 
-/** The middle half of the months, worded by which side of fair value it lay on. */
+/** The middle half of the months (margins of safety `lo` ≤ `hi`), worded by which side of fair value the price lay on. */
 function rangeWords(lo: number, hi: number): string {
-  const p = (x: number) => Math.round(Math.abs(x) * 100);
+  const p = (x: number) => Math.round(Math.abs(priceGap(x)) * 100);
   if (lo >= 0) return `${p(lo)}–${p(hi)} % unter dem`;
   if (hi <= 0) return `${p(hi)}–${p(lo)} % über dem`;
   return `zwischen ${p(lo)} % über und ${p(hi)} % unter dem`;

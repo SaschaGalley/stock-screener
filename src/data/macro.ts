@@ -37,6 +37,9 @@ const SECTOR_ETF_MAP: Record<string, string> = {
  * the price archive keeps beside the stocks: returns are measured against
  * them, so an evaluation without them has nothing to measure against.
  */
+/** The benchmarks' currency: a listing in any other is restated in it before it is compared. */
+export const BENCHMARK_CURRENCY = 'USD';
+
 export const BENCHMARK_TICKERS: readonly string[] = [...new Set([
   // The index the macro block reads, and the fund that also pays its dividends.
   SPY_SYMBOL, 'SPY', VIX_SYMBOL, DXY_SYMBOL, ...Object.values(SECTOR_ETF_MAP),

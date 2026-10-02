@@ -5,7 +5,7 @@ import RecommendationBadge from './RecommendationBadge';
 import StockListControls from './StockListControls';
 import { StockIdentity, StockScore, rowTitle, ROW_HEIGHT, HEADER_HEIGHT } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
-import { ChartIcon, GearIcon } from './icons';
+import { ChartIcon, GearIcon, PulseIcon } from './icons';
 import VerdictChanges from './VerdictChanges';
 import { averageScore, scoreColor, type ListView } from './stockList';
 import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
@@ -21,6 +21,7 @@ interface Props {
   onSelect: (symbol: string) => void;
   onOpenAdmin: () => void;
   onOpenEvaluation: () => void;
+  onOpenFeed: () => void;
   /** Symbol → stages the queue currently has in flight for it. */
   activity?: Record<string, string[]>;
   /** Shared with the rail, so collapsing the columns doesn't move the list. */
@@ -64,7 +65,7 @@ const NAME_CELL = 'w-full max-w-0 xl:w-auto xl:max-w-none';
  * one fact, and reads better as one cell than as two columns.
  */
 export default function StockTable({
-  rows, total, loading, view, onViewChange, onSelect, onOpenAdmin, onOpenEvaluation,
+  rows, total, loading, view, onViewChange, onSelect, onOpenAdmin, onOpenEvaluation, onOpenFeed,
   activity = {}, scrollAnchor,
 }: Props) {
   // The table only exists while it is on screen, so it is always the visible
@@ -101,6 +102,13 @@ export default function StockTable({
         </div>
         <div className="ml-auto flex items-center gap-3 sm:ml-0">
           <button
+            onClick={onOpenFeed}
+            title="Was ist passiert — Herabstufungen, Insider, Kurssprünge und Quartalszahlen der Watchlist"
+            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
+          >
+            <PulseIcon />
+          </button>
+          <button
             onClick={onOpenEvaluation}
             title="Auswertung — sagt der Score die spätere Rendite voraus?"
             className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
@@ -117,7 +125,7 @@ export default function StockTable({
         </div>
       </div>
 
-      <VerdictChanges onSelect={onSelect} />
+      <VerdictChanges onSelect={onSelect} onOpenFeed={onOpenFeed} />
 
       <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-auto">
         {loading && total === 0 ? (

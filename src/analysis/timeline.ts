@@ -12,6 +12,8 @@
  * Pure and dependency-free so the web app can import the types.
  */
 
+import { ratingBucket } from './analyst-history.js';
+
 export const TIMELINE_KINDS = ['analyst', 'insider', 'earnings', 'dividend', 'verdict', 'event', 'news', 'move'] as const;
 export type TimelineKind = (typeof TIMELINE_KINDS)[number];
 
@@ -74,10 +76,8 @@ export function analystEvent(a: {
 }
 
 function gradeTone(grade: string | null): Tone {
-  const g = (grade ?? '').toLowerCase();
-  if (/buy|outperform|overweight|positive|accumulate/.test(g)) return 'positive';
-  if (/sell|underperform|underweight|negative|reduce/.test(g)) return 'negative';
-  return 'neutral';
+  const b = ratingBucket(grade);
+  return b === 'strongBuy' || b === 'buy' ? 'positive' : b === 'sell' || b === 'strongSell' ? 'negative' : 'neutral';
 }
 
 /**

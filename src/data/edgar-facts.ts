@@ -290,9 +290,15 @@ export function fiscalYears(facts: Fact[], asOf: string): { end: string; value: 
 
 // ── Download and cache ───────────────────────────────────────────────────────
 
-/** The SEC asks for at most ten requests a second, with a contact in the User-Agent. */
-const secWindow = new RateWindow(8, 1000);
+/**
+ * The SEC asks for at most ten requests a second, with a contact in the
+ * User-Agent — and at eight a second, a full index's first download still
+ * tripped its ten-minute block. Five keeps well clear.
+ */
+const secWindow = new RateWindow(5, 1000);
 const SEC_UA = 'stock-cli backtest (open-source research tool; contact via repository)';
+/** Waits before each retry of a rate-limited download, in milliseconds. */
+const SEC_RETRIES = [5_000, 30_000, 90_000];
 
 /**
  * A company's reduced facts: from the disk cache when it is younger than
@@ -309,12 +315,19 @@ export async function companyFacts(cik: string, cacheDir: string, maxAgeDays = 3
       if (cached.v === PACK_VERSION && fresh) return unpack(cached);
     } catch { /* re-fetch a damaged cache file */ }
   }
-  await secWindow.take();
   try {
-    const res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${padded}.json`, {
-      headers: { 'User-Agent': SEC_UA, Accept: 'application/json' },
-      signal: AbortSignal.timeout(60_000),
-    });
+    let res: Response;
+    // The SEC answers a burst with 429 even under its stated limit; a company
+    // lost to one would leave the backtest's universe different run to run.
+    for (let attempt = 0; ; attempt++) {
+      await secWindow.take();
+      res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${padded}.json`, {
+        headers: { 'User-Agent': SEC_UA, Accept: 'application/json' },
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (res.status !== 429 || attempt >= SEC_RETRIES.length) break;
+      await new Promise((r) => setTimeout(r, SEC_RETRIES[attempt]));
+    }
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const reduced = reduceCompanyFacts(await res.json() as RawCompanyFacts);

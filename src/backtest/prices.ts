@@ -19,7 +19,7 @@ import { logger } from '../utils/logger.js';
 import { RateWindow } from '../utils/rate-window.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const yf = new (YahooFinance as any)({ suppressNotices: ['yahooSurvey', 'ripHistorical'], validation: { logErrors: false } });
+export const yf = new (YahooFinance as any)({ suppressNotices: ['yahooSurvey', 'ripHistorical'], validation: { logErrors: false } });
 
 export interface PriceHistory {
   /** Trading days, YYYY-MM-DD, oldest first. */
@@ -47,8 +47,9 @@ const CACHE_DAYS = 7;
 /**
  * Two histories a second. Several hundred at once would be the burst Yahoo
  * answers with a block, and the nightly refresh shares the same address.
+ * The analyst histories (`analysts.ts`) queue in the same window.
  */
-const yahooWindow = new RateWindow(2, 1000);
+export const yahooWindow = new RateWindow(2, 1000);
 
 export async function priceHistory(
   symbol: string, from: string, cacheDir: string, maxAgeDays = CACHE_DAYS,

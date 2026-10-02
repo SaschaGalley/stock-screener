@@ -18,9 +18,9 @@
  *      measured ones show beyond noise (`priorSdFrom`). Inside each pillar the
  *      criteria then sum to what they did. Criteria that differ by no more than
  *      their noise give a width of zero, and nothing moves.
- *   2. Pillars. The same one level up for the four pillars the backtest can
+ *   2. Pillars. The same one level up for the pillars the backtest can
  *      score, each read with its tilted criteria. Together they keep the share
- *      they had; consensus and revisions, which it cannot score, keep theirs.
+ *      they had; a pillar it cannot score keeps its own.
  *
  * The fit has held up when the published score's IC improves at one month in
  * both directions and does not fall at three months in the forward one. Only

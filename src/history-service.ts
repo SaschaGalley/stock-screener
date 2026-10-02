@@ -11,12 +11,14 @@ import { join } from 'path';
 import { getConfig } from './config.js';
 import { readAppState, writeAppState } from './db/admin.js';
 import {
-  lastMacroDay, priceCoverage, saveAnalystActions, saveInsiderTransactions, saveMacroSeries, savePriceBars, savePriceEvents,
+  lastMacroDay, priceCoverage, quoteCurrencies, saveAnalystActions, saveInsiderTransactions, saveMacroSeries, savePriceBars,
+  savePriceEvents,
 } from './db/history-store.js';
 import { getImpliedERPSeries } from './data/damodaran.js';
 import { fetchSeriesSince, READ_FRED_SERIES } from './data/fred.js';
 import { saveSnapshot } from './db/store.js';
-import { BENCHMARK_TICKERS } from './data/macro.js';
+import { BENCHMARK_CURRENCY, BENCHMARK_TICKERS } from './data/macro.js';
+import { fxTicker, majorCurrency } from './currencies.js';
 import type { YahooRaw } from './data/yahoo-raw.js';
 import { priceHistory, type PriceHistory } from './backtest/prices.js';
 import { logger } from './utils/logger.js';
@@ -107,10 +109,16 @@ async function dailyArchive(): Promise<void> {
   await syncMacroSeries();
 }
 
-/** The index, VIX, the dollar and the sector ETFs. */
+/**
+ * The index, VIX, the dollar, the sector ETFs — and the rate of every currency
+ * a stored stock trades in, so its returns can be restated in the benchmarks'.
+ */
 async function refreshBenchmarks(): Promise<void> {
   const dir = join(getConfig().dataDir, 'backtest', 'prices');
-  for (const ticker of BENCHMARK_TICKERS) {
+  const currencies = new Set((await quoteCurrencies()).map((c) => majorCurrency(c)!));
+  currencies.delete(BENCHMARK_CURRENCY);
+  const fx = [...currencies].sort().map((c) => fxTicker(c, BENCHMARK_CURRENCY));
+  for (const ticker of [...BENCHMARK_TICKERS, ...fx]) {
     const coverage = await priceCoverage(ticker);
     const years = coverage.days >= BACKFILLED_DAYS ? 1 : BACKFILL_YEARS;
     const from = `${Number(today().slice(0, 4)) - years}${today().slice(4)}`;

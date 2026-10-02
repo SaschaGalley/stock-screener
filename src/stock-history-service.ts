@@ -1,21 +1,28 @@
 /**
- * The archive, read back for one stock: the analysts' track record, the event
- * timeline, the holders and the income statement as a flow.
+ * The archive, read back for one stock: the analysts' track record, our own,
+ * the event timeline, the holders and the income statement as a flow.
  *
  * Everything here reads what `history-service.ts` stored; nothing fetches.
  * See the pure modules for what each view computes and why.
  */
 
 import { trackRecord, type TrackRecord } from './analysis/analyst-accuracy.js';
+import { inCommonCurrency } from './analysis/evaluate.js';
+import {
+  callOutcomes, verdictCalls, verdictRecord, type Bar, type CallOutcome, type VerdictPoint, type VerdictRecord,
+} from './analysis/verdict-record.js';
+import { fxTicker, majorCurrency } from './currencies.js';
+import { BENCHMARK_CURRENCY } from './data/macro.js';
 import { flowFromRow, ttmFlow, type IncomeFlow } from './analysis/income-flow.js';
 import { tradeKind, type Holder, type Holders } from './analysis/holders.js';
 import { analystEvent, bigMoves, type Timeline, type TimelineEvent } from './analysis/timeline.js';
 import type { PerplexityContext } from './data/perplexity.js';
 import {
-  readAnalystActions, readInsiderTransactions, readPriceBars, readPriceEvents, readVerdictChanges,
+  readAnalystActions, readInsiderTransactions, readPriceBars, readPriceBarsMany, readPriceEvents, readVerdictChanges,
 } from './db/history-store.js';
 import {
-  latestSnapshot, listDocuments, readFinancialsLax, readFundamentals, snapshotHistory,
+  latestSnapshot, listDocuments, listSymbols, readFinancialsLax, readFundamentals, readSeries, readSeriesForAll,
+  snapshotHistory, symbolFacts, type Series,
 } from './db/store.js';
 import { fmtBig, fmtPrice } from './format.js';
 import type { NewsItem } from './types.js';
@@ -38,10 +45,126 @@ export async function analystTrackRecord(symbol: string): Promise<TrackRecordVie
   return { ...rest, targets: outcomes.length, pending: outcomes.filter((o) => o.error === null).length };
 }
 
-// ── Timeline ────────────────────────────────────────────────────────────────
+// ── Our own verdicts' track record ──────────────────────────────────────────
 
 const DAY_MS = 86_400_000;
+const VERDICT_KEY = 'score.final.verdict';
+const VERDICT_SCORE_KEY = 'score.final.score';
+/** The index with its dividends, as the stocks' adjusted closes have theirs. */
+const RECORD_BENCHMARK = 'SPY';
+
+type StoredBar = { day: string; close: number; adjClose: number | null };
+const totalReturn = (bars: readonly StoredBar[] | undefined): Bar[] => (bars ?? []).map((b) => ({ day: b.day, close: b.adjClose ?? b.close }));
+const daysBefore = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) - n * DAY_MS).toISOString().slice(0, 10);
+
+function verdictPoints(series: readonly Series[]): VerdictPoint[] {
+  const verdicts = series.find((s) => s.key === VERDICT_KEY)?.points ?? [];
+  const scores = new Map((series.find((s) => s.key === VERDICT_SCORE_KEY)?.points ?? []).map((p) => [p.at, p.value]));
+  return verdicts.flatMap((p) => (p.text ? [{ at: p.at, verdict: p.text, score: scores.get(p.at) ?? null }] : []));
+}
+
+/** A listing's closes in the benchmark's currency; null when its rate is not archived. */
+function inBenchmarkCurrency(bars: Bar[], currency: string, fx: Map<string, StoredBar[]>): Bar[] | null {
+  if (currency === BENCHMARK_CURRENCY) return bars;
+  const rate = fx.get(fxTicker(currency, BENCHMARK_CURRENCY));
+  if (!rate?.length) return null;
+  return inCommonCurrency(bars.map((b) => ({ date: b.day, close: b.close })), rate.map((r) => ({ date: r.day, close: r.close })))
+    .map((c) => ({ day: c.date, close: c.close }));
+}
+
+/** One stock's calls with their outcomes — against the index when its currency could be restated, else on their own. */
+async function outcomesFor(
+  symbols: string[], series: Map<string, Series[]>,
+): Promise<{ outcomes: Map<string, CallOutcome[]>; unpriced: number; unrestated: Set<string> }> {
+  const calls = new Map(symbols.map((s) => [s, verdictCalls(verdictPoints(series.get(s) ?? []))] as const));
+  const first = [...calls.values()].flatMap((cs) => (cs.length ? [cs[0].day] : [])).sort()[0];
+  const outcomes = new Map<string, CallOutcome[]>();
+  const unrestated = new Set<string>();
+  if (!first) return { outcomes, unpriced: 0, unrestated };
+  const facts = await symbolFacts(symbols);
+  const currencyOf = (s: string) => majorCurrency(facts.get(s.toUpperCase())?.currency) ?? BENCHMARK_CURRENCY;
+  const fxTickers = [...new Set(symbols.map(currencyOf))].filter((c) => c !== BENCHMARK_CURRENCY).map((c) => fxTicker(c, BENCHMARK_CURRENCY));
+  // A few days before the first call: its entry is the last close at or before it.
+  const bars = await readPriceBarsMany([...symbols, RECORD_BENCHMARK, ...fxTickers], daysBefore(first, 10));
+  const bench = totalReturn(bars.get(RECORD_BENCHMARK));
+  let unpriced = 0;
+  for (const s of symbols) {
+    const cs = calls.get(s) ?? [];
+    if (cs.length === 0) continue;
+    const stored = bars.get(s.toUpperCase()) ?? [];
+    const own = totalReturn(stored);
+    if (own.length === 0) { unpriced++; continue; }
+    const usd = inBenchmarkCurrency(own, currencyOf(s), bars);
+    if (!usd) unrestated.add(s);
+    // Returns from the adjusted dollar closes; the price shown is the day's own close, as quoted.
+    const quoted = (day: string) => stored.filter((b) => b.day <= day).at(-1)?.close;
+    outcomes.set(s, callOutcomes(cs, usd ?? own, usd && bench.length ? bench : null)
+      .map((o) => ({ ...o, price: quoted(o.day) ?? o.price })));
+  }
+  return { outcomes, unpriced, unrestated };
+}
+
+export interface VerdictRecordView {
+  calls:    CallOutcome[];
+  record:   VerdictRecord;
+  /** The listing's currency where it is not the benchmark's. */
+  currency: string | null;
+  /** False when that currency's rate is not archived yet, and the calls stand without the index. */
+  restated: boolean;
+}
+
+export async function verdictTrackRecord(symbol: string): Promise<VerdictRecordView | null> {
+  const series = await readSeries(symbol, [VERDICT_KEY, VERDICT_SCORE_KEY]);
+  const { outcomes, unrestated } = await outcomesFor([symbol], new Map([[symbol, series]]));
+  const calls = outcomes.get(symbol) ?? [];
+  if (calls.length === 0) return null;
+  const currency = majorCurrency((await symbolFacts([symbol])).get(symbol.toUpperCase())?.currency);
+  return {
+    calls: [...calls].reverse(),
+    record: verdictRecord(outcomes, RECOMMENDATIONS),
+    currency: currency && currency !== BENCHMARK_CURRENCY ? currency : null,
+    restated: !unrestated.has(symbol),
+  };
+}
+
+export interface VerdictRecordSummary {
+  /** Every stock with a stored verdict: the watchlist and the reference universe. */
+  all:        VerdictRecord;
+  watchlist:  VerdictRecord;
+  /** Stocks with verdicts but no archived prices yet. */
+  unpriced:   number;
+  computedAt: string;
+}
+
+/** The whole record, recomputed at most every few hours — prices move once a day and verdicts once a night. */
+const RECORD_TTL_MS = 6 * 60 * 60_000;
+let recordMemo: { at: number; value: Promise<VerdictRecordSummary> } | null = null;
+
+export function verdictRecordSummary(fresh = false): Promise<VerdictRecordSummary> {
+  if (recordMemo && !fresh && Date.now() - recordMemo.at < RECORD_TTL_MS) return recordMemo.value;
+  const entry = { at: Date.now(), value: computeRecordSummary() };
+  entry.value.catch(() => { if (recordMemo === entry) recordMemo = null; });
+  recordMemo = entry;
+  return entry.value;
+}
+
+async function computeRecordSummary(): Promise<VerdictRecordSummary> {
+  const [series, watch] = await Promise.all([readSeriesForAll([VERDICT_KEY, VERDICT_SCORE_KEY]), listSymbols('watchlist')]);
+  const { outcomes, unpriced } = await outcomesFor([...series.keys()], series);
+  const watched = new Set(watch);
+  return {
+    all: verdictRecord(outcomes, RECOMMENDATIONS),
+    watchlist: verdictRecord(new Map([...outcomes].filter(([s]) => watched.has(s))), RECOMMENDATIONS),
+    unpriced,
+    computedAt: new Date().toISOString(),
+  };
+}
+
+// ── Timeline ────────────────────────────────────────────────────────────────
+
 const verdictRank = (v: string) => RECOMMENDATIONS.indexOf(v as (typeof RECOMMENDATIONS)[number]);
+/** The longest a company takes to report a quarter: a 10-Q is due within 45 days, an annual report within 90. */
+const REPORT_LAG_DAYS = 100;
 
 export async function stockTimeline(symbol: string, days = 365): Promise<Timeline> {
   const from = new Date(Date.now() - days * DAY_MS).toISOString().slice(0, 10);
@@ -95,15 +218,23 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
     });
   }
 
-  // The quarter's numbers, placed at the quarter's end: the report day itself
-  // is not archived, and a date that looks precise and is not is worse.
+  // The quarter's numbers on the day they were first stored — within a night
+  // of the report, since the refresh runs nightly. A quarter first stored long
+  // after its end came in with the history, not with its report; it is placed
+  // at the quarter's end, as a date that looks precise and is not is worse.
   const byQuarter = new Map<string, Record<string, number>>();
-  for (const q of quarters) byQuarter.set(q.periodEnd, { ...(byQuarter.get(q.periodEnd) ?? {}), [q.key]: q.value });
+  const firstSeen = new Map<string, string>();
+  for (const q of quarters) {
+    byQuarter.set(q.periodEnd, { ...(byQuarter.get(q.periodEnd) ?? {}), [q.key]: q.value });
+    if (q.key === 'epsActual') firstSeen.set(q.periodEnd, q.firstSeenAt.slice(0, 10));
+  }
   for (const [end, q] of byQuarter) {
     if (q.epsActual === undefined) continue;
     const s = q.surprisePct;
+    const seen = firstSeen.get(end);
+    const reported = seen && (Date.parse(seen) - Date.parse(end)) / DAY_MS <= REPORT_LAG_DAYS ? seen : null;
     events.push({
-      day: end, kind: 'earnings', tone: s === undefined ? 'neutral' : s >= 0 ? 'positive' : 'negative',
+      day: reported ?? end, kind: 'earnings', tone: s === undefined ? 'neutral' : s >= 0 ? 'positive' : 'negative',
       title: `Quartal bis ${end}: EPS ${money(q.epsActual)}${q.epsEstimate !== undefined ? ` vs. ${money(q.epsEstimate)} erwartet` : ''}`,
       detail: s !== undefined ? `${s >= 0 ? 'Übertroffen' : 'Verfehlt'} um ${(Math.abs(s) * 100).toFixed(1)} %` : null,
     });
@@ -147,6 +278,69 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
   return {
     events: events.filter((e) => e.day >= from).sort((a, b) => b.day.localeCompare(a.day)),
     upcoming, from,
+  };
+}
+
+// ── What happened across the watchlist ──────────────────────────────────────
+
+/** One stock's event, with the stock it belongs to. */
+export type FeedEvent = TimelineEvent & { symbol: string; name: string | null };
+
+export interface Feed {
+  events:   FeedEvent[];
+  /** Reports scheduled within `UPCOMING_DAYS`, soonest first. */
+  upcoming: FeedEvent[];
+  from:     string;
+  symbols:  number;
+}
+
+/** How far ahead the feed lists scheduled reports. */
+const UPCOMING_DAYS = 14;
+/** Timelines read at once: each is a handful of indexed queries. */
+const FEED_CONCURRENCY = 6;
+/** The feed is read when the list opens; the archive changes once a night. */
+const FEED_TTL_MS = 10 * 60_000;
+const feedMemo = new Map<number, { at: number; value: Promise<Feed> }>();
+
+/**
+ * Every watchlist stock's timeline over the last days, on one axis — the
+ * question the list raises each morning and a stock page answers only for one
+ * stock: what happened. Built from the same timelines, so an event reads the
+ * same here as on the stock's own page.
+ */
+export function watchlistFeed(days = 7, fresh = false): Promise<Feed> {
+  const hit = feedMemo.get(days);
+  if (hit && !fresh && Date.now() - hit.at < FEED_TTL_MS) return hit.value;
+  const entry = { at: Date.now(), value: buildFeed(days) };
+  entry.value.catch(() => { if (feedMemo.get(days) === entry) feedMemo.delete(days); });
+  feedMemo.set(days, entry);
+  return entry.value;
+}
+
+async function buildFeed(days: number): Promise<Feed> {
+  const symbols = await listSymbols('watchlist');
+  const facts = await symbolFacts(symbols);
+  const timelines = new Map<string, Timeline>();
+  const queue = [...symbols];
+  await Promise.all(Array.from({ length: FEED_CONCURRENCY }, async () => {
+    for (let s = queue.shift(); s; s = queue.shift()) timelines.set(s, await stockTimeline(s, days));
+  }));
+  const today = new Date().toISOString().slice(0, 10);
+  const horizon = new Date(Date.now() + UPCOMING_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const tag = (symbol: string) => (e: TimelineEvent): FeedEvent => ({ ...e, symbol, name: facts.get(symbol)?.name ?? null });
+  const events: FeedEvent[] = [];
+  const upcoming: FeedEvent[] = [];
+  for (const [symbol, t] of timelines) {
+    // A stock's own timeline keeps the day the scheduled report falls on; the
+    // feed only what has already happened.
+    events.push(...t.events.filter((e) => e.day <= today).map(tag(symbol)));
+    upcoming.push(...t.upcoming.filter((e) => e.day <= horizon).map(tag(symbol)));
+  }
+  return {
+    events: events.sort((a, b) => b.day.localeCompare(a.day) || a.symbol.localeCompare(b.symbol)),
+    upcoming: upcoming.sort((a, b) => a.day.localeCompare(b.day)),
+    from: new Date(Date.now() - days * DAY_MS).toISOString().slice(0, 10),
+    symbols: symbols.length,
   };
 }
 

@@ -106,7 +106,7 @@ const rate = (xs: (boolean | null)[]) => {
   return v.length ? v.filter(Boolean).length / v.length : null;
 };
 
-export function splitFactorAfter(splits: Split[], day: string): number {
+export function splitFactorAfter(splits: readonly Split[], day: string): number {
   return splits.reduce((f, s) => (s.day > day ? f * s.ratio : f), 1);
 }
 

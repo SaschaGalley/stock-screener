@@ -29,7 +29,9 @@ import type { HistoryMultiple, SectorMultiples, ValuationHistory } from '../../s
 import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
-import type { IncomeFlows, TrackRecordView } from '../../src/stock-history-service';
+import type {
+  Feed, IncomeFlows, TrackRecordView, VerdictRecordSummary, VerdictRecordView,
+} from '../../src/stock-history-service';
 
 const BASE = '/api';
 
@@ -99,6 +101,12 @@ export const api = {
   // The archive, read back — see `src/stock-history-service.ts`.
   getAnalystRecord: (symbol: string) =>
     jsonFetch<{ symbol: string; data: TrackRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/analysts`),
+  getVerdictRecord: (symbol: string) =>
+    jsonFetch<{ symbol: string; data: VerdictRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/verdicts`),
+  /** What happened across the watchlist over the last `days`. */
+  getFeed: (days = 7) => jsonFetch<Feed>(`${BASE}/feed?days=${days}`),
+  /** Every stored verdict as a call, against the index — cached on the server for hours. */
+  getVerdictRecordSummary: () => jsonFetch<VerdictRecordSummary>(`${BASE}/verdict-record`),
   getTimeline: (symbol: string, days = 365) =>
     jsonFetch<{ symbol: string; data: Timeline }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/timeline?days=${days}`),
   getHolders: (symbol: string) =>

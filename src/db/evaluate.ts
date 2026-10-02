@@ -20,8 +20,8 @@
 
 import { getConfig } from '../config.js';
 import { logger } from '../utils/logger.js';
-import { fetchDailyBars } from '../data/macro.js';
-import { majorCurrency } from '../currencies.js';
+import { BENCHMARK_CURRENCY, fetchDailyBars } from '../data/macro.js';
+import { fxTicker, majorCurrency } from '../currencies.js';
 import {
   evaluate, inCommonCurrency, suggestWeights,
   type Close, type Evaluation, type SignalPoint, type WeightSuggestion,
@@ -32,8 +32,6 @@ import { closePool, waitForDatabase } from './client.js';
 import { listSymbols, readSeries, symbolFacts } from './store.js';
 
 const BENCHMARK = '^GSPC';
-/** The benchmark's currency; every listing's closes are restated in it. */
-const BENCHMARK_CURRENCY = 'USD';
 const LABEL_KEY = 'score.final.verdict';
 
 /** The horizon the weight suggestion reads: about a month, as factor research measures. */
@@ -122,7 +120,7 @@ export async function runEvaluation(opts: {
   const fx = new Map<string, Close[]>();
   for (const cur of new Set(symbols.map(currencyOf))) {
     if (cur === BENCHMARK_CURRENCY) continue;
-    fx.set(cur, toCloses(await fetchDailyBars(`${cur}${BENCHMARK_CURRENCY}=X`, daysBack)));
+    fx.set(cur, toCloses(await fetchDailyBars(fxTicker(cur, BENCHMARK_CURRENCY), daysBack)));
   }
 
   const prices = new Map<string, Close[]>();

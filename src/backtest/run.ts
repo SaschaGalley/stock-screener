@@ -5,6 +5,7 @@
  *   pnpm run backtest                     # S&P 500, month-ends since 2013
  *   pnpm run backtest -- --from 2016-01   # a later start
  *   pnpm run backtest -- --limit 60       # the first 60 companies, to try it out
+ *   pnpm run backtest -- --no-analysts    # without the rebuilt consensus, for comparison
  *   pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
  *
  * The live evaluation needs months of stored scores before it says anything.
@@ -18,9 +19,15 @@
  * month's cross-section only: the premium adjustment, and every criterion's
  * reference distribution. Nothing from after a month-end reaches its scores.
  *
+ * The analyst consensus of each month-end is rebuilt from Yahoo's rating
+ * history (`analysts.ts`, `analysis/analyst-history.ts`): each firm's newest
+ * target and grade from the year before. The result says, year by year, for
+ * what share of the stocks there was one.
+ *
  * What it cannot do, and says so in the result:
- *   - Analyst data was never archived, so the consensus and revisions pillars
- *     are silent and the DCF starts from trailing growth.
+ *   - Estimates, their revisions and earnings surprises have no history, so
+ *     the revisions pillar has only the rating drift and the DCF starts from
+ *     trailing growth. The rating history thins out before 2019.
  *   - The universe is today's index members, each from the day it joined.
  *     Companies that left before today are missing: survivors only.
  *   - Peer groups are the index's own GICS sub-industries, not Finnhub's.
@@ -50,8 +57,10 @@ import { computeFactorScore, trustOf } from '../analysis/score.js';
 import { FITTED_WEIGHTS_META } from '../analysis/weight-table.js';
 import { evaluate, type Close, type SignalPoint } from '../analysis/evaluate.js';
 import { PILLAR_KEYS } from '../types.js';
+import type { AnalystAction } from '../analysis/analyst-accuracy.js';
+import { analystHistory } from './analysts.js';
 import { Company, payloadAt, yahooSector } from './payload.js';
-import { BACKTEST_CAVEATS, BacktestResult, RESULT_KEY } from './result.js';
+import { BACKTEST_CAVEATS, BacktestResult, NO_ANALYSTS_CAVEAT, RESULT_KEY } from './result.js';
 import { crossSectionPeers } from './peers.js';
 import { indexAtOrBefore, monthEnds, priceHistory, PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
@@ -95,7 +104,10 @@ async function pooled<T, R>(items: T[], size: number, fn: (x: T) => Promise<R>):
   return out;
 }
 
-export async function runBacktest(opts: { from?: string; to?: string; limit?: number } = {}): Promise<BacktestResult> {
+export async function runBacktest(
+  opts: { from?: string; to?: string; limit?: number; analysts?: boolean } = {},
+): Promise<BacktestResult> {
+  const withAnalysts = opts.analysts ?? true;
   const cfg = getConfig();
   const dir = join(cfg.dataDir, 'backtest');
   const from = opts.from ? `${opts.from.slice(0, 7)}-01` : '2013-01-01';
@@ -127,6 +139,16 @@ export async function runBacktest(opts: { from?: string; to?: string; limit?: nu
   const bench = prices.get(BENCHMARK);
   if (!bench) throw new Error(`No ${BENCHMARK} history — cannot build the calendar`);
 
+  const analysts = new Map<string, AnalystAction[]>();
+  if (withAnalysts) {
+    done = 0;
+    await pooled(companies, 4, async (c) => {
+      const a = await analystHistory(c.symbol, join(dir, 'analysts'));
+      if (a && a.length) analysts.set(c.symbol, a);
+      if (++done % 50 === 0) logger.info(`  Analyst histories: ${done}/${companies.length}`);
+    });
+  }
+
   const ratesOn = await rateHistory(priceFrom, cfg.fredApiKey);
   const days = monthEnds(bench.dates, from, to);
 
@@ -144,6 +166,8 @@ export async function runBacktest(opts: { from?: string; to?: string; limit?: nu
   // Every company-month's criteria, for weighing them again (`weights.ts`).
   const rows: ScoredRow[] = [];
   const labels = new Map<string, string>();
+  // Company-months scored, and how many of them had a rebuilt consensus target.
+  const coverage = new Map<number, { stocks: number; covered: number }>();
 
   try {
     for (const [m, day] of days.entries()) {
@@ -152,10 +176,14 @@ export async function runBacktest(opts: { from?: string; to?: string; limit?: nu
         const f = facts.get(c.symbol), px = prices.get(c.symbol);
         if (!f || !px) return [];
         const etf = sectorToEtf(c.sector);
-        const p = payloadAt(c, f, px, bench, etf ? prices.get(etf) ?? null : null, day);
+        const p = payloadAt(c, f, px, bench, etf ? prices.get(etf) ?? null : null, day, analysts.get(c.symbol) ?? null);
         return p ? [{ c, ...p }] : [];
       });
       if (entries.length < 20) continue;
+      const year = coverage.get(Number(day.slice(0, 4))) ?? { stocks: 0, covered: 0 };
+      year.stocks += entries.length;
+      year.covered += entries.filter((e) => e.financials.targetMeanPrice !== null).length;
+      coverage.set(Number(day.slice(0, 4)), year);
 
       const rates = ratesOn(day);
       const peers = crossSectionPeers(entries.map((e) => ({
@@ -261,15 +289,19 @@ export async function runBacktest(opts: { from?: string; to?: string; limit?: nu
       max: sortedPremiums[sortedPremiums.length - 1] ?? 0,
     },
     evaluation,
-    byYear: [...years.entries()].sort(([a], [b]) => a - b).map(([year, v]) => ({
-      year, months: v.ics.length, ic: mean(v.ics), neutralIc: mean(v.neutral),
-    })),
+    byYear: [...years.entries()].sort(([a], [b]) => a - b).map(([year, v]) => {
+      const c = coverage.get(year);
+      return {
+        year, months: v.ics.length, ic: mean(v.ics), neutralIc: mean(v.neutral),
+        analysts: withAnalysts && c && c.stocks > 0 ? c.covered / c.stocks : null,
+      };
+    }),
     fit,
-    caveats: FITTED_WEIGHTS_META
-      ? [...BACKTEST_CAVEATS, `Die Gewichte in Kraft sind auf die Monatsenden ${FITTED_WEIGHTS_META.from} bis ${FITTED_WEIGHTS_META.to} `
+    caveats: (withAnalysts ? BACKTEST_CAVEATS : [NO_ANALYSTS_CAVEAT, ...BACKTEST_CAVEATS.slice(1)]).concat(FITTED_WEIGHTS_META
+      ? [`Die Gewichte in Kraft sind auf die Monatsenden ${FITTED_WEIGHTS_META.from} bis ${FITTED_WEIGHTS_META.to} `
         + 'angepasst: Für sie sind die Zahlen oben zum Teil in-sample. Was die Anpassung auf Jahren leistet, die sie nicht gesehen hat, '
         + 'steht unter „Gewichte“.']
-      : BACKTEST_CAVEATS,
+      : []),
   };
   await writeAppState(RESULT_KEY, JSON.stringify(result));
   return result;
@@ -299,7 +331,10 @@ export function renderBacktest(r: BacktestResult): string {
     }
   }
   lines.push('', 'Factor score IC at one month, by year:');
-  for (const y of r.byYear) lines.push(`  ${y.year}  IC ${fmt(y.ic)}  sector ${fmt(y.neutralIc)}  (${y.months} months)`);
+  for (const y of r.byYear) {
+    lines.push(`  ${y.year}  IC ${fmt(y.ic)}  sector ${fmt(y.neutralIc)}  (${y.months} months)`
+      + (y.analysts != null ? `  consensus for ${Math.round(y.analysts * 100)}%` : ''));
+  }
   lines.push('', ...renderFit(r.fit), '', ...r.caveats.map((c) => `· ${c}`));
   return lines.join('\n');
 }
@@ -344,6 +379,7 @@ if (isMain) {
     const started = Date.now();
     const result = await runBacktest({
       from: flag('--from'), to: flag('--to'), limit: flag('--limit') ? Number(flag('--limit')) : undefined,
+      analysts: !args.includes('--no-analysts'),
     });
     console.log(renderBacktest(result));
     if (args.includes('--write-weights')) {

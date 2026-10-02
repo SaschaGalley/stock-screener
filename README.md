@@ -80,6 +80,8 @@ There is one list of stocks, shown at two densities. There are no tabs and no to
 
 **Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
 
+**Was ist passiert** (the pulse icon beside the chart icon, `#/feed`, `GET /api/feed?days=7`) — every watchlist stock's timeline over the last day, week or month on one axis: rating changes and target moves, insider trades, the quarter's numbers, our own verdict changes, dated research findings, the days a price jumped, headlines on request — and the reports due in the next two weeks above them. Built from the same per-stock timelines (`watchlistFeed` in `src/stock-history-service.ts`), so an event reads the same in the feed as on its stock's page. The strip of verdict changes above the list links to it.
+
 **Analyse** — the same list collapsed to a rail, with one stock open beside it. A row click opens it; clicking that same row again closes it, as does the **✕** at the top right of the analysis, or `Esc`.
 
 The list does not move when any of that happens. The two densities share the row markup for every column both of them show (`StockRowCells.tsx`) and declare one row height between them, so a row is the same two lines at the same size on either side of the click. The scroll position travels as *which stock was at the top of the box, and how far down it sat* — the one thing a table and a rail can both honour, since pixels do not survive a trip between two different elements. The rail carries the same sticky column-label row as the table for the same reason: without it the two scroll boxes start their content at different places, and the list at the very top cannot be reproduced at all.
@@ -91,13 +93,14 @@ Measured across the list, the stock you clicked lands on the pixel it was on, go
 
   **Wie der Score entsteht** is a strip under the three verdict cards rather than a section of its own: the blend as one line (Zahlen × weight + Text × weight → score), the six pillars with their weights, and the five narrative dimensions. Findings, method and the two prose reads sit behind *Befunde & Begründung*, which remembers being opened; the two prose reads are also a hover on their half of the formula.
 
-  **Four views read the archive back** (`src/stock-history-service.ts`, all reads, no fetches):
+  **Five views read the archive back** (`src/stock-history-service.ts`, all reads, no fetches):
   - **Analysten: Trefferquote** — every archived price target against the close twelve months later, targets from before a split put on today's basis: how far the price ended from the target, whether it was reached within the year, whether the stock moved the way it implied — per firm and overall — and the consensus of a year ago drawn against the price it promised. For Apple, 839 targets since 2018: the price ended a median 12 % *above* the target, 76 % were reached; Barclays' underweight got the direction right in 28 % of cases.
-  - **Zeitleiste** — rating changes and target moves, insider purchases and sales, the quarter's numbers, dividends and splits, our own verdict changes, dated findings from every research brief, headlines, and the days the price moved more than three of its own standard deviations (at least 5 %), filterable by kind, with the next report on top.
+  - **Unser Urteil: Trefferquote** — the same question turned on us (`src/analysis/verdict-record.ts`): every change of the published verdict, read off its stored series, as a dated call, with the stock against the S&P 500 (SPY, dividends included, a foreign listing restated in dollars) one, three, six and twelve months later and for as long as the verdict held. A buy was right when the stock beat the index, a sell when it lagged; a hold is only measured. A change counts once it has held through the next day's reading, as in the list of verdict changes. The same calls across every stock are a tab of their own under **Auswertung**, *Unsere Urteile*: the median excess return and the hit rate per verdict and horizon (`GET /api/verdict-record`).
+  - **Zeitleiste** — rating changes and target moves, insider purchases and sales, the quarter's numbers, dividends and splits, our own verdict changes, dated findings from every research brief, headlines, and the days the price moved more than three of its own standard deviations (at least 5 %), filterable by kind, with the next report on top. A quarter's numbers are dated the day they were first stored — within a night of the report — and a quarter that came in with the history, long after its end, at the quarter's end.
   - **Aktionäre**, under ownership — the largest institutions and funds with the change since their previous report, the insiders' stakes, six months of net buying, every insider trade on file. Each institution's stake becomes a series as the reports accumulate.
   - **Vom Umsatz zum Gewinn**, under fundamentals — the income statement as filed, as a flow, for the last four quarters or any fiscal year, in the reporting currency. A loss is drawn as the shortfall it is, and other income that covers it flows into that shortfall: Ondas' operating loss of 225 million, covered by 360 million of revaluation gains, still ends in a net profit.
 
-  **Bewertung im Zeitverlauf** answers what one day's numbers cannot — whether today is unusual for this stock. Every month-end of the last five years is rebuilt from the SEC filings known that day and run through the live models (`src/backtest/history.ts`, the backtest's own reconstruction for a single stock), giving three views: the reconstructed fair value against the price, with the range the gap usually sat in ("meist 69–86 % über dem Fair Value; heute 64 % darüber — günstiger als in 83 % der Monate"); the price against earnings times the stock's median P/E, FAST-Graphs style; and each of P/E, P/S, P/FCF and EV/EBITDA against its own three- and five-year median, with the price the median multiple implies. Medians rather than means, because ServiceNow's P/E of 640 on near-zero 2021 earnings put its five-year mean at 210. Beside the history, each multiple's median and rank across the stock's industry in the universe, and a **fair P/E and P/S**: a regression of each multiple, in logs, on revenue growth, operating and gross margin, beta and sector across the universe (`src/analysis/fair-ratio.ts`), read through the stock's own inputs — whether the premium over the industry is one the fundamentals pay for. The R² travels with every answer (about 0.56 for P/S, 0.25 for P/E), below 0.2 there is none, and a loss-maker gets no fair P/E. Analyst targets and peer multiples were never archived, so the rebuilt fair value runs below the headline composite — it is consistent with itself, and today's live value is drawn beside it. A listing without XBRL filings gets the earnings and multiples from Yahoo's fiscal years instead, without a fair value. The first open of a stock each day takes a few seconds (a SEC download and two price histories); the result is cached as a `valuation_history` snapshot for a day.
+  **Bewertung im Zeitverlauf** answers what one day's numbers cannot — whether today is unusual for this stock. Every month-end of the last five years is rebuilt from the SEC filings known that day and run through the live models (`src/backtest/history.ts`, the backtest's own reconstruction for a single stock), giving three views: the reconstructed fair value against the price, with the range the gap usually sat in ("meist zwischen 54 % über und 17 % unter dem rekonstruierten Fair Value; heute 45 % darüber — teurer als in 70 % der Monate", worded from the fair value, so a price at a third of it reads 67 % below rather than 200 %); the price against earnings times the stock's median P/E, FAST-Graphs style; and each of P/E, P/S, P/FCF and EV/EBITDA against its own three- and five-year median, with the price the median multiple implies. Medians rather than means, because ServiceNow's P/E of 640 on near-zero 2021 earnings put its five-year mean at 210. Beside the history, each multiple's median and rank across the stock's industry in the universe, and a **fair P/E and P/S**: a regression of each multiple, in logs, on revenue growth, operating and gross margin, beta and sector across the universe (`src/analysis/fair-ratio.ts`), read through the stock's own inputs — whether the premium over the industry is one the fundamentals pay for. The R² travels with every answer (about 0.56 for P/S, 0.25 for P/E), below 0.2 there is none, and a loss-maker gets no fair P/E. The analyst target in it is the consensus of each month-end rebuilt from the archived rating history (each firm's newest target from the year before, `src/analysis/analyst-history.ts`); peer multiples cannot be rebuilt for one stock alone and are missing, so the rebuilt fair value differs from the headline composite — it is consistent with itself, and today's live value is drawn beside it. A listing without XBRL filings gets the earnings and multiples from Yahoo's fiscal years instead, without a fair value. The first open of a stock each day takes a few seconds (a SEC download and two price histories); the result is cached as a `valuation_history` snapshot for a day.
 - **Analyse dialog** (the combination named on the verdict card, or „Andere Einstellungen…" in the refresh menu): every flag combo is its own cached entry, so the dialog lists what is stored — one click shows that one, and costs nothing — and underneath it holds the model, web-search and Perplexity pickers with the button that spends money. Outdated entries stay selectable and carry a ⚠.
 
   It used to be a permanent third column, which gave a panel you touch a few times a day the same standing as the analysis itself and a fifth of the window to say it. Both of its jobs are moments rather than states, and a run that costs an API call is better confirmed in a dialog than fired by a stray click on a sidebar button.
@@ -1356,6 +1359,17 @@ directory.
 capitalisation, and the dividend-adjusted ones the return. A share count from a
 2014 filing is on 2014's basis, so the splits since then bring it onto today's.
 
+**The analysts as they stood that day.** Yahoo's rating history lists every
+action with the firm, the grade it moved to and the target it set, back to
+2012 for the large caps (`backtest/analysts.ts`, cached on disk and stored in
+`analyst_actions`). Each firm's newest target and grade from the year before a
+month-end, the day itself excluded, are that day's consensus
+(`analysis/analyst-history.ts`): the mean target, the count of buys, holds and
+sells — broker vocabularies mapped onto the five steps — and their change
+against a month before. Below three firms there is none. Targets from before a
+split are put on today's basis. The result says, year by year, for what share
+of the stocks there was a consensus.
+
 **Everything calibrated is recalibrated per month**, from that month's
 cross-section only: the premium adjustment, and every criterion's reference
 distribution. Peer medians come from the index's own GICS sub-industries that
@@ -1365,9 +1379,10 @@ reaches its scores.
 
 What it cannot do, and the page says so beside the numbers:
 
-- **No analyst data.** Estimates, ratings, targets and surprises were never
-  archived. The consensus and revisions pillars are silent, the DCF starts from
-  trailing growth, and those two pillars keep their weights in the fit.
+- **No estimates.** Earnings estimates, their revisions and surprises have no
+  history. The revisions pillar is read on the rating drift alone, and the DCF
+  starts from trailing growth. The rating history thins out going back:
+  Apple's has a handful of actions before 2018.
 - **Survivors only.** The universe is today's index members, each from the day
   it joined. Companies that left before today are missing.
 - **US only.** The SEC does not hold European filings.
@@ -1383,8 +1398,13 @@ the cache and take under two.
 pnpm run backtest                     # S&P 500, month-ends since 2013
 pnpm run backtest -- --from 2016-01   # a later start
 pnpm run backtest -- --limit 60       # the first 60 companies, to try it out
+pnpm run backtest -- --no-analysts    # without the rebuilt consensus, for comparison
 pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
 ```
+
+The SEC answers a burst with a ten-minute block even under its stated ten
+requests a second; the download keeps to five and waits out a refusal rather
+than losing the company, so two runs see the same universe.
 
 Every criterion's own figure is evaluated too, turned so that more is better.
 A pillar that ranks nothing may still hold a criterion that does, and a
@@ -1427,9 +1447,10 @@ is checked (`src/backtest/weights.ts`):
    is the variance. Criteria that differ by no more than their noise give a
    width of zero, and nothing moves. Inside each pillar the weights keep their
    total.
-2. **Pillars.** The same one level up, for the four pillars the backtest can
-   score, each read with its tilted criteria. Consensus and revisions keep
-   their 25 %.
+2. **Pillars.** The same one level up, for the pillars the backtest can
+   score, each read with its tilted criteria — with the rebuilt consensus, all
+   six, the revisions pillar on its rating drift. A pillar it cannot score
+   keeps its weight.
 3. **The check.** Fitted on 2013–2019 and scored on 2020–2026 against the
    judgment weights on the same stocks and months, then the other way round;
    December 2019, whose month ahead is January 2020, belongs to neither half.
@@ -1581,6 +1602,7 @@ src/
 ├── alerts.ts              Verdict changes: recorded when they happen, announced once they hold
 ├── backtest/              The factor score rebuilt at past month-ends (`pnpm run backtest`)
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
+│   ├── analysts.ts        Every company's rating history, cached on disk and archived
 │   ├── prices.ts          Daily histories with their splits, cached on disk
 │   ├── peers.ts           Peer medians from the month's own cross-section
 │   ├── rates.ts           FRED and Damodaran by month
@@ -1623,6 +1645,8 @@ src/
 │   ├── calibration.ts     Percentile reading of a criterion against its reference distribution
 │   ├── calibration-table.ts  Generated reference distributions (`pnpm run calibrate`)
 │   ├── evaluate.ts        Rank IC, sector-neutral IC, the weight tilt and the joint test
+│   ├── analyst-history.ts The analyst consensus of a past day, rebuilt from the rating actions
+│   ├── verdict-record.ts  Our verdicts as calls, against the index after 1, 3, 6 and 12 months
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
@@ -1643,7 +1667,7 @@ web/
 ├── tailwind.config.js     Maps Tailwind colour tokens → CSS vars in styles.css
 ├── src/
 │   ├── App.tsx            Routing (hash), state, SSE wiring
-│   ├── pages/             Administration
+│   ├── pages/             Administration, Auswertung, Was ist passiert (FeedPage)
 │   ├── api.ts             Thin fetch wrappers
 │   ├── types.ts           Mirror of server schemas (StockBundle, AnalysisFlagsKey, …)
 │   ├── format.ts          fmt*, mosColor, recommendationColor helpers
@@ -1655,7 +1679,8 @@ web/
 │       ├── StockTable.tsx         The list at full width (Übersicht)
 │       ├── StockRail.tsx          The same list at rail width, beside an analysis
 │       ├── StockListControls.tsx  Search · sort · watchlist, shared by both
-│       ├── VerdictChanges.tsx     The week's verdict changes above the overview
+│       ├── VerdictChanges.tsx     The week's verdict changes above the overview, linking to the feed
+│       ├── VerdictRecordPanel.tsx Our verdicts as calls, under Auswertung
 │       ├── BacktestPanel.tsx      The backtest's view under Auswertung
 │       ├── AnalysisModal.tsx      Stored analyses + model/search/pplx, as a dialog
 │       ├── AnalysisView.tsx       Centre detail; renders all sections

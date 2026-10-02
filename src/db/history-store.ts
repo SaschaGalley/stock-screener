@@ -160,6 +160,30 @@ export async function readPriceBars(ticker: string, from?: string): Promise<{ da
   return res.rows.map((r) => ({ day: day(r.day)!, close: r.close, adjClose: r.adj_close }));
 }
 
+/** Every quote currency a stored symbol trades in. */
+export async function quoteCurrencies(): Promise<string[]> {
+  const res = await query<{ currency: string }>('SELECT DISTINCT currency FROM symbols WHERE currency IS NOT NULL');
+  return res.rows.map((r) => r.currency);
+}
+
+/** Closes for several tickers at once, from `from` on — the cross-section's read. */
+export async function readPriceBarsMany(
+  tickers: string[], from?: string,
+): Promise<Map<string, { day: string; close: number; adjClose: number | null }[]>> {
+  const res = await query<{ ticker: string; day: Date; close: number; adj_close: number | null }>(
+    `SELECT ticker, day, close, adj_close FROM price_bars
+      WHERE ticker = ANY($1) AND ($2::date IS NULL OR day >= $2) ORDER BY ticker, day`,
+    [tickers.map((t) => t.toUpperCase()), from ?? null],
+  );
+  const out = new Map<string, { day: string; close: number; adjClose: number | null }[]>();
+  for (const r of res.rows) {
+    const list = out.get(r.ticker) ?? [];
+    list.push({ day: day(r.day)!, close: r.close, adjClose: r.adj_close });
+    out.set(r.ticker, list);
+  }
+  return out;
+}
+
 export async function readPriceEvents(ticker: string): Promise<PriceEventRow[]> {
   const res = await query<{ day: Date; kind: 'split' | 'dividend'; value: number }>(
     'SELECT day, kind, value FROM price_events WHERE ticker = $1 ORDER BY day', [ticker.toUpperCase()],

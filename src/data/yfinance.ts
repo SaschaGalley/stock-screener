@@ -12,7 +12,7 @@ import {
 import { DailyBar } from '../analysis/technical.js';
 import { auditFinancials, isFundamentalsStale } from '../analysis/data-quality.js';
 import { QuarterPoint, annualGrowth, latestValue, trailingGrowth, trailingSum } from '../analysis/trailing.js';
-import { MINOR_UNIT_CURRENCIES } from '../currencies.js';
+import { fxTicker, MINOR_UNIT_CURRENCIES } from '../currencies.js';
 import { logger } from '../utils/logger.js';
 import {
   analystActionsFrom, insiderTransactionsFrom, pickModules, priceBarsFrom, priceEventsFrom,
@@ -59,11 +59,11 @@ async function safeQuote(symbol: string): Promise<any> {
 async function fetchFxRate(from: string, to: string): Promise<number | null> {
   if (from === to) return 1;
   try {
-    const q = await yf.quote(`${from}${to}=X`);
+    const q = await yf.quote(fxTicker(from, to));
     const r = num((q as any)?.regularMarketPrice);
     return r !== null && r > 0 ? r : null;
   } catch (e) {
-    logger.warn(`FX ${from}${to}=X: ${(e as Error).message}`);
+    logger.warn(`FX ${fxTicker(from, to)}: ${(e as Error).message}`);
     return null;
   }
 }

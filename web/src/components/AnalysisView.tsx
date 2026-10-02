@@ -14,6 +14,7 @@ import ScoreBreakdown from "./sections/ScoreBreakdown";
 import MarginTrends from "./sections/MarginTrends";
 import BalanceChecks from "./sections/BalanceChecks";
 import AnalystTrackRecord from "./sections/AnalystTrackRecord";
+import VerdictTrackRecord from "./sections/VerdictTrackRecord";
 import HoldersPanel from "./sections/HoldersPanel";
 import StockTimeline from "./sections/StockTimeline";
 import IncomeFlowChart from "./charts/IncomeFlowChart";
@@ -361,6 +362,15 @@ export default function AnalysisView({
               storageKey="analyst-record"
             >
               <AnalystTrackRecord symbol={symbol} />
+            </Section>
+
+            {/* TIER 7c: THE SAME QUESTION, ASKED OF OUR OWN VERDICTS */}
+            <Section
+              title="Unser Urteil: Trefferquote"
+              subtitle="Jeder Urteilswechsel gegen den S&P 500 danach"
+              storageKey="verdict-record"
+            >
+              <VerdictTrackRecord symbol={symbol} />
             </Section>
 
             {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}

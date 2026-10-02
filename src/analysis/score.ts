@@ -159,8 +159,9 @@ export function withFitted(base: ScoreWeights, fitted: FittedWeights | null): Sc
 
 /**
  * The weights in force: the judgment, with what the backtest fitted in its
- * place. Consensus and revisions keep theirs — analyst data was never
- * archived, so the backtest has nothing to measure them by.
+ * place. What the backtest cannot measure keeps its judgment weight — the
+ * estimate revisions and surprises, which have no history; the consensus it
+ * rebuilds from the rating history.
  */
 export const WEIGHTS: ScoreWeights = withFitted(JUDGMENT_WEIGHTS, FITTED_WEIGHTS);
 
