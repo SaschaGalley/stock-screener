@@ -20,6 +20,7 @@ import {
 } from './db/store.js';
 import { sendAlert, verdictAlert } from './alerts.js';
 import { sendDigest } from './digest.js';
+import { applyBacktestSchedule, backtestOverview, reconcileBacktestStatus, startBacktest } from './backtest-service.js';
 import { storedBacktest } from './backtest/result.js';
 import { CALIBRATION_META, calibrationDue } from './analysis/calibration.js';
 import { migrate } from './db/migrate.js';
@@ -665,6 +666,7 @@ export function createApp(): express.Express {
       const before = await readAppConfig();
       const config = await writeAppConfig(parsed.data);
       await applySchedule();
+      await applyBacktestSchedule().catch((e) => logger.error(`Could not install backtest schedule: ${(e as Error).message}`));
       res.json({ ok: true, config, scheduler: await getSchedulerStatus() });
 
       // Unticking a stock here is the other way it leaves the watchlist, and it
@@ -922,6 +924,25 @@ export function createApp(): express.Express {
     try {
       const days = Number(req.query.days ?? 7);
       res.json(await watchlistFeed(Number.isFinite(days) ? Math.min(90, Math.max(1, Math.round(days))) : 7, req.query.fresh === '1'));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/backtest/overview · POST /api/backtest/run ─────────────────────
+  // The run in progress, the monthly schedule and every run kept; and a run
+  // started now, as a child process (`backtest-service.ts`).
+  app.get('/api/backtest/overview', async (_req, res, next) => {
+    try {
+      res.json(await backtestOverview());
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.post('/api/backtest/run', async (_req, res, next) => {
+    try {
+      const r = await startBacktest('manual');
+      res.status(r.started ? 202 : 409).json(r);
     } catch (e) {
       next(e);
     }
@@ -1610,6 +1631,9 @@ if (isMain) {
         // Install the cron only once the port is bound: if the process is going
         // to die on EADDRINUSE, it should do so without having kicked off a run.
         applySchedule().catch((e) => logger.error(`Could not install schedule: ${(e as Error).message}`));
+        reconcileBacktestStatus()
+          .then(() => applyBacktestSchedule())
+          .catch((e) => logger.error(`Could not install backtest schedule: ${(e as Error).message}`));
       });
 
       // Close the pool on shutdown so in-flight queries finish and the server

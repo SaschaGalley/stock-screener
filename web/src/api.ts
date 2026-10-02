@@ -29,6 +29,7 @@ import type { HistoryMultiple, SectorMultiples, ValuationHistory } from '../../s
 import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
+import type { BacktestOverview } from '../../src/backtest-service';
 import type {
   CoverageView, Feed, IncomeFlows, TrackRecordView, VerdictRecordSummary, VerdictRecordView,
 } from '../../src/stock-history-service';
@@ -186,9 +187,13 @@ export const api = {
   // `listMetrics` is the picker's data source and `getSeries` draws whatever
   // was picked.
 
-  /** The stored backtest — cheap, it is computed by `pnpm run backtest`, not here. */
+  /** The stored backtest — cheap, it is computed by `pnpm run backtest` or the monthly run, not here. */
   getBacktest: () =>
     jsonFetch<BacktestResponse>(`${BASE}/backtest`),
+  /** The run in progress, the monthly schedule and every run kept. */
+  getBacktestOverview: () => jsonFetch<BacktestOverview>(`${BASE}/backtest/overview`),
+  /** Start a run now; refused while one is going. */
+  runBacktest: () => jsonFetch<{ started: boolean; reason: string | null }>(`${BASE}/backtest/run`, { method: 'POST' }),
 
   /** Rank IC of the stored scores against later returns. Slow when not cached server-side. */
   getEvaluation: (horizons: number[], fresh = false) =>

@@ -57,7 +57,7 @@ import { join, resolve } from 'path';
 import { getConfig } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { closePool, waitForDatabase } from '../db/client.js';
-import { writeAppState } from '../db/admin.js';
+import { takeBacktestLock, type BacktestLock } from './lock.js';
 import { companyFacts, CompanyFacts } from '../data/edgar-facts.js';
 import { lookupCIK } from '../data/edgar.js';
 import {
@@ -71,7 +71,7 @@ import {
 import { computeAllMetrics, impliedPremiumShift } from '../analysis/computeMetrics.js';
 import { computeFactorScore, trustOf } from '../analysis/score.js';
 import { FITTED_WEIGHTS_META } from '../analysis/weight-table.js';
-import { evaluate, type Close, type SignalPoint } from '../analysis/evaluate.js';
+import { bucketReturns, evaluate, type Close, type SignalPoint } from '../analysis/evaluate.js';
 import { PILLAR_KEYS } from '../types.js';
 import type { AnalystAction } from '../analysis/analyst-accuracy.js';
 import { analystHistory } from './analysts.js';
@@ -79,7 +79,10 @@ import { insiderHistory } from './insiders.js';
 import { resolveDeparted } from './departed.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
 import { Company, payloadAt, yahooSector } from './payload.js';
-import { BACKTEST_CAVEATS, BacktestResult, departedCaveat, NO_ANALYSTS_CAVEAT, RESULT_KEY } from './result.js';
+import {
+  BACKTEST_CAVEATS, BacktestResult, departedCaveat, NO_ANALYSTS_CAVEAT, saveBacktestRun, writeBacktestStatus,
+  type BacktestStatus, type BacktestTrigger,
+} from './result.js';
 import { crossSectionPeers } from './peers.js';
 import { indexAtOrBefore, monthEnds, priceHistory, PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
@@ -91,7 +94,13 @@ export type BacktestUniverse = 'sp500' | 'sp1500';
 /** Prices from a year before the first month-end: momentum reads twelve months back. */
 const PRICE_LEAD_YEARS = 2;
 /** Months ahead the scores are judged over. */
-export const BACKTEST_HORIZONS = [1, 3];
+export const BACKTEST_HORIZONS = [1, 3, 6, 12];
+/**
+ * The horizons the weight fit is checked on — fixed with the rule, before
+ * the longer ones were measured: a check that grows with whatever else is
+ * measured is a check that moves after the result is seen.
+ */
+export const BACKTEST_FIT_HORIZONS = [1, 3];
 /** The horizon the weight fit reads: one month, as factor research measures. */
 export const BACKTEST_WEIGHT_HORIZON = 1;
 
@@ -130,9 +139,13 @@ async function pooled<T, R>(items: T[], size: number, fn: (x: T) => Promise<R>):
 export async function runBacktest(
   opts: {
     from?: string; to?: string; limit?: number; analysts?: boolean; insiders?: boolean; departed?: boolean; universe?: BacktestUniverse;
+    trigger?: BacktestTrigger;
+    /** Told at every step, in words for the admin page: "SEC-Abschlüsse 500/1502". */
+    onProgress?: (phase: string) => void;
   } = {},
 ): Promise<BacktestResult> {
   const withAnalysts = opts.analysts ?? true;
+  const progress = (phase: string) => { try { opts.onProgress?.(phase); } catch { /* a status write must not cost the run */ } };
   const universe = opts.universe ?? 'sp1500';
   const cfg = getConfig();
   const dir = join(cfg.dataDir, 'backtest');
@@ -177,7 +190,10 @@ export async function runBacktest(
   await pooled(companies, 4, async (c) => {
     const f = await companyFacts(c.cik, join(dir, 'facts'));
     if (f) facts.set(c.symbol, f);
-    if (++done % 50 === 0) logger.info(`  SEC filings: ${done}/${companies.length}`);
+    if (++done % 50 === 0) {
+      logger.info(`  SEC filings: ${done}/${companies.length}`);
+      progress(`SEC-Abschlüsse ${done}/${companies.length}`);
+    }
   });
 
   const etfs = [...new Set(companies.map((c) => sectorToEtf(c.sector)).filter((e): e is string => !!e))];
@@ -186,7 +202,10 @@ export async function runBacktest(
   await pooled([...companies.map((c) => c.symbol), BENCHMARK, ...etfs], 4, async (symbol) => {
     const p = await priceHistory(symbol, priceFrom, join(dir, 'prices'));
     if (p) prices.set(symbol, p);
-    if (++done % 50 === 0) logger.info(`  Prices: ${done}/${companies.length + etfs.length + 1}`);
+    if (++done % 50 === 0) {
+      logger.info(`  Prices: ${done}/${companies.length + etfs.length + 1}`);
+      progress(`Kurse ${done}/${companies.length + etfs.length + 1}`);
+    }
   });
   const bench = prices.get(BENCHMARK);
   if (!bench) throw new Error(`No ${BENCHMARK} history — cannot build the calendar`);
@@ -197,7 +216,10 @@ export async function runBacktest(
     await pooled(companies, 4, async (c) => {
       const a = await analystHistory(c.symbol, join(dir, 'analysts'));
       if (a && a.length) analysts.set(c.symbol, a);
-      if (++done % 50 === 0) logger.info(`  Analyst histories: ${done}/${companies.length}`);
+      if (++done % 50 === 0) {
+        logger.info(`  Analyst histories: ${done}/${companies.length}`);
+        progress(`Analysten-Historien ${done}/${companies.length}`);
+      }
     });
   }
 
@@ -208,7 +230,10 @@ export async function runBacktest(
     await pooled(companies, 2, async (c) => {
       const t = await insiderHistory(c.symbol, finnhubKey, join(dir, 'insiders'));
       if (t) insiders.set(c.symbol, t);
-      if (++done % 100 === 0) logger.info(`  Insider histories: ${done}/${companies.length}`);
+      if (++done % 100 === 0) {
+        logger.info(`  Insider histories: ${done}/${companies.length}`);
+        progress(`Insider-Historien ${done}/${companies.length}`);
+      }
     });
   }
 
@@ -309,6 +334,7 @@ export async function runBacktest(
           }
         }
       });
+      progress(`Monatsende ${day} (${m + 1}/${days.length}), ${entries.length} Aktien`);
       if (m % 12 === 0 || m === days.length - 1) {
         logger.info(`  ${day}: ${entries.length} stocks, premium ${(premium * 100).toFixed(2)} pts`);
       }
@@ -357,8 +383,34 @@ export async function runBacktest(
     return [{ key: ix.key, label: ix.label, companies: members.size, ics: ev.ics, labels: ev.labels }];
   });
 
+  // The score cut into its tenths and its verdicts, each against the month's
+  // average stock: whether the top earns more than the next, and whether a
+  // STRONG BUY earns more than a BUY.
+  progress('Bänder und Dezile');
+  const scoreSignal = signals.get('score.factor.score') ?? new Map<string, SignalPoint[]>();
+  const step = (p: SignalPoint) => {
+    if (p.value === null || !Number.isFinite(p.value)) return null;
+    const v = Math.floor(p.value);
+    return v <= 2 ? '<3' : v >= 8 ? '≥8' : `${v}–${v + 1}`;
+  };
+  const bucketsOf = (symbols: Set<string> | null) => {
+    const only = <T>(m: Map<string, T>) => (symbols ? new Map([...m].filter(([s]) => symbols.has(s))) : m);
+    const common = { prices: priceMap, benchmark: calendar, horizons: BACKTEST_HORIZONS };
+    return {
+      deciles: bucketReturns({ ...common, points: only(scoreSignal), bucket: 'decile' }),
+      rawDeciles: bucketReturns({ ...common, points: only(signals.get('score.factor.raw') ?? new Map()), bucket: 'decile' }),
+      verdicts: bucketReturns({ ...common, points: only(signals.get(LABEL_KEY) ?? new Map()), bucket: (p) => p.text ?? null }),
+      steps: bucketReturns({ ...common, points: only(scoreSignal), bucket: step }),
+    };
+  };
+  const bands = bucketsOf(null);
+  for (const seg of segments) {
+    const members = new Set(companies.filter((c) => c.segment === seg.key).map((c) => c.symbol));
+    Object.assign(seg, { bands: bucketsOf(members) });
+  }
+
   const fit = weightLab(rows, { prices: priceMap, sectors }, {
-    fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_HORIZONS, labels,
+    fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_FIT_HORIZONS, labels,
   }).validate(calendar);
 
   const sortedPremiums = [...premiums].sort((a, b) => a - b);
@@ -384,6 +436,7 @@ export async function runBacktest(
     }),
     fit,
     departed: departed?.counts,
+    bands,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
       departed ? departedCaveat(departed.counts) : BACKTEST_CAVEATS[1],
@@ -394,7 +447,14 @@ export async function runBacktest(
         + 'steht unter „Gewichte“.']
       : []),
   };
-  await writeAppState(RESULT_KEY, JSON.stringify(result));
+  // A trial on the first few companies says whether the code runs, not what
+  // the score does: it is printed, never stored over a real run.
+  if (opts.limit) {
+    logger.info('Trial run (--limit): result not stored');
+  } else {
+    progress('Speichern');
+    await saveBacktestRun(result, opts.trigger ?? 'cli');
+  }
   return result;
 }
 
@@ -465,6 +525,9 @@ function renderFit(v: WeightValidation): string[] {
   return lines;
 }
 
+/** `maxRSS` is in kilobytes on Linux and macOS alike, as Node reports it. */
+const peakMemoryMb = () => Math.round(process.resourceUsage().maxRSS / 1024);
+
 const isMain = process.argv[1]?.endsWith('backtest/run.ts') || process.argv[1]?.endsWith('backtest/run.js');
 
 if (isMain) {
@@ -473,16 +536,43 @@ if (isMain) {
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;
   };
+  const trigger: BacktestTrigger = flag('--trigger') === 'cron' ? 'cron' : flag('--trigger') === 'manual' ? 'manual' : 'cli';
+  let status: BacktestStatus | null = null;
+  const report = (patch: Partial<BacktestStatus>) => {
+    if (!status) return Promise.resolve();
+    status = { ...status, ...patch, updatedAt: new Date().toISOString() };
+    return writeBacktestStatus(status).catch(() => { /* the run matters more than its status line */ });
+  };
+  let lock: BacktestLock | null = null;
   (async () => {
     getConfig();
     await waitForDatabase();
+    lock = await takeBacktestLock();
+    if (!lock) {
+      logger.warn('Another backtest is running — not starting a second one');
+      await closePool();
+      process.exit(2);
+    }
     const started = Date.now();
+    status = {
+      state: 'running', trigger, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      finishedAt: null, phase: 'Start', error: null, peakMb: null,
+    };
+    await report({});
+    // A status write a step: a few hundred over a run, none of them awaited by the run.
+    let last = 0;
     const result = await runBacktest({
       from: flag('--from'), to: flag('--to'), limit: flag('--limit') ? Number(flag('--limit')) : undefined,
       analysts: !args.includes('--no-analysts'),
       insiders: !args.includes('--no-insiders'),
       departed: !args.includes('--no-departed'),
       universe: flag('--universe') === 'sp500' ? 'sp500' : 'sp1500',
+      trigger,
+      onProgress: (phase) => {
+        if (Date.now() - last < 2_000) return;
+        last = Date.now();
+        void report({ phase });
+      },
     });
     console.log(renderBacktest(result));
     if (args.includes('--write-weights')) {
@@ -496,10 +586,15 @@ if (isMain) {
         logger.success(`Weights written → ${out}`);
       }
     }
-    logger.success(`Backtest finished in ${((Date.now() - started) / 60_000).toFixed(1)} min`);
+    const peakMb = peakMemoryMb();
+    await report({ state: 'done', finishedAt: new Date().toISOString(), phase: null, peakMb });
+    logger.success(`Backtest finished in ${((Date.now() - started) / 60_000).toFixed(1)} min, peak memory ${peakMb} MB`);
+    await lock?.release();
     await closePool();
   })().catch(async (e) => {
     logger.error(`Backtest failed: ${(e as Error).message}`);
+    await report({ state: 'failed', finishedAt: new Date().toISOString(), error: (e as Error).message, peakMb: peakMemoryMb() });
+    await lock?.release().catch(() => {});
     await closePool();
     process.exit(1);
   });

@@ -37,6 +37,18 @@ export const AppConfigSchema = z.object({
     timezone: z.string().min(1).default('Europe/Berlin'),
   }).prefault({}),
 
+  /**
+   * The backtest, rerun on its own (`src/backtest-service.ts`). Monthly
+   * rather than nightly: it scores month-ends, and a new one comes once a
+   * month. The default is the 2nd at two in the afternoon, in the schedule's
+   * zone — after the month-end close is in, and away from the night's refresh,
+   * whose Yahoo, SEC and Finnhub budgets it would otherwise share.
+   */
+  backtest: z.object({
+    enabled: z.boolean().default(true),
+    cron:    z.string().regex(CRON_RE, 'expected a 5-field cron expression').default('0 14 2 * *'),
+  }).prefault({}),
+
   steps: z.object({
     data: z.object({
       enabled: z.boolean().default(true),

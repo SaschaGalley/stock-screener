@@ -1,12 +1,15 @@
 /**
- * What a backtest found, as stored for the page (`app_state`, `backtest.result`).
+ * What a backtest found, as stored for the page — every run in
+ * `backtest_runs`, the newest the one shown — and how the run in progress is
+ * getting on (`app_state`, `backtest.status`).
  *
  * Apart from the runner so that the server can read a result without loading
  * the SEC and Yahoo clients that produce one.
  */
 
-import { readAppState } from '../db/admin.js';
-import type { Evaluation } from '../analysis/evaluate.js';
+import { readAppState, writeAppState } from '../db/admin.js';
+import { query, queryOne } from '../db/client.js';
+import type { BucketReturn, Evaluation } from '../analysis/evaluate.js';
 import type { WeightValidation } from './weights.js';
 
 export const RESULT_KEY = 'backtest.result';
@@ -26,7 +29,9 @@ export interface BacktestResult {
    * caps — so a factor that works only further down is not averaged away.
    * Empty for a run on the 500 alone, absent in older results.
    */
-  segments?:   { key: string; label: string; companies: number; ics: Evaluation['ics']; labels: Evaluation['labels'] }[];
+  segments?:   { key: string; label: string; companies: number; ics: Evaluation['ics']; labels: Evaluation['labels']; bands?: Bands }[];
+  /** The score's tenths, its verdicts and its steps, each against the month's average stock; absent in older results. */
+  bands?:      Bands;
   /** Median premium adjustment over the months, and its range. */
   premium:     { median: number; min: number; max: number };
   evaluation:  Evaluation;
@@ -41,6 +46,18 @@ export interface BacktestResult {
   /** The weights fitted to it, and how the fit did on the months it had not seen. */
   fit:         WeightValidation;
   caveats:     string[];
+}
+
+/** The score cut up, each part against the average stock of the same months (`bucketReturns`). */
+export interface Bands {
+  /** By rank within the month, D1 the lowest tenth. */
+  deciles:    BucketReturn[];
+  /** The same for the score before the confidence shrink and the conviction stretch. */
+  rawDeciles: BucketReturn[];
+  /** By published factor verdict. */
+  verdicts:   BucketReturn[];
+  /** By whole points of the score: <3, 3–4 … 7–8, ≥8. */
+  steps:      BucketReturn[];
 }
 
 export const BACKTEST_CAVEATS = [
@@ -65,13 +82,97 @@ export function departedCaveat(d: { departed: number; included: number }): strin
     + 'steht, zählt ab deren Beginn (S&P 600: Dezember 2019).';
 }
 
+export type BacktestTrigger = 'cron' | 'manual' | 'cli';
+
+/** Keep a finished run. */
+export async function saveBacktestRun(r: BacktestResult, trigger: BacktestTrigger): Promise<void> {
+  await query(
+    `INSERT INTO backtest_runs (generated_at, trigger, universe, months, companies, result)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [r.generatedAt, trigger, r.universe ?? 'S&P 500', r.months, r.companies, JSON.stringify(r)],
+  );
+}
+
 /** The newest stored result, or null before the first run. */
 export async function storedBacktest(): Promise<BacktestResult | null> {
   try {
+    const row = await queryOne<{ result: BacktestResult }>('SELECT result FROM backtest_runs ORDER BY generated_at DESC LIMIT 1');
+    if (row) return row.result;
+    // A database from before the runs were kept.
     const raw = await readAppState(RESULT_KEY);
     return raw ? JSON.parse(raw) as BacktestResult : null;
   } catch {
     return null;
   }
+}
+
+/** One earlier run, as a line in the list of runs. */
+export interface BacktestRunSummary {
+  id:          number;
+  generatedAt: string;
+  trigger:     string;
+  universe:    string | null;
+  months:      number | null;
+  companies:   number | null;
+  /** The factor score at one month: IC, its t, and within the sector. */
+  ic:          number | null;
+  tStat:       number | null;
+  neutralIc:   number | null;
+  /** Whether the weight fit held up on the half it had not seen. */
+  held:        boolean | null;
+}
+
+export async function backtestHistory(limit = 24): Promise<BacktestRunSummary[]> {
+  const res = await query<{
+    id: string; generated_at: Date; trigger: string; universe: string | null; months: number | null; companies: number | null;
+    ic: number | null; t: number | null; neutral: number | null; held: boolean | null;
+  }>(
+    `SELECT id, generated_at, trigger, universe, months, companies,
+            (ic ->> 'meanIc')::float8 AS ic, (ic ->> 'tStat')::float8 AS t, (ic ->> 'neutralIc')::float8 AS neutral,
+            (result -> 'fit' ->> 'held')::boolean AS held
+       FROM backtest_runs
+       LEFT JOIN LATERAL (
+         SELECT x AS ic FROM jsonb_array_elements(result -> 'evaluation' -> 'ics') x
+          WHERE x ->> 'key' = 'score.factor.score' AND (x ->> 'horizon')::int = 1
+          LIMIT 1
+       ) h ON true
+      ORDER BY generated_at DESC LIMIT $1`,
+    [limit],
+  );
+  return res.rows.map((r) => ({
+    id: Number(r.id), generatedAt: r.generated_at.toISOString(), trigger: r.trigger, universe: r.universe,
+    months: r.months, companies: r.companies, ic: r.ic, tStat: r.t, neutralIc: r.neutral, held: r.held,
+  }));
+}
+
+// ── The run in progress ──────────────────────────────────────────────────────
+
+export const STATUS_KEY = 'backtest.status';
+
+export interface BacktestStatus {
+  state:      'running' | 'done' | 'failed' | 'interrupted';
+  trigger:    BacktestTrigger;
+  startedAt:  string;
+  /** Last written: the run writes at every step, so an old one with `running` is a run that died. */
+  updatedAt:  string;
+  finishedAt: string | null;
+  /** What it is doing: "SEC-Abschlüsse 500/1502", "Monatsende 2018-06". */
+  phase:      string | null;
+  error:      string | null;
+  /** Peak memory of the run, in megabytes. */
+  peakMb:     number | null;
+}
+
+export async function readBacktestStatus(): Promise<BacktestStatus | null> {
+  try {
+    const raw = await readAppState(STATUS_KEY);
+    return raw ? JSON.parse(raw) as BacktestStatus : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeBacktestStatus(s: BacktestStatus): Promise<void> {
+  await writeAppState(STATUS_KEY, JSON.stringify(s));
 }
 

@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { AppConfig, ConfigResponse, JobRun, SchedulerStatus, SearchChoice } from '../types';
 import { MODELS } from '../../../src/models';
 import { CloseIcon } from '../components/icons';
+import { BacktestStatusLine, useBacktestOverview } from '../components/BacktestRuns';
 
 /** Poll interval while a run is in flight — fast enough to feel live, slow
  *  enough that a two-hour run doesn't hammer the API. */
@@ -93,6 +94,7 @@ export default function AdminPage({ onClose }: Props) {
   const [meta, setMeta] = useState<ConfigResponse | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [jobs, setJobs] = useState<SchedulerStatus | null>(null);
+  const backtest = useBacktestOverview();
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -180,6 +182,18 @@ export default function AdminPage({ onClose }: Props) {
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  async function runBacktest() {
+    setError(null);
+    try {
+      const r = await api.runBacktest();
+      if (r.started) setNotice('Backtest gestartet — der Fortschritt steht in der Karte.');
+      else setError(r.reason ?? 'Backtest nicht gestartet.');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    backtest.reload();
   }
 
   async function testDigest() {
@@ -459,6 +473,38 @@ export default function AdminPage({ onClose }: Props) {
               </div>
             )}
           </div>
+        </Card>
+
+        {/* ── Backtest ───────────────────────────────────────────────────── */}
+        <Card
+          title="Backtest"
+          hint="Rechnet den Faktor-Score an jedem Monatsende seit 2013 für den S&P 1500 nach und prüft ihn an den Renditen danach. Einmal im Monat genügt: Er rechnet Monatsenden, und ein neues kommt einmal im Monat. Läuft als eigener Prozess, eine Viertelstunde mit warmem Cache, beim ersten Mal rund eine Stunde."
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <Toggle
+              checked={config.backtest.enabled}
+              onChange={(v) => patch((d) => { d.backtest.enabled = v; })}
+              label="Monatlich automatisch"
+            />
+            <label className="text-xs text-ink-400">Cron</label>
+            <input
+              value={config.backtest.cron}
+              onChange={(e) => patch((d) => { d.backtest.cron = e.target.value; })}
+              className={`${inputCls} w-32 font-mono`}
+              title="5 Felder, in der Zeitzone des Zeitplans; Standard: am 2. um 14 Uhr"
+            />
+            {backtest.data?.schedule.next && (
+              <span className="text-xs text-ink-500">nächster Lauf {new Date(backtest.data.schedule.next).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</span>
+            )}
+            <button
+              onClick={() => void runBacktest()}
+              disabled={!!backtest.data?.running}
+              className="ml-auto rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
+            >
+              Jetzt rechnen
+            </button>
+          </div>
+          {backtest.data && <p className="text-xs"><BacktestStatusLine o={backtest.data} /></p>}
         </Card>
 
         {/* ── Benachrichtigungen ─────────────────────────────────────────── */}

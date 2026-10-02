@@ -1423,13 +1423,33 @@ What it cannot do, and the page says so beside the numbers:
   trade; the bought and the bankrupt are missing.
 - **US only.** The SEC does not hold European filings.
 
-The result is stored (`app_state`, `backtest.result`) and shown under
-**Auswertung** as a third view, *Backtest*. It has the same table of signals,
-the factor score's IC by year, the excess return by factor verdict, and the
-weights fitted to it with their check on unseen years, and the same signals
-by index. A first run downloads about 1,700 filings, price and rating
-histories and takes half an hour, the insiders another half; later ones read
-the cache and take a few minutes.
+Every run is kept (`backtest_runs`) and the newest shown under **Auswertung**
+as a third view, *Backtest*: the table of signals at one, three, six and twelve
+months, the factor score's IC by year, the same signals by index, the score cut
+into tenths, verdicts and steps, the weights fitted to it with their check on
+unseen years, and the earlier runs. A first run downloads about 1,700 filings,
+price and rating histories and takes half an hour, the insiders another half;
+later ones read the cache and take six or seven minutes. A trial with
+`--limit` is printed and never stored.
+
+**It runs itself once a month** (`src/backtest-service.ts`): on the 2nd at two
+in the afternoon by default — after the month-end close is in, away from the
+night's refresh, whose Yahoo, SEC and Finnhub budgets it would share. Nightly
+would add nothing: it scores month-ends, and a new one comes once a month; its
+caches refresh themselves on the way (prices weekly, filings and insiders
+monthly), so nothing has to be fetched in between. The schedule and a
+**Jetzt rechnen** button are under **⚙ Administration → Backtest**, with the
+run's progress as it goes. The server starts it as a child process —
+`backtest/run.ts` as the terminal runs it, writing its own log
+(`backtest/run.log` under the data directory) — because a run holds the S&P
+1500 in memory, at its peak about 2.7 GB, and the server that answers the page
+must not share a heap with that. Postgres's advisory lock (`backtest/lock.ts`)
+keeps it to one run at a time across processes: the schedule, the button and
+a terminal cannot start a second. A run that dies with its process — a deploy —
+is marked as interrupted when the lock is found free. It never writes weights:
+a fit that held is shown, and committing it stays a decision. An environment
+that leaves the nightly cron to production (`HATCHET_SCHEDULE_ENABLED=false`)
+leaves this one to it too.
 
 **Candidates.** Beside the score the backtest measures signals no pillar reads
 yet, so that a weight for one is proposed only after it has been tested. The
@@ -1451,6 +1471,22 @@ pnpm run backtest -- --no-departed    # today's members only
 pnpm run backtest -- --no-insiders    # without the insider candidates
 pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
 ```
+
+**Longer horizons.** Value is said to work over quarters and years rather than
+weeks, so the score is measured at six and twelve months too. With 166
+month-ends that is 27 and 13 independent windows: the t-statistics there are
+wide. The weight fit is still fitted at one month and checked at one and
+three — the check was fixed with the rule, and a check that grows with
+whatever else is measured is one that moves after the result is seen.
+
+**The score cut up** (`bucketReturns`). The rank IC says whether the score
+orders the stocks on the whole; the tenths, the published verdicts and the
+whole points of the score say whether each part earns more than the one below
+it. Each is measured every month against the average stock of that month,
+not the index — the market and the small caps' lag since 2020 are not in
+it — with each month's returns held to their own 2.5th and 97.5th
+percentiles: one stock that went up eightfold decides which tenth "won" in
+the mean, and is never seen by the rank.
 
 The SEC answers a burst with a ten-minute block even under its stated ten
 requests a second; the download keeps to five and waits out a refusal rather
@@ -1602,6 +1638,28 @@ does not show, and no pillar will read it. The tercile spread is no help
 for a signal that is zero for most stocks: with that many ties there is a
 bottom third only in months when a third of the index had buyers.
 
+**At longer horizons, and cut up (3 October 2026).** The factor score's IC
+stays about the same as the horizon grows — 0.014 at one month, 0.011 at
+three and six, 0.010 at twelve — while its t falls with the fewer windows.
+Quality is the pillar that grows: 0.007 → 0.010 → 0.014 → 0.023, as the
+literature has it; valuation does not.
+
+At one month the verdicts lie in the order of their names, against the
+month's average stock: STRONG BUY +0.16 %, BUY +0.10 %, HOLD 0.00 %, SELL
+−0.05 %, STRONG SELL −0.15 % a month — small, and none of them alone beyond
+noise. Over three and six months the top falls back. A score of 8 or more —
+under two per cent of the stocks, mostly STRONG BUY — trails the average by
+1.1 % over three months (t −2.0) and 2.7 % over six (t −2.3), in the 500, the
+400 and the 600 alike, while 6–7 is ahead. At twelve months it is ahead again
+(+2.5 %, t 0.8), on thirteen windows. The ninth tenth does better than the
+tenth at one, three and six months. What gets a stock to 8 is every lens
+agreeing — cheap, sound, rising, liked — and that is a crowded place to buy:
+the conviction stretch, which rewards agreement, may be carrying the top
+past what it earns. The raw score before the stretch does slightly better in
+its top tenth (−0.1 % against −0.2 % at three months), not enough to say. A
+change to the bands or the stretch would be a change to the model, tested the
+way the weights are and decided by its owner, not here.
+
 Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
 
@@ -1706,7 +1764,9 @@ src/
 ├── universe.ts            The reference universe: members per index, departures, tonight's rotation
 ├── alerts.ts              Verdict changes: recorded when they happen, announced once they hold
 ├── digest.ts              The morning's message: what happened across the watchlist since the last
+├── backtest-service.ts    The monthly backtest: schedule, child process, status
 ├── backtest/              The factor score rebuilt at past month-ends (`pnpm run backtest`)
+│   ├── lock.ts            One run at a time across processes (an advisory lock)
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
 │   ├── analysts.ts        Every company's rating history, cached on disk and archived
 │   ├── insiders.ts        Every company's Form 4 trades from Finnhub, for the candidates

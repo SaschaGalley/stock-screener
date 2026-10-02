@@ -4,6 +4,8 @@ import { recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 import { IcTable, SignedBar, evidence, pct } from './evaluationParts';
 import WeightFit from './WeightFit';
+import BacktestRuns, { BacktestStatusLine, useBacktestOverview } from './BacktestRuns';
+import BacktestBands from './BacktestBands';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
@@ -22,12 +24,13 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
   const bt = data.backtest;
   const horizons = [...new Set(bt?.evaluation.ics.map((r) => r.horizon) ?? [])].sort((a, b) => a - b);
   const [horizon, setHorizon] = useState(horizons[0] ?? 1);
+  const overview = useBacktestOverview();
 
   if (!bt) {
     return (
       <div className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-6 text-center text-sm text-ink-400">
-        Noch kein Backtest gerechnet — <span className="font-mono">pnpm run backtest</span> rechnet ihn
-        (einmalig einige Minuten, danach aus dem Cache).
+        Noch kein Backtest gerechnet. Er läuft einmal im Monat von selbst; sofort unter Administration → Backtest →
+        „Jetzt rechnen“ (beim ersten Mal rund eine Stunde, danach eine Viertelstunde).
       </div>
     );
   }
@@ -53,7 +56,9 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         {bt.departed && <> (davon {bt.departed.included} der {bt.departed.departed} seither ausgeschiedenen)</>} ·
         Prämienkorrektur im Median {(bt.premium.median * 100).toFixed(2).replace('.', ',')} Pkt. ·
         gerechnet {new Date(bt.generatedAt).toLocaleDateString('de-DE')}
+        {overview.data?.schedule.next && <> · nächster Lauf {new Date(overview.data.schedule.next).toLocaleDateString('de-DE')}</>}
       </p>
+      {overview.data?.running && <p className="text-xs"><BacktestStatusLine o={overview.data} /></p>}
 
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-xs text-ink-400">Horizont</span>
@@ -88,6 +93,8 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         </header>
         <IcTable signals={data.signals} rows={rows} periodLabel="Monate" />
       </section>
+
+      <BacktestBands bt={bt} horizon={horizon} monthName={monthName} />
 
       {candidateSignals.length > 0 && (
         <section className="rounded-lg border border-ink-700 bg-ink-900">
@@ -213,6 +220,8 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       </div>
 
       {bt.fit && <WeightFit v={bt.fit} inForce={data.inForce} />}
+
+      {overview.data && <BacktestRuns o={overview.data} />}
 
       <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-ink-500">
         {bt.caveats.map((c) => <li key={c}>{c}</li>)}

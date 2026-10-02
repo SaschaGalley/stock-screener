@@ -404,6 +404,103 @@ export function evaluate(input: EvaluationInput): Evaluation {
   return { from: first, to: last, symbols: symbols.size, ics, labels };
 }
 
+/** What one bucket of a signal earned against the average stock of the same months. */
+export interface BucketReturn {
+  horizon:    number;
+  bucket:     string;
+  /** Formation months the bucket held a stock in — non-overlapping, one every `horizon`. */
+  months:     number;
+  /** Stock-windows over those months. */
+  count:      number;
+  /**
+   * The bucket's mean return less the mean of every stock with a reading,
+   * averaged over the months: what holding the bucket added to holding them
+   * all. Neither the market nor whatever all of them shared — the small caps'
+   * lag since 2020 — is in it. Each month's returns are held to its own 2.5th
+   * and 97.5th percentiles first (`WINSOR`).
+   */
+  meanExcess: number | null;
+  tStat:      number | null;
+  /** Share of the months the bucket did better than the average. */
+  hitRate:    number | null;
+}
+
+/**
+ * How far into each tail a month's returns are held, before buckets average
+ * them. One stock that went up eightfold in a year moves a tenth of the index
+ * by a whole point and decides which tenth "won" — the rank IC never sees it,
+ * the mean of a bucket sees nothing else. Clipped, it still counts as the
+ * month's best; it no longer counts as eight of them.
+ */
+const WINSOR = 0.025;
+
+/**
+ * A signal's stocks split into buckets each formation month — its deciles by
+ * rank, or buckets of its own (a verdict, a step of the score) — and what each
+ * earned against the month's average stock. The question the rank IC answers
+ * on the whole, asked of each part: does the top tenth earn more than the
+ * next, does a STRONG BUY earn more than a BUY.
+ */
+export function bucketReturns(input: {
+  points:    ReadonlyMap<string, SignalPoint[]>;
+  prices:    ReadonlyMap<string, Close[]>;
+  benchmark: Close[];
+  horizons:  number[];
+  /** `decile` ranks each month's readings into ten; a function names a reading's bucket. */
+  bucket:    'decile' | ((p: SignalPoint) => string | null);
+}): BucketReturn[] {
+  let first: string | null = null;
+  for (const points of input.points.values()) {
+    if (points.length && (first === null || isoDate(points[0].at) < first)) first = isoDate(points[0].at);
+  }
+  if (first === null) return [];
+  const out: BucketReturn[] = [];
+  for (const h of input.horizons) {
+    const diffs = new Map<string, number[]>();
+    const counts = new Map<string, number>();
+    windowsFor(input.benchmark, h, first).forEach((w, i) => {
+      if (i % h !== 0) return;
+      const rows: { value: number; point: SignalPoint; r: number }[] = [];
+      for (const [symbol, points] of input.points) {
+        const p = valueBefore(points, w.day);
+        if (!p) continue;
+        const r = forwardReturn(input.prices.get(symbol), w.day, w.exit);
+        if (r === null) continue;
+        rows.push({ value: p.value ?? NaN, point: p, r });
+      }
+      if (rows.length < MIN_CROSS_SECTION) return;
+      const sorted = rows.map((x) => x.r).sort((a, b) => a - b);
+      const lo = sorted[Math.floor(WINSOR * (sorted.length - 1))], hi = sorted[Math.ceil((1 - WINSOR) * (sorted.length - 1))];
+      for (const x of rows) x.r = Math.min(hi, Math.max(lo, x.r));
+      const average = rows.reduce((a, x) => a + x.r, 0) / rows.length;
+      const byBucket = new Map<string, number[]>();
+      if (input.bucket === 'decile') {
+        const valued = rows.filter((x) => Number.isFinite(x.value)).sort((a, b) => a.value - b.value);
+        valued.forEach((x, k) => {
+          const d = `D${Math.min(10, Math.floor((k * 10) / valued.length) + 1)}`;
+          (byBucket.get(d) ?? byBucket.set(d, []).get(d)!).push(x.r);
+        });
+      } else {
+        for (const x of rows) {
+          const b = input.bucket(x.point);
+          if (b !== null) (byBucket.get(b) ?? byBucket.set(b, []).get(b)!).push(x.r);
+        }
+      }
+      for (const [b, rs] of byBucket) {
+        (diffs.get(b) ?? diffs.set(b, []).get(b)!).push(rs.reduce((a, v) => a + v, 0) / rs.length - average);
+        counts.set(b, (counts.get(b) ?? 0) + rs.length);
+      }
+    });
+    for (const [b, ds] of diffs) {
+      out.push({
+        horizon: h, bucket: b, months: ds.length, count: counts.get(b) ?? 0,
+        meanExcess: mean(ds), tStat: meanTest(ds).t, hitRate: ds.length ? ds.filter((d) => d > 0).length / ds.length : null,
+      });
+    }
+  }
+  return out;
+}
+
 // ── What the evidence says about the weights ─────────────────────────────────
 
 /**
