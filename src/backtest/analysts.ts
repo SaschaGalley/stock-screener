@@ -4,7 +4,10 @@
  * The live refresh archives the history for the stocks it follows; the
  * backtest needs it for the whole index. Fetched once a week per company and
  * cached on disk like the prices, and stored in the archive too
- * (`analyst_actions`), where it outlives Yahoo's own list.
+ * (`analyst_actions`), where it outlives Yahoo's own list — for the companies
+ * the app already knows. A mid cap only the backtest reads must not become a
+ * row in `symbols`: created as a watchlist row, it would stay one when the
+ * universe later takes it in, and show on the list.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
@@ -13,6 +16,7 @@ import { join } from 'path';
 import { logger } from '../utils/logger.js';
 import { analystActionsFrom } from '../data/yahoo-raw.js';
 import { saveAnalystActions } from '../db/history-store.js';
+import { symbolId } from '../db/store.js';
 import type { AnalystAction } from '../analysis/analyst-accuracy.js';
 import { yahooWindow, yf } from './prices.js';
 
@@ -34,7 +38,9 @@ export async function analystHistory(symbol: string, cacheDir: string, maxAgeDay
     const actions = analystActionsFrom(r?.upgradeDowngradeHistory);
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(file, JSON.stringify({ fetchedAt: new Date().toISOString(), actions }));
-    await saveAnalystActions(symbol, actions).catch((e) => logger.debug(`Analyst archive ${symbol}: ${(e as Error).message}`));
+    if (await symbolId(symbol).catch(() => null) !== null) {
+      await saveAnalystActions(symbol, actions).catch((e) => logger.debug(`Analyst archive ${symbol}: ${(e as Error).message}`));
+    }
     return actions;
   } catch (e) {
     logger.warn(`Analyst history ${symbol}: ${(e as Error).message}`);

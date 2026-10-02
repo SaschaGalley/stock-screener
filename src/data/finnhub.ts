@@ -75,6 +75,39 @@ function sentimentFromScore(score: number): NewsItem['sentiment'] {
   return 'neutral';
 }
 
+/** One insider transaction as Finnhub reads it off the Form 4. */
+export interface FinnhubInsiderTrade {
+  name:            string;
+  /** The day the filing was made — the day the trade became known. */
+  filingDate:      string;
+  transactionDate: string | null;
+  /** The Form 4 code: P an open-market purchase, S a sale, M an exercise, A a grant … */
+  code:            string;
+  /** Shares bought (positive) or sold (negative). */
+  change:          number;
+  price:           number | null;
+  derivative:      boolean;
+}
+
+/**
+ * Every insider transaction Finnhub has for a US listing, back to 2010 for
+ * most, with the day it was filed. One request returns the whole history.
+ */
+export async function getInsiderTransactions(symbol: string, apiKey: string, from = '2010-01-01'): Promise<FinnhubInsiderTrade[]> {
+  // Finnhub spells share classes with a dot, Yahoo with a dash.
+  const data = await fetchFinnhub(`/stock/insider-transactions?symbol=${encodeURIComponent(symbol.replace(/-/g, '.'))}&from=${from}`, apiKey) as {
+    data?: { name?: string; filingDate?: string; transactionDate?: string; transactionCode?: string; change?: number; transactionPrice?: number; isDerivative?: boolean }[];
+  };
+  return (data?.data ?? []).flatMap((t) => {
+    const change = toFiniteNumber(t.change);
+    if (!t.filingDate || !t.transactionCode || change === null) return [];
+    return [{
+      name: t.name ?? '', filingDate: t.filingDate.slice(0, 10), transactionDate: t.transactionDate?.slice(0, 10) ?? null,
+      code: t.transactionCode, change, price: toFiniteNumber(t.transactionPrice), derivative: !!t.isDerivative,
+    }];
+  });
+}
+
 export async function getNews(symbol: string, apiKey: string, days = 7): Promise<NewsItem[]> {
   logger.step(`Fetching news for ${symbol}...`);
 

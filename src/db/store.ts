@@ -78,6 +78,8 @@ export type SnapshotKind =
   | 'yahoo_statements' | 'yahoo_analyst' | 'yahoo_holders'
   // Finnhub's /stock/metric: today's ratios, and two decades of them by period.
   | 'finnhub_metric' | 'finnhub_series'
+  // Finnhub's insider transactions, each with the day its filing became known.
+  | 'finnhub_insider'
   // The score card as published. Observations are re-written when the scoring
   // changes; this is what the reader saw on the day.
   | 'score_card';

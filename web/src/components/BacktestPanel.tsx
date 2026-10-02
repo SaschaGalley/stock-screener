@@ -4,11 +4,14 @@ import { recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 import { IcTable, SignedBar, evidence, pct } from './evaluationParts';
 import WeightFit from './WeightFit';
+import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
 
-/** How the backtest names a criterion's own signal (`backtest/run.ts`). */
+/** How the backtest names a criterion's own signal, and a candidate's (`backtest/run.ts`). */
 const CRITERION_PREFIX = 'criterion.';
+const CANDIDATE_PREFIX = 'candidate.';
+const CANDIDATE_TITLE = new Map(INSIDER_CANDIDATES.map((c) => [`${CANDIDATE_PREFIX}${c.key}`, c.title]));
 
 /**
  * The factor score rebuilt at every month-end since 2013 from the SEC's filings
@@ -35,6 +38,9 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
     .sort((a, b) => (b.meanIc ?? -1) - (a.meanIc ?? -1));
   const criterionSignals = criterionRows.map((r) => ({ key: r.key, title: r.key.slice(CRITERION_PREFIX.length), pillar: false }));
   const headline = rows.find((r) => r.key === 'score.factor.score');
+  const candidateRows = rows.filter((r) => r.key.startsWith(CANDIDATE_PREFIX));
+  const candidateSignals = candidateRows.map((r) => ({ key: r.key, title: CANDIDATE_TITLE.get(r.key) ?? r.key, pillar: false }));
+  const segmentSignals = [...data.signals, ...candidateSignals];
   const labels = bt.evaluation.labels.filter((l) => l.horizon === horizon)
     .sort((a, b) => RECOMMENDATIONS.indexOf(a.label as never) - RECOMMENDATIONS.indexOf(b.label as never));
   const monthName = (h: number) => (h === 1 ? '1 Monat' : `${h} Monate`);
@@ -43,7 +49,8 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
   return (
     <>
       <p className="text-[11px] leading-relaxed text-ink-400">
-        S&amp;P 500, Monatsenden {bt.from} bis {bt.to} · {bt.months} Stichtage · {bt.companies} Firmen ·
+        {bt.universe ?? 'S&P 500'}, Monatsenden {bt.from} bis {bt.to} · {bt.months} Stichtage · {bt.companies} Firmen
+        {bt.departed && <> (davon {bt.departed.included} der {bt.departed.departed} seither ausgeschiedenen)</>} ·
         Prämienkorrektur im Median {(bt.premium.median * 100).toFixed(2).replace('.', ',')} Pkt. ·
         gerechnet {new Date(bt.generatedAt).toLocaleDateString('de-DE')}
       </p>
@@ -81,6 +88,59 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         </header>
         <IcTable signals={data.signals} rows={rows} periodLabel="Monate" />
       </section>
+
+      {candidateSignals.length > 0 && (
+        <section className="rounded-lg border border-ink-700 bg-ink-900">
+          <header className="border-b border-ink-800 px-4 py-2.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Kandidaten — noch nicht im Score</h3>
+            <p className="mt-0.5 text-[11px] text-ink-500">
+              Signale, die keine Säule liest, auf dieselbe Probe gestellt, bevor jemand ein Gewicht für sie vorschlägt: die
+              Käufe und Verkäufe der Insider am offenen Markt aus ihren Form-4-Meldungen, ab dem Tag der Meldung. Die
+              meisten Werte haben in einem halben Jahr keinen Insider-Kauf; bei so vielen Gleichständen gibt es ein unteres
+              Drittel nur in Monaten mit sehr vielen Käufern, und „Oben−Unten“ sagt nichts — maßgeblich ist der Rang-IC.
+            </p>
+          </header>
+          <IcTable signals={candidateSignals} rows={candidateRows} periodLabel="Monate" />
+        </section>
+      )}
+
+      {(bt.segments?.length ?? 0) > 0 && (
+        <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
+          <header className="border-b border-ink-800 px-4 py-2.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Nach Indexgröße</h3>
+            <p className="mt-0.5 text-[11px] text-ink-500">
+              Dieselben Signale nur unter Large, Mid oder Small Caps gerankt — was die großen Werte einpreisen, kann weiter
+              unten noch wirken. Rang-IC über {monthName(horizon)}, in Klammern t.
+            </p>
+          </header>
+          <table className="w-full min-w-[560px] text-sm">
+            <thead className="text-[11px] text-ink-400">
+              <tr className="border-b border-ink-800">
+                <th className="px-4 py-1.5 text-left font-normal">Signal</th>
+                {bt.segments!.map((s) => (
+                  <th key={s.key} className="px-2 py-1.5 text-right font-normal">{s.label} <span className="text-ink-600">({s.companies})</span></th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {segmentSignals.map((sig) => (
+                <tr key={sig.key} className="border-b border-ink-800/60 last:border-0">
+                  <td className={`px-4 py-1 ${sig.pillar ? 'pl-8 text-ink-300' : 'font-medium text-ink-100'}`}>{sig.title}</td>
+                  {bt.segments!.map((s) => {
+                    const r = s.ics.find((x) => x.key === sig.key && x.horizon === horizon);
+                    if (!r || r.days === 0) return <td key={s.key} className="px-2 py-1 text-right text-ink-600">—</td>;
+                    return (
+                      <td key={s.key} className={`whitespace-nowrap px-2 py-1 text-right font-mono ${evidence(r.tStat, r.independent).cls}`}>
+                        {r.meanIc?.toFixed(3) ?? '—'} <span className="text-ink-500">({r.tStat?.toFixed(1) ?? '—'})</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {criterionSignals.length > 0 && (
         <section className="rounded-lg border border-ink-700 bg-ink-900">

@@ -1353,9 +1353,32 @@ starting each one.
 The live evaluation needs months of stored scores before it can say anything;
 the weight suggestion above needs a dozen independent monthly windows. So
 `pnpm run backtest` rebuilds them (`src/backtest/`). At every month-end since
-2013 it reconstructs each S&P 500 member as the scorer would have seen it that
-day, then scores the whole cross-section with the live code. The scores are
-evaluated against the following months with the same `evaluate` the page uses.
+2013 it reconstructs each member of the S&P 1500 — the 500, the MidCap 400 and
+the SmallCap 600 — as the scorer would have seen it that day, then scores the
+whole cross-section with the live code. The scores are evaluated against the
+following months with the same `evaluate` the page uses, across all of them
+and within each index: a factor the large caps price away may still work
+further down, and the watchlist holds small caps the 500 never tested.
+
+**Who was in, and when.** The 500's members and the day each joined come from
+the community CSV; the 400's and the 600's from their Wikipedia tables, whose
+tickers sit in `{{NyseSymbol|…}}` templates, and the day each joined from the
+tables of changes — the 500's in *Historical components of the S&P 500*
+(`data/universe.ts`). A company that left another of the three on the day it
+joined moved rather than joined, and counts from its first entry
+(`compositeJoinDates`). One the table never lists as added has been a member at
+least since the table begins and counts from then: the 600's starts in
+December 2019, and counting today's small caps from 2013 would count years
+before some of them were small caps — the survivors' years. Filers the 400's
+table gives by ticker are looked up in the SEC's own list.
+
+**And who left.** The same tables name everyone removed since 2013 who is not a
+member again — 738 companies. Those that still trade and still file under
+their ticker are rebuilt up to the day they left (`backtest/departed.ts`), the
+SEC's name for the ticker checked against the table's, since tickers are
+reused (APC was Anadarko and is ARKO); GICS is not in the tables, so the sector
+and industry are Yahoo's. Bought and bankrupt companies are gone from Yahoo and
+stay missing; the result says how many came back.
 
 **The filings as they stood that day.** The SEC's XBRL company facts carry, for
 every figure a US filer has tagged since 2009, the period it covers and the day
@@ -1396,22 +1419,36 @@ What it cannot do, and the page says so beside the numbers:
   history. The revisions pillar is read on the rating drift alone, and the DCF
   starts from trailing growth. The rating history thins out going back:
   Apple's has a handful of actions before 2018.
-- **Survivors only.** The universe is today's index members, each from the day
-  it joined. Companies that left before today are missing.
+- **Survivors, mostly.** Companies that left are in only where they still
+  trade; the bought and the bankrupt are missing.
 - **US only.** The SEC does not hold European filings.
 
 The result is stored (`app_state`, `backtest.result`) and shown under
 **Auswertung** as a third view, *Backtest*. It has the same table of signals,
 the factor score's IC by year, the excess return by factor verdict, and the
-weights fitted to it with their check on unseen years. A first run downloads
-about 500 filings and price histories and takes a few minutes; later ones read
-the cache and take under two.
+weights fitted to it with their check on unseen years, and the same signals
+by index. A first run downloads about 1,700 filings, price and rating
+histories and takes half an hour, the insiders another half; later ones read
+the cache and take a few minutes.
+
+**Candidates.** Beside the score the backtest measures signals no pillar reads
+yet, so that a weight for one is proposed only after it has been tested. The
+first are the insiders (`analysis/insider-signals.ts`): from every Form 4 as
+Finnhub keeps it, back to 2010, dated by its filing — the number of different
+insiders who bought on the open market in the half year before, buyers against
+sellers, and what the buying cost against the company's size. Purchases rather
+than sales, because selling has many reasons and buying one (Lakonishok and
+Lee 2001; Cohen, Malloy and Pomorski 2012); grants, exercises, gifts and
+derivative trades are left out.
 
 ```bash
-pnpm run backtest                     # S&P 500, month-ends since 2013
+pnpm run backtest                     # S&P 1500, month-ends since 2013
+pnpm run backtest -- --universe sp500 # the large caps alone, as before
 pnpm run backtest -- --from 2016-01   # a later start
 pnpm run backtest -- --limit 60       # the first 60 companies, to try it out
 pnpm run backtest -- --no-analysts    # without the rebuilt consensus, for comparison
+pnpm run backtest -- --no-departed    # today's members only
+pnpm run backtest -- --no-insiders    # without the insider candidates
 pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
 ```
 
@@ -1532,8 +1569,40 @@ factor worth its name ranks at 0.03 or more. The weight rule now tilts on all
 months — consensus 15 → 18 %, revisions 10 → 15.5 %, balance sheet 15 → 8 % —
 but the check does not hold: fitted on 2020–2026 it moves nothing, and fitted
 on 2013–2019 it adds 0.0009 to the IC of the years after (t 0.3). The judgment
-weights stay. Every backtest run asks
-again, and every month the live evaluation adds from October 2026 on is one no
+weights stay.
+
+**On the S&P 1500 (3 October 2026, 166 month-ends).** Three runs on the same
+downloads: today's 1,414 members alone, then with the companies that left —
+171 of the 735 that left since 2013 could be rebuilt — and the insider
+candidates.
+
+| Signal, 1 month | S&P 500 alone | S&P 1500, members | … and the departed |
+|---|---|---|---|
+| Factor score | 0.012 (t 1.6) | 0.012 (t 1.8) | 0.014 (t 2.1), right in 62 % of months |
+| … within the sector | 0.009 (t 1.4) | 0.011 (t 1.9) | 0.012 (t 2.2) |
+| … in the 400 | — | 0.005 (t 0.5) | 0.005 (t 0.6) |
+| … in the 600, since Dec 2019 | — | 0.015 (t 1.6) | 0.017 (t 2.0) |
+
+For the first time the score clears two standard errors, pooled and within
+the sector. It does so in the small caps and on the whole, not in the mid caps,
+and the IC has been positive in every year since 2021 (0.011–0.058), after
+four negative years out of five in 2016–2020. Two cautions. The departed are the ones that
+still trade, mostly companies that shrank out of the 600; the bought ones are
+missing, and whether they were rated high or low decides which way that
+leans. And 0.014 is still under the 0.03 a factor worth its name reaches. The
+weight rule moved nothing on either half; the judgment weights stay.
+
+The insiders are a null result. Over the S&P 1500 the number of insiders who
+bought ranks the next month at −0.007 (t −1.4) and the next quarter at −0.009
+(t −2.3); within the sector, where the buying of a beaten-down industry nets
+out, at −0.004 (t −1.1 and −1.3). In the small caps it is +0.001 to +0.021,
+none of it beyond noise. The studies found the effect mostly in micro caps
+below the 600 and in years before 2008; in these stocks and these years it
+does not show, and no pillar will read it. The tercile spread is no help
+for a signal that is zero for most stocks: with that many ties there is a
+bottom third only in months when a third of the index had buyers.
+
+Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
 
 ## Technical signals gauge
@@ -1640,6 +1709,8 @@ src/
 ├── backtest/              The factor score rebuilt at past month-ends (`pnpm run backtest`)
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
 │   ├── analysts.ts        Every company's rating history, cached on disk and archived
+│   ├── insiders.ts        Every company's Form 4 trades from Finnhub, for the candidates
+│   ├── departed.ts        The companies that left the S&P 1500, as far as they still trade
 │   ├── prices.ts          Daily histories with their splits, cached on disk
 │   ├── peers.ts           Peer medians from the month's own cross-section
 │   ├── rates.ts           FRED and Damodaran by month
@@ -1684,6 +1755,7 @@ src/
 │   ├── evaluate.ts        Rank IC, sector-neutral IC, the weight tilt and the joint test
 │   ├── analyst-history.ts The analyst consensus of a past day, rebuilt from the rating actions
 │   ├── verdict-record.ts  Our verdicts as calls, against the index after 1, 3, 6 and 12 months
+│   ├── insider-signals.ts The insiders' open-market buying and selling before a day
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation

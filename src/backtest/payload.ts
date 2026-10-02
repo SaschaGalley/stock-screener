@@ -33,6 +33,8 @@ export interface Company {
   subIndustry: string;
   /** The day it joined the index; before that it is not in the backtest's universe. */
   added:       string | null;
+  /** The day it left, for a company that did; from then on it is not either. */
+  removed?:    string | null;
 }
 
 /** GICS sector names in Yahoo's spelling, which the live code (`borrowsToLend`) and the calibration's sector keys use. */

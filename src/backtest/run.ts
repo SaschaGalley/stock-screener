@@ -2,18 +2,24 @@
  * Does the factor score rank the stocks that went on to do better — measured
  * over the past, not waited for?
  *
- *   pnpm run backtest                     # S&P 500, month-ends since 2013
+ *   pnpm run backtest                     # S&P 1500, month-ends since 2013
+ *   pnpm run backtest -- --universe sp500 # the large caps alone
  *   pnpm run backtest -- --from 2016-01   # a later start
  *   pnpm run backtest -- --limit 60       # the first 60 companies, to try it out
  *   pnpm run backtest -- --no-analysts    # without the rebuilt consensus, for comparison
+ *   pnpm run backtest -- --no-insiders    # without the insider candidates (half an hour of Finnhub the first time)
+ *   pnpm run backtest -- --no-departed    # today's members only, without those that left
  *   pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
  *
  * The live evaluation needs months of stored scores before it says anything.
  * This one rebuilds them. At every month-end since 2013 it reconstructs each
- * S&P 500 member as the scorer would have seen it that day: the SEC filings
- * filed before it, and the prices up to its close (`payload.ts`). It then scores
- * the whole cross-section with the live code and evaluates the scores against
- * the following months' returns, with the same `evaluate` the page uses.
+ * member of the S&P 1500 — the 500, the MidCap 400 and the SmallCap 600 — as
+ * the scorer would have seen it that day: the SEC filings filed before it, and
+ * the prices up to its close (`payload.ts`). It then scores the whole
+ * cross-section with the live code and evaluates the scores against the
+ * following months' returns, with the same `evaluate` the page uses — across
+ * all of them, and within each of the three indices: a factor the large caps
+ * price away may still work further down.
  *
  * Everything the live system calibrates is recalibrated per month, from that
  * month's cross-section only: the premium adjustment, and every criterion's
@@ -28,9 +34,16 @@
  *   - Estimates, their revisions and earnings surprises have no history, so
  *     the revisions pillar has only the rating drift and the DCF starts from
  *     trailing growth. The rating history thins out before 2020.
- *   - The universe is today's index members, each from the day it joined.
- *     Companies that left before today are missing: survivors only.
+ *   - The universe is today's index members, each from the day it joined the
+ *     composite (`compositeJoinDates`), and those that left since 2013 as far
+ *     as free data still has them (`departed.ts`): the ones that still trade.
+ *     Bought and bankrupt companies are missing.
  *   - Peer groups are the index's own GICS sub-industries, not Finnhub's.
+ *
+ * Beside the score it measures candidates — signals no pillar reads yet, put
+ * to the same test before anyone proposes a weight for them: the insiders'
+ * open-market buying and selling, from their Form 4 filings as Finnhub keeps
+ * them (`insiders.ts`, `analysis/insider-signals.ts`).
  *
  * It also fits the weights to what it measured and checks the fit on the half
  * of the months it did not see (`weights.ts`).
@@ -46,7 +59,10 @@ import { logger } from '../utils/logger.js';
 import { closePool, waitForDatabase } from '../db/client.js';
 import { writeAppState } from '../db/admin.js';
 import { companyFacts, CompanyFacts } from '../data/edgar-facts.js';
-import { fetchSp500Constituents } from '../data/universe.js';
+import { lookupCIK } from '../data/edgar.js';
+import {
+  COMPOSITE_INDEXES, fetchSp1500Constituents, fetchSp500Constituents, type CompositeIndex, type Constituent,
+} from '../data/universe.js';
 import { sectorToEtf } from '../data/macro.js';
 import {
   collectCalibrated, percentiles, sectorKey, useCalibrationTable, usePremiumAdjustment,
@@ -59,14 +75,19 @@ import { evaluate, type Close, type SignalPoint } from '../analysis/evaluate.js'
 import { PILLAR_KEYS } from '../types.js';
 import type { AnalystAction } from '../analysis/analyst-accuracy.js';
 import { analystHistory } from './analysts.js';
+import { insiderHistory } from './insiders.js';
+import { resolveDeparted } from './departed.js';
+import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
 import { Company, payloadAt, yahooSector } from './payload.js';
-import { BACKTEST_CAVEATS, BacktestResult, NO_ANALYSTS_CAVEAT, RESULT_KEY } from './result.js';
+import { BACKTEST_CAVEATS, BacktestResult, departedCaveat, NO_ANALYSTS_CAVEAT, RESULT_KEY } from './result.js';
 import { crossSectionPeers } from './peers.js';
 import { indexAtOrBefore, monthEnds, priceHistory, PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
 import { renderWeightTable, scoredRow, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
 
 const BENCHMARK = '^GSPC';
+/** The S&P 1500 by default; the 500 alone to compare with the runs before it. */
+export type BacktestUniverse = 'sp500' | 'sp1500';
 /** Prices from a year before the first month-end: momentum reads twelve months back. */
 const PRICE_LEAD_YEARS = 2;
 /** Months ahead the scores are judged over. */
@@ -77,6 +98,8 @@ export const BACKTEST_WEIGHT_HORIZON = 1;
 const pillarKey = (p: string) => `score.factor.pillars.${p}.score`;
 /** Signals that are one criterion's figure rather than a score. */
 export const CRITERION_PREFIX = 'criterion.';
+/** Signals measured beside the score that no pillar reads yet. */
+export const CANDIDATE_PREFIX = 'candidate.';
 export const BACKTEST_SIGNALS = ['score.factor.score', 'score.factor.raw', ...PILLAR_KEYS.map(pillarKey)];
 const LABEL_KEY = 'score.factor.verdict';
 
@@ -105,20 +128,49 @@ async function pooled<T, R>(items: T[], size: number, fn: (x: T) => Promise<R>):
 }
 
 export async function runBacktest(
-  opts: { from?: string; to?: string; limit?: number; analysts?: boolean } = {},
+  opts: {
+    from?: string; to?: string; limit?: number; analysts?: boolean; insiders?: boolean; departed?: boolean; universe?: BacktestUniverse;
+  } = {},
 ): Promise<BacktestResult> {
   const withAnalysts = opts.analysts ?? true;
+  const universe = opts.universe ?? 'sp1500';
   const cfg = getConfig();
   const dir = join(cfg.dataDir, 'backtest');
   const from = opts.from ? `${opts.from.slice(0, 7)}-01` : '2013-01-01';
   const to = opts.to ?? new Date().toISOString().slice(0, 10);
   const priceFrom = `${Number(from.slice(0, 4)) - PRICE_LEAD_YEARS}-01-01`;
 
-  const constituents = (await fetchSp500Constituents()).filter((c) => c.cik);
-  const companies: Company[] = constituents.slice(0, opts.limit ?? constituents.length).map((c) => ({
+  const withDeparted = universe === 'sp1500' && (opts.departed ?? true);
+  const sp1500 = universe === 'sp1500' ? await fetchSp1500Constituents(withDeparted ? from : undefined) : null;
+  const listed: Constituent[] = sp1500
+    ? sp1500.members
+    : (await fetchSp500Constituents()).map((c) => ({ ...c, index: 'sp500' as const }));
+  // The 400's table gives some filers by ticker rather than number; the SEC's
+  // own list has them. One at a time: the first lookup loads the list, and the
+  // rest read it from memory rather than each asking the SEC again.
+  const constituents: Constituent[] = [];
+  for (const c of listed) {
+    const cik = c.cik ?? (await lookupCIK(c.symbol))?.cik ?? null;
+    if (cik) constituents.push({ ...c, cik });
+  }
+  const companies: (Company & { segment: CompositeIndex })[] = constituents.slice(0, opts.limit ?? constituents.length).map((c) => ({
     symbol: c.symbol, name: c.name, cik: c.cik!, sector: c.sector, subIndustry: c.subIndustry, added: c.added,
+    segment: c.index ?? 'sp500',
   }));
-  logger.info(`Backtest: ${companies.length} companies, month-ends ${from} → ${to}`);
+  logger.info(`Backtest: ${companies.length} companies (${listed.length - constituents.length} without a SEC number), month-ends ${from} → ${to}`);
+
+  // Those that left, as far as they can still be found, each up to the day it left.
+  const departed = withDeparted && sp1500 && !opts.limit
+    ? await resolveDeparted(sp1500.departed.filter((d) => !companies.some((c) => c.symbol === d.symbol)), join(dir, 'profiles'))
+    : null;
+  if (departed) {
+    companies.push(...departed.companies.map((d) => ({
+      symbol: d.symbol, name: d.name, cik: d.cik, sector: d.sector, subIndustry: d.subIndustry, added: d.added,
+      removed: d.removed, segment: d.index ?? 'sp500',
+    })));
+    logger.info(`  Departed since ${from}: ${departed.counts.departed}, found ${departed.counts.included} `
+      + `(${departed.counts.noFiler} without a matching SEC filer, ${departed.counts.noProfile} without a Yahoo profile)`);
+  }
 
   const facts = new Map<string, CompanyFacts>();
   let done = 0;
@@ -149,6 +201,17 @@ export async function runBacktest(
     });
   }
 
+  const insiders = new Map<string, InsiderTrade[]>();
+  const finnhubKey = cfg.finnhubApiKey;
+  if ((opts.insiders ?? true) && finnhubKey) {
+    done = 0;
+    await pooled(companies, 2, async (c) => {
+      const t = await insiderHistory(c.symbol, finnhubKey, join(dir, 'insiders'));
+      if (t) insiders.set(c.symbol, t);
+      if (++done % 100 === 0) logger.info(`  Insider histories: ${done}/${companies.length}`);
+    });
+  }
+
   const ratesOn = await rateHistory(priceFrom, cfg.fredApiKey);
   const days = monthEnds(bench.dates, from, to);
 
@@ -173,6 +236,7 @@ export async function runBacktest(
     for (const [m, day] of days.entries()) {
       const entries = companies.flatMap((c) => {
         if (c.added && c.added > day) return [];
+        if (c.removed && c.removed <= day) return [];
         const f = facts.get(c.symbol), px = prices.get(c.symbol);
         if (!f || !px) return [];
         const etf = sectorToEtf(c.sector);
@@ -235,6 +299,15 @@ export async function runBacktest(
         push('score.factor.raw', e.c.symbol, { at, value: f.raw });
         for (const p of f.pillars) push(pillarKey(p.key), e.c.symbol, { at, value: p.score });
         push(LABEL_KEY, e.c.symbol, { at, value: null, text: f.verdict });
+
+        const trades = insiders.get(e.c.symbol);
+        if (trades) {
+          const a = insiderActivity(trades, day);
+          for (const cand of INSIDER_CANDIDATES) {
+            const value = cand.read(a, e.financials.marketCap);
+            if (value !== null) push(`${CANDIDATE_PREFIX}${cand.key}`, e.c.symbol, { at, value });
+          }
+        }
       });
       if (m % 12 === 0 || m === days.length - 1) {
         logger.info(`  ${day}: ${entries.length} stocks, premium ${(premium * 100).toFixed(2)} pts`);
@@ -273,6 +346,17 @@ export async function runBacktest(
   // The daily series served their purpose; the stored result keeps the aggregates.
   for (const r of evaluation.ics) delete r.daily;
 
+  // The same signals within each index: the large caps alone, the mid caps, the small caps.
+  const segments = universe === 'sp500' ? [] : COMPOSITE_INDEXES.flatMap((ix) => {
+    const members = new Set(companies.filter((c) => c.segment === ix.key && scored.has(c.symbol)).map((c) => c.symbol));
+    if (members.size === 0) return [];
+    const within = new Map([...BACKTEST_SIGNALS, LABEL_KEY, ...[...signals.keys()].filter((k) => k.startsWith(CANDIDATE_PREFIX))].map((k) => [
+      k, new Map([...(signals.get(k) ?? new Map<string, SignalPoint[]>())].filter(([sym]) => members.has(sym))),
+    ]));
+    const ev = evaluate({ signals: within, prices: priceMap, benchmark: calendar, horizons: BACKTEST_HORIZONS, labelKey: LABEL_KEY, sectors });
+    return [{ key: ix.key, label: ix.label, companies: members.size, ics: ev.ics, labels: ev.labels }];
+  });
+
   const fit = weightLab(rows, { prices: priceMap, sectors }, {
     fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_HORIZONS, labels,
   }).validate(calendar);
@@ -283,6 +367,8 @@ export async function runBacktest(
     from: days[0] ?? from, to: days[days.length - 1] ?? to,
     months: premiums.length,
     companies: scored.size,
+    universe: universe === 'sp500' ? 'S&P 500' : 'S&P 1500',
+    segments,
     premium: {
       median: median(premiums) ?? 0,
       min: sortedPremiums[0] ?? 0,
@@ -297,7 +383,12 @@ export async function runBacktest(
       };
     }),
     fit,
-    caveats: (withAnalysts ? BACKTEST_CAVEATS : [NO_ANALYSTS_CAVEAT, ...BACKTEST_CAVEATS.slice(1)]).concat(FITTED_WEIGHTS_META
+    departed: departed?.counts,
+    caveats: [
+      withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
+      departed ? departedCaveat(departed.counts) : BACKTEST_CAVEATS[1],
+      ...BACKTEST_CAVEATS.slice(2),
+    ].concat(FITTED_WEIGHTS_META
       ? [`Die Gewichte in Kraft sind auf die Monatsenden ${FITTED_WEIGHTS_META.from} bis ${FITTED_WEIGHTS_META.to} `
         + 'angepasst: Für sie sind die Zahlen oben zum Teil in-sample. Was die Anpassung auf Jahren leistet, die sie nicht gesehen hat, '
         + 'steht unter „Gewichte“.']
@@ -315,7 +406,7 @@ function fmt(v: number | null | undefined, digits = 3): string {
 
 export function renderBacktest(r: BacktestResult): string {
   const lines = [
-    `Backtest ${r.from} → ${r.to} · ${r.months} month-ends · ${r.companies} companies`,
+    `Backtest ${r.universe ?? 'S&P 500'} ${r.from} → ${r.to} · ${r.months} month-ends · ${r.companies} companies`,
     `Premium adjustment per month: median ${(r.premium.median * 100).toFixed(2)} pts (${(r.premium.min * 100).toFixed(2)} … ${(r.premium.max * 100).toFixed(2)})`,
   ];
   for (const h of BACKTEST_HORIZONS) {
@@ -323,11 +414,20 @@ export function renderBacktest(r: BacktestResult): string {
     lines.push(`${'signal'.padEnd(34)} ${'IC'.padStart(7)} ${'t'.padStart(6)} ${'sector'.padStart(7)} ${'t'.padStart(6)} ${'hit'.padStart(5)} ${'top−bot'.padStart(8)} ${'n'.padStart(5)}`);
     for (const s of r.evaluation.ics.filter((x) => x.horizon === h && x.days > 0)) {
       lines.push(
-        `${s.key.replace('score.factor.', '').replace(CRITERION_PREFIX, '  · ').padEnd(34)} ${fmt(s.meanIc).padStart(7)} ${fmt(s.tStat, 1).padStart(6)} `
+        `${s.key.replace('score.factor.', '').replace(CRITERION_PREFIX, '  · ').replace(CANDIDATE_PREFIX, '  ◇ ').padEnd(34)} ${fmt(s.meanIc).padStart(7)} ${fmt(s.tStat, 1).padStart(6)} `
         + `${fmt(s.neutralIc).padStart(7)} ${fmt(s.neutralTStat, 1).padStart(6)} `
         + `${(s.hitRate === null ? '—' : `${Math.round(s.hitRate * 100)}%`).padStart(5)} `
         + `${(s.spread === null ? '—' : `${(s.spread * 100).toFixed(2)}%`).padStart(8)} ${fmt(s.meanCrossSection, 0).padStart(5)}`,
       );
+    }
+  }
+  for (const seg of r.segments ?? []) {
+    lines.push('', `── ${seg.label}: ${seg.companies} companies ──`);
+    for (const h of BACKTEST_HORIZONS) {
+      for (const sig of seg.ics.filter((x) => x.horizon === h && x.days > 0 && !x.key.startsWith(CRITERION_PREFIX))) {
+        lines.push(`  ${h}M ${sig.key.replace('score.factor.', '').padEnd(28)} IC ${fmt(sig.meanIc).padStart(7)}  t ${fmt(sig.tStat, 1).padStart(5)}`
+          + `  sector ${fmt(sig.neutralIc).padStart(7)}  t ${fmt(sig.neutralTStat, 1).padStart(5)}  n ${fmt(sig.meanCrossSection, 0)}`);
+      }
     }
   }
   lines.push('', 'Factor score IC at one month, by year:');
@@ -380,6 +480,9 @@ if (isMain) {
     const result = await runBacktest({
       from: flag('--from'), to: flag('--to'), limit: flag('--limit') ? Number(flag('--limit')) : undefined,
       analysts: !args.includes('--no-analysts'),
+      insiders: !args.includes('--no-insiders'),
+      departed: !args.includes('--no-departed'),
+      universe: flag('--universe') === 'sp500' ? 'sp500' : 'sp1500',
     });
     console.log(renderBacktest(result));
     if (args.includes('--write-weights')) {

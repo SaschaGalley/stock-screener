@@ -127,7 +127,7 @@ export default function EvaluationPage({ onClose }: Props) {
             {([
               ...(data ? [['watchlist', `Watchlist (${data.evaluation.symbols})`, 'Alle Signale, auch Text und alter LLM-Score']] : []),
               ...(data?.universe ? [['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale']] : []),
-              ...(bt ? [['backtest', 'Backtest (S&P 500 seit 2013)', 'Faktor-Score an jedem Monatsende aus den SEC-Abschlüssen nachgerechnet']] : []),
+              ...(bt ? [['backtest', `Backtest (${bt.backtest?.universe ?? 'S&P 500'} seit 2013)`, 'Faktor-Score an jedem Monatsende aus den SEC-Abschlüssen nachgerechnet']] : []),
               ['calls', 'Unsere Urteile', 'Jeder Urteilswechsel gegen den Index danach: Trefferquote nach 1, 3, 6 und 12 Monaten'],
             ] as [Scope, string, string][]).map(([s, label, title]) => (
               <button
