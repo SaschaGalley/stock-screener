@@ -29,6 +29,7 @@ import {
   scheduledSymbols,
 } from '../../pipeline/steps.js';
 import { syncWatchlistDossiers } from '../../distill-dossiers.js';
+import { sendDigest } from '../../digest.js';
 import { referenceBatch } from '../../universe.js';
 import { logger } from '../../utils/logger.js';
 import { settledPool } from '../../utils/pool.js';
@@ -313,6 +314,12 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
         for (const step of outcome.value) {
           if (step?.status === 'failed') failed++;
         }
+      }
+
+      // The morning's message once the watchlist has settled — it is about the
+      // watchlist, and the universe behind it takes hours.
+      if (!input.symbols.length) {
+        await sendDigest().catch((e) => logger.warn(`Digest failed: ${(e as Error).message}`));
       }
 
       // The universe after the watchlist has settled, never beside it: the

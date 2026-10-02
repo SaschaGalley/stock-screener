@@ -19,6 +19,7 @@ import {
   recentVerdictChanges, peersByIndustry, peersBySymbol, StoredPeer,
 } from './db/store.js';
 import { sendAlert, verdictAlert } from './alerts.js';
+import { sendDigest } from './digest.js';
 import { storedBacktest } from './backtest/result.js';
 import { CALIBRATION_META, calibrationDue } from './analysis/calibration.js';
 import { migrate } from './db/migrate.js';
@@ -966,6 +967,18 @@ export function createApp(): express.Express {
         fields: { ...sample.fields, test: true },
       });
       res.json({ ok: sent.ok, error: sent.reason ?? undefined });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── POST /api/alerts/digest/test ───────────────────────────────────────────
+  // The morning's message as it would arrive now, marked as a test: the last
+  // day across the watchlist. Remembers nothing, so the night's is unchanged.
+  app.post('/api/alerts/digest/test', async (_req, res, next) => {
+    try {
+      const sent = await sendDigest({ test: true });
+      res.json({ ok: sent.ok, events: sent.events, error: sent.reason ?? undefined });
     } catch (e) {
       next(e);
     }

@@ -38,6 +38,7 @@ import {
   needsAttention, runAnalysisStep, runDataStep, runDistillStep, runReferenceStep, scheduledSymbols,
 } from './pipeline/steps.js';
 import { syncWatchlistDossiers } from './distill-dossiers.js';
+import { sendDigest } from './digest.js';
 import { referenceBatch } from './universe.js';
 
 export type { JobRun, JobRunStatus, JobStep, JobStepResult, JobSymbolResult, StepStatus };
@@ -153,6 +154,12 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
       const result = await processSymbol(config, symbol, runId);
       run.symbols.push(result);
       run.totals = tallySteps(run.symbols, planned);
+    }
+
+    // The morning's message as soon as the watchlist is through, not after
+    // the universe: it is about the watchlist, and the universe takes hours.
+    if (!explicit && run.status !== 'stopped') {
+      await sendDigest().catch((e) => logger.warn(`Digest failed: ${(e as Error).message}`));
     }
 
     // What is left of the night goes to the universe; the watchlist is what

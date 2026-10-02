@@ -228,6 +228,8 @@ export const api = {
   /** One test message to the configured webhook. */
   testAlert: () =>
     jsonFetch<{ ok: boolean; error?: string }>(`${BASE}/alerts/test`, { method: 'POST' }),
+  testDigest: () =>
+    jsonFetch<{ ok: boolean; events: number; error?: string }>(`${BASE}/alerts/digest/test`, { method: 'POST' }),
 
   /** Whole-object write; the server reinstalls the cron before answering. */
   saveConfig: (config: AppConfig) =>

@@ -707,6 +707,19 @@ the stored series, which a re-score after a model change rewrites too: a new
 scoring model moves verdicts in bulk, and that is a deploy, not news about the
 companies.
 
+**The daily digest** (`src/digest.ts`) goes to the same webhook once the
+night's watchlist pass is through, before the reference universe: what
+happened across the watchlist since the last message — the quarter's numbers,
+insider trades, rating changes and target moves, price jumps, dated research
+findings — one line each, at most twenty with the rest counted, and the
+reports due in the next three days below them. Headlines are left out, and
+verdict changes, which are announced on their own. What was sent is
+remembered per event (`app_state`, `digest.sent`), not by date: a rating
+change dated yesterday afternoon is archived tonight, after yesterday's message
+went out. A night with nothing new sends nothing. It is on by default and can
+be switched off in the admin page; **Überblick testen** sends the last day as
+it would arrive, marked as a test, without touching what the night will send.
+
 ### Two things the pillars deliberately do not read
 
 **The analyst target is not a valuation model here.** It rides in the composite's
@@ -1623,6 +1636,7 @@ src/
 ├── pipeline/steps.ts      The steps a run applies to a symbol, shared by both schedulers
 ├── universe.ts            The reference universe: members per index, departures, tonight's rotation
 ├── alerts.ts              Verdict changes: recorded when they happen, announced once they hold
+├── digest.ts              The morning's message: what happened across the watchlist since the last
 ├── backtest/              The factor score rebuilt at past month-ends (`pnpm run backtest`)
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
 │   ├── analysts.ts        Every company's rating history, cached on disk and archived

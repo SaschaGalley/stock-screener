@@ -182,6 +182,17 @@ export default function AdminPage({ onClose }: Props) {
     }
   }
 
+  async function testDigest() {
+    setError(null);
+    try {
+      const r = await api.testDigest();
+      if (!r.ok) setError(`Der Überblick ging nicht raus${r.error ? ` — ${r.error}` : ''}.`);
+      else setNotice(r.events ? `Überblick mit ${r.events} Ereignissen des letzten Tages gesendet.` : 'Im letzten Tag ist nichts passiert — nichts gesendet.');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function stopRun() {
     try {
       await api.stopJob();
@@ -453,7 +464,7 @@ export default function AdminPage({ onClose }: Props) {
         {/* ── Benachrichtigungen ─────────────────────────────────────────── */}
         <Card
           title="Benachrichtigungen"
-          hint="Ein Urteilswechsel auf der Watchlist wird gemeldet, sobald er einen weiteren Nachtlauf gehalten hat — ein Score auf der Bandgrenze meldet sich so nicht jede Nacht. Alle Wechsel stehen außerdem über der Übersicht."
+          hint="Ein Urteilswechsel auf der Watchlist wird gemeldet, sobald er einen weiteren Nachtlauf gehalten hat — ein Score auf der Bandgrenze meldet sich so nicht jede Nacht. Alle Wechsel stehen außerdem über der Übersicht. Dazu nach dem Nachtlauf der Watchlist ein Überblick über alles andere, was seit dem letzten passiert ist."
         >
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-[11px] text-ink-400">Format</label>
@@ -481,6 +492,28 @@ export default function AdminPage({ onClose }: Props) {
               className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
             >
               Test senden
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs text-ink-300">
+              <input
+                type="checkbox"
+                checked={config.alerts.digest}
+                onChange={(e) => patch((d) => { d.alerts.digest = e.target.checked; })}
+              />
+              Täglicher Überblick nach dem Nachtlauf
+            </label>
+            <span className="text-[11px] text-ink-500">
+              Herabstufungen und Kursziele, Insider-Trades, Quartalszahlen, Kurssprünge und Recherche-Funde der Watchlist,
+              jedes Ereignis einmal; dazu die Quartalszahlen der nächsten drei Tage. Nichts Neues, keine Nachricht.
+            </span>
+            <button
+              onClick={() => void testDigest()}
+              disabled={!config.alerts.webhookUrl || dirty}
+              title={dirty ? 'Erst speichern' : 'Den Überblick des letzten Tages jetzt senden, als Test markiert'}
+              className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
+            >
+              Überblick testen
             </button>
           </div>
           <p className="text-[11px] leading-relaxed text-ink-500">

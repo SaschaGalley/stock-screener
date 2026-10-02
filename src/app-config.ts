@@ -128,6 +128,12 @@ export const AppConfigSchema = z.object({
   alerts: z.object({
     webhookUrl: z.union([z.string().url(), z.literal('')]).default(''),
     format:     z.enum(['json', 'ntfy']).default('json'),
+    /**
+     * After the night's watchlist pass, one message with what happened since
+     * the last — rating changes, insider trades, the quarter's numbers, price
+     * jumps (`src/digest.ts`). Off, only the verdict changes are sent.
+     */
+    digest:     z.boolean().default(true),
   }).prefault({}),
 });
 
