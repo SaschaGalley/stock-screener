@@ -131,7 +131,7 @@ export function keyedArraysFor(domain: string): readonly KeyedArray[] {
  * identifies the period itself (that becomes `period_end`, not a value).
  */
 const FISCAL_ELEMENTS: readonly { schema: z.ZodTypeAny; skip: readonly string[] }[] = [
-  { schema: EarningsSurpriseSchema, skip: ['quarter'] },
+  { schema: EarningsSurpriseSchema, skip: ['quarter', 'endDate'] },
   { schema: EarningsEstimateSchema, skip: ['period', 'endDate'] },
 ];
 

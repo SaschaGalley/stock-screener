@@ -1,4 +1,5 @@
 import { getConfig } from './config.js';
+import { archiveFetch } from './history-service.js';
 import { logger } from './utils/logger.js';
 import { getFinancials, getOptionsSignals, resolveSymbol } from './data/yfinance.js';
 import { getNews, getBasicFinancials } from './data/finnhub.js';
@@ -36,7 +37,7 @@ type FinancialsBundle = Awaited<ReturnType<typeof getFinancials>>;
  * the country premium — so a stock's cost of equity depended on whether the
  * data step or the analysis had fetched last.
  */
-export async function fetchFinancialsBundle(symbol: string): Promise<FinancialsBundle> {
+export async function fetchFinancialsBundle(symbol: string, runId?: number | null): Promise<FinancialsBundle> {
   const cfg = getConfig();
   const [bundle, finnhubMetrics] = await Promise.all([
     getFinancials(symbol),
@@ -66,6 +67,9 @@ export async function fetchFinancialsBundle(symbol: string): Promise<FinancialsB
     const issuer = major && major in LOCAL_TEN_YEAR ? LOCAL_TEN_YEAR[major as RateCurrency].issuer : null;
     bundle.financials.currencyDefaultSpread = issuer ? countryRiskFor(countryRisk, issuer)?.defaultSpread ?? null : null;
   }
+  // Every path that fetches financials comes through here, so this is where
+  // the rest of what was fetched is kept.
+  await archiveFetch(symbol, bundle.raw, runId);
   return bundle;
 }
 
@@ -126,7 +130,7 @@ export async function refreshStockData(rawSymbol: string, opts: RefreshOptions =
 
   logger.step(`Refreshing ${reference ? 'reference ' : ''}data for ${symbol}…`);
 
-  const bundle = await fetchFinancialsBundle(symbol);
+  const bundle = await fetchFinancialsBundle(symbol, runId);
   await writeFinancials(symbol, bundle.financials, runId);
 
   // News (best effort)

@@ -312,7 +312,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
 
   if (!financials) {
     emit({ stage: 'financials', message: 'Fetching financials from Yahoo + Finnhub…' });
-    const bundle = await fetchFinancialsBundle(symbol);
+    const bundle = await fetchFinancialsBundle(symbol, input.runId);
 
     financials       = bundle.financials;
     bundleDailyBars  = bundle.dailyBars;

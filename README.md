@@ -1686,14 +1686,32 @@ cost history.
 | --- | --- |
 | `symbols` | The registry, plus slow-moving identity (name, sector, ISIN) |
 | `metrics` | The catalogue — one row per series, generated from the `.describe()` strings in `types.ts` |
-| `snapshots` | Raw payloads (financials, market signals, models, peers, news), deduplicated by content hash |
+| `snapshots` | Raw payloads (financials, market signals, models, peers, news, the published score card, Yahoo's statements, estimates and holders as received), deduplicated by content hash |
 | `observations` | `(symbol, metric, timestamp, value)` — the chart surface, ~325 values per symbol per run |
 | `documents` | Distill briefings, Perplexity syntheses, verdicts, search traces — one row per version that actually changed |
 | `fundamental_periods` | Reported figures keyed by fiscal period *and* observation date, so restatements are visible |
 | `macro_observations` | VIX, yield curve, HY spread, DXY, FRED rates — global, stored once rather than per symbol |
-| `runs` / `run_steps` | Pipeline provenance; every row above can point at the run that produced it |
+| `runs` / `run_steps` | Pipeline provenance; every row above can point at the run that produced it. Never pruned |
+| `price_bars` / `price_events` | Daily prices per ticker — stocks, the index, VIX, the dollar, the sector ETFs — with splits and dividends; ten years on a ticker's first refresh |
+| `analyst_actions` | Every rating action and price-target change Yahoo lists, by firm, back to 2012 for the large caps |
+| `insider_transactions` | Individual insider trades, appended as Yahoo's two-year window moves on |
 | `distill_entities`, `filings`, `settings` | Mappings and operational state |
 | `distill_dossiers` | Which dossier switches we have set upstream, and why any are out of sync — for companies *and* the sectors they sit in. Keyed by subject text, not by `symbols(id)`: deleting a stock is exactly when the switch has to be turned off, and a cascading row would erase that intent first |
+
+**Keep what was fetched.** What is not stored cannot be evaluated later, and
+neither Yahoo nor Finnhub hands the history out again — a delisted stock's
+prices vanish, an analyst's old target is replaced by the new one. A refresh
+used to download a year of daily prices, a decade of analyst actions and two
+years of insider trades, and keep technical indicators, one month's rating
+counts and six insider totals. Every path that fetches financials now archives
+the rest (`history-service.ts`): the bars and corporate actions, the statements
+in their reporting currency with their real period ends, the estimate and
+rating modules, the holders, every analyst action and insider trade. The first
+refresh of a ticker fetches its last ten years once, and the benchmarks are
+kept current daily. Archiving is best effort — a failure is logged, never
+fatal to the refresh — and nothing is ever pruned: runs used to be cut to the
+last twenty, which left every stored number pointing at a run that no longer
+existed after three weeks.
 
 Nothing in the codebase lists field names. Adding a valuation model to
 `AnalysisResultSchema` adds its outputs to the catalogue on the next boot, and

@@ -32,6 +32,16 @@ const SECTOR_ETF_MAP: Record<string, string> = {
   'Communication Services':  'XLC',
 };
 
+/**
+ * The market's own series — the index, the dollar and every sector ETF — that
+ * the price archive keeps beside the stocks: returns are measured against
+ * them, so an evaluation without them has nothing to measure against.
+ */
+export const BENCHMARK_TICKERS: readonly string[] = [...new Set([
+  // The index the macro block reads, and the fund that also pays its dividends.
+  SPY_SYMBOL, 'SPY', VIX_SYMBOL, DXY_SYMBOL, ...Object.values(SECTOR_ETF_MAP),
+])];
+
 export function sectorToEtf(sector: string | null): string | null {
   if (!sector) return null;
   return SECTOR_ETF_MAP[sector] ?? null;

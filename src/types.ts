@@ -24,7 +24,8 @@ export const PrevYearSnapshotSchema = z.object({
 export type PrevYearSnapshot = z.infer<typeof PrevYearSnapshotSchema>;
 
 export const EarningsSurpriseSchema = z.object({
-  quarter:     z.string().describe('Period label from Yahoo Finance (e.g. "3Q2024")'),
+  quarter:     z.string().describe('Period label from Yahoo Finance — relative, e.g. "-1q"'),
+  endDate:     z.string().nullable().optional().describe('End of the fiscal quarter (YYYY-MM-DD); absent on payloads from before 2 October 2026'),
   epsEstimate: z.number().nullable().describe('Consensus analyst EPS estimate before the announcement'),
   epsActual:   z.number().nullable().describe('Actual reported EPS'),
   surprisePct: z.number().nullable().describe('Beat/miss as decimal (positive = beat, e.g. 0.079 = +7.9%)'),

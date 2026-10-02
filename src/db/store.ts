@@ -72,7 +72,13 @@ export type SnapshotKind =
   | 'sector_medians' | 'news' | 'technical_signals'
   // Derived rather than fetched: rebuilt from the SEC filings and price
   // history, cached for a day (`valuation-history-service.ts`).
-  | 'valuation_history';
+  | 'valuation_history'
+  // Yahoo's answers as received, beyond what the payload carries
+  // (`history-service.ts`): statements, estimates and ratings, holders.
+  | 'yahoo_statements' | 'yahoo_analyst' | 'yahoo_holders'
+  // The score card as published. Observations are re-written when the scoring
+  // changes; this is what the reader saw on the day.
+  | 'score_card';
 
 export type DocumentKind = 'distill' | 'perplexity' | 'verdict' | 'search_trace';
 
@@ -1282,9 +1288,10 @@ function fiscalRowsFrom(f: StockFinancials): FiscalRow[] {
   }
   for (const q of f.quarterlyRevenues ?? []) push('quarter', q.endDate, 'revenue', q.revenue);
   for (const s of f.earningsSurprises ?? []) {
-    // Yahoo labels these "3Q2024"; without a real end date the quarter cannot
-    // be placed on a calendar, so those entries are skipped rather than guessed.
-    const end = quarterLabelToDate(s.quarter);
+    // The quarter's end date since 2 October 2026. Before that only Yahoo's
+    // relative label ("-1q") was kept, which places nothing on a calendar, so
+    // those entries are skipped rather than guessed.
+    const end = s.endDate ?? quarterLabelToDate(s.quarter);
     push('quarter', end, 'epsEstimate', s.epsEstimate);
     push('quarter', end, 'epsActual',   s.epsActual);
     push('quarter', end, 'surprisePct', s.surprisePct);
@@ -1398,6 +1405,11 @@ export async function recordRunData(input: RecordRunInput): Promise<void> {
   }
   if (input.technicalSignals) {
     await saveSnapshot(input.symbol, 'technical_signals', MARKET_SIGNALS_VERSION, input.technicalSignals, input.runId);
+  }
+  // The card as published. A rescore rewrites the `score.*` observations at
+  // past instants when the rules change; this keeps what the page said then.
+  if (input.scoreCard) {
+    await saveSnapshot(input.symbol, 'score_card', ANALYSIS_VERSION, input.scoreCard, input.runId);
   }
 
   const sources: ObservationSource[] = [];

@@ -35,6 +35,7 @@ import type { ValuationHistory, ValuationHistoryPoint } from '../analysis/valuat
 import { payloadAt } from './payload.js';
 import { indexAtOrBefore, monthEnds, priceHistory, type PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
+import { savePriceHistory } from '../history-service.js';
 
 const BENCHMARK = '^GSPC';
 export const HISTORY_YEARS = 5;
@@ -63,6 +64,8 @@ export async function reconstructHistory({ financials: f, dataDir, fredApiKey }:
   // week behind the rest of the page.
   const px = await priceHistory(f.symbol, yearsBefore(today, HISTORY_YEARS + PRICE_LEAD_YEARS), join(dir, 'prices'), 1);
   if (!px) return null;
+  // Ten years of prices fetched anyway — the archive keeps them.
+  await savePriceHistory(f.symbol, px).catch(() => { /* best effort */ });
   const days = monthEnds(px.dates, from, today);
 
   const sec = await fromFilings(f, px, days, dir, fredApiKey);

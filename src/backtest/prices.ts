@@ -30,6 +30,8 @@ export interface PriceHistory {
   adj:   number[];
   /** Splits, with the ratio of new shares to old. */
   splits: { date: string; ratio: number }[];
+  /** Dividends per share. Absent in cache files written before they were asked for. */
+  dividends?: { date: string; amount: number }[];
 }
 
 const CACHE_DAYS = 7;
@@ -52,8 +54,8 @@ export async function priceHistory(
   }
   try {
     await yahooWindow.take();
-    const r = await yf.chart(symbol, { period1: from, interval: '1d', events: 'split' });
-    const out: PriceHistory = { dates: [], close: [], adj: [], splits: [] };
+    const r = await yf.chart(symbol, { period1: from, interval: '1d', events: 'div|split' });
+    const out: PriceHistory = { dates: [], close: [], adj: [], splits: [], dividends: [] };
     for (const q of r?.quotes ?? []) {
       const close = typeof q.close === 'number' && Number.isFinite(q.close) ? q.close : null;
       if (close === null || close <= 0) continue;
@@ -71,6 +73,13 @@ export async function priceHistory(
       }
     }
     out.splits.sort((a, b) => a.date.localeCompare(b.date));
+    for (const dv of r?.events?.dividends ?? []) {
+      const amount = Number(dv.amount);
+      if (Number.isFinite(amount) && amount > 0) {
+        const d = dv.date instanceof Date ? dv.date : new Date(dv.date);
+        out.dividends!.push({ date: d.toISOString().slice(0, 10), amount });
+      }
+    }
     if (out.dates.length === 0) return null;
     mkdirSync(cacheDir, { recursive: true });
     writeFileSync(file, JSON.stringify({ ...out, from, fetchedAt: new Date().toISOString() }));

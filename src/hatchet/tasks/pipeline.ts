@@ -22,7 +22,7 @@
 
 import { readAppConfig } from '../../app-config.js';
 import {
-  finishRun, isRunActive, JobStepResult, pruneRuns, recordRunSteps, setRunSymbol, startRun,
+  finishRun, isRunActive, JobStepResult, recordRunSteps, setRunSymbol, startRun,
 } from '../../db/admin.js';
 import {
   isVerdictStale, newestAnalysisAges, runAnalysisStep, runDataStep, runDistillStep, runReferenceStep,
@@ -346,7 +346,6 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
       await finishRun(runId, 'partial', reason);
     } finally {
       await setRunSymbol(runId, null).catch(() => { /* cosmetic */ });
-      await pruneRuns().catch(() => { /* retention is best effort */ });
     }
 
     return { runId, symbols: symbols.length, analysed: stale.length, failed, reference: reference.length };

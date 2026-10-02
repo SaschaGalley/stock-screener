@@ -188,7 +188,13 @@ function assemble(runs: RunRow[], steps: StepRow[]): JobRun[] {
   });
 }
 
-const MAX_KEPT_RUNS = 20;
+/**
+ * Runs the admin page lists. Not how many are kept: every run is. They used to
+ * be pruned to the last twenty, and a pruned run took its steps with it and
+ * left every snapshot, observation and document it wrote pointing at nothing —
+ * after three weeks no stored number could say which night produced it.
+ */
+const LISTED_RUNS = 20;
 
 /**
  * Whether a run is still going. The admin page's stop closes the row, and a
@@ -201,7 +207,7 @@ export async function isRunActive(runId: number): Promise<boolean> {
 }
 
 /** The recent runs, newest first, with their steps. */
-export async function listRuns(limit = MAX_KEPT_RUNS): Promise<JobRun[]> {
+export async function listRuns(limit = LISTED_RUNS): Promise<JobRun[]> {
   const runs = (await query<RunRow>(
     'SELECT * FROM runs ORDER BY started_at DESC LIMIT $1', [limit],
   )).rows;
@@ -236,15 +242,6 @@ export async function reapStaleRuns(): Promise<number> {
   return n;
 }
 
-/** Drop runs beyond the retention window, cascading their steps. */
-export async function pruneRuns(keep = MAX_KEPT_RUNS): Promise<void> {
-  await query(
-    `DELETE FROM runs WHERE id NOT IN (
-       SELECT id FROM runs ORDER BY started_at DESC LIMIT $1
-     )`,
-    [keep],
-  );
-}
 
 // ── Distill entity mapping ───────────────────────────────────────────────────
 

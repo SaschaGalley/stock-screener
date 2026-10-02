@@ -32,7 +32,7 @@ import { isHatchetConfigured } from './hatchet/client.js';
 import { AppConfig, readAppConfig } from './app-config.js';
 import {
   finishRun, JobRun, JobRunStatus, JobStep, JobStepResult, JobSymbolResult,
-  listRuns, pruneRuns, reapStaleRuns, recordRunSteps, setRunSymbol, startRun, StepStatus, tallySteps,
+  listRuns, reapStaleRuns, recordRunSteps, setRunSymbol, startRun, StepStatus, tallySteps,
 } from './db/admin.js';
 import {
   needsAttention, runAnalysisStep, runDataStep, runDistillStep, runReferenceStep, scheduledSymbols,
@@ -183,7 +183,6 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
     run.finishedAt = new Date().toISOString();
     await finishRun(runId, run.status, run.error).catch((e) =>
       logger.warn(`Could not finalise run ${runId}: ${(e as Error).message}`));
-    await pruneRuns().catch(() => { /* retention is best effort */ });
     activeRun = null;
     stopRequested = false;
     const secs = ((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(0);

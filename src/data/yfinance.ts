@@ -14,6 +14,10 @@ import { auditFinancials, isFundamentalsStale } from '../analysis/data-quality.j
 import { QuarterPoint, annualGrowth, latestValue, trailingGrowth, trailingSum } from '../analysis/trailing.js';
 import { MINOR_UNIT_CURRENCIES } from '../currencies.js';
 import { logger } from '../utils/logger.js';
+import {
+  analystActionsFrom, insiderTransactionsFrom, pickModules, priceBarsFrom, priceEventsFrom,
+  type PriceBarRow, type PriceEventRow, type YahooRaw,
+} from './yahoo-raw.js';
 import { toFiniteNumber as num } from '../utils/num.js';
 
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'], validation: { logErrors: false, logOptionsErrors: false } } as any);
@@ -115,10 +119,35 @@ async function safeSummary(symbol: string): Promise<any> {
   return merged;
 }
 
+/**
+ * Modules fetched only to be archived — nothing in the payload reads them.
+ *
+ * A request of their own, and unvalidated: they are stored as Yahoo sends
+ * them, and a shape the library does not expect must not cost the payload the
+ * eleven modules above, which is what folding them into that request would
+ * risk. The analyst history is the one that matters — every rating action and
+ * price target change back to 2012 for the large caps.
+ */
+const ARCHIVE_MODULES = [
+  'upgradeDowngradeHistory', 'institutionOwnership', 'fundOwnership', 'insiderHolders', 'netSharePurchaseActivity',
+] as const;
+
+async function safeArchiveSummary(symbol: string): Promise<any> {
+  try {
+    return await yf.quoteSummary(symbol, { modules: ARCHIVE_MODULES as unknown as string[] } as any, { validateResult: false } as any);
+  } catch (e) {
+    logger.debug(`Summary[archive] for ${symbol}: ${(e as Error).message}`);
+    return null;
+  }
+}
+
 interface HistoricalData {
   monthlyReturns: number[];
   monthlyPrices: Record<string, number>;  // "YYYY-MM" → price
   dailyBars: DailyBar[];
+  /** The daily chart as Yahoo sent it, for the price archive. */
+  priceBars: PriceBarRow[];
+  priceEvents: PriceEventRow[];
 }
 
 async function safeHistoricalData(symbol: string): Promise<HistoricalData> {
@@ -138,6 +167,7 @@ async function safeHistoricalData(symbol: string): Promise<HistoricalData> {
         period1: fromDaily.toISOString().slice(0, 10),
         period2: new Date().toISOString().slice(0, 10),
         interval: '1d',
+        events: 'div|split',
       }),
     ]);
 
@@ -182,10 +212,13 @@ async function safeHistoricalData(symbol: string): Promise<HistoricalData> {
       });
     }
 
-    return { monthlyReturns, monthlyPrices, dailyBars };
+    return {
+      monthlyReturns, monthlyPrices, dailyBars,
+      priceBars: priceBarsFrom(dailyQuotes), priceEvents: priceEventsFrom(daily?.events),
+    };
   } catch (e) {
     logger.warn(`Historical: ${(e as Error).message}`);
-    return { monthlyReturns: [], monthlyPrices: {}, dailyBars: [] };
+    return { monthlyReturns: [], monthlyPrices: {}, dailyBars: [], priceBars: [], priceEvents: [] };
   }
 }
 
@@ -748,12 +781,14 @@ export interface FinancialsBundle {
   financials: StockFinancials;
   dailyBars:  DailyBar[];
   revisions:  EarningsRevisions;
+  /** Everything fetched that the payload does not carry — for the archive. */
+  raw:        YahooRaw;
 }
 
 export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   logger.step(`Fetching financials for ${symbol}...`);
 
-  const [quote, summary, bsData, finData, cfData, finQData, cfQData, bsQData, historicalData] = await Promise.all([
+  const [quote, summary, bsData, finData, cfData, finQData, cfQData, bsQData, historicalData, archive] = await Promise.all([
     safeQuote(symbol),
     safeSummary(symbol),
     safeTimeSeries(symbol, 'balance-sheet'),
@@ -763,6 +798,7 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     safeQuarterlySeries(symbol, 'cash-flow'),
     safeQuarterlySeries(symbol, 'balance-sheet'),
     safeHistoricalData(symbol),
+    safeArchiveSummary(symbol),
   ]);
 
   const { monthlyReturns, monthlyPrices, dailyBars } = historicalData;
@@ -968,6 +1004,11 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   // ── Earnings surprises ────────────────────────────────────────────────────
   const earningsSurprises = (eh as any[]).slice(0, 4).map((q: any) => ({
     quarter:     str(q.period) ?? str(q.quarter?.fmt) ?? 'Unknown',
+    // The label is relative ("-4q"); the quarter's end is what places it on a
+    // calendar, and without it no surprise ever reached the fiscal table.
+    endDate:     q.quarter instanceof Date && !Number.isNaN(q.quarter.getTime())
+                   ? q.quarter.toISOString().slice(0, 10)
+                   : null,
     epsEstimate: num(q.epsEstimate?.raw ?? q.epsEstimate),
     epsActual:   num(q.epsActual?.raw   ?? q.epsActual),
     surprisePct: num(q.surprisePercent?.raw ?? q.surprisePercent),
@@ -1486,5 +1527,21 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     if (w.severity === 'error') logger.warn(line); else logger.info(line);
   }
 
-  return { financials, dailyBars, revisions };
+  const raw: YahooRaw = {
+    priceBars:   historicalData.priceBars,
+    priceEvents: historicalData.priceEvents,
+    statements: {
+      annual:    { balanceSheet: bsData, financials: finData, cashFlow: cfData },
+      quarterly: { balanceSheet: bsQData, financials: finQData, cashFlow: cfQData },
+    },
+    analyst: pickModules(summary, ['recommendationTrend', 'earningsTrend', 'earningsHistory', 'calendarEvents']),
+    holders: {
+      ...pickModules(summary, ['majorHoldersBreakdown']),
+      ...pickModules(archive, ['institutionOwnership', 'fundOwnership', 'insiderHolders', 'netSharePurchaseActivity']),
+    },
+    analystActions:      analystActionsFrom(archive?.upgradeDowngradeHistory),
+    insiderTransactions: insiderTransactionsFrom(summary?.insiderTransactions),
+  };
+
+  return { financials, dailyBars, revisions, raw };
 }
