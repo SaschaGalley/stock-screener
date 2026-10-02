@@ -7,6 +7,7 @@ import { CHART_COLORS, baseTextStyle } from '../charts/chartTheme';
 import { useArchive } from '../useArchive';
 import { MIN_FIRM_TARGETS, type FirmRecord } from '../../../../src/analysis/analyst-accuracy';
 import type { TrackRecordView } from '../../../../src/stock-history-service';
+import Term from '../Term';
 
 /**
  * How good the analysts' targets for this stock have been: every target with
@@ -128,10 +129,10 @@ function FirmTable({ firms }: { firms: FirmRecord[] }) {
         <thead>
           <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal">Haus</th>
-            <th className="py-1 text-right font-normal">Ziele</th>
-            <th className="py-1 text-right font-normal" title="Median von Kurs nach 12 Monaten / Kursziel − 1">Kurs vs. Ziel</th>
-            <th className="py-1 text-right font-normal">Erreicht</th>
-            <th className="py-1 text-right font-normal">Richtung</th>
+            <th className="py-1 text-right font-normal"><Term k="concept.ar.targets">Ziele</Term></th>
+            <th className="py-1 text-right font-normal"><Term k="concept.ar.medianError">Kurs vs. Ziel</Term></th>
+            <th className="py-1 text-right font-normal"><Term k="concept.ar.reached">Erreicht</Term></th>
+            <th className="py-1 text-right font-normal"><Term k="concept.ar.direction">Richtung</Term></th>
             <th className="hidden py-1 text-right font-normal sm:table-cell">Zuletzt</th>
           </tr>
         </thead>

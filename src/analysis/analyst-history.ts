@@ -66,28 +66,53 @@ export interface ConsensusAt {
 const DAY_MS = 86_400_000;
 const shift = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 
+/** One firm's newest word before a day: its target and its grade, each with when it was given. */
+export interface FirmWord {
+  firm:   string;
+  /** Newest target in the window, split-adjusted to today's basis; `prior` is the one it replaced, same basis. */
+  target: { day: string; value: number; prior: number | null } | null;
+  /** Newest grade that reads on the five-step scale, as the firm worded it and as counted. */
+  grade:  { day: string; label: string; bucket: RatingBucket; from: string | null; action: string | null } | null;
+}
+
 /**
- * What the firms were saying before `day` (YYYY-MM-DD): each firm's newest
- * target and newest grade from the year before it, the day itself excluded —
- * an action dated on the day may have come after the close the day is priced at.
+ * Each firm's newest target and newest grade from the year before `day`
+ * (YYYY-MM-DD), the day itself excluded — an action dated on the day may have
+ * come after the close the day is priced at. Target and grade are kept apart:
+ * a firm that last moved only its target still holds the grade it gave before.
+ *
+ * The consensus below is this list counted; the analyst card shows it firm by
+ * firm, so the two cannot disagree about who is in it.
  */
-export function consensusAt(actions: readonly AnalystAction[], day: string, splits: readonly Split[] = []): ConsensusAt {
+export function firmWordsAt(actions: readonly AnalystAction[], day: string, splits: readonly Split[] = []): FirmWord[] {
   const from = shift(day, -CONSENSUS_WINDOW_DAYS);
-  const target = new Map<string, { day: string; value: number }>();
-  const grade = new Map<string, { day: string; bucket: RatingBucket }>();
+  const words = new Map<string, FirmWord>();
   for (const a of actions) {
     const d = a.gradedAt.slice(0, 10);
     if (d >= day || d < from) continue;
-    if (a.priceTarget !== null && a.priceTarget > 0) {
-      const seen = target.get(a.firm);
-      if (!seen || d > seen.day) target.set(a.firm, { day: d, value: a.priceTarget / splitFactorAfter(splits, d) });
+    const w = words.get(a.firm) ?? { firm: a.firm, target: null, grade: null };
+    words.set(a.firm, w);
+    if (a.priceTarget !== null && a.priceTarget > 0 && (!w.target || d > w.target.day)) {
+      const factor = splitFactorAfter(splits, d);
+      w.target = {
+        day: d,
+        value: a.priceTarget / factor,
+        prior: a.priorPriceTarget !== null && a.priorPriceTarget > 0 ? a.priorPriceTarget / factor : null,
+      };
     }
     const bucket = ratingBucket(a.toGrade);
-    if (bucket) {
-      const seen = grade.get(a.firm);
-      if (!seen || d > seen.day) grade.set(a.firm, { day: d, bucket });
+    if (bucket && (!w.grade || d > w.grade.day)) {
+      w.grade = { day: d, label: a.toGrade!, bucket, from: a.fromGrade, action: a.action };
     }
   }
+  return [...words.values()].filter((w) => w.target || w.grade);
+}
+
+/** What the firms were saying before `day`: `firmWordsAt`, counted. */
+export function consensusAt(actions: readonly AnalystAction[], day: string, splits: readonly Split[] = []): ConsensusAt {
+  const words = firmWordsAt(actions, day, splits);
+  const target = new Map(words.flatMap((w) => (w.target ? [[w.firm, w.target] as const] : [])));
+  const grade = new Map(words.flatMap((w) => (w.grade ? [[w.firm, w.grade] as const] : [])));
 
   const targets = [...target.values()].map((t) => t.value).sort((a, b) => a - b);
   const enough = targets.length >= MIN_CONSENSUS_FIRMS;

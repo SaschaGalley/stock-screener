@@ -1,4 +1,7 @@
 import { trendTable, type AnnualHistory } from '../../../../src/analysis/trends';
+import Term from '../Term';
+import Tip from '../Tip';
+import { GLOSSARY, TREND_TERMS } from '../../glossary';
 
 /** Below this, a move against the prior years is noise rather than a trend. */
 const FLAT = 0.01;
@@ -20,7 +23,9 @@ export default function MarginTrends({ history }: { history: AnnualHistory }) {
 
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Margen &amp; Renditen im Verlauf</h3>
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+        <Term k="concept.marginTrends">Margen &amp; Renditen im Verlauf</Term>
+      </h3>
       <table className="w-full text-xs tabular">
         <thead>
           <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
@@ -41,15 +46,22 @@ export default function MarginTrends({ history }: { history: AnnualHistory }) {
                 className="border-b border-ink-800"
                 title={series.map((p) => `${p.year}: ${pct(p.value)}`).join('\n')}
               >
-                <td className="py-1 pr-2 text-ink-400">{label}</td>
+                <td className="py-1 pr-2 text-ink-400"><Term k={TREND_TERMS[key]}>{label}</Term></td>
                 <td className="py-1 text-right font-mono text-ink-100">{pct(summary.latest?.value ?? null)}</td>
                 <td className="py-1 text-right font-mono text-ink-300">{pct(summary.avg3)}</td>
                 <td className="py-1 text-right font-mono text-ink-400">{pct(summary.avgAll)}</td>
-                <td
-                  className={`py-1 text-right font-mono ${trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-red-400' : 'text-ink-600'}`}
-                  title={d === null ? undefined : `${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)} pp gegenüber dem Schnitt der Vorjahre`}
-                >
-                  {trend === 'up' ? '▲' : trend === 'down' ? '▼' : '·'}
+                <td className={`py-1 text-right font-mono ${trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-red-400' : 'text-ink-600'}`}>
+                  <Tip
+                    focusable={false}
+                    content={
+                      <>
+                        {d !== null && <div>{d >= 0 ? '+' : '−'}{(Math.abs(d) * 100).toFixed(1)} Prozentpunkte gegenüber dem Schnitt der Vorjahre.</div>}
+                        <div className="mt-1 text-ink-400">{GLOSSARY['concept.trendArrow']}</div>
+                      </>
+                    }
+                  >
+                    {trend === 'up' ? '▲' : trend === 'down' ? '▼' : '·'}
+                  </Tip>
                 </td>
               </tr>
             );

@@ -6,6 +6,7 @@ import { useArchive } from '../useArchive';
 import {
   RECORD_HORIZONS, callHit, type CallOutcome, type Leg,
 } from '../../../../src/analysis/verdict-record';
+import Term from '../Term';
 
 /**
  * How our own verdicts on this stock have done: every call with the stock
@@ -73,9 +74,9 @@ function CallTable({ calls }: { calls: CallOutcome[] }) {
             <th className="py-1 text-right font-normal">Score</th>
             <th className="py-1 text-right font-normal">Kurs</th>
             {RECORD_HORIZONS.map((h) => (
-              <th key={h} className="py-1 text-right font-normal" title="Mehrrendite gegenüber dem S&P 500">{h} M</th>
+              <th key={h} className="py-1 text-right font-normal"><Term k="concept.vr.excess">{h} M</Term></th>
             ))}
-            <th className="py-1 text-right font-normal" title="Vom Urteil bis zum nächsten — oder bis heute">Solange es galt</th>
+            <th className="py-1 text-right font-normal"><Term k="concept.vr.held">Solange es galt</Term></th>
           </tr>
         </thead>
         <tbody>

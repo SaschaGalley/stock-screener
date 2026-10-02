@@ -3,6 +3,7 @@ import { api } from '../../api';
 import { useMoney } from '../../currency';
 import { useArchive } from '../useArchive';
 import type { Holder, Holders, InsiderTrade } from '../../../../src/analysis/holders';
+import Term from '../Term';
 
 const pct = (v: number | null, d = 1) => (v === null ? '—' : `${(v * 100).toFixed(d)} %`);
 
@@ -66,9 +67,9 @@ function HolderTable({ title, rows }: { title: string; rows: Holder[] }) {
         <thead>
           <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal" />
-            <th className="py-1 text-right font-normal">Anteil</th>
+            <th className="py-1 text-right font-normal"><Term k="concept.holders.share">Anteil</Term></th>
             <th className="py-1 text-right font-normal">Wert</th>
-            <th className="py-1 text-right font-normal" title="Veränderung der Position seit der vorigen Meldung">Veränderung</th>
+            <th className="py-1 text-right font-normal"><Term k="concept.holders.change">Veränderung</Term></th>
           </tr>
         </thead>
         <tbody>
@@ -97,7 +98,7 @@ function Trades({ trades, insiders }: { trades: InsiderTrade[]; insiders: Holder
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">Insider-Transaktionen</h3>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500"><Term k="concept.insiderTrades">Insider-Transaktionen</Term></h3>
         {hidden > 0 && (
           <button onClick={() => setAll((x) => !x)} className="text-[11px] text-ink-400 hover:text-ink-100">
             {all ? 'Nur Käufe und Verkäufe' : `+ ${hidden} Zuteilungen, Schenkungen, Ausübungen`}

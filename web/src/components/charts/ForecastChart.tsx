@@ -3,6 +3,7 @@ import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useMoney } from '../../currency';
 import { fmtSignedPct } from '../../format';
 import { growthPair, pastAndForecast, type ForecastInput } from '../../../../src/analysis/forecast';
+import Term from '../Term';
 
 /**
  * Reported years and the consensus for the next two on one axis: revenue as
@@ -95,7 +96,9 @@ export default function ForecastChart(input: ForecastInput) {
 
   return (
     <div>
-      <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Vergangenheit &amp; Prognose</h3>
+      <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+        <Term k="concept.forecast">Vergangenheit &amp; Prognose</Term>
+      </h3>
       <p className="mb-2 text-xs text-ink-400">
         {line('Umsatz', revG)}
         {(epsG.past !== null || epsG.ahead !== null) && <> · {line('EPS', epsG)}</>}

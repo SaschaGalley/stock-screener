@@ -7,6 +7,7 @@
  */
 
 import { trackRecord, type TrackRecord } from './analysis/analyst-accuracy.js';
+import { CONSENSUS_WINDOW_DAYS, firmWordsAt, type FirmWord } from './analysis/analyst-history.js';
 import { inCommonCurrency } from './analysis/evaluate.js';
 import {
   callOutcomes, verdictCalls, verdictRecord, type Bar, type CallOutcome, type VerdictPoint, type VerdictRecord,
@@ -43,6 +44,31 @@ export async function analystTrackRecord(symbol: string): Promise<TrackRecordVie
   const splits = events.filter((e) => e.kind === 'split').map((e) => ({ day: e.day, ratio: e.value }));
   const { outcomes, ...rest } = trackRecord(actions, bars.map((b) => ({ day: b.day, close: b.close })), splits);
   return { ...rest, targets: outcomes.length, pending: outcomes.filter((o) => o.error === null).length };
+}
+
+// ── Who covers the stock, and what each firm says now ───────────────────────
+
+export interface CoverageView {
+  /** Each firm's newest word from the window, highest target first; firms with a grade only last. */
+  firms:      FirmWord[];
+  windowDays: number;
+}
+
+/**
+ * The analyst card's consensus, firm by firm. Yahoo's live figures — mean,
+ * low, high, the five counts — say nothing about who is behind them; the
+ * rating history does, and read up to today it is the same list the backtest
+ * rebuilds a past day's consensus from.
+ */
+export async function analystCoverage(symbol: string): Promise<CoverageView | null> {
+  const [actions, events] = await Promise.all([readAnalystActions(symbol), readPriceEvents(symbol)]);
+  if (actions.length === 0) return null;
+  const splits = events.filter((e) => e.kind === 'split').map((e) => ({ day: e.day, ratio: e.value }));
+  // The window excludes its own day; tomorrow's window is everything up to and including today.
+  const tomorrow = new Date(Date.now() + DAY_MS).toISOString().slice(0, 10);
+  const firms = firmWordsAt(actions, tomorrow, splits)
+    .sort((a, b) => (b.target?.value ?? -Infinity) - (a.target?.value ?? -Infinity) || a.firm.localeCompare(b.firm));
+  return firms.length ? { firms, windowDays: CONSENSUS_WINDOW_DAYS } : null;
 }
 
 // ── Our own verdicts' track record ──────────────────────────────────────────

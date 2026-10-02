@@ -1,5 +1,8 @@
 import type { ComputedMetrics } from '../../types';
 import { fmt, fmtPct } from '../../format';
+import Term from '../Term';
+import Tip from '../Tip';
+import { GLOSSARY, type GlossaryKey } from '../../glossary';
 
 interface Props {
   metrics: ComputedMetrics;
@@ -21,11 +24,11 @@ export default function QualityScores({ metrics }: Props) {
 }
 
 function ScoreCard({
-  title, value, subtitle, color, body,
-}: { title: string; value: string; subtitle?: string; color: string; body?: React.ReactNode }) {
+  title, term, value, subtitle, color, body,
+}: { title: string; term: GlossaryKey; value: string; subtitle?: string; color: string; body?: React.ReactNode }) {
   return (
     <div className="rounded border border-ink-800 bg-ink-950 p-3">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">{title}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500"><Term k={term}>{title}</Term></div>
       <div className="mt-1 flex items-baseline gap-2">
         <span className={`font-mono text-xl font-bold tabular ${color}`}>{value}</span>
         {subtitle && <span className="text-[11px] text-ink-400">{subtitle}</span>}
@@ -33,6 +36,12 @@ function ScoreCard({
       {body && <div className="mt-2 text-[11px] text-ink-400">{body}</div>}
     </div>
   );
+}
+
+/** A Piotroski signal's explanation, by the key the metrics carry it under. */
+function signalText(key: string): string | null {
+  const k = `metrics.piotroski.signals.${key}`;
+  return k in GLOSSARY ? GLOSSARY[k as GlossaryKey] : null;
 }
 
 function PiotroskiCard({ p }: { p: any }) {
@@ -43,20 +52,28 @@ function PiotroskiCard({ p }: { p: any }) {
 
   return (
     <ScoreCard
-      title="Piotroski F-Score"
+      title="Piotroski F-Score" term="metrics.piotroski.score"
       value={`${score}/${max}`}
       subtitle={p.interpretation?.toUpperCase()}
       color={color}
       body={
         <div className="flex gap-0.5">
-          {Object.values(p.signals ?? {}).map((v: any, i: number) => (
-            <div
-              key={i}
-              className={`h-2 flex-1 rounded-sm ${
+          {Object.entries(p.signals ?? {}).map(([key, v]: [string, any], i: number) => (
+            <Tip
+              key={key}
+              focusable={false}
+              className={`block h-2 flex-1 rounded-sm ${
                 v === null ? 'bg-ink-700' : v ? 'bg-emerald-500' : 'bg-red-500'
               }`}
-              title={`F${i + 1}`}
-            />
+              content={
+                <>
+                  {signalText(key) ?? `F${i + 1}`}
+                  <div className="mt-1 text-ink-400">{v === null ? 'Nicht berechenbar — zählt nicht mit.' : v ? 'Erfüllt.' : 'Nicht erfüllt.'}</div>
+                </>
+              }
+            >
+              {null}
+            </Tip>
           ))}
         </div>
       }
@@ -65,11 +82,11 @@ function PiotroskiCard({ p }: { p: any }) {
 }
 
 function AltmanCard({ a }: { a: any }) {
-  if (a.score === null) return <ScoreCard title="Altman Z-Score" value="N/A" color="text-ink-500" />;
+  if (a.score === null) return <ScoreCard title="Altman Z-Score" term="metrics.altmanZ.score" value="N/A" color="text-ink-500" />;
   const color = a.zone === 'safe' ? 'text-emerald-400' : a.zone === 'distress' ? 'text-red-400' : 'text-amber-400';
   return (
     <ScoreCard
-      title="Altman Z-Score"
+      title="Altman Z-Score" term="metrics.altmanZ.score"
       value={a.score.toFixed(2)}
       subtitle={`${a.zone} zone`}
       color={color}
@@ -79,13 +96,13 @@ function AltmanCard({ a }: { a: any }) {
 }
 
 function BeneishCard({ b }: { b: any }) {
-  if (b.score === null) return <ScoreCard title="Beneish M-Score" value="N/A" color="text-ink-500" body={`${b.variablesComputed}/8 indices`} />;
+  if (b.score === null) return <ScoreCard title="Beneish M-Score" term="metrics.beneish.score" value="N/A" color="text-ink-500" body={`${b.variablesComputed}/8 indices`} />;
   const color = b.probability === 'unlikely manipulator' ? 'text-emerald-400'
               : b.probability === 'likely manipulator'   ? 'text-red-400'
               : 'text-amber-400';
   return (
     <ScoreCard
-      title="Beneish M-Score"
+      title="Beneish M-Score" term="metrics.beneish.score"
       value={b.score.toFixed(2)}
       subtitle={b.probability}
       color={color}
@@ -95,12 +112,12 @@ function BeneishCard({ b }: { b: any }) {
 }
 
 function SortinoCard({ s }: { s: any }) {
-  if (s.ratio === null) return <ScoreCard title="Sortino Ratio" value="N/A" color="text-ink-500" body="needs ≥6 months of data" />;
+  if (s.ratio === null) return <ScoreCard title="Sortino Ratio" term="metrics.sortino.ratio" value="N/A" color="text-ink-500" body="needs ≥6 months of data" />;
   const color = s.ratio >= 2 ? 'text-emerald-400' : s.ratio >= 1 ? 'text-emerald-500'
               : s.ratio >= 0.5 ? 'text-amber-400' : 'text-red-400';
   return (
     <ScoreCard
-      title="Sortino Ratio"
+      title="Sortino Ratio" term="metrics.sortino.ratio"
       value={s.ratio.toFixed(2)}
       subtitle={s.interpretation}
       color={color}
@@ -110,11 +127,11 @@ function SortinoCard({ s }: { s: any }) {
 }
 
 function RuleOf40Card({ r }: { r: any }) {
-  if (r.score === null) return <ScoreCard title="Rule of 40" value="N/A" color="text-ink-500" />;
+  if (r.score === null) return <ScoreCard title="Rule of 40" term="metrics.ruleOf40.score" value="N/A" color="text-ink-500" />;
   const color = r.passes ? 'text-emerald-400' : 'text-amber-400';
   return (
     <ScoreCard
-      title="Rule of 40"
+      title="Rule of 40" term="metrics.ruleOf40.score"
       value={r.score.toFixed(1)}
       subtitle={r.passes ? 'PASSES' : 'fails'}
       color={color}
@@ -125,10 +142,10 @@ function RuleOf40Card({ r }: { r: any }) {
 
 function InterestCard({ ic }: { ic: any }) {
   if (ic.ratio === null && ic.interpretation === 'unknown') {
-    return <ScoreCard title="Interest Coverage" value="N/A" color="text-ink-500" />;
+    return <ScoreCard title="Interest Coverage" term="metrics.interestCoverage.ratio" value="N/A" color="text-ink-500" />;
   }
   if (ic.ratio === null && ic.interpretation === 'excellent') {
-    return <ScoreCard title="Interest Coverage" value="∞" subtitle="debt-free" color="text-emerald-400" />;
+    return <ScoreCard title="Interest Coverage" term="metrics.interestCoverage.ratio" value="∞" subtitle="debt-free" color="text-emerald-400" />;
   }
   const color = ic.interpretation === 'excellent' ? 'text-emerald-400'
               : ic.interpretation === 'good' ? 'text-emerald-500'
@@ -137,7 +154,7 @@ function InterestCard({ ic }: { ic: any }) {
               : 'text-red-400';
   return (
     <ScoreCard
-      title="Interest Coverage"
+      title="Interest Coverage" term="metrics.interestCoverage.ratio"
       value={`${fmt(ic.ratio, 'x', 1)}`}
       subtitle={ic.interpretation}
       color={color}

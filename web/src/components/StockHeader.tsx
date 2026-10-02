@@ -5,6 +5,8 @@ import { useMoney } from "../currency";
 import { api } from "../api"; // refresh endpoint (PDF/MD endpoints unused since report generation is skipped)
 import StockLogo, { initialsFromName } from "./StockLogo";
 import { CloseIcon, GearIcon, PeersIcon } from "./icons";
+import Term from "./Term";
+import type { GlossaryKey } from "../glossary";
 
 interface Props {
   summary: StockSummary;
@@ -207,15 +209,17 @@ export default function StockHeader({
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <KV label="Price" value={fmtPrice(f.price)} bigValue />
-        <KV label="Market Cap" value={fmtBig(f.marketCap)} />
-        <KV label="Enterprise Value" value={fmtBig(f.enterpriseValue)} />
+        <KV label="Price" term="financials.price" value={fmtPrice(f.price)} bigValue />
+        <KV label="Market Cap" term="financials.marketCap" value={fmtBig(f.marketCap)} />
+        <KV label="Enterprise Value" term="financials.enterpriseValue" value={fmtBig(f.enterpriseValue)} />
         <KV
           label="52W Range"
+          term="concept.range52w"
           value={`${fmtPrice(f.fiftyTwoWeekLow)} – ${fmtPrice(f.fiftyTwoWeekHigh)}`}
         />
         <KV
           label="Beta"
+          term="financials.beta"
           value={fmt(f.beta)}
           subtle={
             summary.cachedAt ? `cached ${relativeTime(summary.cachedAt)}` : ""
@@ -228,11 +232,13 @@ export default function StockHeader({
 
 function KV({
   label,
+  term,
   value,
   bigValue,
   subtle,
 }: {
   label: string;
+  term?: GlossaryKey;
   value: string;
   bigValue?: boolean;
   subtle?: string;
@@ -240,7 +246,7 @@ function KV({
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-ink-500">
-        {label}
+        <Term k={term}>{label}</Term>
       </div>
       <div
         className={`font-mono tabular ${bigValue ? "text-lg font-bold text-ink-50" : "text-sm text-ink-100"}`}

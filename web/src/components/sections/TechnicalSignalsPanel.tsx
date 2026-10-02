@@ -1,6 +1,8 @@
 import type { SignalGroup, SignalItem, TechnicalSignals } from '../../types';
 import TechnicalGauge from '../charts/TechnicalGauge';
 import { fmt } from '../../format';
+import Term from '../Term';
+import { technicalTerm } from '../../glossary';
 
 interface Props {
   signals: TechnicalSignals;
@@ -10,9 +12,9 @@ export default function TechnicalSignalsPanel({ signals }: Props) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <TechnicalGauge title="Moving Averages" group={signals.movingAverages} />
-        <TechnicalGauge title="Oscillators"     group={signals.oscillators} />
-        <TechnicalGauge title="Overall"          group={signals.overall} />
+        <TechnicalGauge title="Moving Averages" term="tech.movingAverages" group={signals.movingAverages} />
+        <TechnicalGauge title="Oscillators"     term="tech.oscillators"     group={signals.oscillators} />
+        <TechnicalGauge title="Overall"         term="tech.overall"         group={signals.overall} />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <IndicatorTable title={`Moving Averages (${signals.movingAverages.items.length})`} group={signals.movingAverages} />
@@ -39,7 +41,11 @@ function IndicatorTable({ title, group }: { title: string; group: SignalGroup })
         <tbody>
           {group.items.map((it: SignalItem) => (
             <tr key={it.name} className="border-b border-ink-800">
-              <td className="py-1 pr-2 text-ink-300" title={it.hint}>{it.name}</td>
+              <td className="py-1 pr-2 text-ink-300">
+                <Term k={technicalTerm(it.name) ?? undefined} extra={it.hint && it.hint !== 'n/a' ? `Heute: ${it.hint}` : undefined}>
+                  {it.name}
+                </Term>
+              </td>
               <td className="py-1 px-2 text-right font-mono text-ink-100">
                 {it.value !== null ? fmt(it.value, '', 2) : '—'}
               </td>

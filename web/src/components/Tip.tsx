@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 interface Props {
@@ -11,6 +11,8 @@ interface Props {
    * is a button, and a tab stop inside a button is a second control in one.
    */
   focusable?: boolean;
+  /** For an anchor placed by coordinates, as the dots of a strip are. */
+  style?: CSSProperties;
 }
 
 /** Space kept between the tooltip and the thing it explains, and the window edge. */
@@ -31,7 +33,7 @@ const EDGE = 8;
  * are lifted: a row's own `title` would otherwise turn up a second later on
  * top of this one.
  */
-export default function Tip({ content, children, className = '', focusable = true }: Props) {
+export default function Tip({ content, children, className = '', focusable = true, style }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const anchorRef = useRef<HTMLSpanElement | null>(null);
@@ -80,13 +82,14 @@ export default function Tip({ content, children, className = '', focusable = tru
   }, [open]);
 
   if (content === null || content === undefined || content === '') {
-    return <span className={className}>{children}</span>;
+    return <span className={className} style={style}>{children}</span>;
   }
 
   return (
     <>
       <span
         ref={anchorRef}
+        style={style}
         tabIndex={focusable ? 0 : undefined}
         aria-describedby={open ? id : undefined}
         onMouseEnter={() => setOpen(true)}

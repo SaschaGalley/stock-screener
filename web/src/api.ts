@@ -30,7 +30,7 @@ import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
 import type {
-  Feed, IncomeFlows, TrackRecordView, VerdictRecordSummary, VerdictRecordView,
+  CoverageView, Feed, IncomeFlows, TrackRecordView, VerdictRecordSummary, VerdictRecordView,
 } from '../../src/stock-history-service';
 
 const BASE = '/api';
@@ -101,6 +101,9 @@ export const api = {
   // The archive, read back — see `src/stock-history-service.ts`.
   getAnalystRecord: (symbol: string) =>
     jsonFetch<{ symbol: string; data: TrackRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/analysts`),
+  /** Each firm's newest grade and target from the last year — the consensus card, firm by firm. */
+  getCoverage: (symbol: string) =>
+    jsonFetch<{ symbol: string; data: CoverageView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/coverage`),
   getVerdictRecord: (symbol: string) =>
     jsonFetch<{ symbol: string; data: VerdictRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/verdicts`),
   /** What happened across the watchlist over the last `days`. */

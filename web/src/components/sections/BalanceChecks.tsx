@@ -1,5 +1,6 @@
 import type { ComputedMetrics } from '../../types';
 import CheckMark from '../CheckMark';
+import Term from '../Term';
 
 /**
  * The balance sheet's plain questions, answered with the figures behind them
@@ -16,15 +17,15 @@ export default function BalanceChecks({ health }: { health: ComputedMetrics['hea
     <div className="mb-4 rounded border border-ink-800 bg-ink-950 p-3">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">
-          Bilanz-Check · {passed}/{health.checks.length} ✓
+          <Term k="concept.balanceChecks">Bilanz-Check · {passed}/{health.checks.length} ✓</Term>
         </div>
         {runway !== null && (
-          <div
+          <Term
+            k="concept.cashRunway"
             className={`font-mono text-xs ${runway >= 36 ? 'text-emerald-400' : runway >= 12 ? 'text-amber-400' : 'text-red-400'}`}
-            title="Cash geteilt durch den monatlichen Free-Cash-Flow-Abfluss der letzten zwölf Monate"
           >
             Cash-Runway {runway >= 120 ? '> 10 Jahre' : `${Math.round(runway)} Monate`}
-          </div>
+          </Term>
         )}
       </div>
       <ul className="grid gap-x-6 gap-y-1 md:grid-cols-2">

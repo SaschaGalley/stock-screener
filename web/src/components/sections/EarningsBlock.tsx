@@ -3,6 +3,7 @@ import ForwardGrowthChart from '../charts/ForwardGrowthChart';
 import ForecastChart from '../charts/ForecastChart';
 import { fmt } from '../../format';
 import { useMoney } from '../../currency';
+import Term from '../Term';
 
 interface Props {
   financials: any;
@@ -20,7 +21,7 @@ export default function EarningsBlock({ financials: f }: Props) {
       {f.earningsSurprises?.length > 0 && (
         <div>
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-            Past Surprises (last 4 qtrs)
+            <Term k="concept.surprises">Past Surprises (last 4 qtrs)</Term>
           </h3>
           <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 200 }}>
             <EarningsSurpriseChart surprises={f.earningsSurprises} />
@@ -31,7 +32,7 @@ export default function EarningsBlock({ financials: f }: Props) {
                 <th className="py-1 pr-2 text-left font-medium">Qtr</th>
                 <th className="py-1 px-2 text-right font-medium">Estimate</th>
                 <th className="py-1 px-2 text-right font-medium">Actual</th>
-                <th className="py-1 pl-2 text-right font-medium">Surprise</th>
+                <th className="py-1 pl-2 text-right font-medium"><Term k="concept.surprisePct">Surprise</Term></th>
               </tr>
             </thead>
             <tbody>
@@ -53,7 +54,7 @@ export default function EarningsBlock({ financials: f }: Props) {
       {f.earningsEstimates?.length > 0 && (
         <div>
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-            Forward Estimates (analyst consensus)
+            <Term k="concept.forwardEstimates">Forward Estimates (analyst consensus)</Term>
           </h3>
           <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 200 }}>
             <ForwardGrowthChart estimates={f.earningsEstimates} />

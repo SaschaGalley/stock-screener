@@ -10,6 +10,8 @@ import {
 } from '../../../../src/analysis/valuation-history';
 import type { FairRatio } from '../../../../src/analysis/fair-ratio';
 import Tip from '../Tip';
+import Term from '../Term';
+import { HISTORY_MULTIPLE_TERMS, type GlossaryKey } from '../../glossary';
 
 type FairRatios = Partial<Record<HistoryMultiple, FairRatio>>;
 
@@ -67,10 +69,10 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
     return <p className="text-xs text-ink-500">Für diesen Wert lässt sich keine Kurshistorie rekonstruieren.</p>;
   }
 
-  const views: { key: View; label: string; disabled?: string }[] = [
-    { key: 'fair', label: 'Fair Value vs. Kurs', disabled: history.source !== 'sec' ? 'Nur für Werte mit SEC-Filings' : undefined },
-    { key: 'earnings', label: 'Kurs vs. Gewinn' },
-    { key: 'multiples', label: 'Multiples' },
+  const views: { key: View; label: string; term: GlossaryKey; disabled?: string }[] = [
+    { key: 'fair', label: 'Fair Value vs. Kurs', term: 'concept.vh.fair', disabled: history.source !== 'sec' ? 'Nur für Werte mit SEC-Filings' : undefined },
+    { key: 'earnings', label: 'Kurs vs. Gewinn', term: 'concept.vh.earnings' },
+    { key: 'multiples', label: 'Multiples', term: 'concept.vh.multiples' },
   ];
 
   return (
@@ -90,7 +92,7 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
                   : 'border-ink-700 bg-ink-950 text-ink-400 hover:bg-ink-800'
             }`}
           >
-            {v.label}
+            <Term k={v.term} extra={v.disabled} focusable={false}>{v.label}</Term>
           </button>
         ))}
       </div>
@@ -318,13 +320,12 @@ function MultiplesView({ history }: { history: History }) {
         {available.map((m) => (
           <button
             key={m.key}
-            title={m.hint}
             onClick={() => setKey(m.key)}
             className={`rounded px-2 py-0.5 font-mono text-[11px] transition ${
               key === m.key ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'
             }`}
           >
-            {m.label}
+            <Term k={HISTORY_MULTIPLE_TERMS[m.key]} focusable={false}>{m.label}</Term>
           </button>
         ))}
       </div>
@@ -353,7 +354,9 @@ function MultiplesTable({ history, sector, fair }: { history: History; sector: S
 
   return (
     <div>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Multiples gegen Historie und Branche</h3>
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+        <Term k="concept.vh.multiplesTable">Multiples gegen Historie und Branche</Term>
+      </h3>
       <table className="w-full text-xs tabular">
         <thead>
           <tr className="text-[10px] uppercase tracking-wider text-ink-600">
@@ -361,20 +364,20 @@ function MultiplesTable({ history, sector, fair }: { history: History; sector: S
             <th />
             <th colSpan={5} className="border-b border-ink-800 pb-0.5 text-center font-normal">Gegen die eigene Historie</th>
             {sector && (
-              <th colSpan={2} className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell" title={`${sector.level === 'industry' ? 'Branche' : 'Sektor'} im Universum: Watchlist und Referenzwerte`}>
-                {sector.level === 'industry' ? 'Branche' : 'Sektor'} · {sector.group}
+              <th colSpan={2} className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell">
+                <Term k="concept.vh.sector">{sector.level === 'industry' ? 'Branche' : 'Sektor'} · {sector.group}</Term>
               </th>
             )}
-            {hasFair && <th className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell">Modell</th>}
+            {hasFair && <th className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell"><Term k="concept.vh.fairRatio">Modell</Term></th>}
           </tr>
           <tr className="border-b border-ink-700 text-[10px] uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal" />
             <th className="py-1 text-right font-normal">Heute</th>
-            <th className="py-1 text-right font-normal">Median 3J</th>
-            <th className="py-1 text-right font-normal">Median {span}</th>
-            <th className="py-1 text-right font-normal">vs. {span}</th>
-            <th className="hidden py-1 text-right font-normal sm:table-cell">Teurer als</th>
-            <th className="py-1 text-right font-normal">Kurs beim {span}-Median</th>
+            <th className="py-1 text-right font-normal"><Term k="concept.vh.median">Median 3J</Term></th>
+            <th className="py-1 text-right font-normal"><Term k="concept.vh.median">Median {span}</Term></th>
+            <th className="py-1 text-right font-normal"><Term k="concept.vh.vs">vs. {span}</Term></th>
+            <th className="hidden py-1 text-right font-normal sm:table-cell"><Term k="concept.vh.rank">Teurer als</Term></th>
+            <th className="py-1 text-right font-normal"><Term k="concept.vh.impliedPrice">Kurs beim {span}-Median</Term></th>
             {sector && (
               <>
                 <th className="hidden py-1 text-right font-normal md:table-cell">Median</th>
@@ -385,11 +388,11 @@ function MultiplesTable({ history, sector, fair }: { history: History; sector: S
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ key, label, hint, s }) => {
+          {rows.map(({ key, label, s }) => {
             const vs = s.latest !== null && s.median5 !== null ? s.latest / s.median5 - 1 : null;
             return (
-              <tr key={key} className="border-b border-ink-800" title={hint}>
-                <td className="py-1 pr-2 text-ink-400">{label}</td>
+              <tr key={key} className="border-b border-ink-800">
+                <td className="py-1 pr-2 text-ink-400"><Term k={HISTORY_MULTIPLE_TERMS[key]}>{label}</Term></td>
                 <td className="py-1 text-right font-mono text-ink-100">{x(s.latest)}</td>
                 <td className="py-1 text-right font-mono text-ink-300">{x(s.median3)}</td>
                 <td className="py-1 text-right font-mono text-ink-300">{x(s.median5)}</td>

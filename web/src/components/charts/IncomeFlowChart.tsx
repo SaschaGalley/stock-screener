@@ -5,6 +5,7 @@ import { fmtBig } from '../../format';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useArchive } from '../useArchive';
 import { flowLinks, type IncomeFlow } from '../../../../src/analysis/income-flow';
+import Term from '../Term';
 
 /**
  * Where the revenue goes, as filed: revenue into the cost of what was sold
@@ -37,7 +38,9 @@ export default function IncomeFlowChart({ symbol }: { symbol: string }) {
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">Vom Umsatz zum Gewinn</h3>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          <Term k="concept.incomeFlow">Vom Umsatz zum Gewinn</Term>
+        </h3>
         <div className="flex flex-wrap gap-1">
           {periods.map((p) => (
             <button

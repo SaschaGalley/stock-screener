@@ -7,6 +7,7 @@ import type {
 } from "../types";
 import VerdictHero from "./VerdictHero";
 import VerdictChanges from "./VerdictChanges";
+import { useArchive } from "./useArchive";
 import BullBearRisks from "./BullBearRisks";
 import StockHeader from "./StockHeader";
 import { verdictForScore } from "../format";
@@ -85,6 +86,8 @@ export default function AnalysisView({
   const [bundleLoading, setBundleLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [localRefresh, setLocalRefresh] = useState(0);
+  // Firm by firm, behind the consensus card — before the early returns, as hooks must be.
+  const coverage = useArchive(() => api.getCoverage(symbol), [symbol, refreshKey, localRefresh]).data ?? null;
 
   // Clear stale cross-ticker state immediately when the symbol changes so we
   // don't flash the previous ticker's header/verdict while the new bundle
@@ -273,6 +276,7 @@ export default function AnalysisView({
               // How the verdict was arrived at — the calculation, not a retelling.
               breakdown={analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
               verdictChanges={<VerdictChanges symbol={symbol} refreshKey={refreshKey} />}
+              coverage={coverage}
             />
 
             {/* TIER 2: THE CASE FOR AND AGAINST — what a reader wants right after the verdict. */}
@@ -298,6 +302,7 @@ export default function AnalysisView({
               m.composite.conservative.models.length > 0) && (
               <Section
                 title="Fair Value Distribution"
+                info="section.fairValue"
                 subtitle={`Primary ${sym}${m.composite.primary.median?.toFixed(0) ?? "—"} · Conservative ${sym}${m.composite.conservative.median?.toFixed(0) ?? "—"}`}
               >
                 <div className="mb-2 text-[11px] text-ink-500">
@@ -329,6 +334,7 @@ export default function AnalysisView({
             {/* TIER 3b: THE SAME QUESTION OVER FIVE YEARS — is today unusual for this stock? */}
             <Section
               title="Bewertung im Zeitverlauf"
+              info="section.valuationHistory"
               subtitle="Fair Value, Gewinn und Multiples der letzten fünf Jahre"
               storageKey="valuation-history"
             >
@@ -338,13 +344,14 @@ export default function AnalysisView({
             {/* TIER 4: VALUATION DETAILS */}
             <Section
               title="Valuation Models"
+              info="section.valuationModels"
               subtitle="DCF, peer multiples, reverse DCF"
             >
               <ValuationDetail metrics={m} price={f.price} />
             </Section>
 
             {/* TIER 5: QUALITY & RISK */}
-            <Section title="Quality & Risk Scores">
+            <Section title="Quality & Risk Scores" info="section.quality">
               <BalanceChecks health={m.health} />
               <QualityScores metrics={m} />
             </Section>
@@ -352,7 +359,7 @@ export default function AnalysisView({
             {/* TIER 6: EARNINGS (history + forward) */}
             {(f.earningsSurprises?.length > 0 ||
               f.earningsEstimates?.length > 0) && (
-              <Section title="Earnings">
+              <Section title="Earnings" info="section.earnings">
                 <EarningsBlock financials={f} />
               </Section>
             )}
@@ -360,6 +367,7 @@ export default function AnalysisView({
             {/* TIER 7b: HOW GOOD THE TARGETS IN THE CONSENSUS CARD HAVE BEEN */}
             <Section
               title="Analysten: Trefferquote"
+              info="section.analystRecord"
               subtitle="Jedes archivierte Kursziel gegen den Kurs ein Jahr später"
               storageKey="analyst-record"
             >
@@ -369,6 +377,7 @@ export default function AnalysisView({
             {/* TIER 7c: THE SAME QUESTION, ASKED OF OUR OWN VERDICTS */}
             <Section
               title="Unser Urteil: Trefferquote"
+              info="section.verdictRecord"
               subtitle="Jeder Urteilswechsel gegen den S&P 500 danach"
               storageKey="verdict-record"
             >
@@ -376,7 +385,7 @@ export default function AnalysisView({
             </Section>
 
             {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}
-            <Section title="Fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
+            <Section title="Fundamentals" info="section.fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
               <div className="space-y-5">
                 {f.fundamentalsHistory &&
                   (f.fundamentalsHistory.revenue?.length > 0 ||
@@ -398,7 +407,7 @@ export default function AnalysisView({
 
             {/* TIER 7: PEER COMPARISON */}
             {bundle.sectorMedians && (
-              <Section title="Peer Group Comparison">
+              <Section title="Peer Group Comparison" info="section.peers">
                 <PeerCompare
                   ratios={m.ratios}
                   evMultiples={m.evMultiples}
@@ -412,6 +421,7 @@ export default function AnalysisView({
             {bundle.technicalSignals && (
               <Section
                 title="Technical Signals"
+                info="section.technicals"
                 subtitle={`Overall: ${bundle.technicalSignals.overall.verdict.toLowerCase()}`}
               >
                 <TechnicalSignalsPanel signals={bundle.technicalSignals} />
@@ -422,6 +432,7 @@ export default function AnalysisView({
             {bundle.marketSignals && (
               <Section
                 title="Price Action"
+                info="section.priceAction"
                 subtitle="returns, volatility, position, relative strength"
                 defaultOpen={false}
               >
@@ -433,6 +444,7 @@ export default function AnalysisView({
             {bundle.marketSignals && (
               <Section
                 title="Market Context"
+                info="section.marketContext"
                 subtitle="options, analyst revisions, macro"
                 defaultOpen={false}
               >
@@ -441,7 +453,7 @@ export default function AnalysisView({
             )}
 
             {/* TIER 10: OWNERSHIP & FLOW */}
-            <Section title="Ownership & Insider Activity" defaultOpen={false}>
+            <Section title="Ownership & Insider Activity" info="section.ownership" defaultOpen={false}>
               <div className="space-y-5">
                 <OwnershipFlow financials={f} />
                 <HoldersPanel symbol={symbol} />
@@ -449,12 +461,12 @@ export default function AnalysisView({
             </Section>
 
             {/* TIER 10b: WHAT HAPPENED WHEN — every archived event on one axis */}
-            <Section title="Zeitleiste" subtitle="Analysten, Insider, Zahlen, Dividenden, Urteil, Ereignisse, Kurssprünge" storageKey="timeline">
+            <Section title="Zeitleiste" info="section.timeline" subtitle="Analysten, Insider, Zahlen, Dividenden, Urteil, Ereignisse, Kurssprünge" storageKey="timeline">
               <StockTimeline symbol={symbol} />
             </Section>
 
             {/* TIER 11: DISTILL + PERPLEXITY + NEWS + SEARCH TRACES */}
-            <Section title="Research & News" defaultOpen={false}>
+            <Section title="Research & News" info="section.research" defaultOpen={false}>
               <NewsAndResearch
                 symbol={symbol}
                 news={bundle.news}

@@ -8,6 +8,7 @@ import {
 } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { groupRows, toggleGroup, type ListView } from './stockList';
+import Term from './Term';
 
 interface Props {
   /** Already filtered and sorted — see `applyListView`. */
@@ -122,7 +123,7 @@ export default function StockRail({
           <ul>
             <li className={`${HEADER_HEIGHT} sticky top-0 z-10 flex items-center justify-between border-b border-ink-700 bg-ink-900 px-3 text-[10px] font-semibold uppercase tracking-wider text-ink-500`}>
               <span>Aktie</span>
-              <span>Score</span>
+              <Term k="list.score">Score</Term>
             </li>
             {groups
               ? groups.map((g) => {

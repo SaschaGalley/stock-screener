@@ -11,6 +11,7 @@ import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { ChartIcon, GearIcon, PulseIcon } from './icons';
 import { averageScore, groupRows, scoreColor, toggleGroup, type ListView } from './stockList';
 import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
+import Term from './Term';
 
 interface Props {
   /** Already filtered and sorted — see `applyListView`. */
@@ -226,18 +227,14 @@ export default function StockTable({
             <thead className="sticky top-0 z-10 bg-ink-900 text-[10px] uppercase tracking-wider text-ink-500">
               <tr className={`${HEADER_HEIGHT} border-b border-ink-700`}>
                 <th className="px-3 py-2 text-left font-semibold">Aktie</th>
-                <th className="px-2 py-2 text-right font-semibold">Score</th>
-                <th className={`${COL.trend} px-2 py-2 text-left font-semibold`}>Verlauf</th>
-                <th className={`${COL.verdict} px-2 py-2 text-left font-semibold`}>Verdict</th>
-                <th className={`${COL.price} px-2 py-2 text-right font-semibold`}>Kurs</th>
-                <th className={`${COL.target} px-2 py-2 text-right font-semibold`}>
-                  <Tip content="Analysten-Konsensziel und Abstand zum Kurs">Ø Ziel</Tip>
-                </th>
-                <th className={`${COL.model} px-2 py-2 text-right font-semibold`}>
-                  <Tip content="Composite Fair Value der Bewertungsmodelle">Modell-FV</Tip>
-                </th>
-                <th className={`${COL.mcap} px-2 py-2 text-right font-semibold`}>MCap</th>
-                <th className={`${COL.age} px-3 py-2 text-right font-semibold`}>Aktualität</th>
+                <th className="px-2 py-2 text-right font-semibold"><Term k="list.score">Score</Term></th>
+                <th className={`${COL.trend} px-2 py-2 text-left font-semibold`}><Term k="list.trend">Verlauf</Term></th>
+                <th className={`${COL.verdict} px-2 py-2 text-left font-semibold`}><Term k="list.verdict">Verdict</Term></th>
+                <th className={`${COL.price} px-2 py-2 text-right font-semibold`}><Term k="list.price">Kurs</Term></th>
+                <th className={`${COL.target} px-2 py-2 text-right font-semibold`}><Term k="list.target">Ø Ziel</Term></th>
+                <th className={`${COL.model} px-2 py-2 text-right font-semibold`}><Term k="list.modelFv">Modell-FV</Term></th>
+                <th className={`${COL.mcap} px-2 py-2 text-right font-semibold`}><Term k="list.mcap">MCap</Term></th>
+                <th className={`${COL.age} px-3 py-2 text-right font-semibold`}><Term k="list.age">Aktualität</Term></th>
               </tr>
             </thead>
             <tbody>

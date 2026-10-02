@@ -51,7 +51,8 @@ import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
-  analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord, watchlistFeed,
+  analystCoverage, analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord,
+  watchlistFeed,
 } from './stock-history-service.js';
 import { QuoteBrief, quoteBriefs, searchByQuery } from './data/yfinance.js';
 import { yahooTicker } from './data/universe.js';
@@ -1101,6 +1102,7 @@ export function createApp(): express.Express {
       }
     });
   archiveView('analysts', (s) => analystTrackRecord(s));
+  archiveView('coverage', (s) => analystCoverage(s));
   archiveView('verdicts', (s) => verdictTrackRecord(s));
   archiveView('timeline', (s, req) => {
     const days = Number(req.query.days ?? 365);

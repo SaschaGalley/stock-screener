@@ -4,7 +4,8 @@ import { scoreBarColor, scoreColor } from '../stockList';
 import { verdictForScore } from '../../format';
 import { useStoredOpen } from '../Section';
 import CheckMark, { type CheckMarkKind } from '../CheckMark';
-import Tip from '../Tip';
+import Term from '../Term';
+import { DIMENSION_GLOSSARY, GLOSSARY, PILLAR_GLOSSARY } from '../../glossary';
 
 /**
  * Why the number is the number — as a strip under the verdict.
@@ -47,7 +48,7 @@ export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
         </div>
         {narrative?.dimensions && (
           <div>
-            <GroupLabel dot="bg-violet-500">Text · Geschäftslage laut Quellen</GroupLabel>
+            <GroupLabel dot="bg-violet-500"><Term k="concept.dimension">Text · Geschäftslage laut Quellen</Term></GroupLabel>
             <Dimensions dimensions={narrative.dimensions} />
           </div>
         )}
@@ -79,22 +80,22 @@ function Formula({ card }: { card: ScoreCard }) {
   return (
     <div>
       <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 font-mono text-xs text-ink-400">
-        <Tip className="text-sky-400" content={dataNote}>Zahlen {factor.score.toFixed(1)}</Tip>
-        <span>× {fPct} %</span>
+        <Term k="score.factor.score" extra={dataNote} className="text-sky-400">Zahlen {factor.score.toFixed(1)}</Term>
+        <Term k="score.final.factorWeight">× {fPct} %</Term>
         {narrative && (
           <>
             <span>+</span>
-            <Tip className="text-violet-400" content={narrative.summary}>
+            <Term k="score.narrative.score" extra={narrative.summary} className="text-violet-400">
               Text {narrative.score === null ? 'Enthaltung' : narrative.score.toFixed(1)}
-            </Tip>
+            </Term>
             <span>× {nPct} %</span>
           </>
         )}
         <span>→ {final.blend.toFixed(1)}</span>
         {final.adjustment !== 0 && (
-          <Tip content={final.adjustmentReason}>
+          <Term k="score.final.adjustment" extra={final.adjustmentReason}>
             {final.adjustment > 0 ? '+' : '−'} {Math.abs(final.adjustment).toFixed(1)} Korrektur
-          </Tip>
+          </Term>
         )}
         <span>=</span>
         <span className={`text-sm font-bold ${scoreColor(final.score)}`}>{final.score.toFixed(1)}</span>
@@ -102,12 +103,13 @@ function Formula({ card }: { card: ScoreCard }) {
         {/* Against the band of the *final* score, not the factor's: those two
             differ whenever the blend moved the number, which is not a cap. */}
         {verdictForScore(final.score) !== final.verdict && (
-          <Tip
+          <Term
+            k="concept.capped"
+            extra={`Der Score allein wäre ${verdictForScore(final.score)}.`}
             className="rounded border border-amber-700 px-1 font-sans text-[9px] uppercase text-amber-400"
-            content={`Der Score allein wäre ${verdictForScore(final.score)}`}
           >
             gedeckelt
-          </Tip>
+          </Term>
         )}
       </div>
       <div className="mt-1.5 flex h-1 overflow-hidden rounded-full bg-ink-800">
@@ -129,17 +131,20 @@ function GroupLabel({ dot, children }: { dot: string; children: ReactNode }) {
 
 function PillarCell({ p }: { p: ScorePillar }) {
   const width = p.score === null ? 0 : (p.score / 10) * 100;
-  const title = (
-    <ul className="space-y-0.5">
-      {p.criteria.map((c) => (
-        <li key={c.label}><span className="font-semibold text-ink-100">{c.label}:</span> {c.note}</li>
-      ))}
-    </ul>
+  const criteria = (
+    <>
+      <ul className="space-y-0.5">
+        {p.criteria.map((c) => (
+          <li key={c.label}><span className="font-semibold text-ink-100">{c.label}:</span> {c.note}</li>
+        ))}
+      </ul>
+      <div className="mt-1.5 text-ink-500">{GLOSSARY['concept.pillarCell']}</div>
+    </>
   );
   return (
-    <Tip content={title} className="block">
+    <div>
       <div className="flex items-baseline justify-between gap-2 text-[11px]">
-        <span className="truncate text-ink-300">{p.label}</span>
+        <Term text={PILLAR_GLOSSARY[p.key]} extra={criteria} className="truncate text-ink-300">{p.label}</Term>
         <span className={`font-mono font-semibold ${scoreColor(p.score)}`}>
           {p.score === null ? '—' : p.score.toFixed(1)}
         </span>
@@ -151,7 +156,7 @@ function PillarCell({ p }: { p: ScorePillar }) {
         {Math.round(p.effectiveWeight * 100)} % Gewicht · {passed(p)}/{p.criteria.length} ✓
         {p.coverage < 1 && <span className="text-amber-600"> · {Math.round(p.coverage * 100)} % Abdeckung</span>}
       </div>
-    </Tip>
+    </div>
   );
 }
 
@@ -175,13 +180,14 @@ function Dimensions({ dimensions }: { dimensions: NarrativeDimensions }) {
           : r < 0 ? 'border-red-800 text-red-400'
           : 'border-ink-600 text-ink-300';
         return (
-          <Tip
+          <Term
             key={key}
-            content={d?.note || 'Die Quellen sagen dazu nichts'}
+            text={DIMENSION_GLOSSARY[key]}
+            extra={d?.note || 'Die Quellen sagen dazu nichts.'}
             className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${cls}`}
           >
             {DIMENSION_LABELS[key]} {r == null ? '–' : r > 0 ? `+${r}` : r}
-          </Tip>
+          </Term>
         );
       })}
     </div>

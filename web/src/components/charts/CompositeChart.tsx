@@ -2,6 +2,7 @@ import ReactECharts from 'echarts-for-react';
 import type { CompositeFairValue } from '../../types';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useMoney } from '../../currency';
+import { GLOSSARY, MODEL_TERMS } from '../../glossary';
 
 interface Props {
   composite: CompositeFairValue;
@@ -50,11 +51,15 @@ export default function CompositeChart({ composite, price }: Props) {
           backgroundColor: CHART_COLORS.bg,
           borderColor: CHART_COLORS.grid,
           textStyle: { color: CHART_COLORS.text, fontSize: 12 },
+          // Wide enough for the model's explanation to wrap rather than run off.
+          extraCssText: 'max-width: 340px; white-space: normal;',
           formatter: (p: any) => {
             const row = rows[p.dataIndex];
             const tierLabel = row.tier === 'primary' ? 'Primary' : 'Conservative';
+            const term = MODEL_TERMS[row.name];
             return `${p.name} (${tierLabel}): <b>${cur}${p.value.toFixed(2)}</b><br/>vs price ${cur}${price.toFixed(2)}: ` +
-              `${((p.value - price) / price * 100).toFixed(1)}%`;
+              `${((p.value - price) / price * 100).toFixed(1)}%` +
+              (term ? `<div style="margin-top:6px;font-size:11px;line-height:1.4;opacity:.8">${GLOSSARY[term]}</div>` : '');
           },
         },
         xAxis: {

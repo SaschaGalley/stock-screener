@@ -1,4 +1,6 @@
 import { useMoney } from '../../currency';
+import Term from '../Term';
+import type { GlossaryKey } from '../../glossary';
 
 interface Props {
   financials: any;
@@ -14,13 +16,13 @@ export default function OwnershipFlow({ financials: f }: Props) {
         {f.shortPercentOfFloat != null && Number.isFinite(f.shortPercentOfFloat) ? (
           <table className="w-full text-xs tabular">
             <tbody>
-              <Row label="% of Float" value={`${(f.shortPercentOfFloat * 100).toFixed(1)}%`}
+              <Row label="% of Float" term="financials.shortPercentOfFloat" value={`${(f.shortPercentOfFloat * 100).toFixed(1)}%`}
                 accentColor={f.shortPercentOfFloat > 0.20 ? 'text-red-400' : f.shortPercentOfFloat > 0.08 ? 'text-amber-400' : 'text-emerald-400'} />
-              <Row label="Shares Short"  value={fmtCount(f.sharesShort)} />
-              <Row label="Days to Cover" value={f.shortRatio != null && Number.isFinite(f.shortRatio) ? f.shortRatio.toFixed(1) + 'd' : '—'} />
+              <Row label="Shares Short"  term="financials.sharesShort" value={fmtCount(f.sharesShort)} />
+              <Row label="Days to Cover" term="financials.shortRatio" value={f.shortRatio != null && Number.isFinite(f.shortRatio) ? f.shortRatio.toFixed(1) + 'd' : '—'} />
               {f.sharesShort != null && f.sharesShortPriorMonth != null && f.sharesShortPriorMonth > 0 && (() => {
                 const chg = (f.sharesShort - f.sharesShortPriorMonth) / f.sharesShortPriorMonth * 100;
-                return <Row label="MoM" value={`${chg >= 0 ? '+' : ''}${chg.toFixed(0)}%`}
+                return <Row label="MoM" term="concept.shortMoM" value={`${chg >= 0 ? '+' : ''}${chg.toFixed(0)}%`}
                   accentColor={chg >= 0 ? 'text-red-400' : 'text-emerald-400'} />;
               })()}
             </tbody>
@@ -35,12 +37,12 @@ export default function OwnershipFlow({ financials: f }: Props) {
           <table className="w-full text-xs tabular">
             <tbody>
               {f.institutionsPercentHeld != null && Number.isFinite(f.institutionsPercentHeld) && (
-                <Row label="Institutions"
+                <Row label="Institutions" term="financials.institutionsPercentHeld"
                   value={`${(f.institutionsPercentHeld * 100).toFixed(1)}%`}
                   accent={f.institutionsCount ? `${f.institutionsCount.toLocaleString()} holders` : ''} />
               )}
               {f.insidersPercentHeld != null && Number.isFinite(f.insidersPercentHeld) && (
-                <Row label="Insiders" value={`${(f.insidersPercentHeld * 100).toFixed(1)}%`} />
+                <Row label="Insiders" term="financials.insidersPercentHeld" value={`${(f.insidersPercentHeld * 100).toFixed(1)}%`} />
               )}
             </tbody>
           </table>
@@ -50,7 +52,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
       {/* Insider activity */}
       <div>
         <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-          Insider Activity <span className="text-ink-600">(6mo)</span>
+          <Term k="concept.insiderActivity">Insider Activity</Term> <span className="text-ink-600">(6mo)</span>
         </h3>
         {(f.insiderBuyCount > 0 || f.insiderSellCount > 0) ? (
           <table className="w-full text-xs tabular">
@@ -86,10 +88,10 @@ export default function OwnershipFlow({ financials: f }: Props) {
   );
 }
 
-function Row({ label, value, accent, accentColor }: { label: string; value: string; accent?: string; accentColor?: string }) {
+function Row({ label, term, value, accent, accentColor }: { label: string; term?: GlossaryKey; value: string; accent?: string; accentColor?: string }) {
   return (
     <tr className="border-b border-ink-800">
-      <td className="py-1 pr-2 text-ink-400">{label}</td>
+      <td className="py-1 pr-2 text-ink-400"><Term k={term}>{label}</Term></td>
       <td className={`py-1 text-right font-mono ${accentColor ?? 'text-ink-100'}`}>{value}</td>
       {accent !== undefined && <td className="py-1 pl-2 text-right text-[10px] text-ink-500">{accent}</td>}
     </tr>

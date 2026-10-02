@@ -1,4 +1,6 @@
 import { useState, useEffect, ReactNode } from 'react';
+import type { GlossaryKey } from '../glossary';
+import Term from './Term';
 
 interface Props {
   title: string;
@@ -8,6 +10,8 @@ interface Props {
   rightHeader?: ReactNode;
   /** Stable key used to persist open state in localStorage. Defaults to title. */
   storageKey?: string;
+  /** What the section is for, behind an ⓘ beside its title. */
+  info?: GlossaryKey;
 }
 
 const STORAGE_PREFIX = 'stockcli:section:';
@@ -35,7 +39,7 @@ export function useStoredOpen(key: string, defaultOpen: boolean): [boolean, (f: 
   return [open, setOpen];
 }
 
-export default function Section({ title, subtitle, defaultOpen = true, children, rightHeader, storageKey }: Props) {
+export default function Section({ title, subtitle, defaultOpen = true, children, rightHeader, storageKey, info }: Props) {
   const [open, setOpen] = useStoredOpen(storageKey ?? title, defaultOpen);
 
   return (
@@ -47,7 +51,9 @@ export default function Section({ title, subtitle, defaultOpen = true, children,
       >
         <div className="flex items-baseline gap-3">
           <span className={`text-ink-500 transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
-          <h2 className="text-sm font-semibold text-ink-100">{title}</h2>
+          <h2 className="text-sm font-semibold text-ink-100">
+            {info ? <Term k={info} focusable={false}>{title}</Term> : title}
+          </h2>
           {subtitle && <span className="text-[11px] text-ink-500">{subtitle}</span>}
         </div>
         {rightHeader && <div className="flex items-center gap-2">{rightHeader}</div>}

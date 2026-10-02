@@ -1,10 +1,14 @@
 import ReactECharts from 'echarts-for-react';
 import type { SignalGroup } from '../../types';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
+import Term from '../Term';
+import type { GlossaryKey } from '../../glossary';
 
 interface Props {
   group: SignalGroup;
   title: string;
+  /** What the group is, behind an ⓘ beside its title. */
+  term?: GlossaryKey;
 }
 
 /**
@@ -12,7 +16,7 @@ interface Props {
  *   −1 STRONG SELL ←→ STRONG BUY +1
  * Needle position reflects (buy − sell) / total.
  */
-export default function TechnicalGauge({ group, title }: Props) {
+export default function TechnicalGauge({ group, title, term }: Props) {
   // Map score from [-1, 1] to ECharts gauge value [0, 1]
   const gaugeValue = (group.score + 1) / 2;
 
@@ -29,7 +33,7 @@ export default function TechnicalGauge({ group, title }: Props) {
   return (
     <div className="rounded border border-ink-700 bg-ink-950 p-3">
       <div className="text-center text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-        {title}
+        <Term k={term}>{title}</Term>
       </div>
       <div style={{ height: 180 }}>
         <ReactECharts

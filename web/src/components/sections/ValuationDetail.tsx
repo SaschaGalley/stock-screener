@@ -1,6 +1,8 @@
 import type { ComputedMetrics, PeerMultiplesEntry } from '../../types';
 import { fmtSignedPct, mosColor, fmt, fmtPct } from '../../format';
 import { useMoney } from '../../currency';
+import Term from '../Term';
+import type { GlossaryKey } from '../../glossary';
 
 interface Props {
   metrics: ComputedMetrics;
@@ -10,6 +12,12 @@ interface Props {
 const METRIC_LABEL: Record<string, string> = {
   pe: 'P/E', evEbitda: 'EV/EBITDA', evRevenue: 'EV/Revenue',
   priceFCF: 'P/FCF', priceSales: 'P/S', pb: 'P/B',
+};
+
+/** The peer multiples by the keys `peerMultiples.byMultiple` carries. */
+const METRIC_TERM: Record<string, GlossaryKey> = {
+  pe: 'metrics.ratios.pe', evEbitda: 'metrics.evMultiples.evToEbitda', evRevenue: 'metrics.evMultiples.evToRevenue',
+  priceFCF: 'metrics.evMultiples.priceToFCF', priceSales: 'metrics.evMultiples.priceToSales', pb: 'metrics.ratios.pb',
 };
 
 export default function ValuationDetail({ metrics, price }: Props) {
@@ -32,15 +40,15 @@ export default function ValuationDetail({ metrics, price }: Props) {
     : 'no positive book/ROE';
   const ddmNote    = ddm.isApplicable ? `g=${pctOf(ddm.dividendGrowthRate)} → ${pctOf(ddm.terminalGrowthRate)}` : 'no dividend';
 
-  const rows = [
-    { label: `DCF (revenue-driven, g=${pctOf(dcf.growthYear2)})`, value: dcf.fairValue, note: dcfNote },
-    { label: 'Graham Number',         value: grahamNumber.grahamNumber, note: grahamNumber.grahamNumber === null ? 'requires +EPS & book value' : null },
-    { label: 'Graham Revised V*',     value: grahamRevised.fairValue,   note: grNote },
-    { label: 'Peter Lynch',           value: peterLynch.fairValue,      note: lynchNote },
-    { label: 'EPV (Greenwald)',       value: epv.fairValue,             note: epvNote },
-    { label: 'DDM (two-stage)',       value: ddm.isApplicable ? ddm.fairValue : null, note: ddmNote },
-    { label: 'Excess Return (RIM)',   value: rim.isApplicable ? rim.fairValue : null, note: rimNote },
-    { label: 'NCAV (Graham floor)',   value: ncav.isApplicable ? ncav.ncavPerShare : null, note: ncav.isApplicable ? null : 'CA ≤ liabilities' },
+  const rows: { label: string; term: GlossaryKey; value: number | null; note: string | null }[] = [
+    { label: `DCF (revenue-driven, g=${pctOf(dcf.growthYear2)})`, term: 'metrics.dcf.fairValue', value: dcf.fairValue, note: dcfNote },
+    { label: 'Graham Number',       term: 'metrics.grahamNumber.grahamNumber', value: grahamNumber.grahamNumber, note: grahamNumber.grahamNumber === null ? 'requires +EPS & book value' : null },
+    { label: 'Graham Revised V*',   term: 'metrics.grahamRevised.fairValue', value: grahamRevised.fairValue,   note: grNote },
+    { label: 'Peter Lynch',         term: 'metrics.peterLynch.fairValue', value: peterLynch.fairValue,      note: lynchNote },
+    { label: 'EPV (Greenwald)',     term: 'metrics.epv.fairValue', value: epv.fairValue,             note: epvNote },
+    { label: 'DDM (two-stage)',     term: 'metrics.ddm.fairValue', value: ddm.isApplicable ? ddm.fairValue : null, note: ddmNote },
+    { label: 'Excess Return (RIM)', term: 'metrics.rim.fairValue', value: rim.isApplicable ? rim.fairValue : null, note: rimNote },
+    { label: 'NCAV (Graham floor)', term: 'metrics.ncav.ncavPerShare', value: ncav.isApplicable ? ncav.ncavPerShare : null, note: ncav.isApplicable ? null : 'CA ≤ liabilities' },
   ];
 
   return (
@@ -48,14 +56,14 @@ export default function ValuationDetail({ metrics, price }: Props) {
       {/* Single-equation models */}
       <div>
         <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-          Single-Equation Models
+          <Term k="concept.singleEquation">Single-Equation Models</Term>
         </h3>
         <table className="w-full text-xs tabular">
           <thead>
             <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
               <th className="py-1.5 pr-2 text-left font-medium">Model</th>
               <th className="py-1.5 px-2 text-right font-medium">Fair Value</th>
-              <th className="py-1.5 pl-2 text-right font-medium">vs Price</th>
+              <th className="py-1.5 pl-2 text-right font-medium"><Term k="concept.vsPrice">vs Price</Term></th>
             </tr>
           </thead>
           <tbody>
@@ -64,7 +72,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
               return (
                 <tr key={r.label} className="border-b border-ink-800">
                   <td className="py-1.5 pr-2 text-ink-200">
-                    <div>{r.label}</div>
+                    <div><Term k={r.term}>{r.label}</Term></div>
                     {r.note && <div className="text-[10px] text-ink-500">{r.note}</div>}
                   </td>
                   <td className="py-1.5 px-2 text-right font-mono text-ink-100">
@@ -89,16 +97,16 @@ export default function ValuationDetail({ metrics, price }: Props) {
       <div className="space-y-4">
         <div>
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-            Peer-Multiples Fair Value <span className="text-ink-600">({peerMultiples.count} multiples)</span>
+            <Term k="metrics.peerMultiples.medianFairPrice">Peer-Multiples Fair Value</Term> <span className="text-ink-600">({peerMultiples.count} multiples)</span>
           </h3>
           {peerMultiples.byMultiple.length > 0 ? (
             <table className="w-full text-xs tabular">
               <thead>
                 <tr className="border-b border-ink-800 text-[10px] uppercase tracking-wider text-ink-500">
                   <th className="py-1.5 pr-2 text-left font-medium">Multiple</th>
-                  <th className="py-1.5 px-2 text-right font-medium">Sector Median</th>
-                  <th className="py-1.5 px-2 text-right font-medium">Implied Fair</th>
-                  <th className="py-1.5 pl-2 text-right font-medium">vs Price</th>
+                  <th className="py-1.5 px-2 text-right font-medium"><Term k="concept.sectorMedian">Sector Median</Term></th>
+                  <th className="py-1.5 px-2 text-right font-medium"><Term k="concept.impliedFair">Implied Fair</Term></th>
+                  <th className="py-1.5 pl-2 text-right font-medium"><Term k="concept.vsPrice">vs Price</Term></th>
                 </tr>
               </thead>
               <tbody>
@@ -106,7 +114,9 @@ export default function ValuationDetail({ metrics, price }: Props) {
                   const mos = e.fairPrice !== null ? (e.fairPrice - price) / price : null;
                   return (
                     <tr key={e.metric} className="border-b border-ink-800">
-                      <td className="py-1.5 pr-2 text-ink-200">{METRIC_LABEL[e.metric] ?? e.metric}</td>
+                      <td className="py-1.5 pr-2 text-ink-200">
+                        <Term k={METRIC_TERM[e.metric]}>{METRIC_LABEL[e.metric] ?? e.metric}</Term>
+                      </td>
                       <td className="py-1.5 px-2 text-right font-mono text-ink-300">
                         {e.sectorMedian !== null ? `${e.sectorMedian.toFixed(2)}x` : '—'}
                       </td>
@@ -138,7 +148,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
 
         <div>
           <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-            Reverse DCF
+            <Term k="metrics.reverseDCF.impliedGrowthRate">Reverse DCF</Term>
           </h3>
           {reverseDCF.isPossible && reverseDCF.impliedGrowthRate !== null ? (
             <div className="rounded border border-ink-800 bg-ink-950 p-3">
@@ -157,7 +167,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
 
         <div>
           <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-            Margin the price requires
+            <Term k="metrics.reverseDCF.impliedMargin.requiredMargin">Margin the price requires</Term>
           </h3>
           {impliedMargin ? (
             <div className="rounded border border-ink-800 bg-ink-950 p-3">
