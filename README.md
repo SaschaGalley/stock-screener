@@ -1256,6 +1256,29 @@ right in the year banks rally and says nothing about which bank to own. Pooled,
 that industry bet passes for stock picking; within sectors it cancels, and what
 is left is the selection.
 
+**Beside the backtest, with the expectations fixed first.** In the
+*Universum* view, *Live gegen Backtest* reads the universe the way the backtest
+reads its months (`monthlyView` in `db/evaluate.ts`): each stock's newest
+factor score before every month-end, its return one, three, six and twelve
+months on against the month's average stock, windows that do not overlap, the
+factor verdicts' bands — each beside the backtest's own figure.
+
+Above them stand three expectations, written down on 3 October 2026 before a
+month that will test them had closed (`backtest/expectations.ts`): the factor
+score's rank IC over a month above zero; inside the top tenth, the half with
+the stronger momentum pillar ahead over six months; a score of 8 or more
+behind the average stock over six months. The rule is fixed with them: under
+six independent windows *zu früh*, two standard errors the expected way
+*bestätigt*, two the other way *widerlegt*, *offen* between; a month counts
+only when at least 200 stocks were scored on it, not the watchlist alone.
+Each row also says how long an effect the backtest's size, at its spread,
+would need to reach two standard errors: about ten years for the IC, fourteen
+for the split, thirty for the band. The live months will not confirm effects
+this small in any time that matters. They can contradict one sooner, and they
+say whether the score the app actually shows behaves like the one the backtest
+rebuilt. An expectation added later is dated later and tests only the months
+after it.
+
 **What the evidence says about the weights.** The evaluation ends with a
 suggestion for `PILLAR_WEIGHTS` at the 20-session horizon, read from the
 universe. Each pillar's IC is shrunk towards zero by its own uncertainty —
@@ -1794,6 +1817,10 @@ from Yahoo's `financialData`, where there is no such field, so every stock's
 net income was its last fiscal year's — Amazon's 78 billion for 2025 beside a
 trailing 135, half the S&P 500 off by more than a tenth. It is read from the
 key statistics now; the stored snapshots catch up as the nights refresh them.
+
+Months that are not over no longer count as windows: the last session there
+was used to stand in for a month-end, and the window formed on 30 September
+ended on 2 October (`closedMonthEnds`).
 
 With the payload fixed, the run of 3 October moved: the factor score's IC at a
 month is 0.0145 (t 2.3; in the sector 0.0137, t 2.5). The top's fall over half

@@ -65,7 +65,7 @@ import { sectorToEtf } from '../data/macro.js';
 import { collectCalibrated, useCalibrationTable, usePremiumAdjustment } from '../analysis/calibration.js';
 import { trustOf } from '../analysis/score.js';
 import { FITTED_WEIGHTS_META } from '../analysis/weight-table.js';
-import { bucketReturns, evaluate, type Close, type SignalPoint } from '../analysis/evaluate.js';
+import { bucketReturns, evaluate, scoreStep, type Close, type SignalPoint } from '../analysis/evaluate.js';
 import { PILLAR_KEYS } from '../types.js';
 import { insiderHistory } from './insiders.js';
 import { VARIANTS, variantSignals } from './variants.js';
@@ -79,7 +79,7 @@ import {
 import { calibrateCrossSection, median } from './cross-section.js';
 import { fidelityCheck, renderFidelity } from './fidelity.js';
 import { loadBacktestData, pooled, type BacktestUniverse } from './load.js';
-import { indexAtOrBefore, monthEnds, type PriceHistory } from './prices.js';
+import { closedMonthEnds, indexAtOrBefore, type PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
 import { renderWeightTable, scoredRow, WEIGHT_SPLIT, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
 
@@ -149,7 +149,7 @@ export async function runBacktest(
   }
 
   const ratesOn = await rateHistory(priceFrom, cfg.fredApiKey);
-  const days = monthEnds(bench.dates, from, to);
+  const days = closedMonthEnds(bench.dates, from, to);
 
   // Whether what follows measures the score the app shows: the newest live
   // scores beside the backtest's of the same sessions (`fidelity.ts`).
@@ -254,7 +254,7 @@ export async function runBacktest(
 
   // Returns on month-end closes, against the index's month-ends as the calendar.
   const toCloses = (p: PriceHistory): Close[] => p.dates.map((d, k) => ({ date: d, close: p.adj[k] }));
-  const calendar: Close[] = monthEnds(bench.dates, from, bench.dates[bench.dates.length - 1])
+  const calendar: Close[] = closedMonthEnds(bench.dates, from, bench.dates[bench.dates.length - 1])
     .map((d) => ({ date: d, close: bench.adj[indexAtOrBefore(bench.dates, d)] }));
   const priceMap = new Map<string, Close[]>();
   for (const c of companies) {
@@ -301,11 +301,7 @@ export async function runBacktest(
   // STRONG BUY earns more than a BUY.
   progress('Bänder und Dezile');
   const scoreSignal = signals.get('score.factor.score') ?? new Map<string, SignalPoint[]>();
-  const step = (p: SignalPoint) => {
-    if (p.value === null || !Number.isFinite(p.value)) return null;
-    const v = Math.floor(p.value);
-    return v <= 2 ? '<3' : v >= 8 ? '≥8' : `${v}–${v + 1}`;
-  };
+  const step = scoreStep;
   const bucketsOf = (symbols: Set<string> | null) => {
     const only = <T>(m: Map<string, T>) => (symbols ? new Map([...m].filter(([s]) => symbols.has(s))) : m);
     const common = { prices: priceMap, benchmark: calendar, horizons: BACKTEST_HORIZONS };

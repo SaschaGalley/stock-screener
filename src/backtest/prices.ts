@@ -127,6 +127,16 @@ export function monthEnds(dates: string[], from: string, to: string): string[] {
 }
 
 /**
+ * The month-ends of months that are over. `monthEnds` counts the last session
+ * there is as one, which is right for a history drawn up to today and wrong
+ * for a window: a formation on 30 September with the 2 October close as its
+ * "month-end" exit measured two days and called them a month.
+ */
+export function closedMonthEnds(dates: string[], from: string, to: string, today = new Date().toISOString().slice(0, 10)): string[] {
+  return monthEnds(dates, from, to).filter((d) => d.slice(0, 7) < today.slice(0, 7));
+}
+
+/**
  * How many of today's shares one share on `date` has become: the product of
  * every split after it. A share count reported then, times this, is on the
  * basis today's split-adjusted prices are on.

@@ -23,9 +23,12 @@ import { logger } from '../utils/logger.js';
 import { BENCHMARK_CURRENCY, fetchDailyBars } from '../data/macro.js';
 import { fxTicker, majorCurrency } from '../currencies.js';
 import {
-  evaluate, inCommonCurrency, suggestWeights,
-  type Close, type Evaluation, type SignalPoint, type WeightSuggestion,
+  bucketReturns, evaluate, inCommonCurrency, scoreStep, suggestWeights, valueBefore,
+  type BucketReturn, type Close, type Evaluation, type SignalPoint, type WeightSuggestion,
 } from '../analysis/evaluate.js';
+import { EXPECTATIONS, judge, MIN_UNIVERSE_STOCKS, type Expectation, type Judgement, type LiveReading } from '../backtest/expectations.js';
+import { closedMonthEnds } from '../backtest/prices.js';
+import { featureArray, topDecileStudy, type TopRecord, type TopSplit } from '../backtest/top-decile.js';
 import { PILLAR_KEYS } from '../types.js';
 import { PILLAR_LABELS, PILLAR_WEIGHTS } from '../analysis/score.js';
 import { closePool, waitForDatabase } from './client.js';
@@ -62,6 +65,30 @@ export const EVALUATED_SIGNALS: {
   { key: 'verdict.score',         label: 'Old LLM score', title: 'Alter LLM-Score (Vergleich)' },
 ];
 
+/** The factor verdict, which the backtest's bands are cut by; the universe's final verdict is the same label, the watchlist's is blended. */
+const FACTOR_VERDICT = 'score.factor.verdict';
+const MOMENTUM = pillarKey('momentum');
+/** Months ahead, as the backtest measures. */
+export const MONTHLY_HORIZONS = [1, 3, 6, 12];
+
+/**
+ * The universe read the way the backtest reads its months: each stock's
+ * newest score before every month-end, its return over the months after
+ * against the month's average stock, windows that do not overlap — and the
+ * expectations fixed before these months came in (`backtest/expectations.ts`),
+ * judged by the rule fixed with them.
+ */
+export interface MonthlyView {
+  /** Month-ends a score was read at. */
+  months:   string[];
+  /** The factor score's rank IC, one to twelve months on. */
+  ics:      Evaluation['ics'];
+  verdicts: BucketReturn[];
+  steps:    BucketReturn[];
+  deciles:  BucketReturn[];
+  expectations: (Expectation & { live: Judgement })[];
+}
+
 /** Both cross-sections and what the universe says about the pillar weights. */
 export interface EvaluationReport {
   /** The watchlist: every signal, the prose included. */
@@ -71,6 +98,8 @@ export interface EvaluationReport {
   /** Pillar weights the evidence argues for at `WEIGHT_HORIZON` — see `suggestWeights`. */
   weights:   WeightSuggestion[];
   weightHorizon: number;
+  /** The universe at month-ends, beside the backtest; null before there is a universe. */
+  monthly:   MonthlyView | null;
 }
 
 const PRICE_CONCURRENCY = 6;
@@ -95,11 +124,17 @@ export async function runEvaluation(opts: {
 
   const watchSignals = new Map<string, Map<string, SignalPoint[]>>(keys.map((k) => [k, new Map()]));
   const allSignals = new Map<string, Map<string, SignalPoint[]>>(factorKeys.map((k) => [k, new Map()]));
+  // The factor verdict for the monthly bands, beside the signals rather than among them.
+  const factorVerdicts = new Map<string, SignalPoint[]>();
   let earliest = Date.now();
   for (const symbol of symbols) {
     const watched = onWatchlist.has(symbol);
-    for (const series of await readSeries(symbol, watched ? keys : factorKeys)) {
+    for (const series of await readSeries(symbol, [...(watched ? keys : factorKeys), FACTOR_VERDICT])) {
       const points = series.points.map((p) => ({ at: new Date(p.at), value: p.value, text: p.text }));
+      if (series.key === FACTOR_VERDICT) {
+        factorVerdicts.set(symbol, points);
+        continue;
+      }
       if (points.length) earliest = Math.min(earliest, points[0].at.getTime());
       if (watched) watchSignals.get(series.key)!.set(symbol, points);
       allSignals.get(series.key)?.set(symbol, points);
@@ -156,6 +191,80 @@ export async function runEvaluation(opts: {
     universe,
     weights:   suggestWeights(PILLAR_WEIGHTS, (universe ?? watch).ics, WEIGHT_HORIZON, pillarKey),
     weightHorizon: WEIGHT_HORIZON,
+    monthly:   reference.length ? monthlyView({
+      score: allSignals.get('score.factor.score') ?? new Map(), momentum: allSignals.get(MOMENTUM) ?? new Map(),
+      verdicts: factorVerdicts, prices, benchmark, sectors,
+    }) : null,
+  };
+}
+
+export function monthlyView(input: {
+  score:     Map<string, SignalPoint[]>;
+  momentum:  Map<string, SignalPoint[]>;
+  verdicts:  Map<string, SignalPoint[]>;
+  prices:    Map<string, Close[]>;
+  /** Daily closes of the benchmark; its month-ends are the calendar. */
+  benchmark: Close[];
+  sectors:   Map<string, string>;
+}): MonthlyView {
+  const { score, momentum, verdicts, prices, benchmark, sectors } = input;
+  let first: string | null = null;
+  for (const points of score.values()) {
+    const d = points[0]?.at.toISOString().slice(0, 10);
+    if (d && (first === null || d < first)) first = d;
+  }
+  const dates = benchmark.map((c) => c.date);
+  // Only the month-ends the universe was scored on (`MIN_UNIVERSE_STOCKS`).
+  const months = (first ? closedMonthEnds(dates, first, dates[dates.length - 1]) : []).filter((day) => {
+    let n = 0;
+    for (const points of score.values()) if (valueBefore(points, day)) n++;
+    return n >= MIN_UNIVERSE_STOCKS;
+  });
+  const closeOn = new Map(benchmark.map((c) => [c.date, c.close]));
+  const calendar: Close[] = months.map((date) => ({ date, close: closeOn.get(date)! }));
+
+  const ev = evaluate({
+    signals: new Map([['score.factor.score', score], [FACTOR_VERDICT, verdicts]]),
+    prices, benchmark: calendar, horizons: MONTHLY_HORIZONS, labelKey: FACTOR_VERDICT, sectors,
+  });
+  const common = { prices, benchmark: calendar, horizons: MONTHLY_HORIZONS };
+  const steps = bucketReturns({ ...common, points: score, bucket: scoreStep });
+
+  // Each month's score and momentum pillar, for the split inside the top tenth.
+  const records: TopRecord[] = [];
+  for (const day of months) {
+    for (const [symbol, points] of score) {
+      const s = valueBefore(points, day);
+      if (s?.value === null || s?.value === undefined) continue;
+      const m = valueBefore(momentum.get(symbol) ?? [], day);
+      records.push({
+        day, symbol, segment: '', sector: sectors.get(symbol) ?? '', score: s.value,
+        features: featureArray({ 'pillar.momentum': m?.value ?? null }),
+      });
+    }
+  }
+  const split = records.length ? topDecileStudy(records, prices, months).splits.filter((x) => x.feature === 'pillar.momentum') : [];
+
+  const reading = (e: Expectation): LiveReading => {
+    if (e.measure === 'ic') {
+      const r = ev.ics.find((x) => x.key === 'score.factor.score' && x.horizon === e.horizon);
+      return { mean: r?.meanIc ?? null, t: r?.tStat ?? null, windows: r?.independent ?? 0 };
+    }
+    if (e.measure === 'top-momentum-split') {
+      const r: TopSplit | undefined = split.find((x) => x.horizon === e.horizon);
+      return { mean: r?.diff.mean ?? null, t: r?.diff.t ?? null, windows: r?.diff.months ?? 0 };
+    }
+    const r = steps.find((x) => x.bucket === '≥8' && x.horizon === e.horizon);
+    return { mean: r?.meanExcess ?? null, t: r?.tStat ?? null, windows: r?.months ?? 0 };
+  };
+
+  return {
+    months,
+    ics: ev.ics.filter((r) => r.key === 'score.factor.score'),
+    verdicts: bucketReturns({ ...common, points: verdicts, bucket: (p) => p.text ?? null }),
+    steps,
+    deciles: bucketReturns({ ...common, points: score, bucket: 'decile' }),
+    expectations: EXPECTATIONS.map((e) => ({ ...e, live: judge(e, reading(e)) })),
   };
 }
 
@@ -224,6 +333,13 @@ function renderScope(title: string, ev: Evaluation): string[] {
 export function renderEvaluation(report: EvaluationReport): string {
   const lines = renderScope('Watchlist', report.watchlist);
   if (report.universe) lines.push('', '', ...renderScope('Universe (factor signals)', report.universe));
+  if (report.monthly) {
+    lines.push('', '', `Expectations fixed before the live months (${report.monthly.months.length} month-ends so far):`);
+    for (const e of report.monthly.expectations) {
+      lines.push(`  ${e.key.padEnd(16)} ${e.live.status.padEnd(10)} live ${fmt(e.live.mean, 4)} (t ${fmt(e.live.t, 1)}, ${e.live.windows} windows)`
+        + `  backtest ${e.backtest.value.toFixed(4)} (t ${e.backtest.t.toFixed(1)})  decidable after ~${e.live.monthsToDecide} months`);
+    }
+  }
   lines.push('', '', `Pillar weights at ${report.weightHorizon} sessions (IC shrunk by its standard error; a suggestion, never applied):`);
   for (const w of report.weights) {
     lines.push(

@@ -3,6 +3,7 @@ import { api } from '../api';
 import type { BacktestResponse, EvaluationResponse } from '../types';
 import { CloseIcon } from '../components/icons';
 import BacktestPanel from '../components/BacktestPanel';
+import LiveExpectations from '../components/LiveExpectations';
 import VerdictRecordPanel from '../components/VerdictRecordPanel';
 import { SignedBar, WeightsTable, evidence, pct } from '../components/evaluationParts';
 import { recommendationColor } from '../format';
@@ -149,6 +150,8 @@ export default function EvaluationPage({ onClose }: Props) {
 
         {scope !== 'backtest' && scope !== 'calls' && ev && (
           <>
+            {universe && data?.monthly && <LiveExpectations monthly={data.monthly} bt={bt?.backtest ?? null} />}
+
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-xs text-ink-400">Horizont</span>
               {HORIZONS.map((h) => (

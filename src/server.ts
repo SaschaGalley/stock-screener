@@ -894,6 +894,7 @@ export function createApp(): express.Express {
         universe:      report.universe,
         weights:       report.weights.map((w) => ({ ...w, title: PILLAR_LABELS[w.key as PillarKey] ?? w.key })),
         weightHorizon: report.weightHorizon,
+        monthly:       report.monthly,
       };
       res.json(body);
     } catch (e) {

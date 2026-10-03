@@ -319,4 +319,6 @@ export interface EvaluationResponse {
   /** Pillar weights the evidence argues for — a suggestion, never applied. */
   weights:    (import('./analysis/evaluate.js').WeightSuggestion & { title: string })[];
   weightHorizon: number;
+  /** The universe at month-ends, as the backtest reads it, with the expectations fixed before; null before there is a universe. */
+  monthly:    import('./db/evaluate.js').MonthlyView | null;
 }

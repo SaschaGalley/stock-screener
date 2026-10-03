@@ -239,7 +239,7 @@ export const MAX_SIGNAL_AGE_DAYS = 10;
  * A point is dated by its UTC calendar day, so "before `day`" is "before that
  * day's UTC midnight"; the points are oldest first, so it is a binary search.
  */
-function valueBefore(points: SignalPoint[], day: string): SignalPoint | null {
+export function valueBefore(points: SignalPoint[], day: string): SignalPoint | null {
   const midnight = Date.parse(`${day}T00:00:00.000Z`);
   let lo = 0, hi = points.length - 1, index = -1;
   while (lo <= hi) {
@@ -433,6 +433,13 @@ export interface BucketReturn {
  * month's best; it no longer counts as eight of them.
  */
 const WINSOR = 0.025;
+
+/** A score's whole points as buckets — under 3, 3–4 … 7–8, 8 or more — as the bands cut it. */
+export function scoreStep(p: SignalPoint): string | null {
+  if (p.value === null || !Number.isFinite(p.value)) return null;
+  const v = Math.floor(p.value);
+  return v <= 2 ? '<3' : v >= 8 ? '≥8' : `${v}–${v + 1}`;
+}
 
 /**
  * A signal's stocks split into buckets each formation month — its deciles by
