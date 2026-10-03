@@ -67,6 +67,8 @@ export const EVALUATED_SIGNALS: {
 
 /** The factor verdict, which the backtest's bands are cut by; the universe's final verdict is the same label, the watchlist's is blended. */
 const FACTOR_VERDICT = 'score.factor.verdict';
+/** The headline fair value's margin of safety, (fair − price) / price: its gap ranked as a signal. */
+const FAIR_GAP = 'metrics.composite.primary.marginOfSafety';
 const MOMENTUM = pillarKey('momentum');
 /** Months ahead, as the backtest measures. */
 export const MONTHLY_HORIZONS = [1, 3, 6, 12];
@@ -83,6 +85,8 @@ export interface MonthlyView {
   months:   string[];
   /** The factor score's rank IC, one to twelve months on. */
   ics:      Evaluation['ics'];
+  /** The same for the gap to the headline fair value, as the backtest's study measures it (`backtest/fair-value.ts`). */
+  fairIcs:  Evaluation['ics'];
   verdicts: BucketReturn[];
   steps:    BucketReturn[];
   deciles:  BucketReturn[];
@@ -124,15 +128,20 @@ export async function runEvaluation(opts: {
 
   const watchSignals = new Map<string, Map<string, SignalPoint[]>>(keys.map((k) => [k, new Map()]));
   const allSignals = new Map<string, Map<string, SignalPoint[]>>(factorKeys.map((k) => [k, new Map()]));
-  // The factor verdict for the monthly bands, beside the signals rather than among them.
+  // The factor verdict for the monthly bands and the fair value's gap, beside the signals rather than among them.
   const factorVerdicts = new Map<string, SignalPoint[]>();
+  const fairGaps = new Map<string, SignalPoint[]>();
   let earliest = Date.now();
   for (const symbol of symbols) {
     const watched = onWatchlist.has(symbol);
-    for (const series of await readSeries(symbol, [...(watched ? keys : factorKeys), FACTOR_VERDICT])) {
+    for (const series of await readSeries(symbol, [...(watched ? keys : factorKeys), FACTOR_VERDICT, FAIR_GAP])) {
       const points = series.points.map((p) => ({ at: new Date(p.at), value: p.value, text: p.text }));
       if (series.key === FACTOR_VERDICT) {
         factorVerdicts.set(symbol, points);
+        continue;
+      }
+      if (series.key === FAIR_GAP) {
+        fairGaps.set(symbol, points);
         continue;
       }
       if (points.length) earliest = Math.min(earliest, points[0].at.getTime());
@@ -193,7 +202,7 @@ export async function runEvaluation(opts: {
     weightHorizon: WEIGHT_HORIZON,
     monthly:   reference.length ? monthlyView({
       score: allSignals.get('score.factor.score') ?? new Map(), momentum: allSignals.get(MOMENTUM) ?? new Map(),
-      verdicts: factorVerdicts, prices, benchmark, sectors,
+      verdicts: factorVerdicts, fairGaps, prices, benchmark, sectors,
     }) : null,
   };
 }
@@ -202,12 +211,14 @@ export function monthlyView(input: {
   score:     Map<string, SignalPoint[]>;
   momentum:  Map<string, SignalPoint[]>;
   verdicts:  Map<string, SignalPoint[]>;
+  /** Margin of safety to the headline fair value; absent, no row. */
+  fairGaps?: Map<string, SignalPoint[]>;
   prices:    Map<string, Close[]>;
   /** Daily closes of the benchmark; its month-ends are the calendar. */
   benchmark: Close[];
   sectors:   Map<string, string>;
 }): MonthlyView {
-  const { score, momentum, verdicts, prices, benchmark, sectors } = input;
+  const { score, momentum, verdicts, fairGaps, prices, benchmark, sectors } = input;
   let first: string | null = null;
   for (const points of score.values()) {
     const d = points[0]?.at.toISOString().slice(0, 10);
@@ -261,6 +272,9 @@ export function monthlyView(input: {
   return {
     months,
     ics: ev.ics.filter((r) => r.key === 'score.factor.score'),
+    fairIcs: fairGaps?.size
+      ? evaluate({ signals: new Map([['fair.primary', fairGaps]]), prices, benchmark: calendar, horizons: MONTHLY_HORIZONS, sectors }).ics
+      : [],
     verdicts: bucketReturns({ ...common, points: verdicts, bucket: (p) => p.text ?? null }),
     steps,
     deciles: bucketReturns({ ...common, points: score, bucket: 'decile' }),

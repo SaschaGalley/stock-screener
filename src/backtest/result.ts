@@ -13,6 +13,7 @@ import type { BucketReturn, Evaluation } from '../analysis/evaluate.js';
 import type { WeightValidation } from './weights.js';
 import type { TopDecileStudy } from './top-decile.js';
 import type { Fidelity } from './fidelity.js';
+import type { FairValueStudy } from './fair-value.js';
 
 export const RESULT_KEY = 'backtest.result';
 
@@ -38,6 +39,8 @@ export interface BacktestResult {
   variants?:   VariantResult[];
   /** What the top tenth is made of, and which of it falls back (`top-decile.ts`); absent in older results. */
   topDecile?:  TopDecileStudy;
+  /** The composite fair value put to the test (`fair-value.ts`), with the studies; absent in older results. */
+  fairValue?:  FairValueStudy;
   /**
    * When the studies above were computed, where that was an earlier run than
    * this one: they are run with `--studies` only, and carried to the page
@@ -136,12 +139,17 @@ export async function storedBacktest(): Promise<BacktestResult | null> {
     if (row) {
       if (row.result.variants || row.result.topDecile) return row.result;
       // The monthly run leaves the studies out; the newest that has them still answers their questions.
-      const studies = await queryOne<{ variants: BacktestResult['variants'] | null; top: TopDecileStudy | null; at: Date }>(
-        `SELECT result -> 'variants' AS variants, result -> 'topDecile' AS top, generated_at AS at
+      const studies = await queryOne<{
+        variants: BacktestResult['variants'] | null; top: TopDecileStudy | null; fair: FairValueStudy | null; at: Date;
+      }>(
+        `SELECT result -> 'variants' AS variants, result -> 'topDecile' AS top, result -> 'fairValue' AS fair, generated_at AS at
            FROM backtest_runs WHERE result ? 'variants' ORDER BY generated_at DESC LIMIT 1`,
       );
       return studies
-        ? { ...row.result, variants: studies.variants ?? undefined, topDecile: studies.top ?? undefined, studiesAt: studies.at.toISOString() }
+        ? {
+          ...row.result, variants: studies.variants ?? undefined, topDecile: studies.top ?? undefined,
+          fairValue: studies.fair ?? undefined, studiesAt: studies.at.toISOString(),
+        }
         : row.result;
     }
     // A database from before the runs were kept.

@@ -4,9 +4,10 @@ import { recommendationColor } from '../../format';
 import { pct } from '../evaluationParts';
 import { useArchive } from '../useArchive';
 import {
-  RECORD_HORIZONS, callHit, type CallOutcome, type Leg,
+  RECORD_HORIZONS, callHit, type Leg,
 } from '../../../../src/analysis/verdict-record';
 import Term from '../Term';
+import type { FairAtCall, VerdictRecordView } from '../../../../src/stock-history-service';
 
 /**
  * How our own verdicts on this stock have done: every call with the stock
@@ -34,11 +35,14 @@ export default function VerdictTrackRecord({ symbol }: { symbol: string }) {
         )}
         .
       </p>
-      <CallTable calls={data.calls} />
+      <CallTable calls={data.calls} latest={data.latest} />
       <p className="text-xs leading-relaxed text-ink-500">
         Ein Urteilswechsel zählt, sobald er die nächste Aktualisierung gehalten hat. Gemessen mit Dividenden gegen den S&amp;P 500
         (SPY){data.currency && data.restated && <>, die Aktie von {data.currency} in Dollar umgerechnet</>}. Ein Kaufurteil war richtig,
-        wenn die Aktie den Index schlug, ein Verkaufsurteil, wenn sie ihm hinterherlief; Halten wird nur gemessen.
+        wenn die Aktie den Index schlug, ein Verkaufsurteil, wenn sie ihm hinterherlief; Halten wird nur gemessen. Der faire Wert ist
+        der, den die Seite an dem Tag zeigte — der Median der primären Modelle, die Spanne beim Überfahren —, und „Lücke bis heute“,
+        welchen Teil des Abstands zwischen dem damaligen Kurs und diesem Wert der Kurs seither zurückgelegt hat; negativ, wenn er sich
+        entfernt hat.
         {data.currency && !data.restated && (
           <> Der Wechselkurs {data.currency}/USD ist noch nicht archiviert — bis dahin steht die Rendite in {data.currency} ohne Indexvergleich.</>
         )}
@@ -62,17 +66,34 @@ function Excess({ verdict, leg }: { verdict: string; leg: Leg | null | undefined
   );
 }
 
-function CallTable({ calls }: { calls: CallOutcome[] }) {
+/** How much of the way from the call's price to its fair value the price has gone since. */
+function GapClosed({ price, fair, latest }: { price: number; fair: FairAtCall | null; latest: VerdictRecordView['latest'] }) {
+  if (!fair || !latest || !(price > 0)) return <span className="text-ink-600">—</span>;
+  const gap = fair.value - price;
+  // Within five per cent the price stood at the value: there was no gap to close.
+  if (Math.abs(gap) / price < 0.05) return <span className="text-ink-500">am Wert</span>;
+  const share = (latest.price - price) / gap;
+  const cls = share >= 0 ? 'text-emerald-400' : 'text-red-400';
+  return (
+    <span className={`font-mono ${cls}`} title={`Kurs damals ${price.toFixed(2)}, fairer Wert ${fair.value.toFixed(2)}, zuletzt ${latest.price.toFixed(2)} (${fmtDay(latest.day)})`}>
+      {`${share >= 0 ? '' : '−'}${Math.abs(Math.round(share * 100))} %`}
+    </span>
+  );
+}
+
+function CallTable({ calls, latest }: { calls: VerdictRecordView['calls']; latest: VerdictRecordView['latest'] }) {
   const { fmtPrice } = useMoney();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-xs tabular">
+      <table className="w-full min-w-[720px] text-xs tabular">
         <thead>
           <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal">Seit</th>
             <th className="py-1 pr-2 text-left font-normal">Urteil</th>
             <th className="py-1 text-right font-normal">Score</th>
             <th className="py-1 text-right font-normal">Kurs</th>
+            <th className="py-1 text-right font-normal">Fairer Wert</th>
+            <th className="py-1 text-right font-normal" title="Anteil des Abstands zum damaligen fairen Wert, den der Kurs seither zurückgelegt hat">Lücke bis heute</th>
             {RECORD_HORIZONS.map((h) => (
               <th key={h} className="py-1 text-right font-normal"><Term k="concept.vr.excess">{h} M</Term></th>
             ))}
@@ -89,6 +110,20 @@ function CallTable({ calls }: { calls: CallOutcome[] }) {
               </td>
               <td className="py-1 text-right font-mono text-ink-400">{c.score?.toFixed(1) ?? '—'}</td>
               <td className="py-1 text-right font-mono text-ink-400">{fmtPrice(c.price)}</td>
+              <td
+                className="py-1 text-right font-mono text-ink-400"
+                title={c.fair && c.fair.low !== null && c.fair.high !== null ? `Spanne ${fmtPrice(c.fair.low)} – ${fmtPrice(c.fair.high)}` : undefined}
+              >
+                {c.fair ? (
+                  <>
+                    {fmtPrice(c.fair.value)}{' '}
+                    <span className={c.fair.value >= c.price ? 'text-emerald-400' : 'text-red-400'}>
+                      {pct(c.fair.value / c.price - 1)}
+                    </span>
+                  </>
+                ) : '—'}
+              </td>
+              <td className="py-1 text-right"><GapClosed price={c.price} fair={c.fair} latest={latest} /></td>
               {RECORD_HORIZONS.map((h) => (
                 <td key={h} className="py-1 text-right"><Excess verdict={c.verdict} leg={c.horizons[h]} /></td>
               ))}

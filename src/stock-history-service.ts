@@ -130,8 +130,19 @@ async function outcomesFor(
   return { outcomes, unpriced, unrestated };
 }
 
+/** The headline fair value in force on a day — the primary models' median — and their range. */
+export interface FairAtCall { value: number; low: number | null; high: number | null }
+
+/** The composite fair value as the refresh stored it, beside each verdict. */
+const FAIR_KEYS = {
+  value: 'metrics.composite.primary.median', low: 'metrics.composite.primary.min', high: 'metrics.composite.primary.max',
+} as const;
+
 export interface VerdictRecordView {
-  calls:    CallOutcome[];
+  /** Each call with the fair value the page showed beside it that day; null where none was stored. */
+  calls:    (CallOutcome & { fair: FairAtCall | null })[];
+  /** The newest stored close, as quoted: how far the price has come since each call. */
+  latest:   { day: string; price: number } | null;
   record:   VerdictRecord;
   /** The listing's currency where it is not the benchmark's. */
   currency: string | null;
@@ -145,8 +156,26 @@ export async function verdictTrackRecord(symbol: string): Promise<VerdictRecordV
   const calls = outcomes.get(symbol) ?? [];
   if (calls.length === 0) return null;
   const currency = majorCurrency((await symbolFacts([symbol])).get(symbol.toUpperCase())?.currency);
+  // The fair value of each call's day: the newest stored by that day's end.
+  const fairSeries = await readSeries(symbol, Object.values(FAIR_KEYS));
+  const pointsOf = (key: string) => fairSeries.find((x) => x.key === key)?.points ?? [];
+  const asOf = (key: string, day: string) => {
+    let found: number | null = null;
+    for (const p of pointsOf(key)) {
+      if (p.at.slice(0, 10) > day) break;
+      if (p.value !== null && Number.isFinite(p.value)) found = p.value;
+    }
+    return found;
+  };
+  const fairOn = (day: string): FairAtCall | null => {
+    const value = asOf(FAIR_KEYS.value, day);
+    return value !== null && value > 0 ? { value, low: asOf(FAIR_KEYS.low, day), high: asOf(FAIR_KEYS.high, day) } : null;
+  };
+  const recent = (await readPriceBarsMany([symbol], daysBefore(new Date().toISOString().slice(0, 10), 14))).get(symbol.toUpperCase()) ?? [];
+  const last = recent.at(-1);
   return {
-    calls: [...calls].reverse(),
+    calls: [...calls].reverse().map((c) => ({ ...c, fair: fairOn(c.day) })),
+    latest: last ? { day: last.day, price: last.close } : null,
     record: verdictRecord(outcomes, RECOMMENDATIONS),
     currency: currency && currency !== BENCHMARK_CURRENCY ? currency : null,
     restated: !unrestated.has(symbol),

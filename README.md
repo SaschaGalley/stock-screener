@@ -1844,6 +1844,39 @@ in the list, the same as a line on hovering over the chip. A STRONG BUY ahead
 after a month and behind after six says something different from one ahead
 after both, and the label alone says neither.
 
+**The fair value under test (3 October 2026).** The score reads the
+valuation through calibrated criteria; the page's headline is something else —
+the composite fair value, the weighted median of the primary models with their
+range around it — and it had never been tested. A study (`backtest/fair-value.ts`,
+with `--studies`) keeps every company-month's price, fair value, range,
+conservative lens and DCF scenarios and asks four questions of them. On the
+S&P 1500 since 2013, as the backtest rebuilds the fair value (no consensus
+estimates; the rating history's target):
+
+- **It does not rank.** The gap ln(fair / price) has a rank IC between −0.008
+  and +0.006 at one to twelve months, no |t| above 0.6 — for the headline, the
+  conservative lens and the DCF alike.
+- **The price does not close the gap.** Regressed month by month on the gap,
+  the excess return recovers 0.2 % of it over a month and 0.9 % over a year
+  (t 0.3). A fair value the price obeyed would show tens of per cent.
+- **Its place in the range earns nothing.** A price below every primary model
+  (28 % of the company-months) did no better than one inside; one above every
+  model trailed slightly, by 0.2 % over a month and 0.9 % over a year, with
+  no |t| above 1.2.
+- **The range does not draw the price.** The price stood inside the primary
+  models' range 60 % of the time when it was drawn and 50 % a year later; inside
+  the middle half 32 % and 27 %. The DCF's scenarios from bear to bull — its
+  10th to 90th percentile — held the price itself only half the time: the
+  scenarios spread less than model and market disagree.
+
+The fair value describes what the models make of the company; it does not
+forecast the price, and its margin of safety is not an expected return. The
+backtest's fair value is not quite the app's — the comparison puts the DCF
+criterion at a rank correlation of 0.66 — so the live view measures the app's
+own as well (*Lücke zum fairen Wert* under *Live gegen Backtest*). And every
+verdict in *Unser Urteil* now carries the fair value the page showed beside it
+that day, with the share of the gap the price has covered since.
+
 Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
 

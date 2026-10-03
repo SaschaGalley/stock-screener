@@ -110,6 +110,23 @@ export default function LiveExpectations({ monthly, bt }: { monthly: Monthly; bt
               );
             })}
           </tr>
+          {monthly.fairIcs?.length > 0 && (
+            <tr className="border-b border-ink-800/60">
+              <td className="px-4 py-1 text-ink-300" title="Rang-IC der Sicherheitsmarge zum fairen Wert der Seite (Median der primären Modelle)">
+                Lücke zum fairen Wert
+              </td>
+              {horizons.map((h) => {
+                const live = monthly.fairIcs.find((r) => r.horizon === h);
+                const backtest = bt?.fairValue?.ics.find((r) => r.key === 'fair.primary' && r.horizon === h);
+                return (
+                  <td key={h} className="px-2 py-1 text-right font-mono">
+                    <div className="text-ink-200">{live && live.days > 0 ? num(live.meanIc, 3) : '—'}<span className="text-ink-500"> ({live?.independent ?? 0})</span></div>
+                    <div className="text-2xs text-ink-500">{num(backtest?.meanIc, 3)}</div>
+                  </td>
+                );
+              })}
+            </tr>
+          )}
           {RECOMMENDATIONS.map((v) => (
             <tr key={v} className="border-b border-ink-800/60 last:border-0">
               <td className="px-4 py-1">

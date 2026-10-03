@@ -70,6 +70,7 @@ import { PILLAR_KEYS } from '../types.js';
 import { insiderHistory } from './insiders.js';
 import { VARIANTS, variantSignals } from './variants.js';
 import { featureArray, TOP_FEATURES, topDecileStudy, type TopRecord } from './top-decile.js';
+import { FAIR_LENSES, fairRecord, fairValueStudy, type FairRecord } from './fair-value.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
 import { payloadAt, yahooSector } from './payload.js';
 import {
@@ -174,6 +175,8 @@ export async function runBacktest(
   const rows: ScoredRow[] = [];
   // And what each looked like, for the study of the top tenth (`top-decile.ts`).
   const topRecords: TopRecord[] = [];
+  // And its fair value and range, for the test of the fair value (`fair-value.ts`).
+  const fairRecords: FairRecord[] = [];
   const labels = new Map<string, string>();
   // Company-months scored, and how many of them had a rebuilt consensus target.
   const coverage = new Map<number, { stocks: number; covered: number }>();
@@ -219,6 +222,7 @@ export async function runBacktest(
         // What the stock looked like that day, for the study of the top tenth.
         const fin = e.financials, tech = e.signals?.technicals;
         const finite = (v: number | null | undefined) => (v !== null && v !== undefined && Number.isFinite(v) ? v : null);
+        if (opts.studies) fairRecords.push(fairRecord(day, e.c.symbol, fin.price, metrics[k]));
         if (opts.studies) topRecords.push({
           day, symbol: e.c.symbol, segment: e.c.segment, sector: yahooSector(e.c.sector), score: f.score,
           features: featureArray({
@@ -354,6 +358,17 @@ export async function runBacktest(
   const topDecile = opts.studies ? topDecileStudy(topRecords, priceMap, calendar.map((c) => c.date)) : undefined;
   topRecords.length = 0;
 
+  if (opts.studies) progress('Fairer Wert');
+  const fairValue = opts.studies ? fairValueStudy({
+    records: fairRecords, prices: priceMap, calendar, sectors,
+    // The quoted price's path, split-adjusted and without dividends: where the range is read.
+    closes: new Map(companies.flatMap((c) => {
+      const p = prices.get(c.symbol);
+      return p ? [[c.symbol, p.dates.map((d, k) => ({ date: d, close: p.close[k] }))] as const] : [];
+    })),
+  }) : undefined;
+  fairRecords.length = 0;
+
   const fit = weightLab(rows, { prices: priceMap, sectors }, {
     fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_FIT_HORIZONS, labels,
   }).validate(calendar);
@@ -384,6 +399,7 @@ export async function runBacktest(
     bands,
     variants,
     topDecile,
+    fairValue,
     fidelity: fidelity ?? undefined,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
@@ -481,6 +497,32 @@ export function renderBacktest(r: BacktestResult): string {
           + `  2013–19 ${pc(x.first.mean).padStart(7)} (t ${fmt(x.first.t, 1)})  2020–26 ${pc(x.second.mean).padStart(7)} (t ${fmt(x.second.t, 1)})`
           + `  D9 ${pc(x.ninth.mean).padStart(7)} (t ${fmt(x.ninth.t, 1)})`);
       }
+    }
+  }
+  if (r.fairValue) {
+    const fv = r.fairValue;
+    const pc = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`);
+    lines.push('', 'The fair value under test (gap = ln(fair / price); slope = share of the gap closed against the average stock):');
+    for (const l of FAIR_LENSES) {
+      lines.push(`  ${l.label}: coverage ${Math.round((fv.coverage[l.key] ?? 0) * 100)}%, median gap ${fmt(fv.medianGap[l.key], 2)}`);
+      for (const h of [1, 3, 6, 12]) {
+        const ic = fv.ics.find((x) => x.key === l.key && x.horizon === h);
+        const c = fv.convergence.find((x) => x.lens === l.key && x.horizon === h);
+        lines.push(`    ${String(h).padStart(2)}M  IC ${fmt(ic?.meanIc)} (t ${fmt(ic?.tStat, 1)}, sector ${fmt(ic?.neutralIc)})`
+          + `  slope ${fmt(c?.slope)} (t ${fmt(c?.t, 1)}, ${c?.months ?? 0} windows)`);
+      }
+    }
+    lines.push('  Position in the primary range → excess return (t):');
+    for (const pos of Object.keys(fv.positionShare)) {
+      lines.push(`    ${pos.padEnd(18)} ${String(Math.round(fv.positionShare[pos] * 100)).padStart(3)}%  `
+        + [1, 3, 6, 12].map((h) => {
+          const b = fv.positions.find((x) => x.bucket === pos && x.horizon === h);
+          return `${h}M ${pc(b?.meanExcess).padStart(7)} (${fmt(b?.tStat, 1)})`;
+        }).join('  '));
+    }
+    lines.push('  Price inside the range when drawn → a horizon later:');
+    for (const g of fv.ranges) {
+      lines.push(`    ${g.label.padEnd(40)} ${String(g.horizon).padStart(2)}M  ${Math.round(g.then * 100)}% → ${Math.round(g.later * 100)}%  (n ${g.n})`);
     }
   }
   lines.push('', 'Factor score IC at one month, by year:');
