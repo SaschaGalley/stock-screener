@@ -41,7 +41,7 @@ export const GLOSSARY = {
   'list.price': 'Letzter Schlusskurs, in der Währung, in der die Aktie gehandelt wird.',
   'list.target': 'Mittleres Analysten-Kursziel (Yahoo-Konsens) und sein Abstand zum Kurs.',
   'list.modelFv':
-    'Fairer Wert laut Bewertungsmodellen: der Primary-Composite aus DCF, Peer-Multiples, Peter Lynch und Analystenziel, und sein Abstand zum Kurs.',
+    'Fairer Wert laut Bewertungsmodellen: der Primary-Composite aus DCF, Peer-Multiples, Peter Lynch und Analystenziel, und sein Abstand zum Kurs. Im Backtest (S&P 1500 seit 2013, Stand Oktober 2026) hat dieser Abstand keine Rendite vorhergesagt, und der Kurs hat sich dem Wert nicht genähert: Er beschreibt die Modelle, er ist keine erwartete Rendite.',
   'list.mcap': 'Börsenwert: Kurs mal alle ausstehenden Aktien.',
   'list.age':
     'Oben: wie alt die Marktdaten sind (nächtliche Aktualisierung). Unten: wann zuletzt eine Textanalyse lief. Der Score selbst wird bei jeder Datenaktualisierung neu gerechnet.',
@@ -63,7 +63,7 @@ export const GLOSSARY = {
   'card.verdict':
     `Das Urteil zur Aktie. Der Score 0–10 fällt in ein Band: ${BANDS}. Der Balken zeigt den Score, der Text darunter ist die Begründung des Sprachmodells. Oben rechts steht, welche gespeicherte Analyse gezeigt wird; ein Klick wechselt sie oder startet eine neue.`,
   'card.composite':
-    'Der faire Wert, wie ihn die Bewertungsmodelle zusammen sehen. Primary ist die Schlagzeile: wachstumsbewusste, marktnahe Modelle, nämlich DCF, Peer-Multiples, Peter Lynch und das Analystenziel. Die Mitte ist ein gewichteter Median auf logarithmischer Skala. Ein Modell bei halbem und eines bei doppeltem Kurs heben sich auf, wacklige Modelle zählen halb.',
+    'Der faire Wert, wie ihn die Bewertungsmodelle zusammen sehen. Primary ist die Schlagzeile: wachstumsbewusste, marktnahe Modelle, nämlich DCF, Peer-Multiples, Peter Lynch und das Analystenziel. Die Mitte ist ein gewichteter Median auf logarithmischer Skala. Ein Modell bei halbem und eines bei doppeltem Kurs heben sich auf, wacklige Modelle zählen halb. Was der Abstand zum Kurs im Backtest bedeutete, steht unten in der Karte, mit den Zahlen des neuesten Laufs.',
   'card.analysts':
     'Was die Analysten sagen, die die Aktie abdecken: das mittlere Kursziel und sein Abstand zum Kurs, die Spanne der Ziele, wie einig sie sich sind, jedes Haus einzeln und die Verteilung der Ratings. Kopfzahlen aus Yahoos Konsensdaten, die Häuser einzeln aus Yahoos Rating-Historie.',
   'concept.upside':

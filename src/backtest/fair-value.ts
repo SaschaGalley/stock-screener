@@ -134,8 +134,16 @@ function clip(xs: number[]): (v: number) => number {
 }
 
 export function positionOf(price: number, v: Float64Array): (typeof FAIR_POSITIONS)[number] | null {
-  const min = v[F.primaryMin], max = v[F.primaryMax], p25 = v[F.primaryP25], p75 = v[F.primaryP75];
-  if (![min, max, p25, p75].every(Number.isFinite) || max <= min) return null;
+  return positionIn(price, { min: v[F.primaryMin], p25: v[F.primaryP25], p75: v[F.primaryP75], max: v[F.primaryMax] });
+}
+
+/** Where a price stands in a range of model values — the page asks it of today's price. */
+export function positionIn(
+  price: number, r: { min: number | null; p25: number | null; p75: number | null; max: number | null },
+): (typeof FAIR_POSITIONS)[number] | null {
+  const { min, p25, p75, max } = r;
+  if (min === null || p25 === null || p75 === null || max === null) return null;
+  if (![min, max, p25, p75, price].every(Number.isFinite) || max <= min) return null;
   if (price < min) return 'unter der Spanne';
   if (price < p25) return 'unteres Viertel';
   if (price <= p75) return 'mittlere Hälfte';

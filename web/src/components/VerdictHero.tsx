@@ -6,7 +6,7 @@ import { useStoredOpen } from './Section';
 import { fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
 import { useMoney } from '../currency';
 import RecommendationBadge from './RecommendationBadge';
-import VerdictEvidence from './VerdictEvidence';
+import VerdictEvidence, { FairValueEvidence } from './VerdictEvidence';
 import Term from './Term';
 import type { GlossaryKey } from '../glossary';
 
@@ -167,6 +167,8 @@ export default function VerdictHero({
                 <span className="font-mono text-ink-300">{fmtPrice(composite.conservative.median)}</span>
               </div>
             )}
+
+            <FairValueEvidence price={price} primary={composite.primary} />
 
             <div className="mt-auto pt-2 flex items-center gap-1.5 text-xs text-ink-500">
               <Term k="metrics.composite.confidence">

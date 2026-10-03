@@ -1877,6 +1877,13 @@ own as well (*Lücke zum fairen Wert* under *Live gegen Backtest*). And every
 verdict in *Unser Urteil* now carries the fair value the page showed beside it
 that day, with the share of the gap the price has covered since.
 
+The stock page says so where the margin is shown: under the composite fair
+value, what its gap did in the newest study — the rank IC at one to twelve
+months, the share of the gap closed in a year — and what stocks standing
+where today's price stands in the models' range earned over the year after
+(`FairValueEvidence`, from `/api/backtest/verdicts`). The margin describes the
+models; it is not an expected return.
+
 Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
 

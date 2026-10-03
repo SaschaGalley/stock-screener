@@ -174,6 +174,18 @@ export interface VerdictEvidence {
   verdicts:    BucketReturn[];
   /** The live comparison's rank correlation and verdict agreement, where the run made one. */
   fidelity:    { rho: number | null; same: number } | null;
+  /** What the headline fair value's gap did, from the newest run that tested it (`fair-value.ts`); null before one did. */
+  fair:        FairEvidence | null;
+}
+
+export interface FairEvidence {
+  generatedAt: string;
+  /** Rank IC of the gap ln(fair / price), one to twelve months on. */
+  ics:         { horizon: number; ic: number | null; t: number | null }[];
+  /** The share of the gap closed against the average stock. */
+  closed:      { horizon: number; slope: number | null; t: number | null }[];
+  /** What each place of the price in the primary range earned. */
+  positions:   BucketReturn[];
 }
 
 export async function verdictEvidence(): Promise<VerdictEvidence | null> {
@@ -190,10 +202,20 @@ export async function verdictEvidence(): Promise<VerdictEvidence | null> {
       ORDER BY generated_at DESC LIMIT 1`,
   );
   if (!row?.verdicts) return null;
+  const fv = await queryOne<{ generated_at: Date; fair: FairValueStudy }>(
+    `SELECT generated_at, result -> 'fairValue' AS fair FROM backtest_runs
+      WHERE result ? 'fairValue' ORDER BY generated_at DESC LIMIT 1`,
+  );
   return {
     generatedAt: row.generated_at.toISOString(), universe: row.universe ?? 'S&P 500', from: row.from, to: row.to,
     verdicts: row.verdicts,
     fidelity: row.same !== null ? { rho: row.rho, same: row.same } : null,
+    fair: fv ? {
+      generatedAt: fv.generated_at.toISOString(),
+      ics: fv.fair.ics.filter((r) => r.key === 'fair.primary').map((r) => ({ horizon: r.horizon, ic: r.meanIc, t: r.tStat })),
+      closed: fv.fair.convergence.filter((r) => r.lens === 'fair.primary').map((r) => ({ horizon: r.horizon, slope: r.slope, t: r.t })),
+      positions: fv.fair.positions,
+    } : null,
   };
 }
 
