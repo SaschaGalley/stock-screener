@@ -4,6 +4,13 @@
  *   pnpm run calibrate                     # writes src/analysis/calibration-table.ts
  *   pnpm run calibrate -- --weeks 26       # how far back to sample (default 26)
  *   pnpm run calibrate -- --out /tmp/t.ts  # somewhere else
+ *   node dist/db/calibrate.js --store      # into the database, for the admin page to offer
+ *
+ * `--store` is how a deployment calibrates: its image has no sources to write
+ * into and no repository to commit to, but its database is the one with the
+ * universe in it. The table goes to `app_state` as a proposal, with what it
+ * would move (`compareTables`), and the admin page offers it as the file to
+ * commit (`calibration-service.ts`).
  *
  * Scores every stored symbol — the watchlist and the reference universe alike —
  * at one instant per week, collects each calibrated figure as the scorer reads
@@ -29,12 +36,15 @@ import { resolve } from 'path';
 import { getConfig } from '../config.js';
 import { computeAllMetrics, impliedPremiumShift } from '../analysis/computeMetrics.js';
 import {
-  collectCalibrated, CriterionDistribution, percentiles, sectorKey, usePremiumAdjustment,
+  CALIBRATION_META, collectCalibrated, CriterionDistribution, percentileIn, percentiles, sectorKey,
+  usePremiumAdjustment, type CalibrationTable,
 } from '../analysis/calibration.js';
+import { CALIBRATION } from '../analysis/calibration-table.js';
 import { computeFactorScore } from '../analysis/score.js';
 import { StockFinancials } from '../types.js';
 import { logger } from '../utils/logger.js';
 import { closePool, waitForDatabase } from './client.js';
+import { writeAppState } from './admin.js';
 import { storedInputs } from './rescore.js';
 import { listSymbols, snapshotHistory } from './store.js';
 
@@ -113,6 +123,62 @@ export async function calibrate(weeks: number): Promise<{
   return { table, symbols: scoredSymbols, observations };
 }
 
+/** Where the admin page finds the newest proposal and the state of the run making one. */
+export const PROPOSAL_KEY = 'calibration.proposal';
+export const STATUS_KEY = 'calibration.status';
+
+export interface CalibrationStatus {
+  state:      'running' | 'done' | 'failed' | 'interrupted';
+  startedAt:  string;
+  finishedAt: string | null;
+  error:      string | null;
+}
+
+/** One criterion whose typical stock moved: where the new median sits in the old distribution, 0–1. */
+export interface CriterionShift { key: string; oldPercentile: number; symbols: number }
+
+/** A generated table, waiting to be committed. */
+export interface CalibrationProposal {
+  generatedAt:       string;
+  weeks:             number;
+  symbols:           number;
+  observations:      number;
+  criteria:          number;
+  premiumAdjustment: number;
+  /** The committed table it would replace, as the image running it has it. */
+  current:           { generatedAt: string | null; symbols: number; observations: number; premiumAdjustment: number; criteria: number };
+  /** Market-wide criteria (no sector keys) whose median moved most, furthest first. */
+  shifts:            CriterionShift[];
+  /** Keys the new table has and the old lacks, and the other way round. */
+  added:             number;
+  removed:           number;
+  /** The file itself: `src/analysis/calibration-table.ts`. */
+  source:            string;
+}
+
+/**
+ * What a new table would move: for each market-wide criterion, where the new
+ * typical stock sits on the old scale. 0.5 is no change; 0.62 means the stock
+ * that is typical now would have read as the 62nd percentile before — the
+ * criterion's neutral point has risen, and every stock on it scores lower.
+ */
+export function compareTables(old: CalibrationTable, next: Record<string, CriterionDistribution>, keep = 8): {
+  shifts: CriterionShift[]; added: number; removed: number;
+} {
+  const shifts: CriterionShift[] = [];
+  for (const [key, d] of Object.entries(next)) {
+    const before = old[key];
+    if (!before || key.includes('@')) continue;
+    shifts.push({ key, oldPercentile: percentileIn(before.quantiles, d.quantiles[50]), symbols: d.symbols });
+  }
+  shifts.sort((a, b) => Math.abs(b.oldPercentile - 0.5) - Math.abs(a.oldPercentile - 0.5));
+  return {
+    shifts: shifts.slice(0, keep),
+    added: Object.keys(next).filter((k) => !old[k]).length,
+    removed: Object.keys(old).filter((k) => !next[k]).length,
+  };
+}
+
 function render(
   result: Awaited<ReturnType<typeof calibrate>>, weeks: number,
   premium: Awaited<ReturnType<typeof impliedPremiumAdjustment>>,
@@ -155,10 +221,16 @@ if (isMain) {
   };
   const weeks = Number(flag('--weeks') ?? 26);
   const out = resolve(flag('--out') ?? 'src/analysis/calibration-table.ts');
+  const store = args.includes('--store');
+  const startedAt = new Date().toISOString();
+  const status = (patch: Partial<CalibrationStatus>) => (store
+    ? writeAppState(STATUS_KEY, JSON.stringify({ state: 'running', startedAt, finishedAt: null, error: null, ...patch }))
+    : Promise.resolve());
 
   (async () => {
     getConfig();
     await waitForDatabase();
+    await status({});
     // The adjustment is measured with none in force, then held for the
     // collection, whose DCF probabilities depend on it.
     usePremiumAdjustment(0);
@@ -168,14 +240,33 @@ if (isMain) {
       logger.info(`Premium adjustment ${(premium.adjustment * 100).toFixed(2)} points from ${premium.stocks} DCFs`);
     }
     const result = await calibrate(weeks);
-    writeFileSync(out, render(result, weeks, premium));
+    const source = render(result, weeks, premium);
+    if (store) {
+      const proposal: CalibrationProposal = {
+        generatedAt: new Date().toISOString(), weeks,
+        symbols: result.symbols, observations: result.observations, criteria: Object.keys(result.table).length,
+        premiumAdjustment: premium ? Number(premium.adjustment.toFixed(4)) : 0,
+        current: {
+          generatedAt: CALIBRATION_META.generatedAt, symbols: CALIBRATION_META.symbols,
+          observations: CALIBRATION_META.observations, premiumAdjustment: CALIBRATION_META.premiumAdjustment,
+          criteria: Object.keys(CALIBRATION).length,
+        },
+        ...compareTables(CALIBRATION, result.table),
+        source,
+      };
+      await writeAppState(PROPOSAL_KEY, JSON.stringify(proposal));
+      await status({ state: 'done', finishedAt: new Date().toISOString() });
+    } else {
+      writeFileSync(out, source);
+    }
     logger.success(
       `Calibrated ${Object.keys(result.table).length} criteria from ${result.symbols} symbols `
-      + `(${result.observations} observations) → ${out}`,
+      + `(${result.observations} observations) → ${store ? 'app_state' : out}`,
     );
     await closePool();
   })().catch(async (e) => {
     logger.error(`Calibration failed: ${(e as Error).message}`);
+    await status({ state: 'failed', finishedAt: new Date().toISOString(), error: (e as Error).message }).catch(() => {});
     await closePool();
     process.exit(1);
   });

@@ -84,3 +84,31 @@ describe('the timing study', () => {
     assert.ok(Math.abs(s.groupShare.buy - 14 / 40) < 1e-12);
   });
 });
+
+describe('the timing expectation, read from the live series', () => {
+  it('finds the stocks near their low behind, as the backtest did', async () => {
+    const { monthlyView } = await import('../src/db/evaluate.js');
+    const { TIMING_SERIES } = await import('../src/db/timing-series.js');
+    const days = ['2025-01-31', '2025-02-28', '2025-03-31', '2025-04-30', '2025-05-30', '2025-06-30', '2025-07-31', '2025-08-29'];
+    const at = (day: string) => new Date(Date.parse(`${day}T12:00:00Z`) - 86_400_000);
+    const score = new Map(), verdicts = new Map(), timings = new Map(), prices = new Map<string, Close[]>();
+    for (let i = 0; i < 220; i++) {
+      const symbol = `S${i}`;
+      const low = i % 2 === 0;
+      score.set(symbol, days.map((d) => ({ at: at(d), value: 5 })));
+      verdicts.set(symbol, days.map((d) => ({ at: at(d), value: null, text: 'HOLD' })));
+      const values: Record<string, number> = {
+        m1: 0, rsi14: 50, distSma50: 0, distSma200: 0, channelZ: 0, channelSlope: 0, fromLow126: low ? 0.01 : 0.3, lowAgo: 40,
+      };
+      timings.set(symbol, new Map(TIMING_SERIES.map((k) => [k, days.map((d) => ({ at: at(d), value: values[k.split('.').pop()!] }))])));
+      prices.set(symbol, days.map((d, k) => ({ date: d, close: 100 * (low ? 1 : 1.01 ** k) })));
+    }
+    const view = monthlyView({
+      score, momentum: new Map(), verdicts, timings, prices,
+      benchmark: days.map((d) => ({ date: d, close: 100 })), sectors: new Map(),
+    });
+    const e = view.expectations.find((x) => x.key === 'near-low-6m')!;
+    assert.ok(e.live.windows >= 1, `windows ${e.live.windows}`);
+    assert.ok(e.live.mean! < 0, `mean ${e.live.mean}`);
+  });
+});

@@ -509,13 +509,15 @@ export function renderBacktest(r: BacktestResult): string {
       lines.push(`  ${g.group}: n ${g.n} · ${Object.entries(g.segments).map(([k, x]) => `${k} ${(x * 100).toFixed(0)}%`).join(', ')} · `
         + g.sectors.map((x) => `${x.sector} ${(x.share * 100).toFixed(0)}%`).join(', '));
     }
-    for (const h of [3, 6]) {
-      lines.push('', `── The top tenth split at its own median, ${h} months (above − below; halves; same split in D9) ──`);
-      const rows = r.topDecile.splits.filter((x) => x.horizon === h).sort((a, b) => Math.abs(b.diff.t ?? 0) - Math.abs(a.diff.t ?? 0));
-      for (const x of rows) {
-        lines.push(`  ${x.label.padEnd(26)} above ${pc(x.high.mean).padStart(7)} below ${pc(x.low.mean).padStart(7)}  diff ${pc(x.diff.mean).padStart(7)} (t ${fmt(x.diff.t, 1)})`
-          + `  2013–19 ${pc(x.first.mean).padStart(7)} (t ${fmt(x.first.t, 1)})  2020–26 ${pc(x.second.mean).padStart(7)} (t ${fmt(x.second.t, 1)})`
-          + `  D9 ${pc(x.ninth.mean).padStart(7)} (t ${fmt(x.ninth.t, 1)})`);
+    for (const [name, beside, splits] of [['top', 'D9', r.topDecile.splits], ['bottom', 'D2', r.topDecile.bottom ?? []]] as const) {
+      for (const h of [3, 6]) {
+        lines.push('', `── The ${name} tenth split at its own median, ${h} months (above − below; halves; same split in ${beside}) ──`);
+        const rows = splits.filter((x) => x.horizon === h).sort((a, b) => Math.abs(b.diff.t ?? 0) - Math.abs(a.diff.t ?? 0));
+        for (const x of rows) {
+          lines.push(`  ${x.label.padEnd(26)} above ${pc(x.high.mean).padStart(7)} below ${pc(x.low.mean).padStart(7)}  diff ${pc(x.diff.mean).padStart(7)} (t ${fmt(x.diff.t, 1)})`
+            + `  2013–19 ${pc(x.first.mean).padStart(7)} (t ${fmt(x.first.t, 1)})  2020–26 ${pc(x.second.mean).padStart(7)} (t ${fmt(x.second.t, 1)})`
+            + `  ${beside} ${pc(x.ninth.mean).padStart(7)} (t ${fmt(x.ninth.t, 1)})`);
+        }
       }
     }
   }

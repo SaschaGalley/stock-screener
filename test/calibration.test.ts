@@ -110,3 +110,16 @@ describe('criteria the review rebuilt', () => {
     close(criteria(signals({}))['revision-breadth'].value, 10 / 40);
   });
 });
+
+describe('a new table against the committed one', () => {
+  const dist = (shift: number) => ({ n: 101, symbols: 101, quantiles: Array.from({ length: 101 }, (_, i) => i + shift) });
+
+  it('says where the new typical stock sits on the old scale, furthest moves first', async () => {
+    const { compareTables } = await import('../src/db/calibrate.js');
+    const old = { a: dist(0), b: dist(0), 'a@Tech': dist(0), gone: dist(0) };
+    const r = compareTables(old, { a: dist(10), b: dist(0), 'a@Tech': dist(30), fresh: dist(0) });
+    assert.deepEqual(r.shifts.map((x) => [x.key, Math.round(x.oldPercentile * 100)]), [['a', 60], ['b', 50]]);
+    assert.equal(r.added, 1);
+    assert.equal(r.removed, 1);
+  });
+});

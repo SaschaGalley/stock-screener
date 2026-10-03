@@ -43,7 +43,9 @@ export type ExpectationMeasure =
   /** Inside the top tenth by factor score, the half above its median momentum pillar minus the half below. */
   | 'top-momentum-split'
   /** Stocks with a factor score of 8 or more against the average stock. */
-  | 'band-8';
+  | 'band-8'
+  /** Across all stocks, the half deeper in a timing reading's dip minus the half higher up (`backtest/timing.ts`). */
+  | 'timing-split';
 
 export interface Expectation {
   key:       string;
@@ -52,6 +54,8 @@ export interface Expectation {
   measure:   ExpectationMeasure;
   /** Months. */
   horizon:   number;
+  /** For `timing-split`: which reading (`analysis/timing.ts`). */
+  candidate?: string;
   /** +1: the measure should be above zero; −1: below. */
   direction: 1 | -1;
   /** What the backtest measured when it was written down: run of 3 October 2026, S&P 1500, 2013–2026. */
@@ -73,6 +77,14 @@ export const EXPECTATIONS: readonly Expectation[] = [
     key: 'band8-6m', measure: 'band-8', horizon: 6, direction: -1,
     claim: 'Aktien mit einem Score von 8 oder mehr liegen sechs Monate später hinter der Durchschnittsaktie.',
     backtest: { value: -0.0198, t: -1.33, windows: 27 },
+  },
+  {
+    // Found by the timing study the same day, so the backtest cannot test it
+    // again: the live months are its first test. Weaker in 2013–2019 (−0.3 %,
+    // t −0.5) than in 2020–2026 (−2.7 %, t −4.1).
+    key: 'near-low-6m', measure: 'timing-split', candidate: 'timing.support', horizon: 6, direction: -1,
+    claim: 'Aktien nahe ihrem 6-Monats-Tief liegen sechs Monate später hinter der Hälfte, die weiter davon entfernt ist.',
+    backtest: { value: -0.0146, t: -2.94, windows: 27 },
   },
 ];
 

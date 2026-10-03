@@ -22,13 +22,15 @@ import { sendAlert, verdictAlert } from './alerts.js';
 import { sendDigest } from './digest.js';
 import { applyBacktestSchedule, backtestOverview, reconcileBacktestStatus, startBacktest } from './backtest-service.js';
 import { storedBacktest, verdictEvidence } from './backtest/result.js';
+import { calibrationOverview, proposedTable, startCalibration } from './calibration-service.js';
 import { CALIBRATION_META, calibrationDue } from './analysis/calibration.js';
 import { migrate } from './db/migrate.js';
 import { storedMembers } from './universe.js';
 import { tradingViewLogoUrl } from './data/tradingview-logo.js';
 import { syncCatalog } from './db/catalog.js';
 import { closePool, waitForDatabase } from './db/client.js';
-import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials, TimingReadings, TimingReadingsSchema } from './types.js';
+import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials } from './types.js';
+import { TIMING_SERIES, timingFromPoints } from './db/timing-series.js';
 import { PILLAR_LABELS, WEIGHTS } from './analysis/score.js';
 import { FITTED_WEIGHTS_META } from './analysis/weight-table.js';
 import type {
@@ -93,27 +95,8 @@ const KEY_CARD = [
   'score.narrative.score',
 ] as const;
 const KEY_COMPOSITE     = 'metrics.composite.primary.median';
-/** The timing readings' series, one per field of the schema they are stored by. */
-const TIMING_PREFIX = 'signals.technicals.timing.';
-const KEY_TIMING = Object.keys(TimingReadingsSchema.shape).map((k) => `${TIMING_PREFIX}${k}`);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * One refresh's timing readings, put back together from their series. Every
- * field is written in the same call, so a point not stamped like the month's
- * return — which is never null — belongs to an earlier refresh and is a field
- * that has no value now.
- */
-function timingOf(points: Map<string, { at: string; value: number | null }> | undefined): TimingReadings | null {
-  const stamp = points?.get(`${TIMING_PREFIX}m1`)?.at;
-  if (!points || !stamp) return null;
-  const parsed = TimingReadingsSchema.safeParse(Object.fromEntries(KEY_TIMING.map((k) => {
-    const p = points.get(k);
-    return [k.slice(TIMING_PREFIX.length), p && p.at === stamp ? p.value : null];
-  })));
-  return parsed.success ? parsed.data : null;
-}
 
 function logoDomainFromWebsite(url: string | null): string | null {
   if (!url) return null;
@@ -789,7 +772,7 @@ export function createApp(): express.Express {
         seriesForAll(KEY_SCORE),
         latestPointsForAll([...KEY_CARD]),
         latestValueForAll(KEY_COMPOSITE),
-        latestPointsForAll(KEY_TIMING),
+        latestPointsForAll(TIMING_SERIES),
       ]);
       const marketRates = await getMarketRates(cfg.fredApiKey).catch(() => null);
 
@@ -877,7 +860,7 @@ export function createApp(): express.Express {
           dataAgeHours:  (Date.now() - new Date(snap.lastSeenAt).getTime()) / 3_600_000,
           watched:       isWatched(config, symbol),
           consensus:     computeConsensus(f, entries),
-          timing:        timingOf(timings.get(symbol)),
+          timing:        timingFromPoints((k) => timings.get(symbol)?.get(k)),
         });
       }
 
@@ -976,6 +959,38 @@ export function createApp(): express.Express {
     try {
       const r = await startBacktest('manual');
       res.status(r.started ? 202 : 409).json(r);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/calibration · POST /api/calibration/run · GET /api/calibration/table ─
+  // The deployment's way to recalibrate (`calibration-service.ts`): a run in a
+  // child process, its proposal with what it would move, and the file to commit.
+  app.get('/api/calibration', async (_req, res, next) => {
+    try {
+      res.json(await calibrationOverview());
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.post('/api/calibration/run', async (_req, res, next) => {
+    try {
+      const r = await startCalibration();
+      res.status(r.started ? 202 : 409).json(r);
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.get('/api/calibration/table', async (_req, res, next) => {
+    try {
+      const source = await proposedTable();
+      if (!source) {
+        res.status(404).json({ error: 'no_proposal' });
+        return;
+      }
+      // In this order: `attachment` sets the type from the name, and `.ts` is a video stream to it.
+      res.attachment('calibration-table.ts').type('text/plain').send(source);
     } catch (e) {
       next(e);
     }

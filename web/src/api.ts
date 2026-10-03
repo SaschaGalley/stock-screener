@@ -30,6 +30,7 @@ import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
 import type { BacktestOverview } from '../../src/backtest-service';
+import type { CalibrationOverview } from '../../src/calibration-service';
 import type { VerdictEvidence } from '../../src/backtest/result';
 import type {
   CoverageView, Feed, IncomeFlows, TrackRecordView, VerdictRecordSummary, VerdictRecordView,
@@ -197,6 +198,11 @@ export const api = {
   getBacktestOverview: () => jsonFetch<BacktestOverview>(`${BASE}/backtest/overview`),
   /** Start a run now; refused while one is going. */
   runBacktest: () => jsonFetch<{ started: boolean; reason: string | null }>(`${BASE}/backtest/run`, { method: 'POST' }),
+  /** The newest calibration proposal and the run making one — `calibration-service.ts`. */
+  getCalibration: () => jsonFetch<CalibrationOverview>(`${BASE}/calibration`),
+  runCalibration: () => jsonFetch<{ started: boolean; reason: string | null }>(`${BASE}/calibration/run`, { method: 'POST' }),
+  /** Where the proposed `calibration-table.ts` downloads from. */
+  calibrationTableUrl: `${BASE}/calibration/table`,
 
   /** Rank IC of the stored scores against later returns. Slow when not cached server-side. */
   getEvaluation: (horizons: number[], fresh = false) =>

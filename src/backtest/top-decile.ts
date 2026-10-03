@@ -15,6 +15,10 @@
  *      falling back. The same split in the ninth tenth says whether a
  *      difference belongs to the top or to the feature everywhere.
  *
+ * The same split is asked of the bottom tenth, against the second: STRONG
+ * SELL did no worse than the average stock, so which half of the lowest
+ * scores recovers is the question there.
+ *
  * Twenty features at three horizons is sixty chances for noise to look like a
  * finding, so each split is read in both halves of the years too (2013–2019,
  * 2020–2026): a candidate for a rule is one that points the same way in both.
@@ -98,13 +102,19 @@ export interface TopSplit {
   /** Above minus below in each half of the years. */
   first:   SplitStat;
   second:  SplitStat;
-  /** Above minus below inside the ninth tenth, for comparison. */
+  /** Above minus below in the tenth beside it, for comparison: the ninth for the top, the second for the bottom. */
   ninth:   SplitStat;
 }
 
 export interface TopDecileStudy {
   profiles: GroupProfile[];
   splits:   TopSplit[];
+  /**
+   * The same split inside the bottom tenth, against the second: which half of
+   * the lowest scores — where SELL and STRONG SELL are — recovers. Absent in
+   * studies from before it was asked.
+   */
+  bottom?:  TopSplit[];
 }
 
 const median = (xs: number[]) => {
@@ -195,45 +205,51 @@ export function topDecileStudy(
     };
   });
 
-  const splits: TopSplit[] = [];
-  for (const h of TOP_HORIZONS) {
-    const excess = monthlyExcess(byDay, prices, monthEnds, h);
+  // Inside a tenth each month, the half above its own median of a feature
+  // against the half below, and the same split in the tenth beside it.
+  const splitsWithin = (tenth: number, neighbour: number): TopSplit[] => {
+    const out: TopSplit[] = [];
+    for (const h of TOP_HORIZONS) {
+      const excess = monthlyExcess(byDay, prices, monthEnds, h);
 
-    for (const [i, f] of TOP_FEATURES.entries()) {
-      const highs: number[] = [], lows: number[] = [], diffs: number[] = [], first: number[] = [], second: number[] = [], ninth: number[] = [];
-      for (const day of days) {
-        const month = byDay.get(day)!;
-        // Split at the tenth's own median that month: the question is which
-        // half of the top falls back, and a feature the whole top sits high
-        // on — the pillars' agreement — would leave the lower half empty.
-        const side = (d: number) => {
-          const inside = month.filter((r) => decile.get(r) === d && excess.has(r) && Number.isFinite(r.features[i]));
-          const cut = median(inside.map((r) => r.features[i]));
-          if (cut === null) return null;
-          const up = inside.filter((r) => r.features[i] > cut).map((r) => excess.get(r)!);
-          const down = inside.filter((r) => r.features[i] <= cut).map((r) => excess.get(r)!);
-          if (up.length < MIN_SIDE || down.length < MIN_SIDE) return null;
-          const m = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-          return { up: m(up), down: m(down) };
-        };
-        const top = side(10);
-        if (top) {
-          highs.push(top.up);
-          lows.push(top.down);
-          diffs.push(top.up - top.down);
-          (day < HALF ? first : second).push(top.up - top.down);
+      for (const [i, f] of TOP_FEATURES.entries()) {
+        const highs: number[] = [], lows: number[] = [], diffs: number[] = [], first: number[] = [], second: number[] = [], next: number[] = [];
+        for (const day of days) {
+          const month = byDay.get(day)!;
+          // Split at the tenth's own median that month: the question is which
+          // half of the top falls back, and a feature the whole top sits high
+          // on — the pillars' agreement — would leave the lower half empty.
+          const side = (d: number) => {
+            const inside = month.filter((r) => decile.get(r) === d && excess.has(r) && Number.isFinite(r.features[i]));
+            const cut = median(inside.map((r) => r.features[i]));
+            if (cut === null) return null;
+            const up = inside.filter((r) => r.features[i] > cut).map((r) => excess.get(r)!);
+            const down = inside.filter((r) => r.features[i] <= cut).map((r) => excess.get(r)!);
+            if (up.length < MIN_SIDE || down.length < MIN_SIDE) return null;
+            const m = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+            return { up: m(up), down: m(down) };
+          };
+          const own = side(tenth);
+          if (own) {
+            highs.push(own.up);
+            lows.push(own.down);
+            diffs.push(own.up - own.down);
+            (day < HALF ? first : second).push(own.up - own.down);
+          }
+          const beside = side(neighbour);
+          if (beside) next.push(beside.up - beside.down);
         }
-        const nine = side(9);
-        if (nine) ninth.push(nine.up - nine.down);
+        // Overlapping windows are not independent: every h-th month only, as the evaluation counts them.
+        const every = (xs: number[]) => xs.filter((_, k) => k % h === 0);
+        out.push({
+          feature: f.key, label: f.label, horizon: h,
+          high: splitStat(every(highs)), low: splitStat(every(lows)), diff: splitStat(every(diffs)),
+          first: splitStat(every(first)), second: splitStat(every(second)), ninth: splitStat(every(next)),
+        });
       }
-      // Overlapping windows are not independent: every h-th month only, as the evaluation counts them.
-      const every = (xs: number[]) => xs.filter((_, k) => k % h === 0);
-      splits.push({
-        feature: f.key, label: f.label, horizon: h,
-        high: splitStat(every(highs)), low: splitStat(every(lows)), diff: splitStat(every(diffs)),
-        first: splitStat(every(first)), second: splitStat(every(second)), ninth: splitStat(every(ninth)),
-      });
     }
-  }
-  return { profiles, splits };
+    return out;
+  };
+
+  return { profiles, splits: splitsWithin(10, 9), bottom: splitsWithin(1, 2) };
 }

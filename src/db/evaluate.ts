@@ -29,6 +29,8 @@ import {
 import { EXPECTATIONS, judge, MIN_UNIVERSE_STOCKS, type Expectation, type Judgement, type LiveReading } from '../backtest/expectations.js';
 import { closedMonthEnds } from '../backtest/prices.js';
 import { featureArray, topDecileStudy, type TopRecord, type TopSplit } from '../backtest/top-decile.js';
+import { timingArray, timingGroup, timingStudy, type TimingRecord } from '../backtest/timing.js';
+import { TIMING_SERIES, timingFromPoints } from './timing-series.js';
 import { PILLAR_KEYS } from '../types.js';
 import { PILLAR_LABELS, PILLAR_WEIGHTS } from '../analysis/score.js';
 import { closePool, waitForDatabase } from './client.js';
@@ -131,11 +133,18 @@ export async function runEvaluation(opts: {
   // The factor verdict for the monthly bands and the fair value's gap, beside the signals rather than among them.
   const factorVerdicts = new Map<string, SignalPoint[]>();
   const fairGaps = new Map<string, SignalPoint[]>();
+  // And where each stood on its chart, for the timing expectation.
+  const timings = new Map<string, Map<string, SignalPoint[]>>();
+  const timingKeys = new Set(TIMING_SERIES);
   let earliest = Date.now();
   for (const symbol of symbols) {
     const watched = onWatchlist.has(symbol);
-    for (const series of await readSeries(symbol, [...(watched ? keys : factorKeys), FACTOR_VERDICT, FAIR_GAP])) {
+    for (const series of await readSeries(symbol, [...(watched ? keys : factorKeys), FACTOR_VERDICT, FAIR_GAP, ...TIMING_SERIES])) {
       const points = series.points.map((p) => ({ at: new Date(p.at), value: p.value, text: p.text }));
+      if (timingKeys.has(series.key)) {
+        (timings.get(symbol) ?? timings.set(symbol, new Map()).get(symbol)!).set(series.key, points);
+        continue;
+      }
       if (series.key === FACTOR_VERDICT) {
         factorVerdicts.set(symbol, points);
         continue;
@@ -202,7 +211,7 @@ export async function runEvaluation(opts: {
     weightHorizon: WEIGHT_HORIZON,
     monthly:   reference.length ? monthlyView({
       score: allSignals.get('score.factor.score') ?? new Map(), momentum: allSignals.get(MOMENTUM) ?? new Map(),
-      verdicts: factorVerdicts, fairGaps, prices, benchmark, sectors,
+      verdicts: factorVerdicts, fairGaps, timings, prices, benchmark, sectors,
     }) : null,
   };
 }
@@ -213,12 +222,14 @@ export function monthlyView(input: {
   verdicts:  Map<string, SignalPoint[]>;
   /** Margin of safety to the headline fair value; absent, no row. */
   fairGaps?: Map<string, SignalPoint[]>;
+  /** Each stock's timing series by key; absent, the timing expectation reads nothing. */
+  timings?:  Map<string, Map<string, SignalPoint[]>>;
   prices:    Map<string, Close[]>;
   /** Daily closes of the benchmark; its month-ends are the calendar. */
   benchmark: Close[];
   sectors:   Map<string, string>;
 }): MonthlyView {
-  const { score, momentum, verdicts, fairGaps, prices, benchmark, sectors } = input;
+  const { score, momentum, verdicts, fairGaps, timings, prices, benchmark, sectors } = input;
   let first: string | null = null;
   for (const points of score.values()) {
     const d = points[0]?.at.toISOString().slice(0, 10);
@@ -256,6 +267,19 @@ export function monthlyView(input: {
   }
   const split = records.length ? topDecileStudy(records, prices, months).splits.filter((x) => x.feature === 'pillar.momentum') : [];
 
+  // And where each stood on its chart, for the timing split across all stocks.
+  const timingRecords: TimingRecord[] = [];
+  for (const day of months) {
+    for (const [symbol, series] of timings ?? []) {
+      if (!valueBefore(score.get(symbol) ?? [], day)) continue;
+      const t = timingFromPoints((k) => valueBefore(series.get(k) ?? [], day));
+      if (!t) continue;
+      const verdict = valueBefore(verdicts.get(symbol) ?? [], day)?.text ?? 'HOLD';
+      timingRecords.push({ day, symbol, group: timingGroup(verdict), readings: timingArray((c) => c.read(t)) });
+    }
+  }
+  const timingSplits = timingRecords.length ? timingStudy(timingRecords, prices, months).splits : [];
+
   const reading = (e: Expectation): LiveReading => {
     if (e.measure === 'ic') {
       const r = ev.ics.find((x) => x.key === 'score.factor.score' && x.horizon === e.horizon);
@@ -263,6 +287,10 @@ export function monthlyView(input: {
     }
     if (e.measure === 'top-momentum-split') {
       const r: TopSplit | undefined = split.find((x) => x.horizon === e.horizon);
+      return { mean: r?.diff.mean ?? null, t: r?.diff.t ?? null, windows: r?.diff.months ?? 0 };
+    }
+    if (e.measure === 'timing-split') {
+      const r = timingSplits.find((x) => x.candidate === e.candidate && x.group === 'all' && x.horizon === e.horizon);
       return { mean: r?.diff.mean ?? null, t: r?.diff.t ?? null, windows: r?.diff.months ?? 0 };
     }
     const r = steps.find((x) => x.bucket === '≥8' && x.horizon === e.horizon);

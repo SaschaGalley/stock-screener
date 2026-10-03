@@ -443,6 +443,15 @@ collects each figure as the scorer reads it, and writes the 101 percentiles to
 `calibration-table.ts`. That file is committed, so a recalibration is a code
 change that re-scores the history like any other.
 
+A deployment has the universe in its database but no sources to write into,
+so the admin page calibrates there: *Neu berechnen* runs the same script with
+`--store` in a child process (`calibration-service.ts`), which leaves the table
+in `app_state` as a proposal. The page shows what it would move — for the
+criteria whose typical stock moved most, where the new median sits on the old
+scale, 50 meaning unchanged — and offers `calibration-table.ts` to download.
+It replaces `src/analysis/calibration-table.ts` in a commit, and the deploy
+that carries it re-scores the history.
+
 The DCF's probability and the margin the price requires are calibrated, although
 they look natural. The model fades growth faster than the market's own implied
 premium assumes, so it finds most large caps dear, and that says something
@@ -520,8 +529,9 @@ which is what a score is for.
 
 The committed table was generated on 27 September from all 595 stored stocks,
 the watchlist and the full universe, with mostly one observation per reference
-stock. Regenerate it (`pnpm run calibrate`) once the nightly rotation has given
-the universe a few weeks of history; the admin page says when it is due. On
+stock. Regenerate it (`pnpm run calibrate`, or *Neu berechnen* on the admin
+page) once the nightly rotation has given the universe a few weeks of history;
+the admin page says when it is due. On
 those 595 stocks the six pillar medians sit between 4.8 and 5.2, 293 lean
 bullish and 302 bearish, and conviction is 1.25 either way.
 
@@ -1263,17 +1273,19 @@ factor score before every month-end, its return one, three, six and twelve
 months on against the month's average stock, windows that do not overlap, the
 factor verdicts' bands — each beside the backtest's own figure.
 
-Above them stand three expectations, written down on 3 October 2026 before a
+Above them stand four expectations, written down on 3 October 2026 before a
 month that will test them had closed (`backtest/expectations.ts`): the factor
 score's rank IC over a month above zero; inside the top tenth, the half with
 the stronger momentum pillar ahead over six months; a score of 8 or more
-behind the average stock over six months. The rule is fixed with them: under
+behind the average stock over six months; and, from the timing study of the
+same day, the half of all stocks nearer their six-month low behind the other
+half over six months (read from the stored timing series, `db/timing-series.ts`). The rule is fixed with them: under
 six independent windows *zu früh*, two standard errors the expected way
 *bestätigt*, two the other way *widerlegt*, *offen* between; a month counts
 only when at least 200 stocks were scored on it, not the watchlist alone.
 Each row also says how long an effect the backtest's size, at its spread,
 would need to reach two standard errors: about ten years for the IC, fourteen
-for the split, thirty for the band. The live months will not confirm effects
+for the split, thirty for the band, seven for the six-month low. The live months will not confirm effects
 this small in any time that matters. They can contradict one sooner, and they
 say whether the score the app actually shows behaves like the one the backtest
 rebuilt. An expectation added later is dated later and tests only the months
@@ -1777,6 +1789,21 @@ too few stocks to read. The rule is not adopted, nothing in the score
 changed, and the top's fall over half a year is left for the live evaluation
 to confirm or dismiss.
 
+**And the bottom tenth (3 October 2026).** STRONG SELL did no worse than the
+average stock, so the same study asks which half of the bottom recovers. The
+bottom tenth is expensive and stalled: a P/E of 40 against 24 for the middle,
+revenue up 0.6 %, the year flat, 17 % under its high, every pillar low and the
+pillars agreeing as much as at the top. It trails the average stock only a
+little — 0.1 % over a month, 0.4 % over six, 0.7 % over twelve, none beyond
+noise — and no more than the second tenth does. Split at its own medians, no
+feature passes: the largest difference, the higher-beta half ahead by 3.5 %
+over six months (t 2.0), shows nearly as strongly in the second tenth, which
+makes it the market's rise over these years rather than anything about the
+bottom; the faster-growing and the higher-quality halves trailed (t −1.9 and
+−1.8). Fifty-one splits offer about that much by chance. No rule follows. A
+low score marks a stock that is dear and stalled; it does not forecast a
+fall.
+
 **Does it measure the app's score? (3 October 2026)** Every run now also
 compares itself with the live scores (`backtest/fidelity.ts`, alone with
 `--fidelity`): for every stock the app holds that is in the S&P 1500 too, its
@@ -2016,7 +2043,8 @@ src/
 │   ├── admin.ts           Runs, settings, entity mappings, filing index
 │   ├── backfill.ts        One-shot import of the old file cache
 │   ├── rescore.ts         Re-scores stored history on today's code; the current card from stored inputs
-│   ├── calibrate.ts       Reference distributions and the premium adjustment (`pnpm run calibrate`)
+│   ├── calibrate.ts       Reference distributions and the premium adjustment (`pnpm run calibrate`, `--store`)
+│   ├── timing-series.ts   The stored timing readings, put back together per refresh
 │   ├── golden.ts          Captures stored inputs as golden fixtures (`pnpm run golden:capture`)
 │   └── evaluate.ts        CLI for the outcome evaluation (`pnpm run evaluate`)
 ├── files.ts               The two things that stay files (filings, reports)
@@ -2028,10 +2056,12 @@ src/
 ├── alerts.ts              Verdict changes: recorded when they happen, announced once they hold
 ├── digest.ts              The morning's message: what happened across the watchlist since the last
 ├── backtest-service.ts    The monthly backtest: schedule, child process, status
+├── calibration-service.ts The admin page's calibration: child process, proposal, the file to commit
 ├── backtest/              The factor score rebuilt at past month-ends (`pnpm run backtest`)
 │   ├── lock.ts            One run at a time across processes (an advisory lock)
 │   ├── variants.ts        The same rows under another rule: the conviction stretch, a momentum floor for STRONG BUY
-│   ├── top-decile.ts      What the top tenth is made of, and which half of it falls back
+│   ├── top-decile.ts      What the top and bottom tenths are made of, and which half of each falls back or recovers
+│   ├── timing.ts          Whether it pays to wait for the chart, within each verdict
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
 │   ├── analysts.ts        Every company's rating history, cached on disk and archived
 │   ├── insiders.ts        Every company's Form 4 trades from Finnhub, for the candidates
@@ -2077,6 +2107,7 @@ src/
 │   ├── weight-table.ts    Generated weight fit, empty until one holds up (`pnpm run backtest -- --write-weights`)
 │   ├── calibration.ts     Percentile reading of a criterion against its reference distribution
 │   ├── calibration-table.ts  Generated reference distributions (`pnpm run calibrate`)
+│   ├── timing.ts          Where the price sits on its own path: the timing readings and their candidates
 │   ├── evaluate.ts        Rank IC, sector-neutral IC, the weight tilt and the joint test
 │   ├── analyst-history.ts The analyst consensus of a past day, rebuilt from the rating actions
 │   ├── verdict-record.ts  Our verdicts as calls, against the index after 1, 3, 6 and 12 months

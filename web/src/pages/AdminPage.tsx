@@ -4,6 +4,7 @@ import type { AppConfig, ConfigResponse, JobRun, SchedulerStatus, SearchChoice }
 import { MODELS, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel } from '../../../src/models';
 import { CloseIcon } from '../components/icons';
 import { BacktestStatusLine, useBacktestOverview } from '../components/BacktestRuns';
+import CalibrationPanel from '../components/CalibrationPanel';
 
 /** Poll interval while a run is in flight — fast enough to feel live, slow
  *  enough that a two-hour run doesn't hammer the API. */
@@ -475,19 +476,7 @@ export default function AdminPage({ onClose }: Props) {
               {meta.universeFresh} von {meta.universeSize} in den letzten 7 Tagen aktualisiert
             </p>
           )}
-          <div className="rounded border border-ink-800 bg-ink-950/40 px-3 py-2 text-xs leading-relaxed text-ink-400">
-            Kalibrierung {meta.calibration.generatedAt
-              ? `vom ${new Date(meta.calibration.generatedAt).toLocaleDateString('de-DE')}`
-              : 'fehlt'}
-            {' '}· {meta.calibration.symbols} Aktien, {meta.calibration.observations} Beobachtungen
-            {' '}· Prämienkorrektur {meta.calibration.premiumAdjustment >= 0 ? '+' : '−'}
-            {Math.abs(meta.calibration.premiumAdjustment * 100).toFixed(2).replace('.', ',')} Pkt.
-            {meta.calibration.due && (
-              <div className="mt-1 text-amber-400">
-                Neukalibrierung fällig: {meta.calibration.due} — <span className="font-mono">pnpm run calibrate</span>, dann committen.
-              </div>
-            )}
-          </div>
+          <CalibrationPanel committed={meta.calibration} />
         </Card>
 
         {/* ── Backtest ───────────────────────────────────────────────────── */}
