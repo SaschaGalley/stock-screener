@@ -2,6 +2,7 @@ import { Fragment, type MutableRefObject } from 'react';
 import type { OverviewRow } from '../types';
 import ScoreSparkline from './charts/ScoreSparkline';
 import RecommendationBadge from './RecommendationBadge';
+import { evidenceLine, useVerdictEvidence } from './VerdictEvidence';
 import StockListControls from './StockListControls';
 import Tip from './Tip';
 import {
@@ -91,6 +92,8 @@ export default function StockTable({
     (el) => el.querySelector('thead')?.getBoundingClientRect().height ?? 0,
   );
 
+  // What each verdict did in the backtest, on hover over the chip.
+  const evidence = useVerdictEvidence();
   const avg = averageScore(rows);
   const filtered = rows.length !== total;
   const groups = groupRows(rows, view.group);
@@ -124,6 +127,7 @@ export default function StockTable({
             score={r.score}
             heldBack={r.verdictCapped ? r.capReasons : []}
             size="sm"
+            note={evidence ? evidenceLine(evidence, r.recommendation) : null}
           />
         ) : (
           <span className="text-xs text-ink-500">nicht analysiert</span>

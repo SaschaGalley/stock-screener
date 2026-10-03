@@ -1808,6 +1808,15 @@ What the comparison means for every number above: the backtest measures a
 close relative of the app's score, not the score itself. It lacks the
 estimate revisions entirely, and half of its top tenth is not the app's.
 
+**Beside the verdict.** What the backtest says each verdict did is shown where
+the verdict is (`VerdictEvidence.tsx`, from `/api/backtest/verdicts`): on the
+stock page under the verdict, the stocks the newest run gave the same factor
+verdict against the average stock of their month, one, three, six and twelve
+months on, in bold only where a figure is two standard errors from nothing;
+in the list, the same as a line on hovering over the chip. A STRONG BUY ahead
+after a month and behind after six says something different from one ahead
+after both, and the label alone says neither.
+
 Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
 

@@ -21,7 +21,7 @@ import {
 import { sendAlert, verdictAlert } from './alerts.js';
 import { sendDigest } from './digest.js';
 import { applyBacktestSchedule, backtestOverview, reconcileBacktestStatus, startBacktest } from './backtest-service.js';
-import { storedBacktest } from './backtest/result.js';
+import { storedBacktest, verdictEvidence } from './backtest/result.js';
 import { CALIBRATION_META, calibrationDue } from './analysis/calibration.js';
 import { migrate } from './db/migrate.js';
 import { storedMembers } from './universe.js';
@@ -912,6 +912,17 @@ export function createApp(): express.Express {
         inForce:  { weights: WEIGHTS, fit: FITTED_WEIGHTS_META },
       };
       res.json(body);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/backtest/verdicts ─────────────────────────────────────────────
+  // What each verdict did in the newest backtest, for the verdict on every
+  // stock page and in the list — a few kilobytes of the whole result.
+  app.get('/api/backtest/verdicts', async (_req, res, next) => {
+    try {
+      res.json(await verdictEvidence());
     } catch (e) {
       next(e);
     }

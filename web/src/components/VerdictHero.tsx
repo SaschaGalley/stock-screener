@@ -6,6 +6,7 @@ import { useStoredOpen } from './Section';
 import { fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
 import { useMoney } from '../currency';
 import RecommendationBadge from './RecommendationBadge';
+import VerdictEvidence from './VerdictEvidence';
 import Term from './Term';
 import type { GlossaryKey } from '../glossary';
 
@@ -118,6 +119,7 @@ export default function VerdictHero({
             <p className="mt-3 text-sm leading-relaxed text-ink-300">
               {llm.thesis}
             </p>
+            <VerdictEvidence verdict={llm.recommendation} />
             <div className="mt-auto">{verdictChanges}</div>
           </div>
         ) : (

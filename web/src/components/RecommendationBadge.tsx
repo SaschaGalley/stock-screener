@@ -15,13 +15,15 @@ import Tip from './Tip';
  * that changed nothing is not something to announce.
  */
 export default function RecommendationBadge({
-  rec, score, heldBack = [], size = 'md',
+  rec, score, heldBack = [], size = 'md', note = null,
 }: {
   rec: string;
   score?: number | null;
   heldBack?: string[];
   /** `sm` is the list's: a row is only as tall as its tallest cell. */
   size?: 'sm' | 'md';
+  /** Shown on hover over the chip — the list's line on what the verdict did before. */
+  note?: string | null;
 }) {
   const capped = heldBack.length > 0;
   const wouldBe = capped && typeof score === 'number' ? verdictForScore(score) : null;
@@ -29,9 +31,15 @@ export default function RecommendationBadge({
 
   return (
     <span className="inline-flex items-center gap-1">
-      <span className={`inline-block rounded font-bold ${chip} ${recommendationColor(rec)}`}>
-        {rec}
-      </span>
+      {note ? (
+        <Tip content={note}>
+          <span className={`inline-block rounded font-bold ${chip} ${recommendationColor(rec)}`}>{rec}</span>
+        </Tip>
+      ) : (
+        <span className={`inline-block rounded font-bold ${chip} ${recommendationColor(rec)}`}>
+          {rec}
+        </span>
+      )}
       {capped && (
         <Tip
           className="text-xs text-amber-400"

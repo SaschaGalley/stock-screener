@@ -30,6 +30,7 @@ import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
 import type { BacktestOverview } from '../../src/backtest-service';
+import type { VerdictEvidence } from '../../src/backtest/result';
 import type {
   CoverageView, Feed, IncomeFlows, TrackRecordView, VerdictRecordSummary, VerdictRecordView,
 } from '../../src/stock-history-service';
@@ -190,6 +191,8 @@ export const api = {
   /** The stored backtest — cheap, it is computed by `pnpm run backtest` or the monthly run, not here. */
   getBacktest: () =>
     jsonFetch<BacktestResponse>(`${BASE}/backtest`),
+  /** What each verdict did in the newest backtest — small, for the verdict wherever it is shown. */
+  getVerdictEvidence: () => jsonFetch<VerdictEvidence | null>(`${BASE}/backtest/verdicts`),
   /** The run in progress, the monthly schedule and every run kept. */
   getBacktestOverview: () => jsonFetch<BacktestOverview>(`${BASE}/backtest/overview`),
   /** Start a run now; refused while one is going. */

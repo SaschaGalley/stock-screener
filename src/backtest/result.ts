@@ -152,6 +152,43 @@ export async function storedBacktest(): Promise<BacktestResult | null> {
   }
 }
 
+/**
+ * What each factor verdict did in the newest backtest — the stocks it was
+ * given to, against the average stock of the same month, one to twelve months
+ * on — and how closely that backtest follows the app's score. Small enough to
+ * ask for on every stock page; the whole result is not.
+ */
+export interface VerdictEvidence {
+  generatedAt: string;
+  universe:    string;
+  from:        string;
+  to:          string;
+  verdicts:    BucketReturn[];
+  /** The live comparison's rank correlation and verdict agreement, where the run made one. */
+  fidelity:    { rho: number | null; same: number } | null;
+}
+
+export async function verdictEvidence(): Promise<VerdictEvidence | null> {
+  const row = await queryOne<{
+    generated_at: Date; universe: string | null; from: string; to: string;
+    verdicts: BucketReturn[] | null; rho: number | null; same: number | null;
+  }>(
+    `SELECT generated_at, universe, result ->> 'from' AS "from", result ->> 'to' AS "to",
+            result -> 'bands' -> 'verdicts' AS verdicts,
+            (SELECT (x ->> 'rho')::float FROM jsonb_array_elements(result -> 'fidelity' -> 'scores') x
+              WHERE x ->> 'key' = 'score') AS rho,
+            (result -> 'fidelity' -> 'verdicts' ->> 'same')::float AS same
+       FROM backtest_runs WHERE result -> 'bands' ? 'verdicts'
+      ORDER BY generated_at DESC LIMIT 1`,
+  );
+  if (!row?.verdicts) return null;
+  return {
+    generatedAt: row.generated_at.toISOString(), universe: row.universe ?? 'S&P 500', from: row.from, to: row.to,
+    verdicts: row.verdicts,
+    fidelity: row.same !== null ? { rho: row.rho, same: row.same } : null,
+  };
+}
+
 /** One earlier run, as a line in the list of runs. */
 export interface BacktestRunSummary {
   id:          number;
