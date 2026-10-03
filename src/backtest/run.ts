@@ -77,6 +77,7 @@ import type { AnalystAction } from '../analysis/analyst-accuracy.js';
 import { analystHistory } from './analysts.js';
 import { insiderHistory } from './insiders.js';
 import { resolveDeparted } from './departed.js';
+import { VARIANTS, variantSignals } from './variants.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
 import { Company, payloadAt, yahooSector } from './payload.js';
 import {
@@ -383,6 +384,11 @@ export async function runBacktest(
     return [{ key: ix.key, label: ix.label, companies: members.size, ics: ev.ics, labels: ev.labels }];
   });
 
+  // Each criterion's own series has been evaluated; what follows reads the
+  // score, the verdicts and the rows. A quarter of a gigabyte freed before the
+  // bands and variants build their own.
+  for (const k of [...signals.keys()]) if (k.startsWith(CRITERION_PREFIX)) signals.delete(k);
+
   // The score cut into its tenths and its verdicts, each against the month's
   // average stock: whether the top earns more than the next, and whether a
   // STRONG BUY earns more than a BUY.
@@ -408,6 +414,34 @@ export async function runBacktest(
     const members = new Set(companies.filter((c) => c.segment === seg.key).map((c) => c.symbol));
     Object.assign(seg, { bands: bucketsOf(members) });
   }
+
+  // The same rows under other rules: the conviction stretch at full, half and
+  // none, each with its IC, its tenths and its verdicts (`variants.ts`).
+  progress('Varianten');
+  const variants = VARIANTS.map((v) => {
+    const sig = variantSignals(rows, v);
+    const common = { prices: priceMap, benchmark: calendar, horizons: BACKTEST_HORIZONS };
+    const ev = evaluate({
+      ...common, signals: new Map([['score', sig.score], ['verdict', sig.verdict]]), labelKey: 'verdict', sectors,
+    });
+    const bySegment = segments.map((seg) => {
+      const members = new Set(companies.filter((c) => c.segment === seg.key).map((c) => c.symbol));
+      const only = new Map([...sig.score].filter(([s]) => members.has(s)));
+      return { key: seg.key, ics: evaluate({ ...common, signals: new Map([['score', only]]), sectors }).ics };
+    });
+    const counts = new Map<string, number>();
+    for (const points of sig.verdict.values()) for (const p of points) counts.set(p.text!, (counts.get(p.text!) ?? 0) + 1);
+    const total = [...counts.values()].reduce((a, b) => a + b, 0);
+    return {
+      key: v.key, label: v.label, stretch: v.stretch,
+      ics: ev.ics,
+      segments: bySegment,
+      deciles: bucketReturns({ ...common, points: sig.score, bucket: 'decile' }),
+      verdicts: bucketReturns({ ...common, points: sig.verdict, bucket: (p) => p.text ?? null }),
+      steps: bucketReturns({ ...common, points: sig.score, bucket: step }),
+      verdictShare: Object.fromEntries([...counts].map(([k, n]) => [k, total ? n / total : 0])),
+    };
+  });
 
   const fit = weightLab(rows, { prices: priceMap, sectors }, {
     fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_FIT_HORIZONS, labels,
@@ -437,6 +471,7 @@ export async function runBacktest(
     fit,
     departed: departed?.counts,
     bands,
+    variants,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
       departed ? departedCaveat(departed.counts) : BACKTEST_CAVEATS[1],
@@ -488,6 +523,19 @@ export function renderBacktest(r: BacktestResult): string {
         lines.push(`  ${h}M ${sig.key.replace('score.factor.', '').padEnd(28)} IC ${fmt(sig.meanIc).padStart(7)}  t ${fmt(sig.tStat, 1).padStart(5)}`
           + `  sector ${fmt(sig.neutralIc).padStart(7)}  t ${fmt(sig.neutralTStat, 1).padStart(5)}  n ${fmt(sig.meanCrossSection, 0)}`);
       }
+    }
+  }
+  if (r.variants?.length) {
+    lines.push('', '── Variants: the same rows under other rules ──');
+    for (const v of r.variants) {
+      const ic = (h: number) => v.ics.find((x) => x.key === 'score' && x.horizon === h);
+      const top = (h: number) => v.steps.find((x) => x.horizon === h && x.bucket === '≥8');
+      const d10 = (h: number) => v.deciles.find((x) => x.horizon === h && x.bucket === 'D10');
+      lines.push(`  ${v.label}`);
+      lines.push(`    IC  ${BACKTEST_HORIZONS.map((h) => `${h}M ${fmt(ic(h)?.meanIc)} (t ${fmt(ic(h)?.tStat, 1)}, sector ${fmt(ic(h)?.neutralIc)})`).join('  ')}`);
+      lines.push(`    D10 ${BACKTEST_HORIZONS.map((h) => `${h}M ${d10(h)?.meanExcess == null ? '—' : `${(d10(h)!.meanExcess! * 100).toFixed(2)}%`} (t ${fmt(d10(h)?.tStat, 1)})`).join('  ')}`);
+      lines.push(`    ≥8  ${BACKTEST_HORIZONS.map((h) => `${h}M ${top(h)?.meanExcess == null ? '—' : `${(top(h)!.meanExcess! * 100).toFixed(2)}%`} (n ${top(h)?.count ?? 0})`).join('  ')}`);
+      lines.push(`    share ${Object.entries(v.verdictShare).map(([k, x]) => `${k} ${(x * 100).toFixed(1)}%`).join(', ')}`);
     }
   }
   lines.push('', 'Factor score IC at one month, by year:');

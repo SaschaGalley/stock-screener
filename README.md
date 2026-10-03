@@ -1660,6 +1660,27 @@ its top tenth (−0.1 % against −0.2 % at three months), not enough to say. A
 change to the bands or the stretch would be a change to the model, tested the
 way the weights are and decided by its owner, not here.
 
+**Without the conviction stretch (3 October 2026).** Tested as a variant
+(`backtest/variants.ts`): the same rows assembled again — the same criterion
+points, trust and caps — with the stretch at full, half and none. The stretch
+is not what makes the top fall back:
+
+| | IC 1 / 3 / 6 / 12 months | 9th / 10th tenth, 6 months | HOLD | STRONG BUY |
+|---|---|---|---|---|
+| As published | 0.014 / 0.011 / 0.011 / 0.010 | +0.45 % / +0.04 % | 75 % | 1.1 % |
+| Half the stretch | 0.014 / 0.011 / 0.011 / 0.010 | +0.76 % / −0.20 % | 81 % | 0.3 % |
+| No stretch | 0.014 / 0.011 / 0.011 / 0.010 | +0.83 % / −0.10 % | 90 % | 0.0 % |
+
+The order of the stocks is the same in all three, at every horizon and in
+each index: the stretch multiplies a distance by how much the pillars agree,
+and that moves few stocks past each other. The top tenth trails the ninth over
+six months in every variant — it is the very top of the ranking that falls
+back, whatever it is called. What the stretch changes is the labels: without
+it nine stocks in ten are HOLD, BUY and SELL hold five per cent each and
+STRONG disappears, which is the state the stretch was made to end. With half
+of it, the few left at 8 or more fell back harder (−9.7 % over six months on
+59 cases). The stretch stays; what to make of the top is a separate question.
+
 Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
 
@@ -1767,6 +1788,7 @@ src/
 ├── backtest-service.ts    The monthly backtest: schedule, child process, status
 ├── backtest/              The factor score rebuilt at past month-ends (`pnpm run backtest`)
 │   ├── lock.ts            One run at a time across processes (an advisory lock)
+│   ├── variants.ts        The same rows under another rule: the conviction stretch at full, half, none
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
 │   ├── analysts.ts        Every company's rating history, cached on disk and archived
 │   ├── insiders.ts        Every company's Form 4 trades from Finnhub, for the candidates

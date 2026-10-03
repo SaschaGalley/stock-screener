@@ -1374,6 +1374,12 @@ export interface Assembly<C extends CriterionPoints> {
  */
 export function assembleScore<C extends CriterionPoints>(
   criteria: Readonly<Record<PillarKey, readonly C[]>>, trust: number, weights: ScoreWeights = WEIGHTS,
+  /**
+   * How much of the conviction stretch to apply: 1 as published, 0 none. For
+   * the backtest's variants (`backtest/variants.ts`); the live score never
+   * passes it.
+   */
+  stretch = 1,
 ): Assembly<C> {
   const built = PILLAR_KEYS.map((key) => reducePillar(key, criteria[key], weights));
 
@@ -1410,7 +1416,8 @@ export function assembleScore<C extends CriterionPoints>(
   }
 
   const confidence = Math.max(0, Math.min(1, coverage * trust));
-  const { agreement, conviction } = convictionFor(pillars);
+  const { agreement, conviction: full } = convictionFor(pillars);
+  const conviction = 1 + (full - 1) * stretch;
 
   // Two multipliers on the same deviation, answering two different questions:
   // shrink asks how much of this we can trust, conviction how much of it the

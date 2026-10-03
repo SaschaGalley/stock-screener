@@ -6,6 +6,7 @@ import { IcTable, SignedBar, evidence, pct } from './evaluationParts';
 import WeightFit from './WeightFit';
 import BacktestRuns, { BacktestStatusLine, useBacktestOverview } from './BacktestRuns';
 import BacktestBands from './BacktestBands';
+import BacktestVariants from './BacktestVariants';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
@@ -95,6 +96,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       </section>
 
       <BacktestBands bt={bt} horizon={horizon} monthName={monthName} />
+      <BacktestVariants bt={bt} horizon={horizon} monthName={monthName} />
 
       {candidateSignals.length > 0 && (
         <section className="rounded-lg border border-ink-700 bg-ink-900">

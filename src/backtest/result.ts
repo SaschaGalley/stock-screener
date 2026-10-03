@@ -32,6 +32,8 @@ export interface BacktestResult {
   segments?:   { key: string; label: string; companies: number; ics: Evaluation['ics']; labels: Evaluation['labels']; bands?: Bands }[];
   /** The score's tenths, its verdicts and its steps, each against the month's average stock; absent in older results. */
   bands?:      Bands;
+  /** The score assembled again under other rules from the same rows (`variants.ts`); absent in older results. */
+  variants?:   VariantResult[];
   /** Median premium adjustment over the months, and its range. */
   premium:     { median: number; min: number; max: number };
   evaluation:  Evaluation;
@@ -58,6 +60,22 @@ export interface Bands {
   verdicts:   BucketReturn[];
   /** By whole points of the score: <3, 3–4 … 7–8, ≥8. */
   steps:      BucketReturn[];
+}
+
+export interface VariantResult {
+  key:      string;
+  label:    string;
+  /** Share of the conviction stretch applied. */
+  stretch:  number;
+  /** The score (`score`) at every horizon, pooled and within the sector. */
+  ics:      Evaluation['ics'];
+  /** The same within each index. */
+  segments: { key: string; ics: Evaluation['ics'] }[];
+  deciles:  BucketReturn[];
+  verdicts: BucketReturn[];
+  steps:    BucketReturn[];
+  /** Share of all company-months each verdict held. */
+  verdictShare: Record<string, number>;
 }
 
 export const BACKTEST_CAVEATS = [

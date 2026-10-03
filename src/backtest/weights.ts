@@ -41,7 +41,7 @@ import {
 import {
   assembleScore, JUDGMENT_WEIGHTS, PILLAR_LABELS, type CriterionPoints, type ScoreWeights, type WeightFitMeta,
 } from '../analysis/score.js';
-import { PILLAR_KEYS, type FactorScore, type PillarKey } from '../types.js';
+import { PILLAR_KEYS, type FactorScore, type PillarKey, type ScoreCap } from '../types.js';
 
 /**
  * Where the months are halved: 2013–2019 against 2020–2026, seven years
@@ -71,9 +71,11 @@ export interface ScoredRow {
   symbol: string;
   trust:  number;
   points: Float64Array;
+  /** The caps on its verdict, which come from the payload rather than the points. */
+  caps:   ScoreCap[];
 }
 
-export function scoredRow(at: Date, symbol: string, trust: number, factor: Pick<FactorScore, 'pillars'>): ScoredRow {
+export function scoredRow(at: Date, symbol: string, trust: number, factor: Pick<FactorScore, 'pillars' | 'caps'>): ScoredRow {
   const points = new Float64Array(CRITERIA.length).fill(NaN);
   for (const p of factor.pillars) {
     for (const c of p.criteria) {
@@ -81,10 +83,10 @@ export function scoredRow(at: Date, symbol: string, trust: number, factor: Pick<
       if (i !== undefined && c.points !== null) points[i] = c.points;
     }
   }
-  return { at, symbol, trust, points };
+  return { at, symbol, trust, points, caps: factor.caps };
 }
 
-function criteriaOf(row: ScoredRow): Record<PillarKey, CriterionPoints[]> {
+export function criteriaOf(row: ScoredRow): Record<PillarKey, CriterionPoints[]> {
   const out = Object.fromEntries(PILLAR_KEYS.map((p) => [p, [] as CriterionPoints[]])) as Record<PillarKey, CriterionPoints[]>;
   CRITERIA.forEach((c, i) => {
     const v = row.points[i];
