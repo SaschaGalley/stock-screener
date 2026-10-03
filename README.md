@@ -78,7 +78,7 @@ pnpm run serve           # API only — serve dist/ behind your own reverse prox
 
 There is one list of stocks, shown at two densities. There are no tabs and no toolbar above it: the list *is* the app, and whether a stock or the administration is open on top of it is a fact about state rather than a place you navigate to.
 
-**Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, where the price stands on its chart (see *When to buy* under [The backtest](#the-backtest)), market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
+**Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label, the factor score's rank among every stored stock (the reference universe included) and the model, price, analyst mean target, composite fair value, both upside percentages, where the price stands on its chart (see *When to buy* under [The backtest](#the-backtest)), market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
 
 **Was ist passiert** (the pulse icon beside the chart icon, `#/feed`, `GET /api/feed?days=7`) — every watchlist stock's timeline over the last day, week or month on one axis: rating changes and target moves, insider trades, the quarter's numbers, our own verdict changes, dated research findings, the days a price jumped, headlines on request — and the reports due in the next two weeks above them. Built from the same per-stock timelines (`watchlistFeed` in `src/stock-history-service.ts`), so an event reads the same in the feed as on its stock's page. The strip of verdict changes above the list links to it.
 
@@ -1803,6 +1803,27 @@ bottom; the faster-growing and the higher-quality halves trailed (t −1.9 and
 −1.8). Fifty-one splits offer about that much by chance. No rule follows. A
 low score marks a stock that is dear and stalled; it does not forecast a
 fall.
+
+**Narrower bands (3 October 2026).** Three stocks in four are HOLD, so two
+narrower ones were tested as variants on the same rows, with the rule fixed
+before the run: worth having only if BUY still beats the average stock and
+SELL still trails it at one and six months, in both halves of the years, with
+BUY − SELL no smaller than published. Scores between 4 and 6 earned within
+0.02 % a month of the average stock; the only whole point with a t above 2 is
+6–7 (+0.15 %, t 2.2). Moving the bands in therefore relabels stocks the score
+cannot tell apart:
+
+| Bands | HOLD | BUY − SELL, 1 / 6 months | BUY, 6 months (halves) | SELL, 6 months (halves) |
+|---|---|---|---|---|
+| Published (BUY 6.5, SELL < 3.5) | 75 % | 0.24 % / 1.21 % | +0.56 % (+0.21 / +0.94) | −0.65 % (+0.41 / −1.78) |
+| BUY 6.0, SELL < 4.0 | 59 % | 0.22 % / 0.93 % | +0.44 % (−0.01 / +0.93) | −0.49 % (+0.23 / −1.25) |
+| BUY 5.5, SELL < 4.5 | 37 % | 0.14 % / 0.37 % | +0.21 % (−0.31 / +0.77) | −0.16 % (+0.48 / −0.85) |
+
+Both fail; the published bands stay. They do not pass the rule cleanly either
+— SELL was ahead over six months in 2013–2019 — which is the honest size of
+what any band can say. To tell one HOLD from another the list shows instead
+where the factor score stands among every stored stock's (*über 84 %*, under
+the verdict).
 
 **Does it measure the app's score? (3 October 2026)** Every run now also
 compares itself with the live scores (`backtest/fidelity.ts`, alone with

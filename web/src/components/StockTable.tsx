@@ -134,8 +134,21 @@ export default function StockTable({
         ) : (
           <span className="text-xs text-ink-500">nicht analysiert</span>
         )}
-        {r.verdictModel && (
-          <div className="font-mono text-3xs leading-3 text-ink-500">{r.verdictModel}</div>
+        {(r.universeRank || r.verdictModel) && (
+          <div className="flex items-center gap-1.5 font-mono text-3xs leading-3 text-ink-500">
+            {r.universeRank && (
+              <Tip
+                focusable={false}
+                className="text-ink-300"
+                content={`Der Faktor-Score${r.factorScore === null ? '' : ` ${r.factorScore.toFixed(1)}`} liegt über ${Math.round(r.universeRank.percentile * 100)} % `
+                  + `der ${r.universeRank.of} gespeicherten Aktien — Watchlist und Referenzuniversum, jeweils die letzte Bewertung. `
+                  + 'So unterscheidet sich eine HOLD am oberen Rand von einer am unteren. Wie viel die Rangfolge über die spätere Rendite sagt, steht unter Auswertung: wenig.'}
+              >
+                {`über ${Math.round(r.universeRank.percentile * 100)} %`}
+              </Tip>
+            )}
+            {r.verdictModel && <span className="truncate">{r.verdictModel}</span>}
+          </div>
         )}
       </td>
 

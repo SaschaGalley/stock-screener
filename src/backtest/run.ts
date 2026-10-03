@@ -485,7 +485,7 @@ export function renderBacktest(r: BacktestResult): string {
       lines.push(`    D10 ${BACKTEST_HORIZONS.map((h) => `${h}M ${d10(h)?.meanExcess == null ? '—' : `${(d10(h)!.meanExcess! * 100).toFixed(2)}%`} (t ${fmt(d10(h)?.tStat, 1)})`).join('  ')}`);
       lines.push(`    ≥8  ${BACKTEST_HORIZONS.map((h) => `${h}M ${top(h)?.meanExcess == null ? '—' : `${(top(h)!.meanExcess! * 100).toFixed(2)}%`} (n ${top(h)?.count ?? 0})`).join('  ')}`);
       lines.push(`    share ${Object.entries(v.verdictShare).map(([k, x]) => `${k} ${(x * 100).toFixed(1)}%`).join(', ')}`);
-      for (const verdict of ['STRONG BUY', 'BUY']) {
+      for (const verdict of ['STRONG BUY', 'BUY', 'HOLD', 'SELL', 'STRONG SELL']) {
         lines.push(`    ${verdict.padEnd(10)} ${BACKTEST_HORIZONS.map((h) => {
           const all = v.verdicts.find((x) => x.horizon === h && x.bucket === verdict);
           const halves = (v.halves ?? []).map((list) => list.find((x) => x.horizon === h && x.bucket === verdict));

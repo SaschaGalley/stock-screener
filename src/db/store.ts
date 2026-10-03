@@ -1623,9 +1623,13 @@ export async function macroHistory(prefix: string): Promise<Map<string, { at: nu
  *
  * Enum leaves come back in `text` and numeric ones in `value`, so a caller can
  * ask for `score.final.verdict` alongside `score.final.score` and get both.
+ *
+ * The reference universe is left out unless asked for: it never appears in
+ * the list, but it is what a stock's rank is read against.
  */
 export async function latestPointsForAll(
   keys: string[],
+  opts: { withReference?: boolean } = {},
 ): Promise<Map<string, Map<string, SeriesPoint>>> {
   if (keys.length === 0) return new Map();
   const res = await query<{
@@ -1636,9 +1640,9 @@ export async function latestPointsForAll(
        FROM observations o
        JOIN metrics m ON m.id = o.metric_id
        JOIN symbols s ON s.id = o.symbol_id
-      WHERE m.key = ANY($1) AND NOT s.reference
+      WHERE m.key = ANY($1) AND ($2 OR NOT s.reference)
       ORDER BY o.symbol_id, m.key, o.observed_at DESC`,
-    [keys],
+    [keys, opts.withReference === true],
   );
   const out = new Map<string, Map<string, SeriesPoint>>();
   for (const r of res.rows) {

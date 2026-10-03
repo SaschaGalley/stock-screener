@@ -37,7 +37,7 @@ export const GLOSSARY = {
   'list.trend':
     'Der Score über die Zeit, ab dem ersten gespeicherten Punkt. Die Skala ist bewusst nicht auf Minimum und Maximum gezogen: Rauschen von einem Zehntel bleibt flach, echte Bewegung bleibt sichtbar. Grün steigend, rot fallend.',
   'list.verdict':
-    'Das Urteil ist das Band, in das der Score fällt. ⛔ heißt: Ein Deckel hält es bewusst darunter, etwa wegen schwacher Datenlage. Darunter steht das Modell, das die Texte gelesen hat.',
+    'Das Urteil ist das Band, in das der Score fällt. ⛔ heißt: Ein Deckel hält es bewusst darunter, etwa wegen schwacher Datenlage. Darunter „über … %“: über wie viel Prozent aller gespeicherten Aktien — Watchlist und Referenzuniversum — der Faktor-Score liegt; das trennt eine HOLD am oberen Rand von einer am unteren. Daneben das Modell, das die Texte gelesen hat.',
   'list.timing':
     'Wo der Kurs in seinem Chart steht: Richtung des 3-Monats-Kanals und an welchem Rand er ist, darunter die Rendite des letzten Monats und der RSI. „Abprall“ heißt: vor 3 bis 15 Handelstagen ein 6-Monats-Tief, seitdem mindestens 5 % darüber. Auf Hover steht jede Lesart neben dem, was der Backtest bei Aktien mit demselben Urteil dazu fand. Fließt nicht in Score und Urteil ein.',
   'list.price': 'Letzter Schlusskurs, in der Währung, in der die Aktie gehandelt wird.',

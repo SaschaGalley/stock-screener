@@ -31,6 +31,7 @@ import { syncCatalog } from './db/catalog.js';
 import { closePool, waitForDatabase } from './db/client.js';
 import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials } from './types.js';
 import { TIMING_SERIES, timingFromPoints } from './db/timing-series.js';
+import { rankAmong } from './utils/rank.js';
 import { PILLAR_LABELS, WEIGHTS } from './analysis/score.js';
 import { FITTED_WEIGHTS_META } from './analysis/weight-table.js';
 import type {
@@ -97,6 +98,7 @@ const KEY_CARD = [
 const KEY_COMPOSITE     = 'metrics.composite.primary.median';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 function logoDomainFromWebsite(url: string | null): string | null {
   if (!url) return null;
@@ -765,7 +767,7 @@ export function createApp(): express.Express {
   // had a composite recorded.
   app.get('/api/overview', async (_req, res, next) => {
     try {
-      const [config, financials, verdicts, scoreSeries, cards, composites, timings] = await Promise.all([
+      const [config, financials, verdicts, scoreSeries, cards, composites, timings, universe] = await Promise.all([
         readAppConfig(),
         latestSnapshotForAll<StockFinancials>('financials'),
         latestVerdictsForAll(),
@@ -773,7 +775,12 @@ export function createApp(): express.Express {
         latestPointsForAll([...KEY_CARD]),
         latestValueForAll(KEY_COMPOSITE),
         latestPointsForAll(TIMING_SERIES),
+        latestPointsForAll(['score.factor.score'], { withReference: true }),
       ]);
+      const rank = rankAmong([...universe.values()].flatMap((m) => {
+        const v = m.get('score.factor.score')?.value;
+        return v === null || v === undefined ? [] : [v];
+      }));
       const marketRates = await getMarketRates(cfg.fredApiKey).catch(() => null);
 
       const rows: OverviewRow[] = [];
@@ -861,6 +868,7 @@ export function createApp(): express.Express {
           watched:       isWatched(config, symbol),
           consensus:     computeConsensus(f, entries),
           timing:        timingFromPoints((k) => timings.get(symbol)?.get(k)),
+          universeRank:  rank(num('score.factor.score') ?? stored?.factor.score ?? null),
         });
       }
 

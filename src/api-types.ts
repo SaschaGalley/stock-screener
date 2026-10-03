@@ -180,6 +180,12 @@ export interface OverviewRow {
    * existed. Beside the verdict, never in it.
    */
   timing:        TimingReadings | null;
+  /**
+   * The factor score's place among every stored stock's newest one, the
+   * reference universe included: the share scoring lower, ties counted half.
+   * What tells a 6.3 HOLD from a 3.8 HOLD. Null without a factor score.
+   */
+  universeRank:  { percentile: number; of: number } | null;
 }
 
 /**

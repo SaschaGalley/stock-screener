@@ -16,7 +16,7 @@
  */
 
 import { assembleScore, capVerdict, WEIGHTS } from '../analysis/score.js';
-import { verdictForScore } from '../verdict.js';
+import { SCORE_BANDS, verdictForScore, type Recommendation } from '../verdict.js';
 import type { SignalPoint } from '../analysis/evaluate.js';
 import { criteriaOf, type ScoredRow } from './weights.js';
 
@@ -34,6 +34,12 @@ export interface Variant {
    * candidate, not as a test.
    */
   momentumFloor?: number;
+  /**
+   * Where verdicts begin instead of the published bands (`SCORE_BANDS`), by
+   * label: `{ BUY: 6, HOLD: 4 }` is a BUY from 6 and a SELL below 4. The
+   * scores are the published ones; only the labels move.
+   */
+  bands?: Partial<Record<Recommendation, number>>;
 }
 
 /** The published rule first: the variants are read against it, assembled the same way. */
@@ -42,7 +48,23 @@ export const VARIANTS: readonly Variant[] = [
   { key: 'half-stretch',  label: 'Halbe Conviction-Streckung', stretch: 0.5 },
   { key: 'no-stretch',    label: 'Ohne Conviction-Streckung',  stretch: 0 },
   { key: 'momentum-floor', label: 'STRONG BUY nur mit Momentum ≥ 5', stretch: 1, momentumFloor: 5 },
+  // Narrower HOLD, asked because three stocks in four are HOLD. Fixed before
+  // the first run, with the rule they are read by: a narrower band is worth
+  // having only if BUY still beats the average stock and SELL still trails it
+  // at one and six months, in both halves of the years, and BUY − SELL is no
+  // smaller than published — otherwise it relabels stocks the score cannot
+  // tell apart.
+  { key: 'bands-6-4',     label: 'BUY ab 6,0, SELL unter 4,0', stretch: 1, bands: { BUY: 6, HOLD: 4 } },
+  { key: 'bands-55-45',   label: 'BUY ab 5,5, SELL unter 4,5', stretch: 1, bands: { BUY: 5.5, HOLD: 4.5 } },
 ];
+
+/** A score's verdict under bands moved by label; the published bands where none moved. */
+export function verdictInBands(score: number, bands: Variant['bands']): Recommendation {
+  if (!bands) return verdictForScore(score);
+  return SCORE_BANDS.map((b) => ({ ...b, min: bands[b.verdict] ?? b.min }))
+    .sort((a, b) => b.min - a.min)
+    .find((b) => score >= b.min)!.verdict;
+}
 
 /** Each row's score and capped verdict under a variant, as signals the evaluation reads. */
 export function variantSignals(rows: readonly ScoredRow[], v: Variant): { score: Map<string, SignalPoint[]>; verdict: Map<string, SignalPoint[]> } {
@@ -55,7 +77,7 @@ export function variantSignals(rows: readonly ScoredRow[], v: Variant): { score:
   for (const r of rows) {
     const a = assembleScore(criteriaOf(r), r.trust, WEIGHTS, v.stretch);
     const momentum = a.pillars.find((p) => p.key === 'momentum')?.score ?? null;
-    let text = capVerdict(verdictForScore(a.score), r.caps);
+    let text = capVerdict(verdictInBands(a.score, v.bands), r.caps);
     if (text === 'STRONG BUY' && v.momentumFloor !== undefined && momentum !== null && momentum < v.momentumFloor) text = 'BUY';
     push(score, r.symbol, { at: r.at, value: a.score });
     push(verdict, r.symbol, { at: r.at, value: null, text });
