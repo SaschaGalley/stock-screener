@@ -9,6 +9,7 @@
  *   pnpm run backtest -- --no-analysts    # without the rebuilt consensus, for comparison
  *   pnpm run backtest -- --no-insiders    # without the insider candidates (half an hour of Finnhub the first time)
  *   pnpm run backtest -- --no-departed    # today's members only, without those that left
+ *   pnpm run backtest -- --studies        # and the studies: the score under other rules, the top tenth
  *   pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
  *
  * The live evaluation needs months of stored scores before it says anything.
@@ -78,6 +79,7 @@ import { analystHistory } from './analysts.js';
 import { insiderHistory } from './insiders.js';
 import { resolveDeparted } from './departed.js';
 import { VARIANTS, variantSignals } from './variants.js';
+import { featureArray, TOP_FEATURES, topDecileStudy, type TopRecord } from './top-decile.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
 import { Company, payloadAt, yahooSector } from './payload.js';
 import {
@@ -87,7 +89,7 @@ import {
 import { crossSectionPeers } from './peers.js';
 import { indexAtOrBefore, monthEnds, priceHistory, PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
-import { renderWeightTable, scoredRow, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
+import { renderWeightTable, scoredRow, WEIGHT_SPLIT, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
 
 const BENCHMARK = '^GSPC';
 /** The S&P 1500 by default; the 500 alone to compare with the runs before it. */
@@ -141,6 +143,13 @@ export async function runBacktest(
   opts: {
     from?: string; to?: string; limit?: number; analysts?: boolean; insiders?: boolean; departed?: boolean; universe?: BacktestUniverse;
     trigger?: BacktestTrigger;
+    /**
+     * The studies too — the score under other rules (`variants.ts`) and what
+     * its top tenth is made of (`top-decile.ts`). Questions asked once, not
+     * every month: they add half a gigabyte at the peak, and the page keeps
+     * showing the newest run that answered them.
+     */
+    studies?: boolean;
     /** Told at every step, in words for the admin page: "SEC-Abschlüsse 500/1502". */
     onProgress?: (phase: string) => void;
   } = {},
@@ -202,7 +211,10 @@ export async function runBacktest(
   done = 0;
   await pooled([...companies.map((c) => c.symbol), BENCHMARK, ...etfs], 4, async (symbol) => {
     const p = await priceHistory(symbol, priceFrom, join(dir, 'prices'));
-    if (p) prices.set(symbol, p);
+    // The closes, the adjusted closes and the splits are all the run reads;
+    // the rest of each bar stays in the cache file, not in memory sixteen
+    // hundred times over.
+    if (p) prices.set(symbol, { dates: p.dates, close: p.close, adj: p.adj, splits: p.splits });
     if (++done % 50 === 0) {
       logger.info(`  Prices: ${done}/${companies.length + etfs.length + 1}`);
       progress(`Kurse ${done}/${companies.length + etfs.length + 1}`);
@@ -254,6 +266,8 @@ export async function runBacktest(
   const premiums: number[] = [];
   // Every company-month's criteria, for weighing them again (`weights.ts`).
   const rows: ScoredRow[] = [];
+  // And what each looked like, for the study of the top tenth (`top-decile.ts`).
+  const topRecords: TopRecord[] = [];
   const labels = new Map<string, string>();
   // Company-months scored, and how many of them had a rebuilt consensus target.
   const coverage = new Map<number, { stocks: number; covered: number }>();
@@ -325,6 +339,23 @@ export async function runBacktest(
         push('score.factor.raw', e.c.symbol, { at, value: f.raw });
         for (const p of f.pillars) push(pillarKey(p.key), e.c.symbol, { at, value: p.score });
         push(LABEL_KEY, e.c.symbol, { at, value: null, text: f.verdict });
+
+        // What the stock looked like that day, for the study of the top tenth.
+        const fin = e.financials, tech = e.signals?.technicals;
+        const finite = (v: number | null | undefined) => (v !== null && v !== undefined && Number.isFinite(v) ? v : null);
+        if (opts.studies) topRecords.push({
+          day, symbol: e.c.symbol, segment: e.c.segment, sector: yahooSector(e.c.sector), score: f.score,
+          features: featureArray({
+            mom12: finite(tech?.returns?.y1), mom3: finite(tech?.returns?.m3), nearHigh: finite(tech?.drawdownFromHighPct),
+            size: finite(fin.marketCap),
+            ps: fin.revenue && fin.revenue > 0 ? fin.marketCap / fin.revenue : null,
+            pe: fin.peRatio !== null && fin.peRatio > 0 ? fin.peRatio : null,
+            upside: fin.targetMeanPrice && fin.price > 0 ? fin.targetMeanPrice / fin.price - 1 : null,
+            growth: finite(fin.revenueGrowth), beta: finite(fin.beta),
+            agreement: f.agreement, confidence: f.confidence,
+            ...Object.fromEntries(f.pillars.map((p) => [`pillar.${p.key}`, p.score])),
+          }),
+        });
 
         const trades = insiders.get(e.c.symbol);
         if (trades) {
@@ -417,8 +448,8 @@ export async function runBacktest(
 
   // The same rows under other rules: the conviction stretch at full, half and
   // none, each with its IC, its tenths and its verdicts (`variants.ts`).
-  progress('Varianten');
-  const variants = VARIANTS.map((v) => {
+  if (opts.studies) progress('Varianten');
+  const variants = !opts.studies ? undefined : VARIANTS.map((v) => {
     const sig = variantSignals(rows, v);
     const common = { prices: priceMap, benchmark: calendar, horizons: BACKTEST_HORIZONS };
     const ev = evaluate({
@@ -438,10 +469,18 @@ export async function runBacktest(
       segments: bySegment,
       deciles: bucketReturns({ ...common, points: sig.score, bucket: 'decile' }),
       verdicts: bucketReturns({ ...common, points: sig.verdict, bucket: (p) => p.text ?? null }),
+      // The verdicts in each half of the years: a rule found on all of them should hold in both.
+      halves: [{ to: WEIGHT_SPLIT }, { from: WEIGHT_SPLIT }].map((range) => bucketReturns({
+        ...common, bucket: (p) => p.text ?? null, points: sig.verdict, range,
+      })),
       steps: bucketReturns({ ...common, points: sig.score, bucket: step }),
       verdictShare: Object.fromEntries([...counts].map(([k, n]) => [k, total ? n / total : 0])),
     };
   });
+
+  if (opts.studies) progress('Oberstes Zehntel');
+  const topDecile = opts.studies ? topDecileStudy(topRecords, priceMap, calendar.map((c) => c.date)) : undefined;
+  topRecords.length = 0;
 
   const fit = weightLab(rows, { prices: priceMap, sectors }, {
     fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_FIT_HORIZONS, labels,
@@ -472,6 +511,7 @@ export async function runBacktest(
     departed: departed?.counts,
     bands,
     variants,
+    topDecile,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
       departed ? departedCaveat(departed.counts) : BACKTEST_CAVEATS[1],
@@ -536,6 +576,38 @@ export function renderBacktest(r: BacktestResult): string {
       lines.push(`    D10 ${BACKTEST_HORIZONS.map((h) => `${h}M ${d10(h)?.meanExcess == null ? '—' : `${(d10(h)!.meanExcess! * 100).toFixed(2)}%`} (t ${fmt(d10(h)?.tStat, 1)})`).join('  ')}`);
       lines.push(`    ≥8  ${BACKTEST_HORIZONS.map((h) => `${h}M ${top(h)?.meanExcess == null ? '—' : `${(top(h)!.meanExcess! * 100).toFixed(2)}%`} (n ${top(h)?.count ?? 0})`).join('  ')}`);
       lines.push(`    share ${Object.entries(v.verdictShare).map(([k, x]) => `${k} ${(x * 100).toFixed(1)}%`).join(', ')}`);
+      for (const verdict of ['STRONG BUY', 'BUY']) {
+        lines.push(`    ${verdict.padEnd(10)} ${BACKTEST_HORIZONS.map((h) => {
+          const all = v.verdicts.find((x) => x.horizon === h && x.bucket === verdict);
+          const halves = (v.halves ?? []).map((list) => list.find((x) => x.horizon === h && x.bucket === verdict));
+          const pc = (x: { meanExcess: number | null } | undefined) => (x?.meanExcess == null ? '—' : `${(x.meanExcess * 100).toFixed(2)}%`);
+          return `${h}M ${pc(all)} (t ${fmt(all?.tStat, 1)}, n ${all?.count ?? 0}; halves ${halves.map(pc).join(' / ')})`;
+        }).join('  ')}`);
+      }
+    }
+  }
+  if (r.topDecile) {
+    const pc = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(2)}%`);
+    lines.push('', '── The top tenth: profile (medians) ──');
+    lines.push(`  ${'feature'.padEnd(26)} ${r.topDecile.profiles.map((g) => g.group.padStart(10)).join('')}`);
+    for (const f of TOP_FEATURES) {
+      lines.push(`  ${f.label.padEnd(26)} ${r.topDecile.profiles.map((g) => {
+        const v = g.medians[f.key];
+        return (v === null ? '—' : Math.abs(v) >= 1e6 ? `${(v / 1e9).toFixed(1)}B` : v.toFixed(3)).padStart(10);
+      }).join('')}`);
+    }
+    for (const g of r.topDecile.profiles) {
+      lines.push(`  ${g.group}: n ${g.n} · ${Object.entries(g.segments).map(([k, x]) => `${k} ${(x * 100).toFixed(0)}%`).join(', ')} · `
+        + g.sectors.map((x) => `${x.sector} ${(x.share * 100).toFixed(0)}%`).join(', '));
+    }
+    for (const h of [3, 6]) {
+      lines.push('', `── The top tenth split at its own median, ${h} months (above − below; halves; same split in D9) ──`);
+      const rows = r.topDecile.splits.filter((x) => x.horizon === h).sort((a, b) => Math.abs(b.diff.t ?? 0) - Math.abs(a.diff.t ?? 0));
+      for (const x of rows) {
+        lines.push(`  ${x.label.padEnd(26)} above ${pc(x.high.mean).padStart(7)} below ${pc(x.low.mean).padStart(7)}  diff ${pc(x.diff.mean).padStart(7)} (t ${fmt(x.diff.t, 1)})`
+          + `  2013–19 ${pc(x.first.mean).padStart(7)} (t ${fmt(x.first.t, 1)})  2020–26 ${pc(x.second.mean).padStart(7)} (t ${fmt(x.second.t, 1)})`
+          + `  D9 ${pc(x.ninth.mean).padStart(7)} (t ${fmt(x.ninth.t, 1)})`);
+      }
     }
   }
   lines.push('', 'Factor score IC at one month, by year:');
@@ -614,6 +686,7 @@ if (isMain) {
       analysts: !args.includes('--no-analysts'),
       insiders: !args.includes('--no-insiders'),
       departed: !args.includes('--no-departed'),
+      studies: args.includes('--studies'),
       universe: flag('--universe') === 'sp500' ? 'sp500' : 'sp1500',
       trigger,
       onProgress: (phase) => {

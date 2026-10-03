@@ -1479,8 +1479,11 @@ monthly), so nothing has to be fetched in between. The schedule and a
 run's progress as it goes. The server starts it as a child process —
 `backtest/run.ts` as the terminal runs it, writing its own log
 (`backtest/run.log` under the data directory) — because a run holds the S&P
-1500 in memory, at its peak about 2.7 GB, and the server that answers the page
-must not share a heap with that. Postgres's advisory lock (`backtest/lock.ts`)
+1500 in memory and the server that answers the page must not share a heap with
+that. It needs more than 2 GB (under that cap it runs out) and, left alone,
+grows to anywhere from 2.6 to 3.3 GB depending on when it collects; the child
+is held to a 3 GB heap (`BACKTEST_HEAP_MB`), so the host knows what to keep
+free. Postgres's advisory lock (`backtest/lock.ts`)
 keeps it to one run at a time across processes: the schedule, the button and
 a terminal cannot start a second. A run that dies with its process — a deploy —
 is marked as interrupted when the lock is found free. It never writes weights:
@@ -1506,6 +1509,7 @@ pnpm run backtest -- --limit 60       # the first 60 companies, to try it out
 pnpm run backtest -- --no-analysts    # without the rebuilt consensus, for comparison
 pnpm run backtest -- --no-departed    # today's members only
 pnpm run backtest -- --no-insiders    # without the insider candidates
+pnpm run backtest -- --studies        # and the studies: the score under other rules, the top tenth
 pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
 ```
 
@@ -1698,7 +1702,8 @@ change to the bands or the stretch would be a change to the model, tested the
 way the weights are and decided by its owner, not here.
 
 **Without the conviction stretch (3 October 2026).** Tested as a variant
-(`backtest/variants.ts`): the same rows assembled again — the same criterion
+(`backtest/variants.ts`, run with `--studies` — the monthly run leaves the
+studies out, and the page shows the newest that has them): the same rows assembled again — the same criterion
 points, trust and caps — with the stretch at full, half and none. The stretch
 is not what makes the top fall back:
 
@@ -1717,6 +1722,37 @@ it nine stocks in ten are HOLD, BUY and SELL hold five per cent each and
 STRONG disappears, which is the state the stretch was made to end. With half
 of it, the few left at 8 or more fell back harder (−9.7 % over six months on
 59 cases). The stretch stays; what to make of the top is a separate question.
+
+**What the top tenth is made of (3 October 2026).** A study
+(`backtest/top-decile.ts`, run with `--studies`): every company-month's
+features at the moment it was ranked, the top tenth's medians against the
+ninth's and the rest's, and the top tenth split each month at its own median
+of each feature, three and six months on, in both halves of the years.
+
+The top tenth is cheap, growing, liked and already rising: a P/E of 13.8
+against 23.7 for the middle, revenue up 10.7 % against 5.8 %, 14 % to the
+analysts' target against 9 %, 19 % up over the year against 10.5 %, every
+pillar above the rest and the pillars agreeing as much as at the very bottom.
+It is not smaller, and not tilted to the small caps.
+
+Inside it, the half the market had not confirmed falls back: split on the
+momentum pillar, the upper half leads by 1.0 % over three months (t 1.7) and
+2.2 % over six (t 1.8); on the three-month return, by 2.1 % over six (t 2.2) —
+the same way in both halves of the years, and weaker or absent in the ninth
+tenth. The cheapest half of the top trails by 1.05 % over three months
+(t −2.4), in both halves; in the ninth tenth it leads. Cheap, sound and
+unconfirmed: a value trap. A split on the balance sheet that looked like a
+finding turned its sign when the top was split at its own median instead of
+the month's — seventeen features at two horizons will offer one of those.
+
+Turned into a rule fixed in advance — no STRONG BUY while the momentum pillar
+is below neutral — it made the STRONG BUYs worse, not better: −4.0 % over six
+months (t −2.5) against −2.5 % (t −1.9). The top tenth is ninety stocks a
+month; STRONG BUY is six or seven, and among those it was the ones that had
+already run that fell back. Two different things at two depths, the second on
+too few stocks to read. The rule is not adopted, nothing in the score
+changed, and the top's fall over half a year is left for the live evaluation
+to confirm or dismiss.
 
 Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
@@ -1825,7 +1861,8 @@ src/
 ├── backtest-service.ts    The monthly backtest: schedule, child process, status
 ├── backtest/              The factor score rebuilt at past month-ends (`pnpm run backtest`)
 │   ├── lock.ts            One run at a time across processes (an advisory lock)
-│   ├── variants.ts        The same rows under another rule: the conviction stretch at full, half, none
+│   ├── variants.ts        The same rows under another rule: the conviction stretch, a momentum floor for STRONG BUY
+│   ├── top-decile.ts      What the top tenth is made of, and which half of it falls back
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
 │   ├── analysts.ts        Every company's rating history, cached on disk and archived
 │   ├── insiders.ts        Every company's Form 4 trades from Finnhub, for the candidates

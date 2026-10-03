@@ -11,6 +11,7 @@ import { readAppState, writeAppState } from '../db/admin.js';
 import { query, queryOne } from '../db/client.js';
 import type { BucketReturn, Evaluation } from '../analysis/evaluate.js';
 import type { WeightValidation } from './weights.js';
+import type { TopDecileStudy } from './top-decile.js';
 
 export const RESULT_KEY = 'backtest.result';
 
@@ -34,6 +35,14 @@ export interface BacktestResult {
   bands?:      Bands;
   /** The score assembled again under other rules from the same rows (`variants.ts`); absent in older results. */
   variants?:   VariantResult[];
+  /** What the top tenth is made of, and which of it falls back (`top-decile.ts`); absent in older results. */
+  topDecile?:  TopDecileStudy;
+  /**
+   * When the studies above were computed, where that was an earlier run than
+   * this one: they are run with `--studies` only, and carried to the page
+   * from the newest run that has them.
+   */
+  studiesAt?:  string;
   /** Median premium adjustment over the months, and its range. */
   premium:     { median: number; min: number; max: number };
   evaluation:  Evaluation;
@@ -73,6 +82,8 @@ export interface VariantResult {
   segments: { key: string; ics: Evaluation['ics'] }[];
   deciles:  BucketReturn[];
   verdicts: BucketReturn[];
+  /** The verdicts in 2013–2019 and in 2020–2026; absent in older results. */
+  halves?:  BucketReturn[][];
   steps:    BucketReturn[];
   /** Share of all company-months each verdict held. */
   verdictShare: Record<string, number>;
@@ -115,7 +126,17 @@ export async function saveBacktestRun(r: BacktestResult, trigger: BacktestTrigge
 export async function storedBacktest(): Promise<BacktestResult | null> {
   try {
     const row = await queryOne<{ result: BacktestResult }>('SELECT result FROM backtest_runs ORDER BY generated_at DESC LIMIT 1');
-    if (row) return row.result;
+    if (row) {
+      if (row.result.variants || row.result.topDecile) return row.result;
+      // The monthly run leaves the studies out; the newest that has them still answers their questions.
+      const studies = await queryOne<{ variants: BacktestResult['variants'] | null; top: TopDecileStudy | null; at: Date }>(
+        `SELECT result -> 'variants' AS variants, result -> 'topDecile' AS top, generated_at AS at
+           FROM backtest_runs WHERE result ? 'variants' ORDER BY generated_at DESC LIMIT 1`,
+      );
+      return studies
+        ? { ...row.result, variants: studies.variants ?? undefined, topDecile: studies.top ?? undefined, studiesAt: studies.at.toISOString() }
+        : row.result;
+    }
     // A database from before the runs were kept.
     const raw = await readAppState(RESULT_KEY);
     return raw ? JSON.parse(raw) as BacktestResult : null;

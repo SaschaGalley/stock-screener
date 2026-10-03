@@ -7,6 +7,7 @@ import WeightFit from './WeightFit';
 import BacktestRuns, { BacktestStatusLine, useBacktestOverview } from './BacktestRuns';
 import BacktestBands from './BacktestBands';
 import BacktestVariants from './BacktestVariants';
+import BacktestTopDecile from './BacktestTopDecile';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
@@ -96,6 +97,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       </section>
 
       <BacktestBands bt={bt} horizon={horizon} monthName={monthName} />
+      <BacktestTopDecile bt={bt} horizon={horizon} monthName={monthName} />
       <BacktestVariants bt={bt} horizon={horizon} monthName={monthName} />
 
       {candidateSignals.length > 0 && (

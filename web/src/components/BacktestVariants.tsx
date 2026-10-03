@@ -22,11 +22,13 @@ export default function BacktestVariants({ bt, horizon, monthName }: { bt: Backt
   return (
     <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Varianten: Conviction-Streckung</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">
+          Varianten{bt.studiesAt && <span className="font-normal normal-case text-ink-500"> · Studie vom {new Date(bt.studiesAt).toLocaleDateString('de-DE')}</span>}
+        </h3>
         <p className="mt-0.5 text-xs text-ink-500">
-          Derselbe Score aus denselben Kriterienpunkten, demselben Vertrauen und denselben Kappungen, nur die Streckung anders.
-          Die Rangfolge (IC, Zehntel) bedeutet in jeder Variante dasselbe; die Urteilsbänder wurden mit der Streckung gesetzt,
-          ohne sie erreicht sie kaum noch jemand.
+          Derselbe Score aus denselben Kriterienpunkten, demselben Vertrauen und denselben Kappungen, nur eine Regel anders: die
+          Conviction-Streckung voll, halb oder gar nicht, und STRONG BUY nur, wo die Säule Markt &amp; Momentum mindestens neutral
+          ist. Die Rangfolge (IC, Zehntel) bedeutet in jeder Variante dasselbe; die Urteilsbänder wurden mit der Streckung gesetzt.
         </p>
       </header>
       <table className="w-full min-w-[720px] text-sm">
@@ -35,6 +37,7 @@ export default function BacktestVariants({ bt, horizon, monthName }: { bt: Backt
             <th className="px-4 py-1.5 text-left font-normal">Variante</th>
             {horizons.map((h) => <th key={h} className="px-2 py-1.5 text-right font-normal">IC {monthName(h)}</th>)}
             <th className="px-2 py-1.5 text-right font-normal" title={`Zehntes gegen neuntes Zehntel, ${monthName(horizon)}`}>D9 / D10</th>
+            <th className="px-2 py-1.5 text-right font-normal" title={`STRONG BUY gegen die Durchschnittsaktie, ${monthName(horizon)}; dahinter 2013–2019 / 2020–2026`}>STRONG BUY</th>
             <th className="px-4 py-1.5 text-left font-normal">Verteilung der Urteile</th>
           </tr>
         </thead>
@@ -49,6 +52,18 @@ export default function BacktestVariants({ bt, horizon, monthName }: { bt: Backt
               ))}
               <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
                 {pct(bucket(v.deciles, 'D9')?.meanExcess)} / {pct(bucket(v.deciles, 'D10')?.meanExcess)}
+              </td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
+                {(() => {
+                  const all = v.verdicts.find((r) => r.horizon === horizon && r.bucket === 'STRONG BUY');
+                  if (!all) return '—';
+                  const halves = (v.halves ?? []).map((list) => list.find((r) => r.horizon === horizon && r.bucket === 'STRONG BUY')?.meanExcess ?? null);
+                  return (
+                    <span title={`${all.count} Fälle`}>
+                      {pct(all.meanExcess)} <span className="text-ink-500">({all.tStat?.toFixed(1) ?? '—'}; {halves.map((x) => pct(x, 1)).join(' / ')})</span>
+                    </span>
+                  );
+                })()}
               </td>
               <td className="px-4 py-1.5">
                 <div className="flex flex-wrap gap-1.5">

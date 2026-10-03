@@ -32,6 +32,9 @@ import {
 } from './backtest/result.js';
 import { logger } from './utils/logger.js';
 
+/** The run's heap ceiling, in megabytes; `BACKTEST_HEAP_MB` overrides it. Below two gigabytes the S&P 1500 does not fit. */
+const DEFAULT_HEAP_MB = 3072;
+
 let task: ScheduledTask | null = null;
 let child: ReturnType<typeof spawn> | null = null;
 
@@ -45,8 +48,13 @@ export async function startBacktest(trigger: BacktestTrigger): Promise<{ started
   mkdirSync(dir, { recursive: true });
   const logFile = join(dir, 'run.log');
   const out = openSync(logFile, 'w');
-  // The same Node, with the same loader flags: under tsx those are what make a `.ts` runnable.
-  child = spawn(process.execPath, [...process.execArgv, RUNNER, '--trigger', trigger], {
+  // The same Node, with the same loader flags: under tsx those are what make a
+  // `.ts` runnable. And a ceiling on its heap: V8 grows into whatever the host
+  // has, and a run that needs about two and a half gigabytes peaked anywhere
+  // from 2.6 to 3.3 depending on when it collected. Held to a number, it
+  // collects sooner and the host knows what to keep free.
+  const heapMb = Number(process.env.BACKTEST_HEAP_MB ?? DEFAULT_HEAP_MB);
+  child = spawn(process.execPath, [...process.execArgv, `--max-old-space-size=${heapMb}`, RUNNER, '--trigger', trigger], {
     cwd: process.cwd(), env: process.env, stdio: ['ignore', out, out],
   });
   closeSync(out);

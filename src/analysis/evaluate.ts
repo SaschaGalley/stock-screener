@@ -448,6 +448,8 @@ export function bucketReturns(input: {
   horizons:  number[];
   /** `decile` ranks each month's readings into ten; a function names a reading's bucket. */
   bucket:    'decile' | ((p: SignalPoint) => string | null);
+  /** Only formation days in [from, to): a part of the years, without copying the points. */
+  range?:    { from?: string; to?: string };
 }): BucketReturn[] {
   let first: string | null = null;
   for (const points of input.points.values()) {
@@ -460,6 +462,7 @@ export function bucketReturns(input: {
     const counts = new Map<string, number>();
     windowsFor(input.benchmark, h, first).forEach((w, i) => {
       if (i % h !== 0) return;
+      if ((input.range?.from && w.day < input.range.from) || (input.range?.to && w.day >= input.range.to)) return;
       const rows: { value: number; point: SignalPoint; r: number }[] = [];
       for (const [symbol, points] of input.points) {
         const p = valueBefore(points, w.day);
