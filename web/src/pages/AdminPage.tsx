@@ -83,6 +83,23 @@ function Toggle({ checked, onChange, label, hint }: {
 const inputCls =
   'rounded border border-ink-700 bg-ink-950 px-2 py-1 text-sm text-ink-100 focus:border-accent focus:outline-none';
 
+/** A day count between 1 and 365, with its unit. */
+function DaysInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="number"
+        min={1}
+        max={365}
+        value={value}
+        onChange={(e) => onChange(Math.max(1, Math.min(365, Number(e.target.value) || 1)))}
+        className={`${inputCls} w-16 text-right font-mono`}
+      />
+      <span className="text-xs text-ink-500">Tage</span>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -341,35 +358,28 @@ export default function AdminPage({ onClose }: Props) {
               label="Analyse mitziehen"
               hint="Läuft direkt nach Daten + Distill derselben Aktie."
             />
-            <div className="flex items-center gap-2">
+            {/* One grid for every labelled field, so the inputs line up in a
+                column whatever the label's length. */}
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
               <label className="text-xs text-ink-400">max. Alter</label>
-              <input
-                type="number"
-                min={1}
-                max={365}
+              <DaysInput
                 value={analysis.maxAgeDays}
-                onChange={(e) => patch((d) => {
-                  d.steps.analysis.maxAgeDays = Math.max(1, Math.min(365, Number(e.target.value) || 1));
-                })}
-                className={`${inputCls} w-16 text-right font-mono`}
+                onChange={(v) => patch((d) => { d.steps.analysis.maxAgeDays = v; })}
               />
-              <span className="text-xs text-ink-500">Tage</span>
-            </div>
-            <div className="flex items-center gap-2">
+
               <label className="text-xs text-ink-400">Modell</label>
               <select
                 value={analysis.model}
                 onChange={(e) => patch((d) => { d.steps.analysis.model = e.target.value; })}
-                className={`${inputCls} flex-1`}
+                className={`${inputCls} w-full min-w-0`}
               >
                 {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                 {!MODELS.some((m) => m.id === analysis.model) && (
                   <option value={analysis.model}>{analysis.model} (eigenes)</option>
                 )}
               </select>
-            </div>
-            <div>
-              <div className="mb-1 text-xs text-ink-400">Websuche</div>
+
+              <span className="self-start pt-0.5 text-xs text-ink-400">Websuche</span>
               <div className="flex flex-wrap gap-1.5">
                 {SEARCH_CHOICES.map((choice) => {
                   const on = analysis.search.includes(choice);
@@ -390,8 +400,7 @@ export default function AdminPage({ onClose }: Props) {
                   );
                 })}
               </div>
-            </div>
-            <div className="flex items-center gap-2">
+
               <label className="text-xs text-ink-400">Perplexity</label>
               <select
                 value={analysis.pplx ?? 'none'}
@@ -399,47 +408,36 @@ export default function AdminPage({ onClose }: Props) {
                   const v = e.target.value;
                   d.steps.analysis.pplx = v === 'none' ? null : (v as PerplexityModelId);
                 })}
-                className={`${inputCls} flex-1`}
+                className={`${inputCls} w-full min-w-0`}
               >
                 <option value="none">aus</option>
                 {PERPLEXITY_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>{perplexityLabel(m.id)} — {m.note}</option>
+                  <option key={m.id} value={m.id}>{perplexityLabel(m.id)}</option>
                 ))}
               </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-ink-400">Perplexity-Cache</label>
-              <input
-                type="number"
-                min={1}
-                max={365}
+              {analysis.pplx && (
+                <p className="col-start-2 -mt-1 text-2xs text-ink-500">
+                  {PERPLEXITY_MODELS.find((m) => m.id === analysis.pplx)?.note}
+                </p>
+              )}
+
+              <label className="text-xs text-ink-400">Recherche-Cache</label>
+              <DaysInput
                 value={config.perplexity.maxAgeDays}
-                onChange={(e) => patch((d) => {
-                  d.perplexity.maxAgeDays = Math.max(1, Math.min(365, Number(e.target.value) || 1));
-                })}
-                className={`${inputCls} w-16 text-right font-mono`}
+                onChange={(v) => patch((d) => { d.perplexity.maxAgeDays = v; })}
               />
-              <span className="text-xs text-ink-500">Tage</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-ink-400">Deep Research mitgeben</label>
-              <input
-                type="number"
-                min={1}
-                max={365}
+
+              <label className="text-xs text-ink-400">Deep Research</label>
+              <DaysInput
                 value={config.perplexity.deepMaxAgeDays}
-                onChange={(e) => patch((d) => {
-                  d.perplexity.deepMaxAgeDays = Math.max(1, Math.min(365, Number(e.target.value) || 1));
-                })}
-                className={`${inputCls} w-16 text-right font-mono`}
+                onChange={(v) => patch((d) => { d.perplexity.deepMaxAgeDays = v; })}
               />
-              <span className="text-xs text-ink-500">Tage</span>
             </div>
             <p className="text-xs leading-relaxed text-ink-500">
-              Gilt für jede Analyse, auch für manuelle Re-runs — jeder Aufruf kostet.
-              Ein Deep-Research-Bericht wird nur von Hand angefordert (Research &amp; News)
-              und geht so lange zusätzlich in jede Analyse ein.
-              ↻ Refresh unter Research &amp; News fragt sofort neu.
+              Der Recherche-Cache gilt für jede Analyse, auch für manuelle Re-runs —
+              jeder Aufruf kostet; ↻ Refresh unter Research &amp; News fragt sofort neu.
+              Deep Research wird nur dort von Hand angefordert und geht so lange
+              zusätzlich in jede Analyse ein.
             </p>
           </Card>
         </div>
