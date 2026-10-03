@@ -15,6 +15,7 @@ import type { TopDecileStudy } from './top-decile.js';
 import type { Fidelity } from './fidelity.js';
 import type { FairValueStudy } from './fair-value.js';
 import type { TimingStudy } from './timing.js';
+import type { PortfolioStudy } from './portfolio.js';
 
 export const RESULT_KEY = 'backtest.result';
 
@@ -48,6 +49,8 @@ export interface BacktestResult {
    * in older results.
    */
   timing?:     TimingStudy;
+  /** Top-N portfolios by a signal against the index funds, after costs (`portfolio.ts`); every run, absent in older results. */
+  portfolios?: PortfolioStudy;
   /**
    * When the studies above were computed, where that was an earlier run than
    * this one: they are run with `--studies` only, and carried to the page

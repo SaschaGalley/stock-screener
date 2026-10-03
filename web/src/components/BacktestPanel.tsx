@@ -11,6 +11,7 @@ import BacktestTopDecile from './BacktestTopDecile';
 import BacktestFidelity from './BacktestFidelity';
 import BacktestFairValue from './BacktestFairValue';
 import BacktestTiming from './BacktestTiming';
+import BacktestPortfolios from './BacktestPortfolios';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
@@ -101,6 +102,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         <IcTable signals={data.signals} rows={rows} periodLabel="Monate" />
       </section>
 
+      <BacktestPortfolios bt={bt} />
       <BacktestBands bt={bt} horizon={horizon} monthName={monthName} />
       <BacktestTopDecile bt={bt} horizon={horizon} monthName={monthName} />
       <BacktestFairValue bt={bt} />

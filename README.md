@@ -1932,6 +1932,44 @@ where today's price stands in the models' range earned over the year after
 (`FairValueEvidence`, from `/api/backtest/verdicts`). The margin describes the
 models; it is not an expected return.
 
+**Against the index, as a portfolio (3 October 2026).** Everything above
+reads the score against the month's average stock, equal-weighted. An
+investor's yardstick is a cap-weighted index, and from 2013 the largest
+companies ran far ahead of the average one: the average S&P 1500 stock made
+13.4 % a year, the S&P 500 14.6 %, the MSCI World 11.6 %. So every run now
+also buys the top N stocks by a signal at each rebalancing month-end, in equal
+parts, holds them, and marks them at every month-end on dividend-adjusted
+closes, at 0.1 % a side for every name bought or sold, without taxes
+(`backtest/portfolio.ts`). Two signals: the published score, and quality plus
+momentum — the mean of the two pillars, as the research describes the most
+robust premia, not as this data would weight them. The rule, fixed before the
+first run: at 25 stocks rebalanced quarterly a signal beats the index only if
+it is ahead of the MSCI World ETF (URTH) after costs in both halves of the
+years.
+
+| Portfolio | a year | vs MSCI World (2013–19 / 2020–26) | vs S&P 500 | deepest fall |
+|---|---|---|---|---|
+| Score, 25, quarterly (the rule) | 10.0 % | −1.6 % (−1.0 / −2.2) | −4.6 % | −39.6 % |
+| Score, 25, monthly | 11.9 % | +0.3 % (−0.4 / +1.1) | −2.7 % | −35.2 % |
+| Score, 25, yearly | 16.3 % | +4.7 % (+5.9 / +3.4) | +1.7 % | −34.0 % |
+| Score, 50, yearly | 15.3 % | +3.7 % (+5.8 / +1.5) | +0.7 % | −31.0 % |
+| Quality + momentum, 25, quarterly (the rule) | 14.3 % | +2.7 % (+8.0 / −2.7) | −0.3 % | −29.1 % |
+| Quality + momentum, 50, yearly | 15.4 % | +3.8 % (+6.5 / +0.9) | +0.8 % | −26.4 % |
+| MSCI World (URTH) | 11.6 % | | | −25.5 % |
+
+All three verdicts of the rule fail: neither signal beats the MSCI World in
+both halves at 25 stocks a quarter, and quality plus momentum does not beat
+the score. Two things are worth saying about the rest, as observations rather
+than findings — ten portfolios are ten chances. Held for a year, the score did
+better than held for a quarter, in both halves: the same shape as its top,
+behind over three and six months and ahead over twelve. And most of the lead
+over the MSCI World is the American market's over the rest of the world: a
+portfolio of American stocks is set against an index two fifths outside
+America, and against the S&P 500 the best of them leads by 1.7 % a year, with
+a deeper fall (−34 % against −24 %); it was ahead of the MSCI World in nine
+calendar years of fourteen. The
+missing bankruptcies flatter all of it.
+
 **When to buy: the chart under test (3 October 2026).** The verdict says
 whether a stock is worth owning; it does not say where the price stands on its
 own recent path. Seven readings of that path are candidates now
@@ -2083,6 +2121,7 @@ src/
 │   ├── variants.ts        The same rows under another rule: the conviction stretch, a momentum floor for STRONG BUY
 │   ├── top-decile.ts      What the top and bottom tenths are made of, and which half of each falls back or recovers
 │   ├── timing.ts          Whether it pays to wait for the chart, within each verdict
+│   ├── portfolio.ts       Top-N portfolios by a signal against the S&P 500 and the MSCI World, after costs
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
 │   ├── analysts.ts        Every company's rating history, cached on disk and archived
 │   ├── insiders.ts        Every company's Form 4 trades from Finnhub, for the candidates

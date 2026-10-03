@@ -82,7 +82,8 @@ import {
 import { calibrateCrossSection, median } from './cross-section.js';
 import { fidelityCheck, renderFidelity } from './fidelity.js';
 import { loadBacktestData, pooled, type BacktestUniverse } from './load.js';
-import { closedMonthEnds, indexAtOrBefore, type PriceHistory } from './prices.js';
+import { closedMonthEnds, indexAtOrBefore, priceHistory, type PriceHistory } from './prices.js';
+import { PORTFOLIO_BENCHMARKS, PORTFOLIO_SIGNALS, portfolioStudy, type PortfolioRecord } from './portfolio.js';
 import { rateHistory } from './rates.js';
 import { renderWeightTable, scoredRow, WEIGHT_SPLIT, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
 
@@ -181,6 +182,8 @@ export async function runBacktest(
   const fairRecords: FairRecord[] = [];
   // And where each stood on its chart, for the timing study (`timing.ts`).
   const timingRecords: TimingRecord[] = [];
+  // And what each signal said of it, for the portfolios (`portfolio.ts`).
+  const portfolioRecords: PortfolioRecord[] = [];
   const labels = new Map<string, string>();
   // Company-months scored, and how many of them had a rebuilt consensus target.
   const coverage = new Map<number, { stocks: number; covered: number }>();
@@ -239,6 +242,17 @@ export async function runBacktest(
             agreement: f.agreement, confidence: f.confidence,
             ...Object.fromEntries(f.pillars.map((p) => [`pillar.${p.key}`, p.score])),
           }),
+        });
+
+        const pillar = (key: string) => f.pillars.find((p) => p.key === key)?.score ?? null;
+        const quality = pillar('quality'), momentum = pillar('momentum');
+        const signalValue: Record<(typeof PORTFOLIO_SIGNALS)[number]['key'], number | null> = {
+          score: f.score,
+          'quality-momentum': quality !== null && momentum !== null ? (quality + momentum) / 2 : null,
+        };
+        portfolioRecords.push({
+          day, symbol: e.c.symbol,
+          values: Float64Array.from(PORTFOLIO_SIGNALS, (x) => signalValue[x.key] ?? NaN),
         });
 
         // Where it stood on its chart: each reading a candidate of its own, and
@@ -388,6 +402,18 @@ export async function runBacktest(
   const timing = timingStudy(timingRecords, priceMap, calendar.map((c) => c.date));
   timingRecords.length = 0;
 
+  progress('Portfolios gegen den Index');
+  const indexFunds = new Map<string, Close[]>();
+  for (const b of PORTFOLIO_BENCHMARKS) {
+    const p = await priceHistory(b.key, data.priceFrom, join(dir, 'prices'));
+    if (p) indexFunds.set(b.key, toCloses(p));
+  }
+  const portfolios = portfolioStudy({
+    records: portfolioRecords, prices: priceMap, benchmarks: indexFunds,
+    calendar: calendar.map((c) => c.date),
+  });
+  portfolioRecords.length = 0;
+
   const fit = weightLab(rows, { prices: priceMap, sectors }, {
     fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_FIT_HORIZONS, labels,
   }).validate(calendar);
@@ -420,6 +446,7 @@ export async function runBacktest(
     topDecile,
     fairValue,
     timing,
+    portfolios,
     fidelity: fidelity ?? undefined,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
@@ -561,6 +588,20 @@ export function renderBacktest(r: BacktestResult): string {
           }).join('  '));
       }
     }
+  }
+  if (r.portfolios) {
+    const pf = r.portfolios;
+    const pc = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`);
+    lines.push('', `Portfolios ${pf.from} → ${pf.to}, equal parts, ${(pf.costPerSide * 100).toFixed(2)} % a side; CAGR, vol, max drawdown:`);
+    for (const b of pf.benchmarks) lines.push(`  ${b.label.padEnd(44)} ${pc(b.cagr).padStart(8)} ${pc(b.vol).padStart(8)} ${pc(b.maxDrawdown).padStart(8)}`);
+    lines.push(`  ${'Durchschnittsaktie'.padEnd(44)} ${pc(pf.universe.cagr).padStart(8)} ${pc(pf.universe.vol).padStart(8)} ${pc(pf.universe.maxDrawdown).padStart(8)}`);
+    for (const run of pf.runs) {
+      const u = run.vs.URTH, s5 = run.vs.SPY, ew = run.vs.universe;
+      lines.push(`  ${`${run.signal} ${run.size}/${run.every}M`.padEnd(44)} ${pc(run.cagr).padStart(8)} ${pc(run.vol).padStart(8)} ${pc(run.maxDrawdown).padStart(8)}`
+        + `  vs URTH ${pc(u.excess)} (${pc(u.first)} / ${pc(u.second)}, TE ${pc(u.trackingError)}, IR ${fmt(u.infoRatio, 2)}, ${u.yearsAhead}/${u.years} y, worst 12M ${pc(u.worst12m)})`
+        + `  vs SPY ${pc(s5.excess)}  vs avg ${pc(ew.excess)}  turnover ${Math.round(run.turnover * 100)}%  costs ${pc(run.costDrag)}/y`);
+    }
+    for (const v of pf.verdicts) lines.push(`  ${v.holds === null ? '?' : v.holds ? 'HOLDS' : 'FAILS'}  ${v.claim}`);
   }
   lines.push('', 'Factor score IC at one month, by year:');
   for (const y of r.byYear) {
