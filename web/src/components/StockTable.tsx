@@ -1,6 +1,7 @@
 import { Fragment, type MutableRefObject } from 'react';
 import type { OverviewRow } from '../types';
 import ScoreSparkline from './charts/ScoreSparkline';
+import TimingCell from './TimingCell';
 import RecommendationBadge from './RecommendationBadge';
 import { evidenceLine, useVerdictEvidence } from './VerdictEvidence';
 import StockListControls from './StockListControls';
@@ -44,6 +45,7 @@ interface Props {
  */
 const COL = {
   verdict: 'hidden sm:table-cell',
+  timing:  'hidden md:table-cell',
   price:   'hidden sm:table-cell',
   target:  'hidden md:table-cell',
   trend:   'hidden lg:table-cell',
@@ -70,7 +72,7 @@ const NAME_CELL = 'w-full max-w-0 xl:w-auto xl:max-w-none';
 const GROUP_CELL = `sticky top-8 z-[5] ${CELL_RULE} bg-ink-900 py-0 transition group-hover:bg-ink-800`;
 
 /** Every column after name and score — what the heading's last cell spans. */
-const TRAILING_COLUMNS = 7;
+const TRAILING_COLUMNS = 8;
 
 /**
  * The stock list at full width: every column the overview has room for.
@@ -135,6 +137,10 @@ export default function StockTable({
         {r.verdictModel && (
           <div className="font-mono text-3xs leading-3 text-ink-500">{r.verdictModel}</div>
         )}
+      </td>
+
+      <td className={`${COL.timing} px-2 py-1`}>
+        <TimingCell timing={r.timing} verdict={r.recommendation} evidence={evidence} />
       </td>
 
       <td className={`${COL.price} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-200`}>
@@ -235,6 +241,7 @@ export default function StockTable({
                 <th className="px-2 py-0 text-right font-semibold"><Term k="list.score">Score</Term></th>
                 <th className={`${COL.trend} px-2 py-0 text-left font-semibold`}><Term k="list.trend">Verlauf</Term></th>
                 <th className={`${COL.verdict} px-2 py-0 text-left font-semibold`}><Term k="list.verdict">Verdict</Term></th>
+                <th className={`${COL.timing} px-2 py-0 text-left font-semibold`}><Term k="list.timing">Chart</Term></th>
                 <th className={`${COL.price} px-2 py-0 text-right font-semibold`}><Term k="list.price">Kurs</Term></th>
                 <th className={`${COL.target} px-2 py-0 text-right font-semibold`}><Term k="list.target">Ø Ziel</Term></th>
                 <th className={`${COL.model} px-2 py-0 text-right font-semibold`}><Term k="list.modelFv">Modell-FV</Term></th>

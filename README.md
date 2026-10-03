@@ -78,7 +78,7 @@ pnpm run serve           # API only — serve dist/ behind your own reverse prox
 
 There is one list of stocks, shown at two densities. There are no tabs and no toolbar above it: the list *is* the app, and whether a stock or the administration is open on top of it is a fact about state rather than a place you navigate to.
 
-**Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
+**Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label and model, price, analyst mean target, composite fair value, both upside percentages, where the price stands on its chart (see *When to buy* under [The backtest](#the-backtest)), market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
 
 **Was ist passiert** (the pulse icon beside the chart icon, `#/feed`, `GET /api/feed?days=7`) — every watchlist stock's timeline over the last day, week or month on one axis: rating changes and target moves, insider trades, the quarter's numbers, our own verdict changes, dated research findings, the days a price jumped, headlines on request — and the reports due in the next two weeks above them. Built from the same per-stock timelines (`watchlistFeed` in `src/stock-history-service.ts`), so an event reads the same in the feed as on its stock's page. The strip of verdict changes above the list links to it.
 
@@ -1883,6 +1883,45 @@ months, the share of the gap closed in a year — and what stocks standing
 where today's price stands in the models' range earned over the year after
 (`FairValueEvidence`, from `/api/backtest/verdicts`). The margin describes the
 models; it is not an expected return.
+
+**When to buy: the chart under test (3 October 2026).** The verdict says
+whether a stock is worth owning; it does not say where the price stands on its
+own recent path. Seven readings of that path are candidates now
+(`analysis/timing.ts`), each turned the dip buyer's way — more is deeper down:
+the last month's fall, a low RSI, the distance under the 50- and the 200-day
+line, the place in the quarter's channel (the last close against a straight
+line through 63 log closes, in the residuals' standard deviations), the
+nearness of the six-month low, and a bounce off it (low made 3 to 15 sessions
+ago, 5 % back since). The thresholds were fixed before the first run, and so
+was the rule for what counts: |t| ≥ 2 and both halves of the years the same
+way. One function computes them for the live technicals and for the
+backtest's month-ends, on the same adjusted closes.
+
+Each is measured across all stocks as a candidate IC, and inside each verdict
+group (`backtest/timing.ts`, every run): each month the stocks of BUY and
+STRONG BUY, of HOLD, of SELL and STRONG SELL are split at the group's median of
+the reading, and the half deeper down set against the half higher up. On the
+S&P 1500 since 2013:
+
+- **Over a month, a dip earns a little and proves nothing.** For the last
+  month's fall, the RSI, the 50-day line and the channel, the half deeper down
+  is ahead by 0.1 to 0.35 % in every group — the short-term reversal the
+  literature knows — but no figure reaches t 2, and since 2020 they are about
+  zero.
+- **Over half a year, the trend wins.** Near the six-month low trails the
+  half further from it by 1.5 % (t −2.9) — in BUY by 2.1 %, in SELL by 1.8 %,
+  in both halves of the years. A bounce off the low did worse, not better
+  (−3.1 %, t −2.0; in HOLD −4.3 %, t −3.4). This is the 52-week-high effect
+  the momentum pillar already reads, seen from its other end.
+- **Four of the 84 tests pass the rule;** chance alone passes about one in
+  thirty. The one pattern beyond that is the second: a stock that is down
+  stays down for a while, whatever its verdict.
+
+So no reading votes, and the verdict does not wait for the chart. The list
+shows the readings beside the verdict (*Chart*: the channel's direction and
+the edge the price is at, the month and the RSI), and on hovering each one
+beside what the backtest found for the stock's own verdict group; the page
+*Auswertung* has the whole table.
 
 Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.

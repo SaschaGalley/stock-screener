@@ -71,6 +71,8 @@ import { insiderHistory } from './insiders.js';
 import { VARIANTS, variantSignals } from './variants.js';
 import { featureArray, TOP_FEATURES, topDecileStudy, type TopRecord } from './top-decile.js';
 import { FAIR_LENSES, fairRecord, fairValueStudy, type FairRecord } from './fair-value.js';
+import { TIMING_GROUPS, TIMING_HORIZONS, timingArray, timingGroup, timingStudy, type TimingRecord } from './timing.js';
+import { TIMING_CANDIDATES } from '../analysis/timing.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
 import { payloadAt, yahooSector } from './payload.js';
 import {
@@ -177,6 +179,8 @@ export async function runBacktest(
   const topRecords: TopRecord[] = [];
   // And its fair value and range, for the test of the fair value (`fair-value.ts`).
   const fairRecords: FairRecord[] = [];
+  // And where each stood on its chart, for the timing study (`timing.ts`).
+  const timingRecords: TimingRecord[] = [];
   const labels = new Map<string, string>();
   // Company-months scored, and how many of them had a rebuilt consensus target.
   const coverage = new Map<number, { stocks: number; covered: number }>();
@@ -236,6 +240,17 @@ export async function runBacktest(
             ...Object.fromEntries(f.pillars.map((p) => [`pillar.${p.key}`, p.score])),
           }),
         });
+
+        // Where it stood on its chart: each reading a candidate of its own, and
+        // all of them beside the verdict for the study of when to buy.
+        const timing = tech?.timing ?? null;
+        if (timing) {
+          const readings = timingArray((c) => c.read(timing));
+          TIMING_CANDIDATES.forEach((c, j) => {
+            if (Number.isFinite(readings[j])) push(`${CANDIDATE_PREFIX}${c.key}`, e.c.symbol, { at, value: readings[j] });
+          });
+          timingRecords.push({ day, symbol: e.c.symbol, group: timingGroup(f.verdict), readings });
+        }
 
         const trades = insiders.get(e.c.symbol);
         if (trades) {
@@ -369,6 +384,10 @@ export async function runBacktest(
   }) : undefined;
   fairRecords.length = 0;
 
+  progress('Timing');
+  const timing = timingStudy(timingRecords, priceMap, calendar.map((c) => c.date));
+  timingRecords.length = 0;
+
   const fit = weightLab(rows, { prices: priceMap, sectors }, {
     fitHorizon: BACKTEST_WEIGHT_HORIZON, horizons: BACKTEST_FIT_HORIZONS, labels,
   }).validate(calendar);
@@ -400,6 +419,7 @@ export async function runBacktest(
     variants,
     topDecile,
     fairValue,
+    timing,
     fidelity: fidelity ?? undefined,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
@@ -523,6 +543,21 @@ export function renderBacktest(r: BacktestResult): string {
     lines.push('  Price inside the range when drawn → a horizon later:');
     for (const g of fv.ranges) {
       lines.push(`    ${g.label.padEnd(40)} ${String(g.horizon).padStart(2)}M  ${Math.round(g.then * 100)}% → ${Math.round(g.later * 100)}%  (n ${g.n})`);
+    }
+  }
+  if (r.timing) {
+    const pc = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`);
+    lines.push('', `Timing: the half deeper down against the half higher up, within each verdict group (deep − high; halves; ✓ = |t| ≥ 2 and both halves agree)`);
+    for (const c of r.timing.candidates) {
+      lines.push(`  ${c.title}`);
+      for (const h of TIMING_HORIZONS) {
+        const ic = r.evaluation.ics.find((x) => x.key === `${CANDIDATE_PREFIX}${c.key}` && x.horizon === h);
+        lines.push(`    ${String(h).padStart(2)}M  IC ${fmt(ic?.meanIc)} (t ${fmt(ic?.tStat, 1)}, sector ${fmt(ic?.neutralIc)})  `
+          + TIMING_GROUPS.map((g) => {
+            const x = r.timing!.splits.find((s) => s.candidate === c.key && s.group === g.key && s.horizon === h);
+            return `${g.key} ${pc(x?.diff.mean)} (t ${fmt(x?.diff.t, 1)}; ${pc(x?.first.mean)} / ${pc(x?.second.mean)})${x?.holds ? ' ✓' : ''}`;
+          }).join('  '));
+      }
     }
   }
   lines.push('', 'Factor score IC at one month, by year:');

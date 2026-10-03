@@ -270,6 +270,19 @@ export const TechnicalReturnsSchema = z.object({
 });
 export type TechnicalReturns = z.infer<typeof TechnicalReturnsSchema>;
 
+/** Where the price sits on its own recent path (`analysis/timing.ts`). Candidates; none of them scores. */
+export const TimingReadingsSchema = z.object({
+  m1:           z.number().describe('Return over the last 21 sessions (decimal)'),
+  rsi14:        z.number().nullable().describe('14-day Wilder RSI over the last year of closes (0–100)'),
+  distSma50:    z.number().nullable().describe('ln(price / SMA50); negative = below the line'),
+  distSma200:   z.number().nullable().describe('ln(price / SMA200); negative = below the line'),
+  channelZ:     z.number().nullable().describe('Last log close against the 63-session trend line, in residual standard deviations; −2 = lower edge'),
+  channelSlope: z.number().nullable().describe('That trend line\'s slope, annualised log return'),
+  fromLow126:   z.number().describe('ln(price / lowest close of the last 126 sessions); 0 = at the low'),
+  lowAgo:       z.number().describe('Sessions since that low'),
+});
+export type TimingReadings = z.infer<typeof TimingReadingsSchema>;
+
 export const TechnicalIndicatorsSchema = z.object({
   returns:           TechnicalReturnsSchema.describe('Trailing total returns over standard horizons'),
   // Moving averages — full ladder for the technicals gauge
@@ -311,6 +324,7 @@ export const TechnicalIndicatorsSchema = z.object({
   currentVolRatio:   z.number().nullable().describe('Latest session volume / 30-day average volume'),
   rsVsSPY3M:         z.number().nullable().describe('3-month outperformance vs S&P 500 (stockReturn − spyReturn, decimal)'),
   rsVsSector3M:      z.number().nullable().describe('3-month outperformance vs sector ETF (decimal); null when sector mapping unavailable'),
+  timing:            TimingReadingsSchema.nullable().optional().describe('Entry-timing readings; absent in signals stored before they existed'),
 });
 export type TechnicalIndicators = z.infer<typeof TechnicalIndicatorsSchema>;
 

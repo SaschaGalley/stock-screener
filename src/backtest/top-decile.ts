@@ -69,7 +69,7 @@ export const TOP_FEATURES: readonly { key: string; label: string }[] = [
 
 const GROUPS = ['D1', 'D2–D8', 'D9', 'D10'] as const;
 export const TOP_HORIZONS = [1, 3, 6] as const;
-const HALF = '2020-01-01';
+export const HALF = '2020-01-01';
 const WINSOR = 0.025;
 /** Fewer stocks than this on either side of a month's split and the month says nothing about it. */
 const MIN_SIDE = 3;
@@ -113,7 +113,7 @@ const median = (xs: number[]) => {
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-const stat = (xs: number[]): SplitStat => ({
+export const splitStat = (xs: number[]): SplitStat => ({
   mean: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null, t: meanTest(xs).t, months: xs.length,
 });
 
@@ -125,6 +125,35 @@ function at(closes: readonly Close[], day: string): number {
     if (closes[mid].date <= day) { found = mid; lo = mid + 1; } else hi = mid - 1;
   }
   return found;
+}
+
+/**
+ * Each month's winsorised return over `h` month-ends for every record formed
+ * that month, against the month's average record: the excess the bands read,
+ * for studies that cut the same company-months their own way.
+ */
+export function monthlyExcess<R extends { symbol: string }>(
+  byDay: ReadonlyMap<string, readonly R[]>, prices: ReadonlyMap<string, Close[]>, monthEnds: readonly string[], h: number,
+): Map<R, number> {
+  const excess = new Map<R, number>();
+  for (const [day, records] of byDay) {
+    const i = monthEnds.indexOf(day);
+    if (i < 0 || i + h >= monthEnds.length) continue;
+    const exit = monthEnds[i + h];
+    const rs = records.flatMap((r) => {
+      const px = prices.get(r.symbol);
+      if (!px) return [];
+      const a = at(px, day), b = at(px, exit);
+      return a >= 0 && b > a ? [{ r, ret: px[b].close / px[a].close - 1 }] : [];
+    });
+    if (rs.length < 30) continue;
+    const sorted = rs.map((x) => x.ret).sort((a, b) => a - b);
+    const lo = sorted[Math.floor(WINSOR * (sorted.length - 1))], hi = sorted[Math.ceil((1 - WINSOR) * (sorted.length - 1))];
+    const clipped = rs.map((x) => ({ r: x.r, ret: Math.min(hi, Math.max(lo, x.ret)) }));
+    const avg = clipped.reduce((s, x) => s + x.ret, 0) / clipped.length;
+    for (const x of clipped) excess.set(x.r, x.ret - avg);
+  }
+  return excess;
 }
 
 export function topDecileStudy(
@@ -168,25 +197,7 @@ export function topDecileStudy(
 
   const splits: TopSplit[] = [];
   for (const h of TOP_HORIZONS) {
-    // Each month's winsorised excess return for every scored stock.
-    const excess = new Map<TopRecord, number>();
-    days.forEach((day) => {
-      const i = monthEnds.indexOf(day);
-      if (i < 0 || i + h >= monthEnds.length) return;
-      const exit = monthEnds[i + h];
-      const rs = byDay.get(day)!.flatMap((r) => {
-        const px = prices.get(r.symbol);
-        if (!px) return [];
-        const a = at(px, day), b = at(px, exit);
-        return a >= 0 && b > a ? [{ r, ret: px[b].close / px[a].close - 1 }] : [];
-      });
-      if (rs.length < 30) return;
-      const sorted = rs.map((x) => x.ret).sort((a, b) => a - b);
-      const lo = sorted[Math.floor(WINSOR * (sorted.length - 1))], hi = sorted[Math.ceil((1 - WINSOR) * (sorted.length - 1))];
-      const clipped = rs.map((x) => ({ r: x.r, ret: Math.min(hi, Math.max(lo, x.ret)) }));
-      const avg = clipped.reduce((s, x) => s + x.ret, 0) / clipped.length;
-      for (const x of clipped) excess.set(x.r, x.ret - avg);
-    });
+    const excess = monthlyExcess(byDay, prices, monthEnds, h);
 
     for (const [i, f] of TOP_FEATURES.entries()) {
       const highs: number[] = [], lows: number[] = [], diffs: number[] = [], first: number[] = [], second: number[] = [], ninth: number[] = [];
@@ -219,8 +230,8 @@ export function topDecileStudy(
       const every = (xs: number[]) => xs.filter((_, k) => k % h === 0);
       splits.push({
         feature: f.key, label: f.label, horizon: h,
-        high: stat(every(highs)), low: stat(every(lows)), diff: stat(every(diffs)),
-        first: stat(every(first)), second: stat(every(second)), ninth: stat(every(ninth)),
+        high: splitStat(every(highs)), low: splitStat(every(lows)), diff: splitStat(every(diffs)),
+        first: splitStat(every(first)), second: splitStat(every(second)), ninth: splitStat(every(ninth)),
       });
     }
   }

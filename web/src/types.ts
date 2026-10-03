@@ -67,6 +67,7 @@ export type {
   StockFinancials,
   MarketSignals,
   NewsItem,
+  TimingReadings,
 } from '../../src/types';
 
 export type { ComputedMetrics } from '../../src/analysis/computeMetrics';

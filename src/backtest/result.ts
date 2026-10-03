@@ -14,6 +14,7 @@ import type { WeightValidation } from './weights.js';
 import type { TopDecileStudy } from './top-decile.js';
 import type { Fidelity } from './fidelity.js';
 import type { FairValueStudy } from './fair-value.js';
+import type { TimingStudy } from './timing.js';
 
 export const RESULT_KEY = 'backtest.result';
 
@@ -41,6 +42,12 @@ export interface BacktestResult {
   topDecile?:  TopDecileStudy;
   /** The composite fair value put to the test (`fair-value.ts`), with the studies; absent in older results. */
   fairValue?:  FairValueStudy;
+  /**
+   * Whether it pays to wait for the chart, within each verdict (`timing.ts`).
+   * Run every time — it is cheap — so not carried from an earlier run; absent
+   * in older results.
+   */
+  timing?:     TimingStudy;
   /**
    * When the studies above were computed, where that was an earlier run than
    * this one: they are run with `--studies` only, and carried to the page
@@ -176,6 +183,11 @@ export interface VerdictEvidence {
   fidelity:    { rho: number | null; same: number } | null;
   /** What the headline fair value's gap did, from the newest run that tested it (`fair-value.ts`); null before one did. */
   fair:        FairEvidence | null;
+  /**
+   * The timing study, with each reading's IC over the whole cross-section; null
+   * for a run from before it (`timing.ts`).
+   */
+  timing:      (TimingStudy & { ics: { key: string; horizon: number; meanIc: number | null; tStat: number | null }[] }) | null;
 }
 
 export interface FairEvidence {
@@ -192,9 +204,14 @@ export async function verdictEvidence(): Promise<VerdictEvidence | null> {
   const row = await queryOne<{
     generated_at: Date; universe: string | null; from: string; to: string;
     verdicts: BucketReturn[] | null; rho: number | null; same: number | null;
+    timing: TimingStudy | null; timing_ics: { key: string; horizon: number; meanIc: number | null; tStat: number | null }[] | null;
   }>(
     `SELECT generated_at, universe, result ->> 'from' AS "from", result ->> 'to' AS "to",
             result -> 'bands' -> 'verdicts' AS verdicts,
+            result -> 'timing' AS timing,
+            (SELECT jsonb_agg(jsonb_build_object('key', x -> 'key', 'horizon', x -> 'horizon', 'meanIc', x -> 'meanIc', 'tStat', x -> 'tStat'))
+               FROM jsonb_array_elements(result -> 'evaluation' -> 'ics') x
+              WHERE x ->> 'key' LIKE 'candidate.timing.%') AS timing_ics,
             (SELECT (x ->> 'rho')::float FROM jsonb_array_elements(result -> 'fidelity' -> 'scores') x
               WHERE x ->> 'key' = 'score') AS rho,
             (result -> 'fidelity' -> 'verdicts' ->> 'same')::float AS same
@@ -216,6 +233,9 @@ export async function verdictEvidence(): Promise<VerdictEvidence | null> {
       closed: fv.fair.convergence.filter((r) => r.lens === 'fair.primary').map((r) => ({ horizon: r.horizon, slope: r.slope, t: r.t })),
       positions: fv.fair.positions,
     } : null,
+    timing: row.timing
+      ? { ...row.timing, ics: (row.timing_ics ?? []).map((x) => ({ ...x, key: x.key.replace(/^candidate\./, '') })) }
+      : null,
   };
 }
 

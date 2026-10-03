@@ -17,7 +17,7 @@
  *   - Type-only imports, so it stays free of runtime dependencies.
  */
 
-import type { StockFinancials, MarketSignals, NewsItem, SectorMedians, TechnicalSignals } from './types.js';
+import type { StockFinancials, MarketSignals, NewsItem, SectorMedians, TechnicalSignals, TimingReadings } from './types.js';
 import type { AnalysisManifestEntry } from './db/store.js';
 import type { ComputedMetrics } from './analysis/computeMetrics.js';
 import type { PerplexityContext } from './data/perplexity.js';
@@ -174,6 +174,12 @@ export interface OverviewRow {
   watched:       boolean;
   /** Combined AI + analyst buy/hold/sell band, for the list's consensus stripe. */
   consensus:     ConsensusBand | null;
+  /**
+   * Where the price sits on its own recent path, from the newest refresh
+   * (`analysis/timing.ts`). Null for a stock not refreshed since the readings
+   * existed. Beside the verdict, never in it.
+   */
+  timing:        TimingReadings | null;
 }
 
 /**

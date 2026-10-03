@@ -19,6 +19,7 @@ import {
   getStandardDeviation,
 } from 'trading-signals';
 import { TechnicalIndicators, TechnicalReturns } from '../types.js';
+import { timingReadings } from './timing.js';
 
 export interface DailyBar {
   date: Date;
@@ -204,5 +205,6 @@ export function computeTechnicals(input: TechnicalsInputs): TechnicalIndicators 
     currentVolRatio,
     rsVsSPY3M:    relativeReturn3M(bars, spyBars),
     rsVsSector3M: relativeReturn3M(bars, sectorBars),
+    timing:       timingReadings(closes),
   };
 }

@@ -20,6 +20,7 @@ import {
 } from '../data/edgar-facts.js';
 import { auditFinancials, isFundamentalsStale } from '../analysis/data-quality.js';
 import { consensusAt, ratingDeltaAt } from '../analysis/analyst-history.js';
+import { TIMING_LOOKBACK, timingReadings } from '../analysis/timing.js';
 import type { AnalystAction } from '../analysis/analyst-accuracy.js';
 import type { MarketSignals, StockFinancials } from '../types.js';
 import { indexAtOrBefore, PriceHistory, splitFactorAfter } from './prices.js';
@@ -388,6 +389,8 @@ export function payloadAt(
       },
       drawdownFromHighPct: high > 0 ? px.adj[i] / high - 1 : null,
       rsVsSector3M: rsSector,
+      // On adjusted closes, as the live bars are.
+      timing: timingReadings(px.adj.slice(Math.max(0, i - TIMING_LOOKBACK + 1), i + 1)),
     },
     revisions: { perPeriod: [], analystRatingMoMDelta: analysts ? ratingDeltaAt(analysts, asOf, splits) : null },
     options: null,

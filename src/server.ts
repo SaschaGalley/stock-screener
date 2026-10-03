@@ -28,7 +28,7 @@ import { storedMembers } from './universe.js';
 import { tradingViewLogoUrl } from './data/tradingview-logo.js';
 import { syncCatalog } from './db/catalog.js';
 import { closePool, waitForDatabase } from './db/client.js';
-import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials } from './types.js';
+import { LLMAnalysis, PillarKey, ScoreCard, StockFinancials, TimingReadings, TimingReadingsSchema } from './types.js';
 import { PILLAR_LABELS, WEIGHTS } from './analysis/score.js';
 import { FITTED_WEIGHTS_META } from './analysis/weight-table.js';
 import type {
@@ -93,8 +93,27 @@ const KEY_CARD = [
   'score.narrative.score',
 ] as const;
 const KEY_COMPOSITE     = 'metrics.composite.primary.median';
+/** The timing readings' series, one per field of the schema they are stored by. */
+const TIMING_PREFIX = 'signals.technicals.timing.';
+const KEY_TIMING = Object.keys(TimingReadingsSchema.shape).map((k) => `${TIMING_PREFIX}${k}`);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * One refresh's timing readings, put back together from their series. Every
+ * field is written in the same call, so a point not stamped like the month's
+ * return — which is never null — belongs to an earlier refresh and is a field
+ * that has no value now.
+ */
+function timingOf(points: Map<string, { at: string; value: number | null }> | undefined): TimingReadings | null {
+  const stamp = points?.get(`${TIMING_PREFIX}m1`)?.at;
+  if (!points || !stamp) return null;
+  const parsed = TimingReadingsSchema.safeParse(Object.fromEntries(KEY_TIMING.map((k) => {
+    const p = points.get(k);
+    return [k.slice(TIMING_PREFIX.length), p && p.at === stamp ? p.value : null];
+  })));
+  return parsed.success ? parsed.data : null;
+}
 
 function logoDomainFromWebsite(url: string | null): string | null {
   if (!url) return null;
@@ -763,13 +782,14 @@ export function createApp(): express.Express {
   // had a composite recorded.
   app.get('/api/overview', async (_req, res, next) => {
     try {
-      const [config, financials, verdicts, scoreSeries, cards, composites] = await Promise.all([
+      const [config, financials, verdicts, scoreSeries, cards, composites, timings] = await Promise.all([
         readAppConfig(),
         latestSnapshotForAll<StockFinancials>('financials'),
         latestVerdictsForAll(),
         seriesForAll(KEY_SCORE),
         latestPointsForAll([...KEY_CARD]),
         latestValueForAll(KEY_COMPOSITE),
+        latestPointsForAll(KEY_TIMING),
       ]);
       const marketRates = await getMarketRates(cfg.fredApiKey).catch(() => null);
 
@@ -857,6 +877,7 @@ export function createApp(): express.Express {
           dataAgeHours:  (Date.now() - new Date(snap.lastSeenAt).getTime()) / 3_600_000,
           watched:       isWatched(config, symbol),
           consensus:     computeConsensus(f, entries),
+          timing:        timingOf(timings.get(symbol)),
         });
       }
 
