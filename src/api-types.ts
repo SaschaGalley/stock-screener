@@ -108,6 +108,8 @@ export interface StockBundle {
   marketSignals:    MarketSignals | null;
   news:             NewsItem[];
   perplexity:       PerplexityContext | null;
+  /** The newest deep research report, bought by hand — whatever its age; the UI says it. */
+  deepResearch:     PerplexityContext | null;
   distill:          DistillBundle | null;
   metrics:          ComputedMetrics;
   sectorMedians:    SectorMedians | null;

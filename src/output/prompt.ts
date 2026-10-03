@@ -525,8 +525,22 @@ export function buildNarrativePrompt(
   f: StockFinancials,
   distill?: DistillBundle,
   perplexity?: PerplexityContext,
+  deepResearch?: PerplexityContext,
 ): string {
   const distillSection = distillDossierSection(f.symbol, distill);
+  // Bought by hand, weeks old perhaps, and far wider than the brief: it says
+  // when it was written, and where it and the newer brief disagree the newer
+  // one wins.
+  const deep = !deepResearch ? ''
+    : `
+### Tiefenrecherche (Perplexity Deep Research vom ${deepResearch.fetchedAt.slice(0, 10)} — gezielt beauftragt, Dutzende Suchen)
+
+Gleiche Gliederung und Einstufung wie die Web-Recherche, aber breiter gesucht und länger
+begründet. Sie kann älter sein: wo sie und eine neuere Recherche sich widersprechen, gilt
+die neuere. Was nur hier steht, ist deswegen nicht schwächer.
+
+${deepResearch.synthesis}
+`;
   // The structured brief reads differently from the old free prose, and the
   // summariser has to know which of its three parts carries weight: a bull claim
   // marked contradicted is the strongest thing on the page, a company-sourced
@@ -542,7 +556,11 @@ Optimisten übersehen. Die **geprüften Bullen-Thesen** sagen, welche verbreitet
 Argumente unabhängig belegt, nur vom Management behauptet oder widerlegt sind — eine
 widerlegte These ist das stärkste Signal auf dieser Seite, eine reine Management-Aussage
 das schwächste. Die **geprüften Bären-Thesen** sind die Argumente der Skeptiker, ebenso
-geprüft; „bisher nur Meinung" heißt, dass noch nichts sie belegt. Einträge aus einer
+geprüft; „bisher nur Meinung" heißt, dass noch nichts sie belegt. Jede These steht mit
+ihrer Wirkung, ihrem Einsatz, ihren Vertretern und dem stärksten Gegenargument da — das
+ist das Material für die Argumente je Seite. Die **Kerndebatte** nennt die offenen Fragen,
+an denen der Kurs hängt; die **operativen Kennzahlen** und **Termine** zeigen, woran und
+wann sie sich entscheiden. Einträge aus einer
 Unternehmensquelle wiegen weniger als unabhängige. Leere Abschnitte heißen „gesucht und
 nichts gefunden", nicht „nicht gesucht".
 
@@ -552,7 +570,7 @@ ${perplexity.synthesis}
 
   return `## Qualitative Lage: ${f.symbol} — ${f.companyName}
 Sektor ${f.sector ?? 'N/A'} / ${f.industry ?? 'N/A'}
-${distillSection}${pplx}
+${distillSection}${pplx}${deep}
 ---
 
 **Deine Aufgabe: lies diese Quellen und sonst nichts.**

@@ -30,7 +30,9 @@ describe('parsing the brief', () => {
     // "Searched and found nothing" is a finding. The old free-text path would
     // have called a short answer a refusal and thrown it away.
     const f = parseFindings('{"events": []}');
-    assert.deepEqual(f, { events: [], bearEvidence: [], bullClaims: [], bearClaims: [] });
+    assert.deepEqual(f, {
+      debate: [], events: [], kpis: [], bearEvidence: [], bullClaims: [], bearClaims: [], catalysts: [],
+    });
   });
 
   it('drops an item with no text rather than keeping a blank finding', () => {
@@ -66,6 +68,29 @@ describe('parsing the brief', () => {
     assert.deepEqual(f?.bearClaims?.map((c) => c.evidence), ['opinion', 'independent', 'contradicted', 'opinion']);
   });
 
+  it('reads the answer after the thinking, not a brace inside it', () => {
+    // sonar-reasoning-pro writes its reasoning first, and the reasoning quotes
+    // the JSON shape it is about to fill.
+    const f = parseFindings('<think>The schema is {"events": [...]}. Let me check ```json drafts```.</think>\n'
+      + JSON.stringify({ events: [{ date: '2026-07-22', what: 'Guide raised', impact: '+1% revenue' }] }));
+    assert.equal(f?.events[0].impact, '+1% revenue');
+  });
+
+  it('keeps a KPI only with values, and drops the periods the model could not fill', () => {
+    const f = parseFindings(JSON.stringify({
+      kpis: [
+        { name: 'cRPO', values: [
+          { period: 'Q2 2026', value: '$13.2bn, +21%' },
+          { period: 'Q1 2026', value: 'Not available in the gathered independent sources' },
+          { period: 'Q4 2025', value: 'Baseline not disclosed in the gathered sources' },
+          { period: 'Q3 2025', value: '$12.1bn, not disclosed by segment' },
+        ], read: 'Steady' },
+        { name: 'NRR', values: [{ period: 'Q2 2026', value: 'Not disclosed' }] },
+      ],
+    }));
+    assert.deepEqual(f?.kpis?.map((k) => [k.name, k.values.length]), [['cRPO', 2]], 'a figure with a caveat is still a figure');
+  });
+
   it('returns null for text that is not JSON, so the caller can fall back', () => {
     assert.equal(parseFindings('ServiceNow reported strong results this quarter.'), null);
   });
@@ -91,6 +116,28 @@ describe('rendering the brief', () => {
       bullClaims: [{ claim: 'Hyperscalers improve margins', evidence: 'contradicted', detail: 'AI mix is a headwind', source: null }],
     });
     assert.match(md, /Hyperscalers improve margins\*\* — widerlegt: AI mix is a headwind/);
+  });
+});
+
+describe('rendering the argued claims', () => {
+  it('sets out the argument beneath the claim', () => {
+    const md = renderFindings({
+      events: [], bearEvidence: [],
+      bullClaims: [{
+        claim: 'AI adds wallet share', mechanism: 'Agents add departments', stake: '$1bn ACV',
+        proponents: 'Morgan Stanley', evidence: 'independent', detail: 'Checks confirm',
+        counter: 'Q3 guide decelerates', settles: 'Q3 cRPO on 2026-10-28', source: null,
+      }],
+    });
+    assert.match(md, /\*\*AI adds wallet share\*\* \(Morgan Stanley\) — unabhängig belegt\n  - _Wirkung:_ Agents add departments/);
+    assert.match(md, /_Dagegen:_ Q3 guide decelerates/);
+  });
+
+  it('shows the sections a new brief asked for, and none an old one did not', () => {
+    const md = renderFindings({ debate: [], events: [], kpis: [], bearEvidence: [], bullClaims: [], catalysts: [] });
+    assert.match(md, /Kerndebatte/);
+    assert.match(md, /Termine/);
+    assert.doesNotMatch(renderFindings({ events: [], bearEvidence: [], bullClaims: [] }), /Kerndebatte|Termine|Kennzahlen/);
   });
 });
 

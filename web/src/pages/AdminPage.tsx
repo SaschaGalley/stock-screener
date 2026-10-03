@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, ConfigResponse, JobRun, SchedulerStatus, SearchChoice } from '../types';
-import { MODELS } from '../../../src/models';
+import { MODELS, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel } from '../../../src/models';
 import { CloseIcon } from '../components/icons';
 import { BacktestStatusLine, useBacktestOverview } from '../components/BacktestRuns';
 
@@ -397,13 +397,14 @@ export default function AdminPage({ onClose }: Props) {
                 value={analysis.pplx ?? 'none'}
                 onChange={(e) => patch((d) => {
                   const v = e.target.value;
-                  d.steps.analysis.pplx = v === 'none' ? null : (v as 'sonar' | 'sonar-pro');
+                  d.steps.analysis.pplx = v === 'none' ? null : (v as PerplexityModelId);
                 })}
                 className={`${inputCls} flex-1`}
               >
                 <option value="none">aus</option>
-                <option value="sonar">sonar</option>
-                <option value="sonar-pro">sonar-pro</option>
+                {PERPLEXITY_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>{perplexityLabel(m.id)} — {m.note}</option>
+                ))}
               </select>
             </div>
             <div className="flex items-center gap-2">
@@ -420,8 +421,24 @@ export default function AdminPage({ onClose }: Props) {
               />
               <span className="text-xs text-ink-500">Tage</span>
             </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-ink-400">Deep Research mitgeben</label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={config.perplexity.deepMaxAgeDays}
+                onChange={(e) => patch((d) => {
+                  d.perplexity.deepMaxAgeDays = Math.max(1, Math.min(365, Number(e.target.value) || 1));
+                })}
+                className={`${inputCls} w-16 text-right font-mono`}
+              />
+              <span className="text-xs text-ink-500">Tage</span>
+            </div>
             <p className="text-xs leading-relaxed text-ink-500">
               Gilt für jede Analyse, auch für manuelle Re-runs — jeder Aufruf kostet.
+              Ein Deep-Research-Bericht wird nur von Hand angefordert (Research &amp; News)
+              und geht so lange zusätzlich in jede Analyse ein.
               ↻ Refresh unter Research &amp; News fragt sofort neu.
             </p>
           </Card>

@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
+import {
+  DEEP_RESEARCH_MODEL, DEFAULT_PERPLEXITY_MODEL, type PerplexityModelId, perplexityLabel,
+} from '../../../../src/models';
 import { api } from '../../api';
+import PerplexityBrief from './PerplexityBrief';
 import type {
   SearchTrace,
   SearchProviderTrace,
@@ -15,6 +19,8 @@ interface Props {
   symbol: string;
   news: any[];
   perplexity: PerplexityContext | null;
+  /** The newest deep research report, bought by hand. */
+  deepResearch: PerplexityContext | null;
   /** The sidebar's Perplexity choice — the model a refresh asks for. */
   pplx: PplxChoice;
   distill: DistillBundle | null;
@@ -33,7 +39,7 @@ const PROVIDER_META: Record<SearchProviderTrace['provider'], { label: string; ti
   'openai-web-search':   { label: 'OpenAI web_search', tint: 'border-l-emerald-500' },
 };
 
-export default function NewsAndResearch({ symbol, news, perplexity, pplx, distill, searches, onRefreshed }: Props) {
+export default function NewsAndResearch({ symbol, news, perplexity, deepResearch, pplx, distill, searches, onRefreshed }: Props) {
   return (
     <div className="space-y-6">
       {/* Distill — top of the section because it's the most-weighted qualitative
@@ -46,6 +52,8 @@ export default function NewsAndResearch({ symbol, news, perplexity, pplx, distil
       {(perplexity || pplx) && (
         <PerplexitySection symbol={symbol} perplexity={perplexity} pplx={pplx} onRefreshed={onRefreshed} />
       )}
+
+      <DeepResearchSection symbol={symbol} deep={deepResearch} onRefreshed={onRefreshed} />
 
       {/* Search Traces — one collapsible block per provider that ran. Persisted
           on the cached analysis so the user can audit what context the LLM saw
@@ -233,15 +241,122 @@ function PerplexitySection({
   pplx: PplxChoice;
   onRefreshed: () => void;
 }) {
+  // The sidebar's choice wins; without one, keep the model the stored
+  // synthesis came from. Deep research is never the regular brief's model
+  // here — it has its own block and its own button.
+  const chosen = pplx ?? perplexity?.model ?? DEFAULT_PERPLEXITY_MODEL;
+  const model = chosen === DEEP_RESEARCH_MODEL ? DEFAULT_PERPLEXITY_MODEL : chosen;
+  const refresh = usePerplexityRefresh(symbol, model, onRefreshed);
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
+          Perplexity Research
+        </h3>
+        <div className="flex items-center gap-2">
+          {perplexity && <BriefMeta context={perplexity} />}
+          <RefreshButton
+            busy={refresh.busy}
+            disabled={false}
+            onClick={refresh.run}
+            title={`Perplexity neu abfragen (${perplexityLabel(model)}) — ohne Cache, kostet einen Aufruf.`}
+          />
+        </div>
+      </div>
+
+      {refresh.busy && <Busy>⟳ Frage Perplexity ab… dauert mit {perplexityLabel(model)} meist eine halbe bis zwei Minuten.</Busy>}
+      {refresh.error && <Failed>{refresh.error}</Failed>}
+
+      {perplexity ? (
+        <div className="rounded border border-ink-800 bg-ink-950 px-3 py-2">
+          <div className="max-h-[48rem] overflow-y-auto">
+            <PerplexityBrief context={perplexity} />
+          </div>
+          <Citations urls={perplexity.citations} />
+        </div>
+      ) : (
+        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-xs text-ink-500">
+          Noch keine Perplexity-Recherche für {symbol}. Die nächste Analyse holt eine,
+          oder ↻ Refresh sofort.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Deep research, bought by hand and kept beside the regular brief.
+ *
+ * Its own block because it is its own purchase: about a dollar and several
+ * minutes a report, against a few cents for the brief. Every analysis inside
+ * the window set in the admin settings reads it as well, so a report bought
+ * today shapes the verdicts of the next weeks — the button says so.
+ */
+function DeepResearchSection({ symbol, deep, onRefreshed }: {
+  symbol: string;
+  deep: PerplexityContext | null;
+  onRefreshed: () => void;
+}) {
+  const refresh = usePerplexityRefresh(symbol, DEEP_RESEARCH_MODEL, onRefreshed);
+  const cost = perplexityLabel(DEEP_RESEARCH_MODEL);
+
+  function start() {
+    if (!window.confirm(
+      `Deep Research für ${symbol} anfordern? ${cost} pro Bericht, dauert 3–5 Minuten. `
+      + 'Der Bericht geht danach in jede Analyse ein, bis er älter ist als im Admin eingestellt.',
+    )) return;
+    refresh.run();
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
+          Deep Research
+        </h3>
+        <div className="flex items-center gap-2">
+          {deep && <BriefMeta context={deep} />}
+          <button
+            onClick={start}
+            disabled={refresh.busy}
+            title={`${cost} — Dutzende Suchen, 3–5 Minuten.`}
+            className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-2xs font-medium text-ink-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {refresh.busy ? '⟳ läuft…' : deep ? '↻ Neu anfordern' : 'Anfordern'}
+          </button>
+        </div>
+      </div>
+
+      {refresh.busy && <Busy>⟳ Deep Research läuft — Perplexity sucht und schreibt drei bis fünf Minuten. Die Seite kann offen bleiben.</Busy>}
+      {refresh.error && <Failed>{refresh.error}</Failed>}
+
+      {deep ? (
+        <details className="rounded border border-ink-800 bg-ink-950 px-3 py-2" open>
+          <summary className="cursor-pointer text-2xs text-ink-500">
+            Bericht vom {new Date(deep.fetchedAt).toLocaleDateString()} — geht in jede Analyse ein, solange er im Zeitfenster liegt
+          </summary>
+          <div className="mt-2 max-h-[48rem] overflow-y-auto">
+            <PerplexityBrief context={deep} />
+          </div>
+          <Citations urls={deep.citations} />
+        </details>
+      ) : (
+        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-xs text-ink-500">
+          Kein Deep-Research-Bericht für {symbol}. Er ist breiter und gründlicher als die
+          Recherche oben, aber rund zehnmal so teuer — deshalb nur auf Anforderung.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function usePerplexityRefresh(symbol: string, model: PerplexityModelId, onRefreshed: () => void) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // The sidebar's choice wins; without one, keep the model the stored
-  // synthesis came from.
-  const model = pplx ?? perplexity?.model ?? null;
-
   useEffect(() => { setError(null); }, [symbol]);
 
-  async function handleRefresh() {
+  async function run() {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -254,68 +369,45 @@ function PerplexitySection({
       setBusy(false);
     }
   }
+  return { busy, error, run };
+}
 
+function BriefMeta({ context }: { context: PerplexityContext }) {
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
-          Perplexity Research
-        </h3>
-        <div className="flex items-center gap-2">
-          {perplexity && (
-            <span className="text-2xs text-ink-500">
-              {perplexity.model} · {new Date(perplexity.fetchedAt).toLocaleString()}
-            </span>
-          )}
-          <RefreshButton
-            busy={busy}
-            disabled={false}
-            onClick={handleRefresh}
-            title={`Perplexity neu abfragen (${model ?? 'sonar-pro'}) — ohne Cache, kostet einen Aufruf.`}
-          />
-        </div>
-      </div>
+    <span className="text-2xs text-ink-500">
+      {context.model} · {new Date(context.fetchedAt).toLocaleString()}
+      {context.costUsd !== undefined && ` · ${context.costUsd.toFixed(2).replace('.', ',')} $`}
+    </span>
+  );
+}
 
-      {busy && (
-        <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-xs text-ink-300">
-          ⟳ Frage Perplexity ab… dauert meist 10–30 Sekunden.
-        </div>
-      )}
-      {error && (
-        <div className="mb-2 rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-xs text-amber-300">
-          ⚠ {error}
-        </div>
-      )}
-
-      {perplexity ? (
-        <div className="rounded border border-ink-800 bg-ink-950 px-3 py-2">
-          <div className="prose-stock max-h-96 overflow-y-auto text-xs">
-            {perplexity.synthesis.split('\n').map((line, i) => (
-              <p key={i} className={line.startsWith('**') ? 'mt-3 font-semibold text-ink-100' : 'mt-1'}>
-                {line.replace(/\*\*/g, '')}
-              </p>
-            ))}
-          </div>
-          {perplexity.citations?.length > 0 && (
-            <details className="mt-2">
-              <summary className="cursor-pointer text-2xs text-ink-500">
-                {perplexity.citations.length} sources
-              </summary>
-              <ul className="mt-1 space-y-0.5 pl-4 text-2xs text-ink-500">
-                {perplexity.citations.map((u, i) => (
-                  <li key={i}><a href={u} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">{u}</a></li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
-      ) : (
-        <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-xs text-ink-500">
-          Noch keine Perplexity-Recherche für {symbol}. Die nächste Analyse holt eine,
-          oder ↻ Refresh sofort.
-        </div>
-      )}
+function Busy({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-xs text-ink-300">
+      {children}
     </div>
+  );
+}
+
+function Failed({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-xs text-amber-300">
+      ⚠ {children}
+    </div>
+  );
+}
+
+function Citations({ urls }: { urls: string[] | undefined }) {
+  if (!urls?.length) return null;
+  return (
+    <details className="mt-2">
+      <summary className="cursor-pointer text-2xs text-ink-500">{urls.length} sources</summary>
+      <ul className="mt-1 space-y-0.5 pl-4 text-2xs text-ink-500">
+        {urls.map((u, i) => (
+          <li key={i}><a href={u} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">{u}</a></li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

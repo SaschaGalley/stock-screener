@@ -14,7 +14,7 @@ import {
   deleteAnalysis, deleteSymbol, latestSnapshotForAll, latestPointsForAll, latestValueForAll, scoreInstants,
   latestDocument, listAnalyses, listDocuments, listMetrics, listSymbols,
   readAnalysis, readDistillLax, readFinancialsMeta, readFinancialsLax,
-  readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax,
+  readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax, readDeepResearchLax,
   readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry, symbolCounts, refreshedWithin,
   recentVerdictChanges, peersByIndustry, peersBySymbol, StoredPeer,
 } from './db/store.js';
@@ -35,7 +35,7 @@ import type {
   AnalysisListEntry, BacktestResponse, ConsensusBand, EvaluationResponse, OverviewRow, PeerRow, PeersResponse,
   StockSummary,
 } from './api-types.js';
-import { MODELS } from './models.js';
+import { DEFAULT_PERPLEXITY_MODEL, isPerplexityModel, MODELS, PerplexityModelId } from './models.js';
 import {
   DistillUnauthorizedError,
   DistillEntityUnresolvedError,
@@ -427,7 +427,7 @@ export function createApp(): express.Express {
   // ── POST /api/stocks/:symbol/perplexity-refresh ────────────────────────────
   // Asks Perplexity again, past the cache window. Every analysis serves the
   // stored synthesis until the window runs out, so this is the one deliberate
-  // way to pay for a new one sooner. Body: `{ model?: 'sonar' | 'sonar-pro' }`.
+  // way to pay for a new one sooner. Body: `{ model?: PerplexityModelId }`.
   app.post('/api/stocks/:symbol/perplexity-refresh', async (req, res, next) => {
     try {
       const symbol = req.params.symbol.toUpperCase();
@@ -436,7 +436,7 @@ export function createApp(): express.Express {
         return;
       }
       const requested = (req.body as { model?: unknown } | undefined)?.model;
-      const model = requested === 'sonar' ? 'sonar' : 'sonar-pro';
+      const model = isPerplexityModel(requested) ? requested : DEFAULT_PERPLEXITY_MODEL;
 
       const { perplexityRefresh } = await import('./hatchet/tasks/single.js');
       const { perplexity } = await viaHatchet(
@@ -1204,10 +1204,11 @@ export function createApp(): express.Express {
       }
       const financials = fSnap.data;
 
-      const [msSnap, news, perplexity, distill, summary] = await Promise.all([
+      const [msSnap, news, perplexity, deepResearch, distill, summary] = await Promise.all([
         readMarketSignalsMeta(symbol),
         readNewsLax(symbol),
         readPerplexityLax(symbol),
+        readDeepResearchLax(symbol),
         readDistillLax(symbol),
         buildStockSummary(symbol),
       ]);
@@ -1250,6 +1251,7 @@ export function createApp(): express.Express {
         marketSignals,
         news,
         perplexity,
+        deepResearch,
         distill,
         metrics,
         sectorMedians,
@@ -1325,9 +1327,7 @@ export function createApp(): express.Express {
       const flags: AnalysisFlagsKey = {
         model:  String(req.query.model ?? ''),
         search: String(req.query.search ?? 'none'),
-        pplx:   (req.query.pplx === 'sonar' || req.query.pplx === 'sonar-pro')
-          ? req.query.pplx
-          : null,
+        pplx:   isPerplexityModel(req.query.pplx) ? req.query.pplx : null,
       };
       if (!flags.model) {
         res.status(400).json({ error: 'model query parameter is required' });
@@ -1351,7 +1351,7 @@ export function createApp(): express.Express {
     try {
       const { input, model, search, pplx, force } = req.body as {
         input?: string; model?: string; search?: string | string[];
-        pplx?: 'sonar' | 'sonar-pro' | null;
+        pplx?: PerplexityModelId | null;
         force?: boolean;
       };
       if (!input || typeof input !== 'string') {
@@ -1399,8 +1399,7 @@ export function createApp(): express.Express {
       ? rawSearch.map(String)
       : rawSearch ? String(rawSearch).split(',').map((s) => s.trim()).filter(Boolean) : [];
     const pplxQ  = String(req.query.pplx ?? '');
-    const pplx: 'sonar' | 'sonar-pro' | null =
-      pplxQ === 'sonar' || pplxQ === 'sonar-pro' ? pplxQ : null;
+    const pplx: PerplexityModelId | null = isPerplexityModel(pplxQ) ? pplxQ : null;
     const force  = req.query.force === '1' || req.query.force === 'true';
 
     if (!input) {

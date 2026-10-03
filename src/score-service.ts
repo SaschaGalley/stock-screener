@@ -118,6 +118,7 @@ export function narrativeMaterial(
   distill?: DistillBundle | null,
   perplexity?: PerplexityContext | null,
   searchResults?: SearchResult[],
+  deepResearch?: PerplexityContext | null,
 ): NarrativeMaterial {
   const sources: string[] = [];
   let weight = 0;
@@ -146,17 +147,22 @@ export function narrativeMaterial(
     sources.push('distill-briefing');
   }
 
-  if (perplexity?.synthesis?.trim()) {
+  // Deep research is the same kind of source as the brief, searched harder.
+  // It counts once, as the better of the two — a second report on the same
+  // company is not a second independent voice.
+  const briefs = [perplexity, deepResearch].filter((p): p is PerplexityContext => !!p?.synthesis?.trim());
+  if (briefs.length > 0) {
     // Weighted by what it found, not by having answered. The old free-text
     // synthesis always counted in full, so a page of press-release paraphrase
     // bought the same narrative weight as a page of dated contrary evidence.
     // A structured answer is weighed by its independent items — six or more
     // earns the full share, none earns nothing. An old unstructured row keeps
     // the flat weight until the prompt hash retires it.
-    weight += perplexity.findings
-      ? SOURCE_WEIGHT.perplexity * Math.min(1, independentItems(perplexity.findings) / PERPLEXITY_FULL_WEIGHT_ITEMS)
-      : SOURCE_WEIGHT.perplexity;
-    sources.push('perplexity');
+    weight += Math.max(...briefs.map((p) => p.findings
+      ? SOURCE_WEIGHT.perplexity * Math.min(1, independentItems(p.findings) / PERPLEXITY_FULL_WEIGHT_ITEMS)
+      : SOURCE_WEIGHT.perplexity));
+    if (perplexity?.synthesis?.trim()) sources.push('perplexity');
+    if (deepResearch?.synthesis?.trim()) sources.push('perplexity-deep');
   }
 
   if ((searchResults?.length ?? 0) > 0) {
@@ -167,7 +173,7 @@ export function narrativeMaterial(
   // Freshness is taken from the newest dated thing we have. The dossier window's
   // end is the right date for it: `builtAt` says when Distill last assembled the
   // tile, not how current the material in it is.
-  const ages = [ageInDays(company?.periodEnd), ageInDays(perplexity?.fetchedAt)]
+  const ages = [ageInDays(company?.periodEnd), ageInDays(perplexity?.fetchedAt), ageInDays(deepResearch?.fetchedAt)]
     .filter((a): a is number => a !== null);
   const newest = ages.length > 0 ? Math.min(...ages) : null;
 
@@ -189,6 +195,8 @@ export interface VerdictPipelineInput {
   promptData:       PromptData;
   distill?:         DistillBundle | null;
   perplexity?:      PerplexityContext | null;
+  /** A deep research report bought by hand, read beside the regular brief. */
+  deepResearch?:    PerplexityContext | null;
   searchResults?:   SearchResult[];
   /** Model that writes the thesis. */
   synthesisModel:   string;
@@ -211,7 +219,7 @@ export interface VerdictPipelineResult {
 export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<VerdictPipelineResult> {
   const {
     financials: f, metrics, sectorMedians, marketSignals, technicalSignals,
-    promptData, distill, perplexity, searchResults,
+    promptData, distill, perplexity, deepResearch, searchResults,
   } = input;
   const say = input.onStage ?? (() => {});
 
@@ -221,7 +229,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
   });
   say(`Faktor-Score ${factor.score.toFixed(1)}/10 → ${factor.verdict} (Konfidenz ${(factor.confidence * 100).toFixed(0)} %)`);
 
-  const material = narrativeMaterial(distill, perplexity, searchResults);
+  const material = narrativeMaterial(distill, perplexity, searchResults, deepResearch);
 
   // ── Stages 1 + 2: two cheap summaries, neither seeing the other's input ────
   const summariser = createProviderForModel(input.summaryModel);
@@ -252,7 +260,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
       : Promise.all(Array.from({ length: NARRATIVE_SAMPLES }, () => narrator.complete({
           label:  'narrative',
           system: SYSTEM_SUMMARISER,
-          user:   appendSearchResults(buildNarrativePrompt(f, distill ?? undefined, perplexity ?? undefined), searchResults),
+          user:   appendSearchResults(buildNarrativePrompt(f, distill ?? undefined, perplexity ?? undefined, deepResearch ?? undefined), searchResults),
           schema: NarrativeOutputSchema,
           // Up to eight theses on top of the summary, events and five notes.
           maxTokens: 4000,
@@ -303,7 +311,12 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
   const synthesisPrompt = buildSynthesisPrompt(f, {
     card:      renderFactorCard(factor),
     dataNote,
-    research:  perplexity?.findings ? researchDigest(perplexity.findings) : null,
+    research:  [
+      perplexity?.findings ? researchDigest(perplexity.findings) : '',
+      deepResearch?.findings
+        ? `Aus der Tiefenrecherche vom ${deepResearch.fetchedAt.slice(0, 10)} (bei Widerspruch gilt die neuere Quelle):\n\n${researchDigest(deepResearch.findings)}`
+        : '',
+    ].filter(Boolean).join('\n\n') || null,
     narrative: narrative && {
       summary: narrative.summary, events: narrative.events, score: narrative.score,
       sources: narrative.sources, theses: narrative.theses,
@@ -368,14 +381,31 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
 function researchDigest(findings: PerplexityFindings): string {
   const line = (x: { date: string | null; what: string; independent: boolean }) =>
     `- ${x.date ? `${x.date} · ` : ''}${x.independent ? 'unabhängig' : 'Unternehmensquelle'} — ${x.what}`;
+  // The argument travels with the claim: the theses are written from these,
+  // and "AI adds wallet share — management-only" cannot be argued from.
+  const claimLine = (c: PerplexityClaim) => [
+    `- ${c.claim}${c.proponents ? ` (${c.proponents})` : ''} — ${EVIDENCE_LABEL[c.evidence] ?? c.evidence}: ${c.detail}`,
+    c.mechanism && `  Wirkung: ${c.mechanism}`,
+    c.stake     && `  Einsatz: ${c.stake}`,
+    c.counter   && `  Dagegen: ${c.counter}`,
+  ].filter(Boolean).join('\n');
   const claims = (title: string, list: PerplexityClaim[] | undefined) => list?.length
-    ? `${title}:\n${list.slice(0, 5).map((c) => `- ${c.claim} — ${EVIDENCE_LABEL[c.evidence] ?? c.evidence}: ${c.detail}`).join('\n')}`
+    ? `${title}:\n${list.slice(0, 5).map(claimLine).join('\n')}`
     : '';
   return [
+    findings.debate?.length
+      ? `Kerndebatte:\n${findings.debate.map((d) => `- ${d.question} ${d.why}${d.settles ? ` Entscheidet: ${d.settles}${d.when ? ` (${d.when})` : ''}` : ''}`).join('\n')}`
+      : '',
     findings.events.length ? `Ereignisse:\n${findings.events.slice(0, 5).map(line).join('\n')}` : '',
     findings.bearEvidence.length ? `Belege gegen die Bullen-These:\n${findings.bearEvidence.slice(0, 5).map(line).join('\n')}` : '',
     claims('Geprüfte Bullen-Thesen', findings.bullClaims),
     claims('Geprüfte Bären-Thesen', findings.bearClaims),
+    findings.kpis?.length
+      ? `Operative Kennzahlen:\n${findings.kpis.map((k) => `- ${k.name}: ${k.values.map((v) => `${v.period} ${v.value}`).join(' → ')}${k.read ? ` — ${k.read}` : ''}`).join('\n')}`
+      : '',
+    findings.catalysts?.length
+      ? `Termine:\n${findings.catalysts.map((c) => `- ${c.date ?? 'ohne Datum'}: ${c.event}${c.watch ? ` — ${c.watch}` : ''}`).join('\n')}`
+      : '',
   ].filter(Boolean).join('\n\n');
 }
 

@@ -22,7 +22,10 @@ import { z } from 'zod';
 import { logger } from './utils/logger.js';
 import { readSettingsJson, writeSettingsJson } from './db/admin.js';
 import { listSymbols } from './db/store.js';
-import { DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, DEFAULT_SUMMARY_MODEL_ID, resolveModelId } from './models.js';
+import {
+  DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, DEFAULT_SUMMARY_MODEL_ID, PERPLEXITY_MODEL_IDS, PerplexityModelId,
+  resolveModelId,
+} from './models.js';
 import { ADJUSTMENT_LIMIT, NARRATIVE_MAX_WEIGHT } from './analysis/score.js';
 
 /** Cron field count we accept: standard 5-field (minute hour dom month dow). */
@@ -64,7 +67,7 @@ export const AppConfigSchema = z.object({
       model:   z.string().min(1).default(DEFAULT_PIPELINE_MODEL_ID),
       /** Search providers, same vocabulary as the CLI's `--search`. */
       search:  z.array(z.string()).default([]),
-      pplx:    z.enum(['sonar', 'sonar-pro']).nullable().default(null),
+      pplx:    z.enum(PERPLEXITY_MODEL_IDS).nullable().default(null),
       /**
        * Escalate to web search for symbols with no sell-side coverage, even when
        * `search` is empty.
@@ -93,6 +96,12 @@ export const AppConfigSchema = z.object({
      * The refresh in Research & News is the way past it.
      */
     maxAgeDays: z.number().int().min(1).max(365).default(14),
+    /**
+     * How long a deep research report, bought by hand, keeps going into every
+     * analysis beside the regular brief. Longer than the brief's window: it
+     * costs ten times as much and is mostly about the business, not the week.
+     */
+    deepMaxAgeDays: z.number().int().min(1).max(365).default(60),
   }).prefault({}),
 
   /**
@@ -206,7 +215,7 @@ export function isWatched(config: AppConfig, symbol: string): boolean {
 export function analysisFlagsFor(config: AppConfig): {
   model: string;
   search: string;
-  pplx: 'sonar' | 'sonar-pro' | null;
+  pplx: PerplexityModelId | null;
 } {
   const { model, search, pplx } = config.steps.analysis;
   return {

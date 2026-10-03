@@ -130,3 +130,56 @@ export function fullIdList(provider?: ModelProvider): string {
 export function acceptedModels(provider?: ModelProvider): string {
   return `${aliasList(provider)} | ${fullIdList(provider)}`;
 }
+
+// ── Perplexity ───────────────────────────────────────────────────────────────
+
+/**
+ * The Perplexity models a research brief can be bought from — the one list the
+ * CLI, the server, the settings and both pickers derive from.
+ *
+ * `costUsd` is what one brief cost on the comparison run of 3 October 2026
+ * (ServiceNow and Fresenius Medical Care, the API's own cost figures). It is
+ * shown beside the choice, not used to bill. Sonar was not part of that run;
+ * its figure is the price list applied to the same answer length. Deep
+ * research varies the most: it decides itself how many searches to run.
+ */
+export const PERPLEXITY_MODELS = [
+  {
+    id: 'sonar', label: 'Sonar', costUsd: 0.02,
+    note: 'günstig, flacher, stuft Firmenquellen oft als unabhängig ein',
+  },
+  {
+    id: 'sonar-pro', label: 'Sonar Pro', costUsd: 0.10,
+    note: 'unter einer Minute, solide Breite',
+  },
+  {
+    id: 'sonar-reasoning-pro', label: 'Sonar Reasoning Pro', costUsd: 0.10,
+    note: 'rund drei Minuten, findet andere Dinge als Pro',
+  },
+  {
+    id: 'sonar-deep-research', label: 'Sonar Deep Research', costUsd: 0.80,
+    note: 'vier bis fünf Minuten, 50+ Suchen — am gründlichsten',
+  },
+] as const satisfies readonly { id: string; label: string; costUsd: number; note: string }[];
+
+export type PerplexityModelId = (typeof PERPLEXITY_MODELS)[number]['id'];
+export const PERPLEXITY_MODEL_IDS = PERPLEXITY_MODELS.map((m) => m.id) as [PerplexityModelId, ...PerplexityModelId[]];
+
+/**
+ * The model that is bought by hand and kept beside the regular brief rather
+ * than in its place — see `readDeepResearch` in `db/store.ts`.
+ */
+export const DEEP_RESEARCH_MODEL: PerplexityModelId = 'sonar-deep-research';
+
+/** Used when Perplexity is asked for without a model. */
+export const DEFAULT_PERPLEXITY_MODEL: PerplexityModelId = 'sonar-pro';
+
+export function isPerplexityModel(v: unknown): v is PerplexityModelId {
+  return typeof v === 'string' && (PERPLEXITY_MODEL_IDS as string[]).includes(v);
+}
+
+/** `Sonar Pro (~0,10 $)` — the picker label, with what a call costs. */
+export function perplexityLabel(id: PerplexityModelId): string {
+  const m = PERPLEXITY_MODELS.find((x) => x.id === id)!;
+  return `${m.label} (~${m.costUsd.toFixed(2).replace('.', ',')} $)`;
+}

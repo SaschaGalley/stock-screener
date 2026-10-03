@@ -33,7 +33,7 @@ import { deriveTechnicalSignals } from './analysis/signals.js';
 import { fetchEdgarFilings } from './data/edgar.js';
 import { getMarketRates } from './data/fred.js';
 import { getMacroBundle } from './data/macro.js';
-import { getPerplexityCached } from './perplexity-service.js';
+import { getDeepResearchStored, getPerplexityCached } from './perplexity-service.js';
 import { DistillBundle } from './data/distill.js';
 import { distillHintsFor } from './distill-service.js';
 import { buildDistillBundle } from './distill-content.js';
@@ -48,7 +48,8 @@ import {
   SearchTrace, SearchProviderTrace,
 } from './types.js';
 import {
-  acceptedModels, aliasList, DEFAULT_MODEL_ID, fullIdList, MODELS, providerFor, resolveModelId,
+  acceptedModels, aliasList, DEFAULT_MODEL_ID, DEFAULT_PERPLEXITY_MODEL, fullIdList, isPerplexityModel, MODELS,
+  PERPLEXITY_MODEL_IDS, PerplexityModelId, providerFor, resolveModelId,
 } from './models.js';
 
 // ─── CLI Setup ───────────────────────────────────────────────────────────────
@@ -101,8 +102,8 @@ program
     '  submissions   Download SEC/EDGAR filings\n' +
     '  (omit value to fetch both)',
   )
-  .option('--pplx', 'Enrich with Perplexity sonar (fast, cheap — requires PPLX_API_KEY, cached 14 days unless changed in the admin settings)')
-  .option('--pplx-pro', 'Enrich with Perplexity sonar-pro (better coverage, default when using Perplexity)')
+  .option('--pplx [model]', `Enrich with Perplexity research — ${PERPLEXITY_MODEL_IDS.join(' | ')} (default ${DEFAULT_PERPLEXITY_MODEL}; requires PPLX_API_KEY, cached 14 days unless changed in the admin settings)`)
+  .option('--pplx-pro', `Shorthand for --pplx sonar-pro`)
   .option('-v, --verbose', 'Debug logging')
   .addHelpText('after', `
 Examples:
@@ -180,7 +181,7 @@ export interface AnalysisRunInput {
    *   • `true`: bare `--search` from the CLI — use the active model's native search
    * The list is normalised to a sorted, deduped joined string for the cache key. */
   search?:    string | string[] | boolean;
-  pplx?:      'sonar' | 'sonar-pro' | null;
+  pplx?:      PerplexityModelId | null;
   verbose?:   boolean;
   /**
    * Bypass the LLM cache and force a fresh call. The cached entry for this
@@ -229,7 +230,7 @@ export interface AnalysisRunMeta {
   symbol:        string;
   modelId:       string;
   searchUsed:    AnalysisOptions['search'];
-  pplxUsed:      'sonar' | 'sonar-pro' | null;
+  pplxUsed:      PerplexityModelId | null;
   fromCache:     boolean;             // true when the LLM analysis was served from cache
   flagsHash:     string;
 }
@@ -323,7 +324,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
 
   // ── 1b. News (cached 30 min) + Rates + Sector Medians + Perplexity ────────
   const usePplx   = input.pplx !== null && input.pplx !== undefined;
-  const pplxModel: 'sonar' | 'sonar-pro' = input.pplx === 'sonar' ? 'sonar' : 'sonar-pro';
+  const pplxModel: PerplexityModelId = input.pplx ?? DEFAULT_PERPLEXITY_MODEL;
   // Distill is always-on when the key is configured — there's no per-run
   // toggle. Its dossiers cost nothing to read, so they are always included, as
   // one qualitative source among others (see `distillDossierSection`).
@@ -369,6 +370,10 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
           })
       : Promise.resolve(null),
   ]);
+
+  // Free to read: it was paid for by hand, and every analysis inside its
+  // window gets it, whether or not this one asked Perplexity for a brief.
+  const deepResearch = await getDeepResearchStored(symbol, usePplx ? pplxModel : null).catch(() => null);
 
   if (freshNews && freshNews.length > 0) {
     news = freshNews;
@@ -522,6 +527,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
         promptData,
         distill,
         perplexity,
+        deepResearch,
         searchResults,
         synthesisModel:      modelId,
         summaryModel:        scoring.summaryModel,
@@ -672,9 +678,12 @@ async function run(rawSymbol: string | undefined, opts: Record<string, string | 
   }
 
   // ── Normal analysis flow ─────────────────────────────────────────────────
-  const pplx: 'sonar' | 'sonar-pro' | null = opts.pplx && !opts.pplxPro
-    ? 'sonar'
-    : (opts.pplx || opts.pplxPro) ? 'sonar-pro' : null;
+  if (typeof opts.pplx === 'string' && !isPerplexityModel(opts.pplx)) {
+    throw new Error(`Unknown Perplexity model "${opts.pplx}" — expected ${PERPLEXITY_MODEL_IDS.join(' | ')}`);
+  }
+  const pplx: PerplexityModelId | null = opts.pplxPro ? 'sonar-pro'
+    : typeof opts.pplx === 'string' ? opts.pplx as PerplexityModelId
+    : opts.pplx ? DEFAULT_PERPLEXITY_MODEL : null;
 
   console.log(chalk.bold.white(`\n  Investment Analysis — ${rawSymbol ?? opts.query}\n`));
 

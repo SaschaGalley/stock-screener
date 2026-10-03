@@ -4,7 +4,10 @@ import type { AnalysisListEntry, SearchChoice, Settings } from '../types';
 import { searchesKey } from '../types';
 import { formatAge } from '../format';
 import { CloseIcon } from './icons';
-import { DEFAULT_MODEL_ID, type ModelProvider, providerFor, resolveModelId } from '../../../src/models';
+import {
+  DEFAULT_MODEL_ID, type ModelProvider, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel, providerFor,
+  resolveModelId,
+} from '../../../src/models';
 
 interface Props {
   symbol: string;
@@ -31,10 +34,9 @@ const SEARCH_OPTIONS: SearchOption[] = [
   { value: 'openai', label: 'OpenAI (nativ)',  help: 'OpenAIs eingebaute Suche', requires: 'openai' },
 ];
 
-const PPLX_OPTIONS: { value: 'none' | 'sonar' | 'sonar-pro'; label: string }[] = [
-  { value: 'none',      label: 'Keine' },
-  { value: 'sonar',     label: 'Sonar (günstig)' },
-  { value: 'sonar-pro', label: 'Sonar Pro' },
+const PPLX_OPTIONS: { value: 'none' | PerplexityModelId; label: string }[] = [
+  { value: 'none', label: 'Keine' },
+  ...PERPLEXITY_MODELS.map((m) => ({ value: m.id, label: perplexityLabel(m.id) })),
 ];
 
 const CUSTOM_MODELS_KEY = 'stockcli:custom-models';
@@ -336,7 +338,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
                   value={settings.pplx ?? 'none'}
                   onChange={(v) => onChange({
                     ...settings,
-                    pplx: v === 'none' ? null : (v as 'sonar' | 'sonar-pro'),
+                    pplx: v === 'none' ? null : (v as PerplexityModelId),
                   })}
                   options={PPLX_OPTIONS}
                 />

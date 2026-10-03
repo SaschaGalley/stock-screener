@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { RECOMMENDATIONS } from './verdict.js';
 import { CASE_DIRECTIONS, type CaseDirection, type CaseSection } from './cases.js';
-import { PROVIDERS } from './models.js';
+import { PERPLEXITY_MODEL_IDS, PROVIDERS } from './models.js';
 import { RATINGS, type Rating } from './data/ratings.js';
 
 // ─── Core Financial Data ──────────────────────────────────────────────────────
@@ -1084,7 +1084,7 @@ export const AnalysisResultSchema = z.object({
   scoreCard:       ScoreCardSchema.describe('Deterministic factor score, the narrative score, and the blend that produced the headline'),
   news:            z.array(NewsItemSchema).describe('Up to 10 recent news items from Finnhub'),
   perplexity:      z.object({
-    model:     z.enum(['sonar', 'sonar-pro']),
+    model:     z.enum(PERPLEXITY_MODEL_IDS),
     synthesis: z.string(),
     citations: z.array(z.string()),
     fetchedAt: z.string(),

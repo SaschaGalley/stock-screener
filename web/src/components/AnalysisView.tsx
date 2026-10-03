@@ -471,6 +471,7 @@ export default function AnalysisView({
                 symbol={symbol}
                 news={bundle.news}
                 perplexity={bundle.perplexity}
+                deepResearch={bundle.deepResearch ?? null}
                 pplx={flags.pplx}
                 distill={bundle.distill}
                 searches={analysis?.searches ?? null}

@@ -31,6 +31,7 @@ import { PerplexityModel, refreshPerplexity } from '../../perplexity-service.js'
 import { refreshStockData } from '../../refresh.js';
 import { runAnalysis } from '../../cli.js';
 import { looksLikeSymbol } from '../../symbols.js';
+import type { PerplexityModelId } from '../../models.js';
 import { getHatchet } from '../client.js';
 import {
   analysisGate, distillGate,
@@ -149,7 +150,7 @@ export type AnalyzeInput = {
   /** Accepts the same shapes `runAnalysis` does: a name, a comma-separated
    *  list, an array, or the string 'none'. */
   search?: string | string[];
-  pplx?:   'sonar' | 'sonar-pro' | null;
+  pplx?:   PerplexityModelId | null;
   force?:  boolean;
 };
 

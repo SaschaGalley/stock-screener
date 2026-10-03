@@ -28,6 +28,7 @@ import { logger } from '../utils/logger.js';
 import { query, queryOne } from './client.js';
 import { buildCatalog, keyedArraysFor, metricIds } from './catalog.js';
 import { coerce, LeafKind, readPath } from './walk.js';
+import { DEEP_RESEARCH_MODEL, type PerplexityModelId } from '../models.js';
 
 // ── Schema versions ──────────────────────────────────────────────────────────
 // Unchanged in meaning from the file cache: a bump makes older payloads
@@ -808,16 +809,54 @@ export async function listDocuments<D = unknown>(
 
 // ── Typed document wrappers ──────────────────────────────────────────────────
 
-/** `maxAgeMs` is a setting, not a constant — see `perplexity-service.ts`. */
-export async function readPerplexity(symbol: string, maxAgeMs: number): Promise<PerplexityContext | null> {
-  const doc = await latestDocument<PerplexityContext>(symbol, 'perplexity');
+/**
+ * The newest brief of the regular kind — every model but deep research — or of
+ * deep research alone.
+ *
+ * The two are kept apart because they are bought apart: the regular brief by
+ * every analysis on its cache window, deep research by a click. Read together,
+ * a deep report bought on Monday would stand in for Tuesday's nightly brief and
+ * then vanish behind Wednesday's, which is the opposite of what was paid for.
+ */
+async function latestPerplexity(symbol: string, deep: boolean): Promise<DocumentRow<PerplexityContext> | null> {
+  const id = await symbolId(symbol);
+  if (id === null) return null;
+  const row = await queryOne<never>(
+    `SELECT * FROM documents
+      WHERE symbol_id = $1 AND kind = 'perplexity' AND (variant = $2) = $3
+      ORDER BY last_seen_at DESC LIMIT 1`,
+    [id, DEEP_RESEARCH_MODEL, deep],
+  );
+  return row ? toDocumentRow<PerplexityContext>(row) : null;
+}
+
+function within(doc: DocumentRow<PerplexityContext> | null, maxAgeMs: number): PerplexityContext | null {
   if (!doc) return null;
-  if (Date.now() - new Date(doc.lastSeenAt).getTime() > maxAgeMs) return null;
-  return doc.data;
+  return Date.now() - new Date(doc.lastSeenAt).getTime() > maxAgeMs ? null : doc.data;
+}
+
+/**
+ * `maxAgeMs` is a setting, not a constant — see `perplexity-service.ts`.
+ * Asking for deep research as the model reads deep research; any other model
+ * reads the regular brief, whichever of them wrote it.
+ */
+export async function readPerplexity(
+  symbol: string, maxAgeMs: number, model?: PerplexityModelId,
+): Promise<PerplexityContext | null> {
+  return within(await latestPerplexity(symbol, model === DEEP_RESEARCH_MODEL), maxAgeMs);
 }
 
 export async function readPerplexityLax(symbol: string): Promise<PerplexityContext | null> {
-  return (await latestDocument<PerplexityContext>(symbol, 'perplexity'))?.data ?? null;
+  return (await latestPerplexity(symbol, false))?.data ?? null;
+}
+
+/** The deep research report, while it is inside its own, longer window. */
+export async function readDeepResearch(symbol: string, maxAgeMs: number): Promise<PerplexityContext | null> {
+  return within(await latestPerplexity(symbol, true), maxAgeMs);
+}
+
+export async function readDeepResearchLax(symbol: string): Promise<PerplexityContext | null> {
+  return (await latestPerplexity(symbol, true))?.data ?? null;
 }
 
 export async function writePerplexity(
@@ -870,7 +909,7 @@ export async function writeDistill(
 export interface AnalysisFlagsKey {
   model:  string;
   search: string;
-  pplx:   'sonar' | 'sonar-pro' | null;
+  pplx:   PerplexityModelId | null;
 }
 
 export function analysisHash(flags: AnalysisFlagsKey): string {

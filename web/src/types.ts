@@ -107,7 +107,7 @@ export type { ProgressEvent, AnalysisRunMeta } from '../../src/cli';
 
 /** Search providers offered by the settings sidebar. */
 export type SearchChoice = 'brave' | 'tavily' | 'claude' | 'openai';
-export type PplxChoice = null | 'sonar' | 'sonar-pro';
+export type PplxChoice = null | import('../../src/models').PerplexityModelId;
 
 /** The right sidebar's current selection — a UI concept, not a server one. */
 export interface Settings {

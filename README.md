@@ -140,9 +140,9 @@ npx tsx src/cli.ts AAPL --model terra   --search
 npx tsx src/cli.ts FACC --search brave
 npx tsx src/cli.ts NOW  --search tavily --output report.md
 
-# Perplexity Sonar context (separate from --search; pulls a web-sourced paragraph)
-npx tsx src/cli.ts MSFT --pplx sonar
-npx tsx src/cli.ts MSFT --pplx sonar-pro
+# Perplexity research brief (separate from --search; a structured, graded brief)
+npx tsx src/cli.ts MSFT --pplx                       # sonar-pro
+npx tsx src/cli.ts MSFT --pplx sonar-reasoning-pro
 
 # Model IDs — the registry lives in src/models.ts
 npx tsx src/cli.ts NOW  --model claude-opus-5-5 --search brave
@@ -189,7 +189,8 @@ Options:
   -s, --search [type] Web search — omit value for native search of active model
                         none | claude | openai | brave | tavily
                         (can be comma-separated for multi-source: brave,tavily)
-      --pplx <model>  Perplexity Sonar context — sonar | sonar-pro
+      --pplx [model]  Perplexity brief — sonar | sonar-pro | sonar-reasoning-pro | sonar-deep-research
+                        (default sonar-pro)
   -o, --output        Save report — .md or .json
   -c, --cache         enable | disable                 (default: enable)
   -v, --verbose       Debug logging
@@ -986,10 +987,13 @@ structured JSON:
 
 | Part | Asked for |
 |---|---|
-| `events` | dated developments that move the outlook; always the latest earnings call — did guidance go up, down or hold, and what did management avoid? Product launches, partnership releases and routine insider sales excluded |
+| `debate` | the one to three open questions the price hinges on — why each matters for earnings or the multiple, what settles it and when |
+| `events` | dated developments that move the outlook; always the latest earnings report — guidance against the prior quarter and consensus, what management avoided — each with its `impact` on revenue, margins or risk |
+| `kpis` | up to four company-specific operating figures the statements do not carry (cRPO, net retention, same-store sales, backlog…), over two to four periods |
 | `bear_evidence` | the strongest *specific* evidence against the bull case — short reports, accounting concerns, guidance cuts, churn, share loss, documented structural threats. Evidence only, never "risks could include" |
-| `bull_claims` | what bulls say drives the stock, each graded `independent`, `management-only` or `contradicted` |
-| `bear_claims` | what bears argue will hold the stock back — the business model, demand, competition, the expectations priced in — each graded `independent`, `opinion` or `contradicted` |
+| `bull_claims` | the theses bulls hold, each argued — `mechanism`, `stake`, named `proponents`, the strongest `counter`, what `settles` it — and graded `independent`, `management-only` or `contradicted` |
+| `bear_claims` | the same for the bears, graded `independent`, `opinion` or `contradicted` |
+| `catalysts` | dated events in the next six months and what to watch in each |
 
 Every item carries a date, a source and an independent-or-company label. On the
 same stock it produced: a guide raised by $15M on a 150bp beat, federal revenue
@@ -1002,7 +1006,7 @@ prose was asked for contrary evidence, it stopped propping the price up.
 Mechanics that keep it honest:
 
 - **High search context.** At `low` the same brief found four insider filings and
-  nothing else. About five cents a call.
+  nothing else. About ten cents a call on Sonar Pro with the argued claims.
 - **Bear claims are the argument, `bear_evidence` the facts.** "Federal revenue
   pulled forward" is evidence; "the multiple assumes years of net retention
   nobody sustains" is the thesis a reader needs, and nothing asked for it until
@@ -1010,8 +1014,15 @@ Mechanics that keep it honest:
   the narrative's weight still counts the bull claims and the evidence, so
   asking one more question does not buy the prose a larger share of the
   headline.
-- **Capped at 6 / 6 / 5 / 5 items, two sentences each.** Uncapped, the first live run
-  ran to 14k characters and was cut off at `max_tokens` mid-sentence.
+- **Arguments, not slogans.** The second brief capped every item at two
+  sentences, and the claims read like it: "ServiceNow is gaining share across
+  workflows — management-only". Three of five bear claims rested on one
+  anonymous "published bearish analysis", and a CFO's remark came back labelled
+  independent. The third (3 October 2026) asks for the argument behind each
+  claim, defines "independent" (the company's releases, calls and executives
+  never are, even when a newspaper repeats them) and asks for the proponents by
+  name. Items are still capped — 3 / 6 / 4 / 6 / 5 / 5 / 4 — the strongest, not
+  all of them.
 - **A truncated answer is salvaged**, not discarded: `salvageTruncatedJson` cuts
   back to the last finished item and closes what is open. Nothing is invented to
   replace the item that was being written.
@@ -1022,16 +1033,42 @@ Mechanics that keep it honest:
 - **The prompt hash is compared.** It existed from the start and was never read,
   so a rewritten brief would have gone on serving answers to the old one for up
   to two weeks. A stored answer from another prompt is now a cache miss.
-- **Sonar Pro, not Sonar.** The brief is one structured search, and Sonar
-  answers it in the same shape with as many items, as recent, at a third of the
-  price (1.4 against 4.3 cents per call over AAPL, VST and ONDS on one day).
-  Which run found the stronger evidence depended on the stock. The difference
-  that matters is the label: Sonar called 7 of 17 items taken from the company's
-  own investor pages and SEC filings independent, Sonar Pro 1 of 12. Independent
-  items are what earn the narrative its weight, so Sonar would let press
-  releases buy exactly the weight this section exists to deny them. At one call
-  per stock every two to three weeks, the difference is about five cents per
-  stock a month.
+- **Sonar Pro by default; the model is a setting.** Sonar answers in the same
+  shape at a fifth of the price, but called 7 of 17 items taken from the
+  company's own investor pages independent, against Sonar Pro's 1 of 12 —
+  and independent items are what earn the narrative its weight.
+
+#### Which model (3 October 2026, ServiceNow and Fresenius Medical Care)
+
+| Model | Cost | Time | What it brought |
+|---|---|---|---|
+| Sonar Pro | 8–10 ¢ | 40–50 s | Every section filled, sound debate questions; KPIs mostly a single quarter, proponents vague ("bearish investors") |
+| Sonar Reasoning Pro | 9–10 ¢ | ~3 min | Found what Pro missed (the $7.75bn Armis price, WARN layoffs, a cluster of critical CVEs; for FMS the TDAPA swing and −0.9 % US same-market treatments), but verbose, with URLs written into the prose and placeholder catalysts |
+| Sonar Deep Research | 67–96 ¢ | 4–5 min | The only one with real KPI series (cRPO, RPO, $5M+ customers and renewal rate over three quarters), earnings quality (GAAP miss, FCF margin 44 % → mid-teens, gross margin 81 → 78 %), a federal investigation, the FDA warning letter at FMS. 50–70 searches |
+
+The runs vary: the same model found the FDA letter on one run and not on the
+next, and a Berenberg downgrade turned up once in six. No model is complete.
+Deep research is clearly the most thorough, at eight to ten times the price, so
+it is **bought by hand** (Research & News → Deep Research) and **kept beside**
+the regular brief, not in its place: every analysis inside
+`perplexity.deepMaxAgeDays` (60 days by default) reads both. Where they
+disagree the prompt says the newer wins; for the narrative's weight they count
+once, as the better of the two.
+
+Two mechanics the reasoning models need:
+
+- **No token ceiling.** Their thinking counts against `max_tokens` without
+  showing in the usage. With 16k, both stopped with `length` after 2,000–6,000
+  visible tokens — deep research after 1,265, mid-claim. Their cost is the
+  thinking (deep research: ~100k reasoning tokens and 50 searches per report),
+  so a ceiling saves nothing worth having.
+- **Streamed.** Node's `fetch` gives up when headers have not arrived after
+  five minutes, and deep research without a ceiling thinks longer than that.
+  Both reports of the second run failed with "fetch failed" — after being
+  billed. A stream sends its headers at once.
+
+The raw answer, the API's usage block and the cost are stored with every brief,
+so a parser fix can re-read old answers and the price of each is on record.
 
 ### The blend
 
