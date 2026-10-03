@@ -12,6 +12,7 @@ import BacktestFidelity from './BacktestFidelity';
 import BacktestFairValue from './BacktestFairValue';
 import BacktestTiming from './BacktestTiming';
 import BacktestPortfolios from './BacktestPortfolios';
+import BacktestSetups from './BacktestSetups';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
@@ -107,6 +108,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       <BacktestTopDecile bt={bt} horizon={horizon} monthName={monthName} />
       <BacktestFairValue bt={bt} />
       <BacktestTiming bt={bt} horizon={horizon} monthName={monthName} />
+      <BacktestSetups bt={bt} />
       <BacktestVariants bt={bt} horizon={horizon} monthName={monthName} />
 
       {candidateSignals.length > 0 && (

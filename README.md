@@ -1970,6 +1970,45 @@ a deeper fall (−34 % against −24 %); it was ahead of the MSCI World in nine
 calendar years of fourteen. The
 missing bankruptcies flatter all of it.
 
+**Trade setups against a random entry (3 October 2026).** The idea of a trade
+rather than a holding — undervalued, low in its band, likely to come back, with
+a stop and a target — needs a different test, because a stop and a target make
+no edge of their own: a price that wanders at random reaches a target three
+typical moves up before a stop two moves down about two times in five, and
+the distances alone decide that. So every scored stock at every month-end is
+a trade — entered at the close, stopped, taken or timed out on the daily
+closes that follow, 0.1 % a side — and those are the random entries. A setup
+is worth something only if the trades it picks earn more than the month's
+random ones (`analysis/setups.ts`, `backtest/setups.ts`, every run).
+
+Five setups were fixed before the first run, with the rule: |t| ≥ 2 on months
+three apart, and both halves of the years the same way. Two are the idea
+itself (at least 25 % under the fair value, and at the lower edge of the
+quarter's channel or just off the six-month low); the others a dip in an
+uptrend (above the 200-day line, RSI under 35), a new yearly high and the
+bounce alone. Stops and targets are in the stock's typical daily move, from
+closes (`atr14`). The rule's distances — two and three moves, three months —
+ended trades in about a week, so a wider set (four and six moves, six months)
+was added after a trial run on 150 companies in which nothing carried: added
+for the holding time, shown and not judged.
+
+| Setup | trades | target first (random 48 %) | per trade | against random, same month (2013–19 / 2020–26) |
+|---|---|---|---|---|
+| Undervalued, low in the channel | 11,327 | 53 % | +1.24 % | +0.27 % (t 1.3; +0.38 / +0.16) |
+| Undervalued, off the low | 4,450 | 50 % | +2.62 % | −0.64 % (t −1.3; −1.09 / −0.29) |
+| Dip in an uptrend | 2,139 | 55 % | +0.77 % | −0.20 % (t −0.6; +0.39 / −0.81) |
+| At the yearly high | 15,386 | 43 % | −0.20 % | +0.05 % (t 0.2; +0.34 / −0.26) |
+| Off the low | 9,013 | 50 % | +2.00 % | −0.21 % (t −0.6; +0.06 / −0.49) |
+
+None carries, at either distance. The setups off the low look best per trade
+— +2.6 % at the rule's distances, +5.5 % at the wider ones — and are behind
+the random entries of the same months: they fire after a market has fallen,
+when everything bounces, and they bounce less than the rest. A return per
+trade without its month is the market's. The list shows a setup that fires
+today beside the chart, with its stop, target, the position a 1 % loss at the
+stop allows, a risk line (volatility, a capped verdict, thin data) and what
+the backtest found for it; the evaluation page has the table.
+
 **When to buy: the chart under test (3 October 2026).** The verdict says
 whether a stock is worth owning; it does not say where the price stands on its
 own recent path. Seven readings of that path are candidates now
@@ -2122,6 +2161,7 @@ src/
 │   ├── top-decile.ts      What the top and bottom tenths are made of, and which half of each falls back or recovers
 │   ├── timing.ts          Whether it pays to wait for the chart, within each verdict
 │   ├── portfolio.ts       Top-N portfolios by a signal against the S&P 500 and the MSCI World, after costs
+│   ├── setups.ts          Trade setups against a random entry with the same stop and target
 │   ├── payload.ts         A company as the scorer would have seen it on a past day
 │   ├── analysts.ts        Every company's rating history, cached on disk and archived
 │   ├── insiders.ts        Every company's Form 4 trades from Finnhub, for the candidates
@@ -2168,6 +2208,7 @@ src/
 │   ├── calibration.ts     Percentile reading of a criterion against its reference distribution
 │   ├── calibration-table.ts  Generated reference distributions (`pnpm run calibrate`)
 │   ├── timing.ts          Where the price sits on its own path: the timing readings and their candidates
+│   ├── setups.ts          Trade setups: entry rules, stop and target in typical moves, a trade walked on closes
 │   ├── evaluate.ts        Rank IC, sector-neutral IC, the weight tilt and the joint test
 │   ├── analyst-history.ts The analyst consensus of a past day, rebuilt from the rating actions
 │   ├── verdict-record.ts  Our verdicts as calls, against the index after 1, 3, 6 and 12 months

@@ -29,6 +29,12 @@ import type { TimingReadings } from '../types.js';
 const MONTH = 21;
 const QUARTER = 63;
 const HALF_YEAR = 126;
+/**
+ * Sessions the typical daily move is averaged over. From closes alone, because
+ * the backtest's older price files have no highs and lows: a gap overnight
+ * counts, the range inside a day does not.
+ */
+const ATR_SESSIONS = 14;
 /** Closes the readings need at most: the 200-day line, and RSI's smoothing warmed up over the year. */
 export const TIMING_LOOKBACK = 253;
 
@@ -105,6 +111,8 @@ export function timingReadings(closes: readonly number[]): TimingReadings | null
   // The newest low wins a tie: a stock that revisits its low is at it today.
   half.forEach((c, k) => { if (c <= low) { low = c; lowAt = k; } });
   const ch = channel(xs);
+  let moves = 0;
+  for (let k = xs.length - ATR_SESSIONS; k < xs.length; k++) moves += Math.abs(xs[k] - xs[k - 1]);
   return {
     m1:          price / xs[xs.length - 1 - MONTH] - 1,
     rsi14:       rsi(xs),
@@ -114,6 +122,8 @@ export function timingReadings(closes: readonly number[]): TimingReadings | null
     channelSlope: ch.slope,
     fromLow126:  Math.log(price / low),
     lowAgo:      half.length - 1 - lowAt,
+    atr14:       moves / ATR_SESSIONS / price,
+    fromHigh252: Math.log(price / Math.max(...xs.slice(-252))),
   };
 }
 

@@ -16,6 +16,7 @@ import type { Fidelity } from './fidelity.js';
 import type { FairValueStudy } from './fair-value.js';
 import type { TimingStudy } from './timing.js';
 import type { PortfolioStudy } from './portfolio.js';
+import type { SetupStudy } from './setups.js';
 
 export const RESULT_KEY = 'backtest.result';
 
@@ -51,6 +52,8 @@ export interface BacktestResult {
   timing?:     TimingStudy;
   /** Top-N portfolios by a signal against the index funds, after costs (`portfolio.ts`); every run, absent in older results. */
   portfolios?: PortfolioStudy;
+  /** Trade setups against a random entry with the same stop and target (`setups.ts`); every run, absent in older results. */
+  setups?:     SetupStudy;
   /**
    * When the studies above were computed, where that was an earlier run than
    * this one: they are run with `--studies` only, and carried to the page
@@ -191,6 +194,8 @@ export interface VerdictEvidence {
    * for a run from before it (`timing.ts`).
    */
   timing:      (TimingStudy & { ics: { key: string; horizon: number; meanIc: number | null; tStat: number | null }[] }) | null;
+  /** The setups against a random entry; null for a run from before them (`setups.ts`). */
+  setups:      SetupStudy | null;
 }
 
 export interface FairEvidence {
@@ -207,11 +212,12 @@ export async function verdictEvidence(): Promise<VerdictEvidence | null> {
   const row = await queryOne<{
     generated_at: Date; universe: string | null; from: string; to: string;
     verdicts: BucketReturn[] | null; rho: number | null; same: number | null;
-    timing: TimingStudy | null; timing_ics: { key: string; horizon: number; meanIc: number | null; tStat: number | null }[] | null;
+    timing: TimingStudy | null; setups: SetupStudy | null; timing_ics: { key: string; horizon: number; meanIc: number | null; tStat: number | null }[] | null;
   }>(
     `SELECT generated_at, universe, result ->> 'from' AS "from", result ->> 'to' AS "to",
             result -> 'bands' -> 'verdicts' AS verdicts,
             result -> 'timing' AS timing,
+            result -> 'setups' AS setups,
             (SELECT jsonb_agg(jsonb_build_object('key', x -> 'key', 'horizon', x -> 'horizon', 'meanIc', x -> 'meanIc', 'tStat', x -> 'tStat'))
                FROM jsonb_array_elements(result -> 'evaluation' -> 'ics') x
               WHERE x ->> 'key' LIKE 'candidate.timing.%') AS timing_ics,
@@ -239,6 +245,7 @@ export async function verdictEvidence(): Promise<VerdictEvidence | null> {
     timing: row.timing
       ? { ...row.timing, ics: (row.timing_ics ?? []).map((x) => ({ ...x, key: x.key.replace(/^candidate\./, '') })) }
       : null,
+    setups: row.setups ?? null,
   };
 }
 

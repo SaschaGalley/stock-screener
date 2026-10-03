@@ -280,6 +280,8 @@ export const TimingReadingsSchema = z.object({
   channelSlope: z.number().nullable().describe('That trend line\'s slope, annualised log return'),
   fromLow126:   z.number().describe('ln(price / lowest close of the last 126 sessions); 0 = at the low'),
   lowAgo:       z.number().describe('Sessions since that low'),
+  atr14:        z.number().nullable().describe('Mean absolute close-to-close move over 14 sessions, as a share of the price: a close-only ATR. Null in readings stored before it existed'),
+  fromHigh252:  z.number().nullable().describe('ln(price / highest close of the last 252 sessions); 0 = at the high. Null in readings stored before it existed'),
 });
 export type TimingReadings = z.infer<typeof TimingReadingsSchema>;
 

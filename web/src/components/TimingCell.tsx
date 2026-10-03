@@ -1,4 +1,5 @@
-import type { TimingReadings } from '../types';
+import type { OverviewRow, TimingReadings } from '../types';
+import SetupBadge from './SetupBadge';
 import { TIMING_CANDIDATES, TIMING_GROUPS, timingGroup } from '../../../src/analysis/timing';
 import type { VerdictEvidence } from '../../../src/backtest/result';
 import Tip from './Tip';
@@ -121,20 +122,22 @@ function Evidence({ t, verdict, evidence }: { t: TimingReadings; verdict: string
   );
 }
 
-export default function TimingCell({
-  timing, verdict, evidence,
-}: { timing: TimingReadings | null; verdict: string | null; evidence: VerdictEvidence | null }) {
+export default function TimingCell({ row, evidence }: { row: OverviewRow; evidence: VerdictEvidence | null }) {
+  const timing = row.timing;
   if (!timing) return <span className="text-xs text-ink-500">—</span>;
   const d = direction(timing);
+  // Two hovers side by side, not one inside the other: the chart's readings, and a setup's plan.
   return (
-    <Tip className="block" content={<Evidence t={timing} verdict={verdict} evidence={evidence} />}>
-      <div className="whitespace-nowrap text-xs leading-4 text-ink-300">
-        <span className="font-mono">{d.arrow}</span> {place(timing)}
-        {bounce.read(timing) === 1 && <span className="ml-1 text-2xs text-accent">Abprall</span>}
+    <div>
+      <div className="flex items-center whitespace-nowrap text-xs leading-4 text-ink-300">
+        <Tip focusable={false} content={<Evidence t={timing} verdict={row.recommendation} evidence={evidence} />}>
+          <span className="font-mono">{d.arrow}</span> {place(timing)}
+        </Tip>
+        <SetupBadge row={row} study={evidence?.setups ?? null} />
       </div>
-      <div className="whitespace-nowrap font-mono text-2xs leading-4 text-ink-500">
-        1M {pct(timing.m1, 0)} · RSI {num(timing.rsi14, 0)}
-      </div>
-    </Tip>
+      <Tip focusable={false} className="block" content={<Evidence t={timing} verdict={row.recommendation} evidence={evidence} />}>
+        <span className="whitespace-nowrap font-mono text-2xs leading-4 text-ink-500">1M {pct(timing.m1, 0)} · RSI {num(timing.rsi14, 0)}</span>
+      </Tip>
+    </div>
   );
 }

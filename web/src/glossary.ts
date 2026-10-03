@@ -39,7 +39,7 @@ export const GLOSSARY = {
   'list.verdict':
     'Das Urteil ist das Band, in das der Score fällt. ⛔ heißt: Ein Deckel hält es bewusst darunter, etwa wegen schwacher Datenlage. Darunter „über … %“: über wie viel Prozent aller gespeicherten Aktien — Watchlist und Referenzuniversum — der Faktor-Score liegt; das trennt eine HOLD am oberen Rand von einer am unteren. Daneben das Modell, das die Texte gelesen hat.',
   'list.timing':
-    'Wo der Kurs in seinem Chart steht: Richtung des 3-Monats-Kanals und an welchem Rand er ist, darunter die Rendite des letzten Monats und der RSI. „Abprall“ heißt: vor 3 bis 15 Handelstagen ein 6-Monats-Tief, seitdem mindestens 5 % darüber. Auf Hover steht jede Lesart neben dem, was der Backtest bei Aktien mit demselben Urteil dazu fand. Fließt nicht in Score und Urteil ein.',
+    'Wo der Kurs in seinem Chart steht: Richtung des 3-Monats-Kanals und an welchem Rand er ist, darunter die Rendite des letzten Monats und der RSI. Ein Kästchen daneben nennt ein Setup, das heute auslöst — mit Stop, Ziel, Positionsgröße, Risiko und dem, was es im Backtest gegen einen Zufallseinstieg mit denselben Abständen brachte (grün umrandet nur, wenn es dort trug). Auf Hover steht jede Lesart neben dem, was der Backtest bei Aktien mit demselben Urteil dazu fand. Fließt nicht in Score und Urteil ein.',
   'list.price': 'Letzter Schlusskurs, in der Währung, in der die Aktie gehandelt wird.',
   'list.target': 'Mittleres Analysten-Kursziel (Yahoo-Konsens) und sein Abstand zum Kurs.',
   'list.modelFv':

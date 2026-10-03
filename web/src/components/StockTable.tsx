@@ -153,7 +153,7 @@ export default function StockTable({
       </td>
 
       <td className={`${COL.timing} px-2 py-1`}>
-        <TimingCell timing={r.timing} verdict={r.recommendation} evidence={evidence} />
+        <TimingCell row={r} evidence={evidence} />
       </td>
 
       <td className={`${COL.price} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-200`}>

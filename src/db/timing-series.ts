@@ -28,7 +28,7 @@ export function timingFromPoints(
   const same = (at: string | Date) => new Date(at).getTime() === new Date(stamp).getTime();
   const parsed = TimingReadingsSchema.safeParse(Object.fromEntries(TIMING_SERIES.map((k) => {
     const p = point(k);
-    return [k.slice(PREFIX.length), p && same(p.at) ? p.value : null];
+    return [k.slice(PREFIX.length), p && same(p.at) ? p.value ?? null : null];
   })));
   return parsed.success ? parsed.data : null;
 }

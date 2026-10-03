@@ -84,6 +84,8 @@ import { fidelityCheck, renderFidelity } from './fidelity.js';
 import { loadBacktestData, pooled, type BacktestUniverse } from './load.js';
 import { closedMonthEnds, indexAtOrBefore, priceHistory, type PriceHistory } from './prices.js';
 import { PORTFOLIO_BENCHMARKS, PORTFOLIO_SIGNALS, portfolioStudy, type PortfolioRecord } from './portfolio.js';
+import { setupStudy, type SetupRecord } from './setups.js';
+import { SETUPS } from '../analysis/setups.js';
 import { rateHistory } from './rates.js';
 import { renderWeightTable, scoredRow, WEIGHT_SPLIT, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
 
@@ -184,6 +186,8 @@ export async function runBacktest(
   const timingRecords: TimingRecord[] = [];
   // And what each signal said of it, for the portfolios (`portfolio.ts`).
   const portfolioRecords: PortfolioRecord[] = [];
+  // And which setups fired on it, for the trades (`setups.ts`).
+  const setupRecords: SetupRecord[] = [];
   const labels = new Map<string, string>();
   // Company-months scored, and how many of them had a rebuilt consensus target.
   const coverage = new Map<number, { stocks: number; covered: number }>();
@@ -264,6 +268,14 @@ export async function runBacktest(
             if (Number.isFinite(readings[j])) push(`${CANDIDATE_PREFIX}${c.key}`, e.c.symbol, { at, value: readings[j] });
           });
           timingRecords.push({ day, symbol: e.c.symbol, group: timingGroup(f.verdict), readings });
+          const fair = metrics[k].composite.primary.median;
+          const inputs = { t: timing, fairGap: fair && fair > 0 && fin.price > 0 ? Math.log(fair / fin.price) : null };
+          if (timing.atr14 !== null && timing.atr14 > 0) {
+            setupRecords.push({
+              day, symbol: e.c.symbol, atr: timing.atr14,
+              fires: SETUPS.reduce((bits, s, j) => (s.fires(inputs) ? bits | (1 << j) : bits), 0),
+            });
+          }
         }
 
         const trades = insiders.get(e.c.symbol);
@@ -402,6 +414,10 @@ export async function runBacktest(
   const timing = timingStudy(timingRecords, priceMap, calendar.map((c) => c.date));
   timingRecords.length = 0;
 
+  progress('Setups gegen den Zufallseinstieg');
+  const setups = setupStudy(setupRecords, priceMap);
+  setupRecords.length = 0;
+
   progress('Portfolios gegen den Index');
   const indexFunds = new Map<string, Close[]>();
   for (const b of PORTFOLIO_BENCHMARKS) {
@@ -447,6 +463,7 @@ export async function runBacktest(
     fairValue,
     timing,
     portfolios,
+    setups,
     fidelity: fidelity ?? undefined,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
@@ -602,6 +619,20 @@ export function renderBacktest(r: BacktestResult): string {
         + `  vs SPY ${pc(s5.excess)}  vs avg ${pc(ew.excess)}  turnover ${Math.round(run.turnover * 100)}%  costs ${pc(run.costDrag)}/y`);
     }
     for (const v of pf.verdicts) lines.push(`  ${v.holds === null ? '?' : v.holds ? 'HOLDS' : 'FAILS'}  ${v.claim}`);
+  }
+  if (r.setups) {
+    const pc = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`);
+    const line = (name: string, x: { trades: number; target: number; stop: number; time: number; meanRet: number | null; sessions: number | null }) =>
+      `  ${name.padEnd(34)} n ${String(x.trades).padStart(7)}  target ${Math.round(x.target * 100)}%  stop ${Math.round(x.stop * 100)}%  time ${Math.round(x.time * 100)}%`
+      + `  mean ${pc(x.meanRet).padStart(7)}  days ${x.sessions?.toFixed(0) ?? '—'}`;
+    for (const g of r.setups.geometries) {
+      lines.push('', `Setups: ${g.barriers.label}, ${(r.setups.costPerSide * 100).toFixed(2)} % a side${g.judged ? ' (the rule)' : ' (shown)'}`);
+      lines.push(line('random entry (every stock-month)', g.baseline));
+      for (const s of g.setups) {
+        lines.push(line(s.title, s) + `  per month ${s.perMonth.toFixed(1)}`
+          + `  vs random ${pc(s.excess.mean)} (t ${fmt(s.excess.t, 1)}; ${pc(s.first.mean)} / ${pc(s.second.mean)})  ${s.verdict}`);
+      }
+    }
   }
   lines.push('', 'Factor score IC at one month, by year:');
   for (const y of r.byYear) {

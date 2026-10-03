@@ -98,7 +98,7 @@ describe('the timing expectation, read from the live series', () => {
       score.set(symbol, days.map((d) => ({ at: at(d), value: 5 })));
       verdicts.set(symbol, days.map((d) => ({ at: at(d), value: null, text: 'HOLD' })));
       const values: Record<string, number> = {
-        m1: 0, rsi14: 50, distSma50: 0, distSma200: 0, channelZ: 0, channelSlope: 0, fromLow126: low ? 0.01 : 0.3, lowAgo: 40,
+        m1: 0, rsi14: 50, distSma50: 0, distSma200: 0, channelZ: 0, channelSlope: 0, fromLow126: low ? 0.01 : 0.3, lowAgo: 40, atr14: 0.02, fromHigh252: -0.1,
       };
       timings.set(symbol, new Map(TIMING_SERIES.map((k) => [k, days.map((d) => ({ at: at(d), value: values[k.split('.').pop()!] }))])));
       prices.set(symbol, days.map((d, k) => ({ date: d, close: 100 * (low ? 1 : 1.01 ** k) })));
