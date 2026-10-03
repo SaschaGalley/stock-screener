@@ -94,6 +94,21 @@ body {
     color: var(--color-text);
 }
 
+/* Selects draw their own chevron. The native one sits on the very edge of
+   the box, closer to the border than the text is on the other side. This one
+   sits as far in from the right as the text does from the left, with room
+   kept for it. Unlayered on purpose: it must win over a select's `px-*`, or
+   a long option would run under the arrow. The stroke is --color-text-faint;
+   a data URI cannot read a CSS variable. */
+select:not([multiple]) {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23808793' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.625rem center;
+    background-size: 0.875rem;
+    padding-right: 2rem;
+}
+
 /* Tabular numbers for financial values */
 .tabular {
     font-variant-numeric: tabular-nums;

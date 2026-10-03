@@ -49,6 +49,19 @@ export const GROUP_HEIGHT = 'h-7';
  */
 export const HEADER_HEIGHT = 'h-8';
 
+/**
+ * The table's row rules, drawn as an inset shadow on the cells rather than as a
+ * border. The rail's rows are buttons whose border sits inside their height;
+ * a table row's border, collapsed or separate, is added to it. So the table's
+ * rows came out at 45px against the rail's 44 and its labels at 33 against 32,
+ * and folding the columns away shrank every row by a pixel — twenty rows down,
+ * the stock you clicked had moved twenty pixels. A shadow takes no room.
+ */
+export const ROW_RULE = '*:shadow-[inset_0_-1px_0_var(--color-bg-elevated)]';
+export const HEADER_RULE = '*:shadow-[inset_0_-1px_0_var(--color-border)]';
+/** The same rule for a cell that carries its own background, as a sticky one does. */
+export const CELL_RULE = 'shadow-[inset_0_-1px_0_var(--color-border)]';
+
 interface IdentityProps {
   row:    OverviewRow;
   active: boolean;

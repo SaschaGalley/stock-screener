@@ -6,6 +6,7 @@ import StockListControls from './StockListControls';
 import Tip from './Tip';
 import {
   StockIdentity, StockScore, GroupName, GroupAverage, rowTitle, ROW_HEIGHT, HEADER_HEIGHT, GROUP_HEIGHT,
+  ROW_RULE, HEADER_RULE, CELL_RULE,
 } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { ChartIcon, GearIcon, PulseIcon } from './icons';
@@ -65,7 +66,7 @@ const NAME_CELL = 'w-full max-w-0 xl:w-auto xl:max-w-none';
  * the middle of it. The cells carry the background, not the row: a sticky
  * row is not a thing tables do.
  */
-const GROUP_CELL = 'sticky top-8 z-[5] border-b border-ink-700 bg-ink-900 py-0 transition group-hover:bg-ink-800';
+const GROUP_CELL = `sticky top-8 z-[5] ${CELL_RULE} bg-ink-900 py-0 transition group-hover:bg-ink-800`;
 
 /** Every column after name and score — what the heading's last cell spans. */
 const TRAILING_COLUMNS = 7;
@@ -102,7 +103,7 @@ export default function StockTable({
       data-symbol={r.symbol}
       onClick={() => onSelect(r.symbol)}
       title={rowTitle(r, fmtBig)}
-      className={`${ROW_HEIGHT} cursor-pointer border-b border-ink-800 transition hover:bg-ink-800`}
+      className={`${ROW_HEIGHT} ${ROW_RULE} cursor-pointer transition hover:bg-ink-800`}
     >
       <td className={`${NAME_CELL} py-1 pr-2 pl-3`}>
         <StockIdentity row={r} active={false} stages={activity[r.symbol]} />
@@ -225,16 +226,16 @@ export default function StockTable({
         ) : (
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-ink-900 text-2xs uppercase tracking-wider text-ink-500">
-              <tr className={`${HEADER_HEIGHT} border-b border-ink-700`}>
-                <th className="px-3 py-2 text-left font-semibold">Aktie</th>
-                <th className="px-2 py-2 text-right font-semibold"><Term k="list.score">Score</Term></th>
-                <th className={`${COL.trend} px-2 py-2 text-left font-semibold`}><Term k="list.trend">Verlauf</Term></th>
-                <th className={`${COL.verdict} px-2 py-2 text-left font-semibold`}><Term k="list.verdict">Verdict</Term></th>
-                <th className={`${COL.price} px-2 py-2 text-right font-semibold`}><Term k="list.price">Kurs</Term></th>
-                <th className={`${COL.target} px-2 py-2 text-right font-semibold`}><Term k="list.target">Ø Ziel</Term></th>
-                <th className={`${COL.model} px-2 py-2 text-right font-semibold`}><Term k="list.modelFv">Modell-FV</Term></th>
-                <th className={`${COL.mcap} px-2 py-2 text-right font-semibold`}><Term k="list.mcap">MCap</Term></th>
-                <th className={`${COL.age} px-3 py-2 text-right font-semibold`}><Term k="list.age">Aktualität</Term></th>
+              <tr className={`${HEADER_HEIGHT} ${HEADER_RULE}`}>
+                <th className="px-3 py-0 text-left font-semibold">Aktie</th>
+                <th className="px-2 py-0 text-right font-semibold"><Term k="list.score">Score</Term></th>
+                <th className={`${COL.trend} px-2 py-0 text-left font-semibold`}><Term k="list.trend">Verlauf</Term></th>
+                <th className={`${COL.verdict} px-2 py-0 text-left font-semibold`}><Term k="list.verdict">Verdict</Term></th>
+                <th className={`${COL.price} px-2 py-0 text-right font-semibold`}><Term k="list.price">Kurs</Term></th>
+                <th className={`${COL.target} px-2 py-0 text-right font-semibold`}><Term k="list.target">Ø Ziel</Term></th>
+                <th className={`${COL.model} px-2 py-0 text-right font-semibold`}><Term k="list.modelFv">Modell-FV</Term></th>
+                <th className={`${COL.mcap} px-2 py-0 text-right font-semibold`}><Term k="list.mcap">MCap</Term></th>
+                <th className={`${COL.age} px-3 py-0 text-right font-semibold`}><Term k="list.age">Aktualität</Term></th>
               </tr>
             </thead>
             <tbody>
