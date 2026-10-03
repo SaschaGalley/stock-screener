@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { api } from './api';
 import StockRail from './components/StockRail';
@@ -8,9 +8,11 @@ import AnalysisModal, { flagsLabel } from './components/AnalysisModal';
 import PeersModal from './components/PeersModal';
 import AnalysisView from './components/AnalysisView';
 import ProgressBanner from './components/ProgressBanner';
-import AdminPage from './pages/AdminPage';
-import EvaluationPage from './pages/EvaluationPage';
-import FeedPage from './pages/FeedPage';
+// The pages behind the gear, the chart icon and the pulse: loaded when opened,
+// not with the list everyone opens first.
+const AdminPage = lazy(() => import('./pages/AdminPage'));
+const EvaluationPage = lazy(() => import('./pages/EvaluationPage'));
+const FeedPage = lazy(() => import('./pages/FeedPage'));
 import { applyListView, DEFAULT_LIST_VIEW, type ListView } from './components/stockList';
 import { EMPTY_ANCHOR, type ListScrollAnchor } from './components/useListScroll';
 import type { Settings, OverviewRow, ProgressEvent, SearchChoice } from './types';
@@ -91,6 +93,9 @@ function withViewTransition(apply: () => void): void {
   doc.startViewTransition(() => { flushSync(apply); });
 }
 
+/** No stages running — one array, so an idle stock's page sees the same prop each time. */
+const NO_STAGES: string[] = [];
+
 export default function App() {
   const [rows, setRows] = useState<OverviewRow[]>([]);
   const [rowsLoading, setRowsLoading] = useState(true);
@@ -124,7 +129,16 @@ export default function App() {
   /** Who else is in the business, and adding them — a dialog from the header. */
   const [peersOpen, setPeersOpen] = useState(false);
   /** Symbols the queue is working on, keyed by symbol → the stages in flight. */
-  const [activity, setActivity] = useState<Record<string, string[]>>({});
+  const [activity, setActivityState] = useState<Record<string, string[]>>({});
+  /**
+   * The queue as the poll found it — kept as the same object while it reads
+   * the same. The poll runs every five seconds, and a fresh object each time
+   * re-rendered the whole app with it: the open stock page and its charts,
+   * 80 ms on the main thread every five seconds, a stutter in every scroll.
+   */
+  const setActivity = useCallback((next: Record<string, string[]>) => {
+    setActivityState((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+  }, []);
 
   // Selecting a symbol always means "show it" — from the table too, where the
   // click collapses the columns into the rail and opens the analysis beside it.
@@ -217,11 +231,10 @@ export default function App() {
   // GET `/analyses-by-flags?model=...` we send the shortcut string verbatim and
   // it'll miss; better to use the resolved ID. For now rely on the server
   // doing exact-match — user sees "not cached" until the analysis runs once.
-  const flags = {
-    model:  resolveModelId(settings.model),
-    search: settings.searches.length === 0 ? 'none' : [...settings.searches].sort().join(','),
-    pplx:   settings.pplx,
-  };
+  const flagModel = resolveModelId(settings.model);
+  const flagSearch = settings.searches.length === 0 ? 'none' : [...settings.searches].sort().join(',');
+  // One object while the flags read the same, so the stock page is not rebuilt for nothing (`memo` on it).
+  const flags = useMemo(() => ({ model: flagModel, search: flagSearch, pplx: settings.pplx }), [flagModel, flagSearch, settings.pplx]);
 
   const handleSelectSymbol = useCallback((s: string) => {
     // Clicking the stock that is already open closes it again. The row is what
@@ -318,6 +331,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, [pollActivity]);
 
+  // The stock page's handlers, the same functions from render to render: it is
+  // memoised, and a fresh arrow each time would rebuild it with every state
+  // change anywhere in the app.
+  const onActivityChanged = useCallback(() => { void pollActivity(); }, [pollActivity]);
+  const toggleStocks = useCallback(() => setStocksDrawer((v) => !v), []);
+  const openAnalysisDialog = useCallback(() => setAnalysisOpen(true), []);
+  const openPeers = useCallback(() => setPeersOpen(true), []);
+  const startAnalyzeRef = useRef<(input: string, force?: boolean) => void>(() => {});
+  const rerunSelected = useCallback(() => { if (selected) startAnalyzeRef.current(selected, true); }, [selected]);
+
   /**
    * Start an analyze run. `force` bypasses the LLM cache — used by the refresh
    * menu's „Alles" and by the dialog's run button when the combination is
@@ -411,6 +434,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isTable, closeOverlay, analysisOpen, peersOpen]);
 
+  startAnalyzeRef.current = startAnalyze;
   return (
     <div className="flex h-full flex-col bg-ink-950 text-ink-100">
       {/* Backdrop while the mobile drawer is open. Clicking it closes it. */}
@@ -434,9 +458,11 @@ export default function App() {
         </div>
       )}
 
-      {isAdmin && <AdminPage onClose={closeOverlay} />}
-      {isEvaluation && <EvaluationPage onClose={closeOverlay} />}
-      {isFeed && <FeedPage onClose={closeOverlay} onSelect={handleSelectSymbol} />}
+      <Suspense fallback={<div className="flex-1 p-4 text-sm text-ink-500">Lade …</div>}>
+        {isAdmin && <AdminPage onClose={closeOverlay} />}
+        {isEvaluation && <EvaluationPage onClose={closeOverlay} />}
+        {isFeed && <FeedPage onClose={closeOverlay} onSelect={handleSelectSymbol} />}
+      </Suspense>
 
       {/* The list at full width. Cheap to rebuild, so it mounts and unmounts. */}
       {isTable && (
@@ -496,14 +522,14 @@ export default function App() {
               // tab. Either is reason enough to call the buttons busy.
               analyzing={loading
                 || (activity[selected] ?? []).some((s) => s === 'analyze' || s === 'symbol-pipeline')}
-              activity={activity[selected] ?? []}
-              onActivityChanged={() => { void pollActivity(); }}
+              activity={activity[selected] ?? NO_STAGES}
+              onActivityChanged={onActivityChanged}
               onClose={closeOverlay}
               onOpenAdmin={openAdmin}
-              onToggleStocks={() => setStocksDrawer((v) => !v)}
-              onOpenAnalysis={() => setAnalysisOpen(true)}
-              onOpenPeers={() => setPeersOpen(true)}
-              onRerun={() => startAnalyze(selected, true)}
+              onToggleStocks={toggleStocks}
+              onOpenAnalysis={openAnalysisDialog}
+              onOpenPeers={openPeers}
+              onRerun={rerunSelected}
               flagsLabel={flagsLabel(settings)}
             />
           )}

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import ReactECharts from 'echarts-for-react';
+import ReactECharts from './ECharts';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useMoney } from '../../currency';
 import { TREND_RATIOS, ratioSeries } from '../../../../src/analysis/trends';

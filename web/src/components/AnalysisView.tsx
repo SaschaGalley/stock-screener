@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type {
@@ -64,7 +65,7 @@ interface Props {
   flagsLabel: string;
 }
 
-export default function AnalysisView({
+function AnalysisView({
   symbol,
   fallbackName,
   flags,
@@ -541,3 +542,10 @@ function CloseButton({ onClose }: { onClose: () => void }) {
     </button>
   );
 }
+
+/**
+ * Memoised: the app re-renders on every poll, keystroke and progress line, and
+ * this page — twenty sections, ten charts — has no reason to follow unless its
+ * own props changed.
+ */
+export default memo(AnalysisView);

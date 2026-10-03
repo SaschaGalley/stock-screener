@@ -1,4 +1,4 @@
-import ReactECharts from 'echarts-for-react';
+import ReactECharts from './ECharts';
 import type { SignalGroup } from '../../types';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import Term from '../Term';

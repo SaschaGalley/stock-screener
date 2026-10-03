@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import ReactECharts from 'echarts-for-react';
+import ReactECharts from './ECharts';
 import { api } from '../../api';
 import { fmtBig } from '../../format';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';

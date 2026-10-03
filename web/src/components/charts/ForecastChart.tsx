@@ -1,4 +1,4 @@
-import ReactECharts from 'echarts-for-react';
+import ReactECharts from './ECharts';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useMoney } from '../../currency';
 import { fmtSignedPct } from '../../format';

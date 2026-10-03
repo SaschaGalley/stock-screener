@@ -1,4 +1,4 @@
-import ReactECharts from 'echarts-for-react';
+import { memo, useState } from 'react';
 import { CHART_COLORS } from './chartTheme';
 
 interface Props {
@@ -8,7 +8,9 @@ interface Props {
 }
 
 /**
- * Verdict score over time, table-cell sized.
+ * Verdict score over time, table-cell sized — drawn as plain SVG. It was an
+ * ECharts instance a row, three dozen of them in the list, each handed a new
+ * tooltip function on every render and so redrawn with every poll.
  *
  * The y-window is padded rather than autoscaled: a plain autoscale turns a
  * wobble between 6.8 and 7.0 into a cliff, while the full 0–10 range flattens a
@@ -31,7 +33,8 @@ function yWindow(values: number[]): { min: number; max: number } {
   }
   return { min: Math.max(0, Math.round(min * 10) / 10), max: Math.min(10, Math.round(max * 10) / 10) };
 }
-export default function ScoreSparkline({ points, width = 116, height = 34 }: Props) {
+function ScoreSparkline({ points, width = 116, height = 34 }: Props) {
+  const [hover, setHover] = useState<number | null>(null);
   if (points.length === 0) {
     return (
       <div
@@ -44,43 +47,46 @@ export default function ScoreSparkline({ points, width = 116, height = 34 }: Pro
     );
   }
 
-  // A single point has no line to draw; show it as a dot so the row still reads
-  // as "we have exactly one reading" rather than "no data".
-  const single = points.length === 1;
   const last = points[points.length - 1].score;
   const first = points[0].score;
   const color = last > first ? CHART_COLORS.green : last < first ? CHART_COLORS.red : CHART_COLORS.blue;
+  const { min, max } = yWindow(points.map((p) => p.score));
+  const PAD_X = 2, PAD_Y = 3;
+  const x = (i: number) => (points.length === 1 ? width / 2 : PAD_X + (i * (width - 2 * PAD_X)) / (points.length - 1));
+  const y = (v: number) => PAD_Y + (1 - (v - min) / (max - min || 1)) * (height - 2 * PAD_Y);
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.score).toFixed(1)}`).join('');
+  const area = `${line}L${x(points.length - 1).toFixed(1)},${height - PAD_Y}L${x(0).toFixed(1)},${height - PAD_Y}Z`;
+  const shown = hover !== null ? points[hover] : null;
 
   return (
-    <ReactECharts
-      style={{ width, height }}
-      opts={{ renderer: 'svg' }}
-      option={{
-        animation: false,
-        grid: { top: 3, left: 2, right: 2, bottom: 3 },
-        xAxis: { type: 'category', show: false, data: points.map((p) => p.at), boundaryGap: false },
-        yAxis: { type: 'value', show: false, ...yWindow(points.map((p) => p.score)) },
-        tooltip: {
-          trigger: 'axis',
-          backgroundColor: CHART_COLORS.bg,
-          borderColor: CHART_COLORS.grid,
-          textStyle: { color: CHART_COLORS.text, fontSize: 12 },
-          formatter: (params: { dataIndex: number }[]) => {
-            const p = points[params[0].dataIndex];
-            return `${new Date(p.at).toLocaleDateString()}<br/><b>${p.score.toFixed(1)}</b>/10`;
-          },
-        },
-        series: [{
-          type: 'line',
-          data: points.map((p) => p.score),
-          smooth: true,
-          symbol: single ? 'circle' : 'none',
-          symbolSize: 5,
-          lineStyle: { width: 1.5, color },
-          itemStyle: { color },
-          areaStyle: { color, opacity: 0.12 },
-        }],
-      }}
-    />
+    <div className="relative" style={{ width, height }}>
+      <svg
+        width={width}
+        height={height}
+        className="block"
+        onMouseMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          const i = Math.round(((e.clientX - r.left - PAD_X) / (width - 2 * PAD_X)) * (points.length - 1));
+          setHover(Math.max(0, Math.min(points.length - 1, i)));
+        }}
+        onMouseLeave={() => setHover(null)}
+      >
+        {points.length > 1 && <path d={area} fill={color} fillOpacity={0.12} />}
+        {points.length > 1 && <path d={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />}
+        {(points.length === 1 || hover !== null) && (
+          <circle cx={x(hover ?? 0)} cy={y(points[hover ?? 0].score)} r={2.5} fill={color} />
+        )}
+      </svg>
+      {shown && (
+        <div
+          className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 -translate-x-1/2 whitespace-nowrap rounded border px-1.5 py-0.5 text-2xs"
+          style={{ background: CHART_COLORS.bg, borderColor: CHART_COLORS.grid, color: CHART_COLORS.text }}
+        >
+          {new Date(shown.at).toLocaleDateString()} · <b>{shown.score.toFixed(1)}</b>/10
+        </div>
+      )}
+    </div>
   );
 }
+
+export default memo(ScoreSparkline);

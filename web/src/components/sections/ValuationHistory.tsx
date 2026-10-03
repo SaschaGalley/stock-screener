@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import ReactECharts from 'echarts-for-react';
+import ReactECharts from '../charts/ECharts';
 import { api } from '../../api';
 import { useMoney } from '../../currency';
 import { fmtSignedPct } from '../../format';
