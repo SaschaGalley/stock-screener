@@ -114,7 +114,7 @@ export function withinLag<T>(row: { data: T; capturedAt: Date } | null, anchor: 
   return anchor.getTime() - row.capturedAt.getTime() <= MAX_SIGNAL_LAG_MS ? row.data : null;
 }
 
-type RateHistory = Map<string, { at: number; value: number }[]>;
+export type RateHistory = Map<string, { at: number; value: number }[]>;
 
 /**
  * One rate as of `at`: the newest reading at or before it, else the earliest
@@ -279,6 +279,8 @@ export interface StoredInputs {
   sectorMedians:    SectorMedians | null;
   technicalSignals: TechnicalSignals | null;
   rates:            MarketRates;
+  /** When the financials in force were captured — the price they carry is that moment's. */
+  capturedAt:       Date;
 }
 
 /**
@@ -287,13 +289,17 @@ export interface StoredInputs {
  * valuation models beside it — reads these, so the page cannot disagree with
  * the list about what went in.
  */
-export async function storedInputs(symbol: string, now: number = Date.now()): Promise<StoredInputs | null> {
+export async function storedInputs(
+  symbol: string, now: number = Date.now(),
+  /** The recorded rates, read once by a caller that asks for many symbols. */
+  rateHistory?: RateHistory,
+): Promise<StoredInputs | null> {
   const [financials, signals, peers, techSig, rates] = await Promise.all([
     snapshotHistory<StockFinancials>(symbol, 'financials'),
     snapshotHistory<MarketSignals>(symbol, 'market_signals'),
     snapshotHistory<SectorMedians>(symbol, 'sector_medians'),
     snapshotHistory<TechnicalSignals>(symbol, 'technical_signals'),
-    macroHistory('macro.'),
+    rateHistory ?? macroHistory('macro.'),
   ]);
   const fRow = rowAsOf(financials, now);
   const f = fRow?.data;
@@ -310,6 +316,7 @@ export async function storedInputs(symbol: string, now: number = Date.now()): Pr
     technicalSignals: withinLag(rowAsOf(techSig, now), fRow.capturedAt)
       ?? (marketSignals?.technicals ? deriveTechnicalSignals(marketSignals.technicals, f.price) : null),
     rates:            ratesAt(rates, now),
+    capturedAt:       fRow.capturedAt,
   };
 }
 

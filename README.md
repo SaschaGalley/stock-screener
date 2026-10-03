@@ -1754,6 +1754,60 @@ too few stocks to read. The rule is not adopted, nothing in the score
 changed, and the top's fall over half a year is left for the live evaluation
 to confirm or dismiss.
 
+**Does it measure the app's score? (3 October 2026)** Every run now also
+compares itself with the live scores (`backtest/fidelity.ts`, alone with
+`--fidelity`): for every stock the app holds that is in the S&P 1500 too, its
+newest live factor score beside the one the backtest rebuilds for the same
+session, and between them the backtest's data scored the app's way — its
+calibration, premium and rates — so that what the data do and what the method
+does come apart. The page shows it as *Misst der Backtest den Score der App?*,
+with the criteria, the input fields and the largest gaps.
+
+The first comparison, on 470 stocks, gave a rank correlation of 0.70. The
+method accounted for almost none of the gap (0.98 between the backtest's data
+scored either way: the calibration population hardly matters), the data for
+nearly all of it. Momentum agreed at 1.00 and the rebuilt consensus at 0.91;
+the revisions pillar at 0.17, since the app's estimate revisions and surprises
+have no history. Field by field, the comparison found three faults in the
+rebuilt payload, all now fixed and tested (`test/fidelity.test.ts`):
+
+- **Stale tags.** Only the revenue was checked for age. VICI last tagged its
+  operating income for 2020, and every month-end since read 2020's figure
+  beside the current revenue — a REIT covering its interest 0.4 times. A flow
+  more than a year behind the revenue, or a balance-sheet item more than 200
+  days behind, is now missing rather than old.
+- **Untagged debt counted as none.** AES keeps its 33 billion of debt in its
+  own taxonomy, which the SEC's company facts leave out; the backtest summed
+  the missing lines to zero and gave a leveraged utility 7.8 for its balance
+  sheet. No debt tagged with interest paid is now unknown debt.
+- **Lines tagged in pieces or renamed.** Lilly and AES tag no operating
+  income; the EBIT is now the pre-tax income with the interest added back, as
+  Yahoo's is. Both tag their liabilities only as current and non-current,
+  now added up. The 2024 taxonomy moved many interest expenses, the banks'
+  among them, to `InterestExpenseOperating`, now read.
+
+After the fixes: 0.75, the same verdict for 80 % of the stocks and at most one
+step apart for all, 25 of the top tenth's 47 in both top tenths.
+
+It found one fault on the live side too: the app read `netIncomeToCommon`
+from Yahoo's `financialData`, where there is no such field, so every stock's
+net income was its last fiscal year's — Amazon's 78 billion for 2025 beside a
+trailing 135, half the S&P 500 off by more than a tenth. It is read from the
+key statistics now; the stored snapshots catch up as the nights refresh them.
+
+With the payload fixed, the run of 3 October moved: the factor score's IC at a
+month is 0.0145 (t 2.3; in the sector 0.0137, t 2.5). The top's fall over half
+a year weakened — a score of 8 or more trails by 2.0 % over six months (t −1.3)
+instead of 2.7 % (t −2.3), and leads by 4.8 % over twelve (t 1.7) — so part of
+it rested on companies the backtest had built wrong, AES-like utilities with
+their debt missing among them. What held is the split inside the top tenth:
+the half the price had not confirmed still trails, by 2.5 % over six months on
+the momentum pillar (t 2.0, in both halves of the years).
+
+What the comparison means for every number above: the backtest measures a
+close relative of the app's score, not the score itself. It lacks the
+estimate revisions entirely, and half of its top tenth is not the app's.
+
 Every backtest run asks again, and every month the live evaluation adds from October 2026 on is one no
 rule here has seen.
 

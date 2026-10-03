@@ -60,7 +60,8 @@ export const FACT_LINES: Record<string, string[]> = {
     'IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments',
   ],
   incomeTax:       ['IncomeTaxExpenseBenefit'],
-  interestExpense: ['InterestExpense', 'InterestExpenseDebt', 'InterestExpenseNonoperating'],
+  // The 2024 taxonomy moved much of it to `InterestExpenseOperating` — the banks, Allstate.
+  interestExpense: ['InterestExpense', 'InterestExpenseDebt', 'InterestExpenseNonoperating', 'InterestExpenseOperating'],
   depreciation: [
     'DepreciationDepletionAndAmortization', 'DepreciationAndAmortization',
     'DepreciationAmortizationAndAccretionNet', 'Depreciation',
@@ -78,6 +79,7 @@ export const FACT_LINES: Record<string, string[]> = {
   liabilities:        ['Liabilities'],
   currentAssets:      ['AssetsCurrent'],
   currentLiabilities: ['LiabilitiesCurrent'],
+  liabilitiesNoncurrent: ['LiabilitiesNoncurrent'],
   equity:             ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
   minorityInterest:   ['MinorityInterest'],
   preferredEquity:    ['PreferredStockValue'],
@@ -163,7 +165,7 @@ export function extractLine(raw: RawCompanyFacts, tags: string[]): Fact[] {
  * of the objects' size. `v` changes when the reduction does, so a cache written
  * by an older one is fetched again rather than read.
  */
-const PACK_VERSION = 2;
+const PACK_VERSION = 4;
 type PackedFacts = {
   v?: number; cik: string; name: string; fetchedAt: string;
   lines: Record<string, [string | null, string, number, string][]>;

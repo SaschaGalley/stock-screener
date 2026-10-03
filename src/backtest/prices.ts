@@ -136,3 +136,16 @@ export function splitFactorAfter(splits: PriceHistory['splits'], date: string): 
   for (const s of splits) if (s.date > date) f *= s.ratio;
   return f;
 }
+
+/**
+ * The session whose close a payload captured at `at` carries: its New York
+ * date, the one before when it was captured before the close, and the last
+ * trading day at or before that.
+ */
+export function sessionOf(at: Date, dates: string[]): string | null {
+  const ny = at.toLocaleString('sv-SE', { timeZone: 'America/New_York' });
+  let day = ny.slice(0, 10);
+  if (Number(ny.slice(11, 13)) < 16) day = new Date(Date.parse(`${day}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  const i = indexAtOrBefore(dates, day);
+  return i >= 0 ? dates[i] : null;
+}

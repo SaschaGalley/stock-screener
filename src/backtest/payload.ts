@@ -75,6 +75,22 @@ const QUARTER = 63;
 
 /** Filings more than this far behind the day describe a company that stopped reporting. */
 const MAX_STATEMENT_AGE_DAYS = 200;
+/**
+ * A line whose newest figure is further behind the revenue's than this
+ * belongs to a tag the company stopped using. VICI last tagged its operating
+ * income for 2020, and every month-end since read 2020's beside the current
+ * revenue — a REIT covering its interest 0.4 times. A flow may fall back to
+ * the last fiscal year, nine months behind a third quarter; a balance-sheet
+ * item should be the quarter's own.
+ */
+const MAX_FLOW_LAG_DAYS = 370;
+const MAX_INSTANT_LAG_DAYS = 200;
+/**
+ * Interest above this share of revenue with no debt tagged at all means the
+ * debt is in the company's own taxonomy, which the SEC's company facts leave
+ * out — AES carries 33 billion of it as `aes:` tags — not that there is none.
+ */
+const UNTAGGED_DEBT_INTEREST_SHARE = 0.005;
 
 function shiftYear(date: string, years: number): string {
   const d = new Date(`${date}T00:00:00Z`);
@@ -131,13 +147,20 @@ export function payloadAt(
   const price = px.close[i];
   const L = facts.lines;
   const line = (k: string): Fact[] => L[k] ?? [];
-  const ttm = (k: string) => trailingTwelveMonths(line(k), asOf);
-  const inst = (k: string) => latestInstant(line(k), asOf);
 
-  const rev = ttm('revenue');
+  const rev = trailingTwelveMonths(line('revenue'), asOf);
   if (!rev || rev.value <= 0) return null;
   if ((Date.parse(asOf) - Date.parse(rev.end)) / DAY_MS > MAX_STATEMENT_AGE_DAYS) return null;
   const E = rev.end;
+  const behind = (end: string) => (Date.parse(E) - Date.parse(end)) / DAY_MS;
+  const ttm = (k: string) => {
+    const x = trailingTwelveMonths(line(k), asOf);
+    return x && behind(x.end) <= MAX_FLOW_LAG_DAYS ? x : null;
+  };
+  const inst = (k: string) => {
+    const x = latestInstant(line(k), asOf);
+    return x && behind(x.end) <= MAX_INSTANT_LAG_DAYS ? x : null;
+  };
 
   // Twelve months ending a year before the newest: the same arithmetic on the
   // periods known today that end no later than then.
@@ -161,10 +184,14 @@ export function payloadAt(
   const revenue = rev.value;
   const cost = v(ttm('costOfRevenue'));
   const grossProfit = v(ttm('grossProfit')) ?? (cost !== null ? revenue - cost : null);
-  const ebit = v(ttm('operatingIncome'));
   const netIncome = v(ttm('netIncome'));
   const da = v(ttm('depreciation'));
   const interest = v(ttm('interestExpense'));
+  const pretax = v(ttm('pretaxIncome'));
+  // Lilly and AES tag no operating income at all, VICI not since 2020; Yahoo's
+  // EBIT for them is the pre-tax income with the interest added back, and so
+  // is this.
+  const ebit = v(ttm('operatingIncome')) ?? (pretax !== null ? pretax + Math.abs(interest ?? 0) : null);
   const ocf = v(ttm('operatingCashFlow'));
   const capexRaw = v(ttm('capex'));
   const capex = capexRaw === null ? null : Math.abs(capexRaw);
@@ -179,7 +206,11 @@ export function payloadAt(
 
   // The newest balance sheet, for the bridge from firm value to equity.
   const cash = (v(inst('cash')) ?? 0) + (v(inst('shortInvestments')) ?? 0);
-  const debt = (v(inst('longTermDebt')) ?? 0) + (v(inst('currentDebt')) ?? 0);
+  const longDebt = inst('longTermDebt'), shortDebt = inst('currentDebt');
+  // No debt tagged: none, unless the company pays interest on some — then unknown.
+  const debt = longDebt || shortDebt
+    ? (v(longDebt) ?? 0) + (v(shortDebt) ?? 0)
+    : interest !== null && Math.abs(interest) > UNTAGGED_DEBT_INTEREST_SHARE * revenue ? null : 0;
   const equity = v(inst('equity'));
   const assetsNow = v(inst('assets'));
   const currentAssets = v(inst('currentAssets'));
@@ -224,7 +255,7 @@ export function payloadAt(
   const eps = netIncome !== null && dilutedShares > 0 ? netIncome / dilutedShares : null;
   const epsNow = epsHistory.length ? epsHistory[epsHistory.length - 1].value : null;
   const eps3y = epsHistory.length >= 4 ? epsHistory[epsHistory.length - 4].value : null;
-  const investedCapital = equity !== null ? equity + debt - cash : null;
+  const investedCapital = equity !== null && debt !== null ? equity + debt - cash : null;
 
   const lo52 = Math.max(0, i - YEAR + 1);
   const window52 = px.close.slice(lo52, i + 1);
@@ -265,7 +296,7 @@ export function payloadAt(
     operatingCashFlow: ocf,
     totalCash: cash, totalDebt: debt,
     longTermDebt: atEnd('longTermDebt', fy0) ?? v(inst('longTermDebt')),
-    debtToEquity: equity !== null && equity > 0 ? debt / equity : null,
+    debtToEquity: debt !== null && equity !== null && equity > 0 ? debt / equity : null,
     currentRatio: currentAssets !== null && currentLiabilities !== null && currentLiabilities > 0 ? currentAssets / currentLiabilities : null,
     quickRatio: null, deferredRevenueShare: null,
     revenue, grossProfit, ebit, netIncome, normalizedNetIncome: null,
@@ -275,7 +306,11 @@ export function payloadAt(
     taxRate,
     totalAssets: atEnd('assets', fy0) ?? assetsNow,
     totalCurrentAssets: currentAssets, totalCurrentLiabilities: currentLiabilities,
-    totalLiabilities: atEnd('liabilities', fy0) ?? v(inst('liabilities')),
+    totalLiabilities: atEnd('liabilities', fy0) ?? v(inst('liabilities')) ?? (() => {
+      // Lilly and AES tag the two halves and not the total.
+      const c = atEnd('currentLiabilities', fy0), n = atEnd('liabilitiesNoncurrent', fy0);
+      return c !== null && n !== null ? c + n : null;
+    })(),
     retainedEarnings: atEnd('retainedEarnings', fy0) ?? v(inst('retainedEarnings')),
     workingCapital: currentAssets !== null && currentLiabilities !== null ? currentAssets - currentLiabilities : null,
     operatingCashFlowAnnual: fyValue('operatingCashFlow', fy0),
@@ -287,10 +322,10 @@ export function payloadAt(
     minorityInterest: v(inst('minorityInterest')), preferredEquity: v(inst('preferredEquity')),
     nonOperatingAssets: v(inst('investments')),
     leaseObligations: null, operatingLeaseLiabilities: null,
-    investedCapital: equity !== null ? equity + debt : null,
+    investedCapital: equity !== null && debt !== null ? equity + debt : null,
     tangibleBookValue: equity !== null ? equity - (v(inst('goodwill')) ?? 0) - (v(inst('intangibles')) ?? 0) : null,
     dilutedShareRatio: null,
-    enterpriseValue: marketCap + debt - cash,
+    enterpriseValue: debt !== null ? marketCap + debt - cash : null,
     sharesOutstanding: shares,
     targetMeanPrice: cons?.targetMean ?? null, analystTargetHigh: cons?.targetHigh ?? null,
     analystTargetLow: cons?.targetLow ?? null, analystTargetMedian: cons?.targetMedian ?? null,

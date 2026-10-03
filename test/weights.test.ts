@@ -125,7 +125,7 @@ describe('fitting and checking on unseen months', () => {
         const r = 0.03 * (points[signal] - 0.5) + 0.02 * normal();
         closes.push({ date: months[t + 1], close: closes[closes.length - 1].close * (1 + r) });
       }
-      rows.push({ at: new Date(Date.parse(`${day}T12:00:00Z`) - 86_400_000), symbol: s, trust: 1, points });
+      rows.push({ at: new Date(Date.parse(`${day}T12:00:00Z`) - 86_400_000), symbol: s, trust: 1, points, caps: [] });
     }
   });
   const calendar: Close[] = months.map((date) => ({ date, close: 100 }));

@@ -1328,7 +1328,12 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     revenue:          preferStatement(fxc(num(fd.totalRevenue)), statementRevenue ?? fxc(num(inc.totalRevenue))),
     grossProfit:      fxc(num(fd.grossProfits) ?? grossProfit),
     ebit:             fxc(trailingEbit),
-    netIncome:        preferStatement(fxc(num(fd.netIncomeToCommon)), statementNetIncome ?? fxc(num(inc.netIncome))),
+    // `netIncomeToCommon` is a key statistic, not financial data: read from
+    // `financialData` it was always missing, and every stock's net income was
+    // its last fiscal year's — Amazon's 78 billion for 2025 beside a trailing
+    // 135, half the S&P 500 off by more than a tenth (the backtest's comparison
+    // with the live scores, `backtest/fidelity.ts`, found it).
+    netIncome:        preferStatement(fxc(num(ks.netIncomeToCommon)), statementNetIncome ?? fxc(num(inc.netIncome))),
     normalizedNetIncome: fxc(normalizedIncomeTTM ?? num((inc as any).normalizedIncome)),
     // EBITDA = operating income + D&A, both over the same four quarters. Yahoo's
     // figure lives in the market-side block, so pairing a stale one with a

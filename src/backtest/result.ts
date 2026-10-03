@@ -12,6 +12,7 @@ import { query, queryOne } from '../db/client.js';
 import type { BucketReturn, Evaluation } from '../analysis/evaluate.js';
 import type { WeightValidation } from './weights.js';
 import type { TopDecileStudy } from './top-decile.js';
+import type { Fidelity } from './fidelity.js';
 
 export const RESULT_KEY = 'backtest.result';
 
@@ -43,6 +44,12 @@ export interface BacktestResult {
    * from the newest run that has them.
    */
   studiesAt?:  string;
+  /**
+   * The newest live scores beside the backtest's of the same sessions: whether
+   * the numbers above measure the score the app shows (`fidelity.ts`). Absent
+   * in older results and in a run with no live scores to compare.
+   */
+  fidelity?:   Fidelity;
   /** Median premium adjustment over the months, and its range. */
   premium:     { median: number; min: number; max: number };
   evaluation:  Evaluation;

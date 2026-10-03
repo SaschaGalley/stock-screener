@@ -11,6 +11,7 @@
  *   pnpm run backtest -- --no-departed    # today's members only, without those that left
  *   pnpm run backtest -- --studies        # and the studies: the score under other rules, the top tenth
  *   pnpm run backtest -- --write-weights  # and commit the weight fit, if it held up
+ *   pnpm run backtest -- --fidelity       # only compare the live scores with the backtest's, printed
  *
  * The live evaluation needs months of stored scores before it says anything.
  * This one rebuilds them. At every month-end since 2013 it reconstructs each
@@ -59,43 +60,30 @@ import { getConfig } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { closePool, waitForDatabase } from '../db/client.js';
 import { takeBacktestLock, type BacktestLock } from './lock.js';
-import { companyFacts, CompanyFacts } from '../data/edgar-facts.js';
-import { lookupCIK } from '../data/edgar.js';
-import {
-  COMPOSITE_INDEXES, fetchSp1500Constituents, fetchSp500Constituents, type CompositeIndex, type Constituent,
-} from '../data/universe.js';
+import { COMPOSITE_INDEXES } from '../data/universe.js';
 import { sectorToEtf } from '../data/macro.js';
-import {
-  collectCalibrated, percentiles, sectorKey, useCalibrationTable, usePremiumAdjustment,
-  type CriterionDistribution,
-} from '../analysis/calibration.js';
-import { computeAllMetrics, impliedPremiumShift } from '../analysis/computeMetrics.js';
-import { computeFactorScore, trustOf } from '../analysis/score.js';
+import { collectCalibrated, useCalibrationTable, usePremiumAdjustment } from '../analysis/calibration.js';
+import { trustOf } from '../analysis/score.js';
 import { FITTED_WEIGHTS_META } from '../analysis/weight-table.js';
 import { bucketReturns, evaluate, type Close, type SignalPoint } from '../analysis/evaluate.js';
 import { PILLAR_KEYS } from '../types.js';
-import type { AnalystAction } from '../analysis/analyst-accuracy.js';
-import { analystHistory } from './analysts.js';
 import { insiderHistory } from './insiders.js';
-import { resolveDeparted } from './departed.js';
 import { VARIANTS, variantSignals } from './variants.js';
 import { featureArray, TOP_FEATURES, topDecileStudy, type TopRecord } from './top-decile.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
-import { Company, payloadAt, yahooSector } from './payload.js';
+import { payloadAt, yahooSector } from './payload.js';
 import {
   BACKTEST_CAVEATS, BacktestResult, departedCaveat, NO_ANALYSTS_CAVEAT, saveBacktestRun, writeBacktestStatus,
   type BacktestStatus, type BacktestTrigger,
 } from './result.js';
-import { crossSectionPeers } from './peers.js';
-import { indexAtOrBefore, monthEnds, priceHistory, PriceHistory } from './prices.js';
+import { calibrateCrossSection, median } from './cross-section.js';
+import { fidelityCheck, renderFidelity } from './fidelity.js';
+import { loadBacktestData, pooled, type BacktestUniverse } from './load.js';
+import { indexAtOrBefore, monthEnds, type PriceHistory } from './prices.js';
 import { rateHistory } from './rates.js';
 import { renderWeightTable, scoredRow, WEIGHT_SPLIT, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
 
-const BENCHMARK = '^GSPC';
-/** The S&P 1500 by default; the 500 alone to compare with the runs before it. */
-export type BacktestUniverse = 'sp500' | 'sp1500';
-/** Prices from a year before the first month-end: momentum reads twelve months back. */
-const PRICE_LEAD_YEARS = 2;
+export type { BacktestUniverse } from './load.js';
 /** Months ahead the scores are judged over. */
 export const BACKTEST_HORIZONS = [1, 3, 6, 12];
 /**
@@ -119,26 +107,6 @@ const LABEL_KEY = 'score.factor.verdict';
 // use it without importing the whole backtest; re-exported for existing callers.
 export { monthEnds } from './prices.js';
 
-function median(xs: number[]): number | null {
-  if (xs.length === 0) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-}
-
-/** A fixed number of downloads in flight, results in input order. */
-async function pooled<T, R>(items: T[], size: number, fn: (x: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(size, items.length) }, async () => {
-    while (next < items.length) {
-      const k = next++;
-      out[k] = await fn(items[k]);
-    }
-  }));
-  return out;
-}
-
 export async function runBacktest(
   opts: {
     from?: string; to?: string; limit?: number; analysts?: boolean; insiders?: boolean; departed?: boolean; universe?: BacktestUniverse;
@@ -161,85 +129,15 @@ export async function runBacktest(
   const dir = join(cfg.dataDir, 'backtest');
   const from = opts.from ? `${opts.from.slice(0, 7)}-01` : '2013-01-01';
   const to = opts.to ?? new Date().toISOString().slice(0, 10);
-  const priceFrom = `${Number(from.slice(0, 4)) - PRICE_LEAD_YEARS}-01-01`;
-
-  const withDeparted = universe === 'sp1500' && (opts.departed ?? true);
-  const sp1500 = universe === 'sp1500' ? await fetchSp1500Constituents(withDeparted ? from : undefined) : null;
-  const listed: Constituent[] = sp1500
-    ? sp1500.members
-    : (await fetchSp500Constituents()).map((c) => ({ ...c, index: 'sp500' as const }));
-  // The 400's table gives some filers by ticker rather than number; the SEC's
-  // own list has them. One at a time: the first lookup loads the list, and the
-  // rest read it from memory rather than each asking the SEC again.
-  const constituents: Constituent[] = [];
-  for (const c of listed) {
-    const cik = c.cik ?? (await lookupCIK(c.symbol))?.cik ?? null;
-    if (cik) constituents.push({ ...c, cik });
-  }
-  const companies: (Company & { segment: CompositeIndex })[] = constituents.slice(0, opts.limit ?? constituents.length).map((c) => ({
-    symbol: c.symbol, name: c.name, cik: c.cik!, sector: c.sector, subIndustry: c.subIndustry, added: c.added,
-    segment: c.index ?? 'sp500',
-  }));
-  logger.info(`Backtest: ${companies.length} companies (${listed.length - constituents.length} without a SEC number), month-ends ${from} → ${to}`);
-
-  // Those that left, as far as they can still be found, each up to the day it left.
-  const departed = withDeparted && sp1500 && !opts.limit
-    ? await resolveDeparted(sp1500.departed.filter((d) => !companies.some((c) => c.symbol === d.symbol)), join(dir, 'profiles'))
-    : null;
-  if (departed) {
-    companies.push(...departed.companies.map((d) => ({
-      symbol: d.symbol, name: d.name, cik: d.cik, sector: d.sector, subIndustry: d.subIndustry, added: d.added,
-      removed: d.removed, segment: d.index ?? 'sp500',
-    })));
-    logger.info(`  Departed since ${from}: ${departed.counts.departed}, found ${departed.counts.included} `
-      + `(${departed.counts.noFiler} without a matching SEC filer, ${departed.counts.noProfile} without a Yahoo profile)`);
-  }
-
-  const facts = new Map<string, CompanyFacts>();
-  let done = 0;
-  await pooled(companies, 4, async (c) => {
-    const f = await companyFacts(c.cik, join(dir, 'facts'));
-    if (f) facts.set(c.symbol, f);
-    if (++done % 50 === 0) {
-      logger.info(`  SEC filings: ${done}/${companies.length}`);
-      progress(`SEC-Abschlüsse ${done}/${companies.length}`);
-    }
+  const data = await loadBacktestData({
+    dir, from, universe, limit: opts.limit, analysts: withAnalysts, departed: opts.departed ?? true, progress,
   });
-
-  const etfs = [...new Set(companies.map((c) => sectorToEtf(c.sector)).filter((e): e is string => !!e))];
-  const prices = new Map<string, PriceHistory>();
-  done = 0;
-  await pooled([...companies.map((c) => c.symbol), BENCHMARK, ...etfs], 4, async (symbol) => {
-    const p = await priceHistory(symbol, priceFrom, join(dir, 'prices'));
-    // The closes, the adjusted closes and the splits are all the run reads;
-    // the rest of each bar stays in the cache file, not in memory sixteen
-    // hundred times over.
-    if (p) prices.set(symbol, { dates: p.dates, close: p.close, adj: p.adj, splits: p.splits });
-    if (++done % 50 === 0) {
-      logger.info(`  Prices: ${done}/${companies.length + etfs.length + 1}`);
-      progress(`Kurse ${done}/${companies.length + etfs.length + 1}`);
-    }
-  });
-  const bench = prices.get(BENCHMARK);
-  if (!bench) throw new Error(`No ${BENCHMARK} history — cannot build the calendar`);
-
-  const analysts = new Map<string, AnalystAction[]>();
-  if (withAnalysts) {
-    done = 0;
-    await pooled(companies, 4, async (c) => {
-      const a = await analystHistory(c.symbol, join(dir, 'analysts'));
-      if (a && a.length) analysts.set(c.symbol, a);
-      if (++done % 50 === 0) {
-        logger.info(`  Analyst histories: ${done}/${companies.length}`);
-        progress(`Analysten-Historien ${done}/${companies.length}`);
-      }
-    });
-  }
+  const { companies, facts, prices, bench, analysts, priceFrom } = data;
 
   const insiders = new Map<string, InsiderTrade[]>();
   const finnhubKey = cfg.finnhubApiKey;
   if ((opts.insiders ?? true) && finnhubKey) {
-    done = 0;
+    let done = 0;
     await pooled(companies, 2, async (c) => {
       const t = await insiderHistory(c.symbol, finnhubKey, join(dir, 'insiders'));
       if (t) insiders.set(c.symbol, t);
@@ -252,6 +150,14 @@ export async function runBacktest(
 
   const ratesOn = await rateHistory(priceFrom, cfg.fredApiKey);
   const days = monthEnds(bench.dates, from, to);
+
+  // Whether what follows measures the score the app shows: the newest live
+  // scores beside the backtest's of the same sessions (`fidelity.ts`).
+  progress('Abgleich mit den Live-Scores');
+  const fidelity = opts.limit ? null : await fidelityCheck(data, ratesOn).catch((e) => {
+    logger.warn(`Fidelity check failed: ${(e as Error).message}`);
+    return null;
+  });
 
   const signals = new Map<string, Map<string, SignalPoint[]>>(
     [...BACKTEST_SIGNALS, LABEL_KEY].map((k) => [k, new Map()]),
@@ -289,38 +195,8 @@ export async function runBacktest(
       year.covered += entries.filter((e) => e.financials.targetMeanPrice !== null).length;
       coverage.set(Number(day.slice(0, 4)), year);
 
-      const rates = ratesOn(day);
-      const peers = crossSectionPeers(entries.map((e) => ({
-        symbol: e.c.symbol, sector: e.c.sector, subIndustry: e.c.subIndustry, financials: e.financials,
-      })));
-
-      // The month's premium adjustment, from this month's DCFs only.
-      usePremiumAdjustment(0);
-      const shifts = entries.flatMap((e) => {
-        const s = impliedPremiumShift({ financials: e.financials, rates, sectorMedians: peers.get(e.c.symbol) ?? null });
-        return s === null ? [] : [s];
-      });
-      const premium = median(shifts) ?? 0;
+      const { premium, metrics, score } = calibrateCrossSection(entries, ratesOn(day));
       premiums.push(premium);
-      usePremiumAdjustment(premium);
-
-      const metrics = entries.map((e) => computeAllMetrics(e.financials, rates, peers.get(e.c.symbol) ?? null));
-      const score = (k: number) => computeFactorScore({
-        financials: entries[k].financials, metrics: metrics[k], sectorMedians: peers.get(entries[k].c.symbol) ?? null,
-        marketSignals: entries[k].signals, technicalSignals: null,
-      });
-
-      // The month's reference distributions, from this month's cross-section only.
-      const values = new Map<string, number[]>();
-      const add = (key: string, value: number) => values.set(key, [...(values.get(key) ?? []), value]);
-      collectCalibrated((key, value, sector) => {
-        add(key, value);
-        if (sector) add(sectorKey(key, sector), value);
-      }, () => entries.forEach((_, k) => score(k)));
-      const table: Record<string, CriterionDistribution> = {};
-      for (const [key, xs] of values) table[key] = { quantiles: percentiles(xs), n: xs.length, symbols: xs.length };
-      useCalibrationTable(table);
-      usePremiumAdjustment(premium);
 
       // Dated the day before: the evaluation counts a signal from the days
       // strictly before a formation day, and these scores saw that day's
@@ -508,13 +384,14 @@ export async function runBacktest(
       };
     }),
     fit,
-    departed: departed?.counts,
+    departed: data.departed ?? undefined,
     bands,
     variants,
     topDecile,
+    fidelity: fidelity ?? undefined,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
-      departed ? departedCaveat(departed.counts) : BACKTEST_CAVEATS[1],
+      data.departed ? departedCaveat(data.departed) : BACKTEST_CAVEATS[1],
       ...BACKTEST_CAVEATS.slice(2),
     ].concat(FITTED_WEIGHTS_META
       ? [`Die Gewichte in Kraft sind auf die Monatsenden ${FITTED_WEIGHTS_META.from} bis ${FITTED_WEIGHTS_META.to} `
@@ -616,6 +493,7 @@ export function renderBacktest(r: BacktestResult): string {
       + (y.analysts != null ? `  consensus for ${Math.round(y.analysts * 100)}%` : ''));
   }
   lines.push('', ...renderFit(r.fit), '', ...r.caveats.map((c) => `· ${c}`));
+  if (r.fidelity) lines.push('', renderFidelity(r.fidelity));
   return lines.join('\n');
 }
 
@@ -649,9 +527,27 @@ function renderFit(v: WeightValidation): string[] {
 const peakMemoryMb = () => Math.round(process.resourceUsage().maxRSS / 1024);
 
 const isMain = process.argv[1]?.endsWith('backtest/run.ts') || process.argv[1]?.endsWith('backtest/run.js');
+const cliArgs = process.argv.slice(2);
 
-if (isMain) {
-  const args = process.argv.slice(2);
+if (isMain && cliArgs.includes('--fidelity')) {
+  // The comparison with the live scores alone, printed: every full run
+  // stores it with its result, this is for looking without one.
+  (async () => {
+    const cfg = getConfig();
+    await waitForDatabase();
+    const data = await loadBacktestData({
+      dir: join(cfg.dataDir, 'backtest'), from: '2013-01-01', universe: 'sp1500', analysts: true, departed: false, progress: () => {},
+    });
+    const r = await fidelityCheck(data, await rateHistory(data.priceFrom, cfg.fredApiKey));
+    console.log(r ? renderFidelity(r) : 'Nothing to compare: too few stocks in both the app and the backtest');
+    await closePool();
+  })().catch(async (e) => {
+    logger.error(`Fidelity check failed: ${(e as Error).message}`);
+    await closePool();
+    process.exit(1);
+  });
+} else if (isMain) {
+  const args = cliArgs;
   const flag = (name: string): string | undefined => {
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;

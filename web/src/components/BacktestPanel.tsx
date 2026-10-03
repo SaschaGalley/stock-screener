@@ -8,6 +8,7 @@ import BacktestRuns, { BacktestStatusLine, useBacktestOverview } from './Backtes
 import BacktestBands from './BacktestBands';
 import BacktestVariants from './BacktestVariants';
 import BacktestTopDecile from './BacktestTopDecile';
+import BacktestFidelity from './BacktestFidelity';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
@@ -88,6 +89,8 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
           <span className="text-ink-500">(t {headline.tStat?.toFixed(1) ?? '—'}, {headline.independent} unabhängige Fenster)</span>
         </div>
       )}
+
+      <BacktestFidelity bt={bt} />
 
       <section className="rounded-lg border border-ink-700 bg-ink-900">
         <header className="border-b border-ink-800 px-4 py-2.5">
