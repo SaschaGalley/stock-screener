@@ -1425,7 +1425,7 @@ export async function readFundamentals(
   const id = await symbolId(symbol);
   if (id === null) return [];
   const res = await query<{
-    period_end: Date; key: string; value: number; observed_at: Date; first_seen: Date;
+    period_end: string; key: string; value: number; observed_at: Date; first_seen: Date;
   }>(
     `SELECT DISTINCT ON (fp.period_end, fp.metric_id)
             fp.period_end, m.key, fp.value, fp.observed_at,
@@ -1437,7 +1437,7 @@ export async function readFundamentals(
     [id, periodType],
   );
   return res.rows.map((r) => ({
-    periodEnd: r.period_end.toISOString().slice(0, 10),
+    periodEnd: r.period_end,
     key: r.key.replace(/^fundamentals\./, ''),
     value: r.value,
     observedAt: r.observed_at.toISOString(),

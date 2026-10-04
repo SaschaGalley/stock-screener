@@ -22,6 +22,12 @@ const { Pool, types } = pg;
 types.setTypeParser(1700, (v) => (v === null ? null : Number.parseFloat(v)));
 // BIGINT (int8) — ids fit in a double long before they reach 2^53.
 types.setTypeParser(20, (v) => (v === null ? null : Number.parseInt(v, 10)));
+// DATE stays the 'YYYY-MM-DD' Postgres sends. The default parser builds a Date
+// at local midnight, and turning that back into a day with toISOString() reads
+// it in UTC — east of Greenwich (the container runs on Europe/Berlin) every
+// trading day, ex-date and trade date came back as the day before. A calendar
+// day has no time zone; it should never pass through an instant.
+types.setTypeParser(1082, (v) => v);
 
 let pool: pg.Pool | null = null;
 

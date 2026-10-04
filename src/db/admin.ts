@@ -524,7 +524,7 @@ export async function readSubmissions(symbol: string): Promise<SubmissionsMeta |
   if (id === null) return null;
   const res = await query<{
     accession_number: string; cik: string | null; entity_name: string | null;
-    form: string; filing_date: Date; primary_document: string | null;
+    form: string; filing_date: string; primary_document: string | null;
     description: string | null; local_file: string | null; fetched_at: Date;
   }>(
     'SELECT * FROM filings WHERE symbol_id = $1 ORDER BY filing_date DESC', [id],
@@ -537,7 +537,7 @@ export async function readSubmissions(symbol: string): Promise<SubmissionsMeta |
     filings: res.rows.map((r) => ({
       accessionNumber: r.accession_number,
       form:            r.form,
-      filingDate:      r.filing_date.toISOString().slice(0, 10),
+      filingDate:      r.filing_date,
       primaryDocument: r.primary_document ?? '',
       description:     r.description ?? '',
       ...(r.local_file ? { localFile: r.local_file } : {}),

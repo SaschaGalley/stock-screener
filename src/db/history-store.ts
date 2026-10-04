@@ -66,10 +66,10 @@ export async function savePriceEvents(ticker: string, events: PriceEventRow[]): 
 
 /** How many days of a ticker are stored, and the first of them. */
 export async function priceCoverage(ticker: string): Promise<{ days: number; first: string | null }> {
-  const row = await queryOne<{ days: string; first: Date | null }>(
+  const row = await queryOne<{ days: string; first: string | null }>(
     'SELECT count(*) AS days, min(day) AS first FROM price_bars WHERE ticker = $1', [ticker.toUpperCase()],
   );
-  return { days: Number(row?.days ?? 0), first: row?.first ? row.first.toISOString().slice(0, 10) : null };
+  return { days: Number(row?.days ?? 0), first: row?.first ?? null };
 }
 
 /** Append rating actions; one already on file is left as first seen. */
@@ -142,22 +142,22 @@ export async function saveMacroSeries(series: string, rows: { day: string; value
 
 /** The newest day stored for a series, or null for one never fetched. */
 export async function lastMacroDay(series: string): Promise<string | null> {
-  const row = await queryOne<{ day: Date | null }>('SELECT max(day) AS day FROM macro_series WHERE series = $1', [series]);
-  return row?.day ? row.day.toISOString().slice(0, 10) : null;
+  const row = await queryOne<{ day: string | null }>('SELECT max(day) AS day FROM macro_series WHERE series = $1', [series]);
+  return row?.day ?? null;
 }
 
 // ── Reading the archive back ─────────────────────────────────────────────────
-
-const day = (d: Date | string | null) => (d === null ? null : d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+// `date` columns arrive as 'YYYY-MM-DD' strings (see the type parser in
+// `client.ts`) and are passed through as they are.
 
 /** A ticker's daily closes, oldest first — split-adjusted, on today's basis. */
 export async function readPriceBars(ticker: string, from?: string): Promise<{ day: string; close: number; adjClose: number | null }[]> {
-  const res = await query<{ day: Date; close: number; adj_close: number | null }>(
+  const res = await query<{ day: string; close: number; adj_close: number | null }>(
     `SELECT day, close, adj_close FROM price_bars
       WHERE ticker = $1 AND ($2::date IS NULL OR day >= $2) ORDER BY day`,
     [ticker.toUpperCase(), from ?? null],
   );
-  return res.rows.map((r) => ({ day: day(r.day)!, close: r.close, adjClose: r.adj_close }));
+  return res.rows.map((r) => ({ day: r.day, close: r.close, adjClose: r.adj_close }));
 }
 
 /** Every quote currency a stored symbol trades in. */
@@ -170,7 +170,7 @@ export async function quoteCurrencies(): Promise<string[]> {
 export async function readPriceBarsMany(
   tickers: string[], from?: string,
 ): Promise<Map<string, { day: string; close: number; adjClose: number | null }[]>> {
-  const res = await query<{ ticker: string; day: Date; close: number; adj_close: number | null }>(
+  const res = await query<{ ticker: string; day: string; close: number; adj_close: number | null }>(
     `SELECT ticker, day, close, adj_close FROM price_bars
       WHERE ticker = ANY($1) AND ($2::date IS NULL OR day >= $2) ORDER BY ticker, day`,
     [tickers.map((t) => t.toUpperCase()), from ?? null],
@@ -178,17 +178,17 @@ export async function readPriceBarsMany(
   const out = new Map<string, { day: string; close: number; adjClose: number | null }[]>();
   for (const r of res.rows) {
     const list = out.get(r.ticker) ?? [];
-    list.push({ day: day(r.day)!, close: r.close, adjClose: r.adj_close });
+    list.push({ day: r.day, close: r.close, adjClose: r.adj_close });
     out.set(r.ticker, list);
   }
   return out;
 }
 
 export async function readPriceEvents(ticker: string): Promise<PriceEventRow[]> {
-  const res = await query<{ day: Date; kind: 'split' | 'dividend'; value: number }>(
+  const res = await query<{ day: string; kind: 'split' | 'dividend'; value: number }>(
     'SELECT day, kind, value FROM price_events WHERE ticker = $1 ORDER BY day', [ticker.toUpperCase()],
   );
-  return res.rows.map((r) => ({ day: day(r.day)!, kind: r.kind, value: r.value }));
+  return res.rows.map((r) => ({ day: r.day, kind: r.kind, value: r.value }));
 }
 
 export async function readAnalystActions(symbol: string): Promise<AnalystActionRow[]> {
@@ -208,7 +208,7 @@ export async function readAnalystActions(symbol: string): Promise<AnalystActionR
 
 export async function readInsiderTransactions(symbol: string): Promise<InsiderTransactionRow[]> {
   const res = await query<{
-    traded_on: Date | null; filer: string | null; relation: string | null; description: string | null;
+    traded_on: string | null; filer: string | null; relation: string | null; description: string | null;
     shares: number | null; value: number | null; ownership: string | null;
   }>(
     `SELECT t.traded_on, t.filer, t.relation, t.description, t.shares, t.value, t.ownership
@@ -217,7 +217,7 @@ export async function readInsiderTransactions(symbol: string): Promise<InsiderTr
     [symbol.toUpperCase()],
   );
   return res.rows.map((r) => ({
-    tradedOn: day(r.traded_on), filer: r.filer, relation: r.relation, description: r.description,
+    tradedOn: r.traded_on, filer: r.filer, relation: r.relation, description: r.description,
     shares: r.shares, value: r.value, ownership: r.ownership,
   }));
 }
