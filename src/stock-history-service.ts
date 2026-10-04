@@ -25,7 +25,9 @@ import {
   latestSnapshot, listDocuments, listSymbols, readFinancialsLax, readFundamentals, readSeries, readSeriesForAll,
   snapshotHistory, symbolFacts, type Series,
 } from './db/store.js';
+import { journalForSymbols } from './db/journal-store.js';
 import { fmtBig, fmtPrice } from './format.js';
+import { JOURNAL_LABEL, journalHeadline } from './journal.js';
 import type { NewsItem } from './types.js';
 import { RECOMMENDATIONS } from './verdict.js';
 
@@ -225,7 +227,7 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
   const from = new Date(Date.now() - days * DAY_MS).toISOString().slice(0, 10);
   const f = await readFinancialsLax(symbol);
   const money = (n: number) => fmtPrice(n, f?.tradingCurrency);
-  const [actions, trades, priceEvents, bars, verdicts, quarters, briefs, news] = await Promise.all([
+  const [actions, trades, priceEvents, bars, verdicts, quarters, briefs, news, journal] = await Promise.all([
     readAnalystActions(symbol),
     readInsiderTransactions(symbol),
     readPriceEvents(symbol),
@@ -235,9 +237,20 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
     readFundamentals(symbol, 'quarter'),
     listDocuments<PerplexityContext>(symbol, 'perplexity', { limit: 30 }),
     snapshotHistory<NewsItem[]>(symbol, 'news', new Date(Date.now() - days * DAY_MS)),
+    journalForSymbols([symbol], from),
   ]);
 
   const events: TimelineEvent[] = [];
+
+  // My own entries: what I read, thought, bought and sold, between the events
+  // that may have prompted them.
+  for (const j of journal) {
+    events.push({
+      day: j.day, kind: 'journal', tone: j.kind === 'buy' ? 'positive' : j.kind === 'sell' ? 'negative' : 'neutral',
+      title: `${JOURNAL_LABEL[j.kind]}: ${journalHeadline(j.body)}`,
+      detail: j.symbols.length > 1 ? j.symbols.filter((s) => s !== symbol.toUpperCase()).join(', ') : null,
+    });
+  }
 
   for (const a of actions) {
     const e = analystEvent(a, money);
@@ -356,6 +369,11 @@ const FEED_CONCURRENCY = 6;
 /** The feed is read when the list opens; the archive changes once a night. */
 const FEED_TTL_MS = 10 * 60_000;
 const feedMemo = new Map<number, { at: number; value: Promise<Feed> }>();
+
+/** Forget the cached feeds — after a journal entry, which should show at once and not in ten minutes. */
+export function invalidateFeed(): void {
+  feedMemo.clear();
+}
 
 /**
  * Every watchlist stock's timeline over the last days, on one axis — the

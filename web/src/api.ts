@@ -29,6 +29,7 @@ import type { HistoryMultiple, SectorMultiples, ValuationHistory } from '../../s
 import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
+import type { JournalEntry, JournalInput } from '../../src/journal';
 import type { BacktestOverview } from '../../src/backtest-service';
 import type { CalibrationOverview } from '../../src/calibration-service';
 import type { VerdictEvidence } from '../../src/backtest/result';
@@ -111,6 +112,21 @@ export const api = {
     jsonFetch<{ symbol: string; data: VerdictRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/verdicts`),
   /** What happened across the watchlist over the last `days`. */
   getFeed: (days = 7) => jsonFetch<Feed>(`${BASE}/feed?days=${days}`),
+
+  /** Every journal entry, newest first — or those naming `symbol`. */
+  getJournal: (symbol?: string) =>
+    jsonFetch<{ entries: JournalEntry[] }>(`${BASE}/journal${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`),
+  addJournal: (entry: JournalInput) =>
+    jsonFetch<JournalEntry>(`${BASE}/journal`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry),
+    }),
+  /** Replaces the wording; the server keeps the one it replaces. */
+  editJournal: (id: number, entry: JournalInput) =>
+    jsonFetch<JournalEntry>(`${BASE}/journal/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry),
+    }),
+  deleteJournal: (id: number) =>
+    jsonFetch<{ ok: true }>(`${BASE}/journal/${id}`, { method: 'DELETE' }),
   /** Every stored verdict as a call, against the index — cached on the server for hours. */
   getVerdictRecordSummary: () => jsonFetch<VerdictRecordSummary>(`${BASE}/verdict-record`),
   getTimeline: (symbol: string, days = 365) =>

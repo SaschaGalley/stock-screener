@@ -355,7 +355,8 @@ export const GLOSSARY = {
   'concept.insiderTrades': 'Jede gemeldete Insider-Transaktion. Zuteilungen, Schenkungen und Optionsausübungen sind Vergütung und standardmäßig ausgeblendet; Käufe und Verkäufe sind Meinungen.',
 
   // ── Timeline, research ───────────────────────────────────────────────────
-  'section.timeline': 'Alles Archivierte auf einer Zeitachse: Analystenaktionen, Insider-Trades, Quartalszahlen, Dividenden, unsere Urteilswechsel, datierte Ereignisse aus der Recherche und große Kurssprünge.',
+  'section.journal': 'Deine eigenen Einträge zu dieser Aktie: was du gelesen und gedacht hast, wann und warum du gekauft oder verkauft hast. Neben jeder Aktie steht, wie sie sich seit dem Tag des Eintrags bewegt hat. Fließt nicht in den Score ein.',
+  'section.timeline': 'Alles Archivierte auf einer Zeitachse: deine Journal-Einträge, Analystenaktionen, Insider-Trades, Quartalszahlen, Dividenden, unsere Urteilswechsel, datierte Ereignisse aus der Recherche und große Kurssprünge.',
   'section.research': 'Die Quellen hinter der Text-Hälfte des Scores: das Distill-Dossier, die Perplexity-Recherche, Nachrichten und welche Suchen die Analyse ausgeführt hat.',
 } as const satisfies Record<string, string>;
 

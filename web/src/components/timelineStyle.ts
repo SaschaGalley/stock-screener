@@ -2,6 +2,7 @@ import type { TimelineKind, Tone } from '../../../src/analysis/timeline';
 
 /** How a timeline event is marked, on a stock's own timeline and in the watchlist feed alike. */
 export const KIND_DOT: Record<TimelineKind, string> = {
+  journal:  'bg-ink-100',
   analyst:  'bg-sky-500',
   insider:  'bg-violet-500',
   earnings: 'bg-emerald-500',

@@ -53,6 +53,9 @@ import { cachedEvaluation, EVALUATED_SIGNALS } from './db/evaluate.js';
 import { currentScoreCard, rescoreIfScoringChanged, storedInputs } from './db/rescore.js';
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
+import {
+  addJournal, editJournal, JournalInputError, parseJournalInput, readJournal, removeJournal,
+} from './journal-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
   analystCoverage, analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord,
@@ -1063,6 +1066,39 @@ export function createApp(): express.Express {
       next(e);
     }
   });
+
+  // ── /api/journal ───────────────────────────────────────────────────────────
+  // What I read, thought, bought and sold, and why — each entry with how the
+  // stocks it names have moved since. An edit keeps the wording it replaces.
+  const journalId = (raw: string) => (/^\d+$/.test(raw) ? Number(raw) : null);
+  const journalWrite = (handle: (req: Request) => Promise<unknown>) =>
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const out = await handle(req);
+        if (out === null) res.status(404).json({ error: 'Eintrag nicht gefunden' });
+        else res.json(out);
+      } catch (e) {
+        if (e instanceof JournalInputError) res.status(400).json({ error: e.message });
+        else next(e);
+      }
+    };
+  app.get('/api/journal', async (req, res, next) => {
+    try {
+      const symbol = typeof req.query.symbol === 'string' && req.query.symbol ? req.query.symbol : undefined;
+      res.json({ entries: await readJournal(symbol) });
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.post('/api/journal', journalWrite((req) => addJournal(parseJournalInput(req.body))));
+  app.put('/api/journal/:id', journalWrite(async (req) => {
+    const id = journalId(String(req.params.id));
+    return id === null ? null : editJournal(id, parseJournalInput(req.body));
+  }));
+  app.delete('/api/journal/:id', journalWrite(async (req) => {
+    const id = journalId(String(req.params.id));
+    return id !== null && await removeJournal(id) ? { ok: true } : null;
+  }));
 
   // ── GET /api/metrics ───────────────────────────────────────────────────────
   // The catalogue: every series that exists, with label, unit and the

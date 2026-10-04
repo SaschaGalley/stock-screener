@@ -86,6 +86,26 @@ export function PulseIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
   );
 }
 
+/** An open notebook: the journal. */
+export function JournalIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6z" />
+      <path d="M6 3v18M4 7h4M4 12h4M4 17h4M10 8h6M10 12h4" />
+    </svg>
+  );
+}
+
 export function PeersIcon({ size = 16, strokeWidth = 1.8 }: IconProps) {
   return (
     <svg

@@ -14,10 +14,11 @@
 
 import { ratingBucket } from './analyst-history.js';
 
-export const TIMELINE_KINDS = ['analyst', 'insider', 'earnings', 'dividend', 'verdict', 'event', 'news', 'move'] as const;
+export const TIMELINE_KINDS = ['journal', 'analyst', 'insider', 'earnings', 'dividend', 'verdict', 'event', 'news', 'move'] as const;
 export type TimelineKind = (typeof TIMELINE_KINDS)[number];
 
 export const TIMELINE_LABEL: Record<TimelineKind, string> = {
+  journal:  'Mein Journal',
   analyst:  'Analysten',
   insider:  'Insider',
   earnings: 'Quartalszahlen',

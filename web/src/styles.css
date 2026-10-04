@@ -146,6 +146,13 @@ select:not([multiple]) {
 .prose-stock ol {
     margin: 0.3rem 0 0.3rem 1.2rem;
 }
+/* The reset takes the markers away; a list written in markdown wants them. */
+.prose-stock ul {
+    list-style: disc;
+}
+.prose-stock ol {
+    list-style: decimal;
+}
 .prose-stock li {
     margin: 0.1rem 0;
     color: var(--color-text-secondary);

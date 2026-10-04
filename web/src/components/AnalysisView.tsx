@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { lazy, memo, Suspense } from 'react';
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type {
@@ -36,6 +36,8 @@ import NewsAndResearch from "./sections/NewsAndResearch";
 import CompanyInfo from "./sections/CompanyInfo";
 import FundamentalsHistoryChart from "./charts/FundamentalsHistoryChart";
 import { CloseIcon } from "./icons";
+// Markdown and the editor are only wanted once the section is opened.
+const Journal = lazy(() => import("./Journal"));
 import { CurrencyProvider } from "../currency";
 import { currencyPrefix } from "../format";
 
@@ -298,6 +300,13 @@ function AnalysisView({
               />
             )}
 
+            {/* TIER 2b: MY OWN VIEW — notes, purchases, sales and why, beside the case for and against */}
+            <Section title="Mein Journal" info="section.journal" subtitle="Notizen, Käufe und Verkäufe zu dieser Aktie — und warum" storageKey="journal">
+              <Suspense fallback={<p className="text-xs text-ink-500">Lade Journal …</p>}>
+                <Journal symbol={symbol} />
+              </Suspense>
+            </Section>
+
             {/* TIER 3: COMPOSITE BAR CHART (Primary + Conservative tiers) */}
             {(m.composite.primary.models.length > 0 ||
               m.composite.conservative.models.length > 0) && (
@@ -462,7 +471,7 @@ function AnalysisView({
             </Section>
 
             {/* TIER 10b: WHAT HAPPENED WHEN — every archived event on one axis */}
-            <Section title="Zeitleiste" info="section.timeline" subtitle="Analysten, Insider, Zahlen, Dividenden, Urteil, Ereignisse, Kurssprünge" storageKey="timeline">
+            <Section title="Zeitleiste" info="section.timeline" subtitle="Journal, Analysten, Insider, Zahlen, Dividenden, Urteil, Ereignisse, Kurssprünge" storageKey="timeline">
               <StockTimeline symbol={symbol} />
             </Section>
 
