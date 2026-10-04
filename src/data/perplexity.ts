@@ -293,6 +293,33 @@ export const PERPLEXITY_PROMPT_HASH = createHash('md5')
   .digest('hex')
   .slice(0, 8);
 
+/** The brief for one company, as the API is sent it. */
+export function researchPrompt(ticker: string, companyName: string): { system: string; user: string } {
+  // Strip Yahoo exchange suffix (ENR.DE → ENR, 0700.HK → 0700) — meaningless for web search
+  const searchTicker = ticker.includes('.') ? ticker.split('.')[0] : ticker;
+  const today = new Date().toISOString().slice(0, 10);
+  const user = PROMPT_TEMPLATE
+    .replace('{date}', today)
+    .replaceAll('{company}', companyName)
+    .replaceAll('{ticker}', searchTicker);
+  return { system: SYSTEM_PROMPT, user };
+}
+
+/**
+ * The same brief for pasting into the Perplexity app by hand.
+ *
+ * The app has no system prompt, so it leads the text. And the app numbers its
+ * sources as [1], [2] beside the answer rather than writing them into it — a
+ * number would be stripped by the parser and leave the item without a source,
+ * so the URL is asked for in so many words.
+ */
+export function manualResearchPrompt(ticker: string, companyName: string): string {
+  const { system, user } = researchPrompt(ticker, companyName);
+  return `${system}\n\n${user}\n\n`
+    + 'Write the full URL into every "source" field, never a citation number. '
+    + 'Put the JSON in a single ```json code block.';
+}
+
 // ── Parsing ──────────────────────────────────────────────────────────────────
 
 const text = (v: unknown): string =>
@@ -542,14 +569,7 @@ export async function fetchPerplexity(
 ): Promise<PerplexityContext> {
   logger.step(`Fetching Perplexity AI context (${model})...`);
   const params = MODEL_PARAMS[model];
-
-  // Strip Yahoo exchange suffix (ENR.DE → ENR, 0700.HK → 0700) — meaningless for web search
-  const searchTicker = ticker.includes('.') ? ticker.split('.')[0] : ticker;
-  const today = new Date().toISOString().slice(0, 10);
-  const prompt = PROMPT_TEMPLATE
-    .replace('{date}', today)
-    .replaceAll('{company}', companyName)
-    .replaceAll('{ticker}', searchTicker);
+  const { system, user } = researchPrompt(ticker, companyName);
 
   const request = () => fetch(PPLX_API_URL, {
     method: 'POST',
@@ -560,8 +580,8 @@ export async function fetchPerplexity(
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user',   content: prompt },
+        { role: 'system', content: system },
+        { role: 'user',   content: user },
       ],
       ...API_PARAMS,
       ...(params.max_tokens ? { max_tokens: params.max_tokens } : {}),
