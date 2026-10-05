@@ -84,3 +84,32 @@ export async function dismissTrades(ids: number[]): Promise<number> {
   const res = await query('UPDATE trades SET dismissed_at = now() WHERE id = ANY($1) AND dismissed_at IS NULL', [ids]);
   return res.rowCount ?? 0;
 }
+
+/** Every trade the source still has, oldest first — what the positions are summed from. */
+export async function allTrades(source: string): Promise<Trade[]> {
+  const res = await query<Trade>(
+    `SELECT ${COLUMNS} FROM trades t WHERE t.source = $1 AND t.removed_at IS NULL ORDER BY t.day, t.id`,
+    [source],
+  );
+  return res.rows;
+}
+
+/** Add the day's prices; a day read again takes the newer reading, since umsatz may correct one. */
+export async function savePrices(source: string, rows: { isin: string; day: string; priceEur: number }[]): Promise<void> {
+  if (rows.length === 0) return;
+  await query(
+    `INSERT INTO holding_prices (source, isin, day, price_eur)
+     SELECT $1, x.isin, x.day, x.price FROM unnest($2::text[], $3::date[], $4::float8[]) AS x(isin, day, price)
+     ON CONFLICT (source, isin, day) DO UPDATE SET price_eur = EXCLUDED.price_eur, fetched_at = now()`,
+    [source, rows.map((r) => r.isin.toUpperCase()), rows.map((r) => r.day), rows.map((r) => r.priceEur)],
+  );
+}
+
+/** Each asset's newest price in euros. */
+export async function latestPrices(source: string): Promise<Map<string, { day: string; priceEur: number }>> {
+  const res = await query<{ isin: string; day: string; price_eur: number }>(
+    `SELECT DISTINCT ON (isin) isin, day, price_eur FROM holding_prices WHERE source = $1 ORDER BY isin, day DESC`,
+    [source],
+  );
+  return new Map(res.rows.map((r) => [r.isin, { day: r.day, priceEur: r.price_eur }]));
+}

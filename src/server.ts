@@ -64,6 +64,7 @@ import {
 } from './journal-service.js';
 import { isJournalKind, normalizeSymbols } from './journal.js';
 import { ignoreTrades, readOpenTrades } from './trades-service.js';
+import { readDepot } from './depot-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
   analystCoverage, analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord,
@@ -1178,6 +1179,15 @@ export function createApp(): express.Express {
     try {
       const symbol = typeof req.query.symbol === 'string' && req.query.symbol ? req.query.symbol : undefined;
       res.json(await readOpenTrades(symbol, req.query.sync === '1'));
+    } catch (e) {
+      next(e);
+    }
+  });
+  // The depot weighed against the model — positions, weights, the model's
+  // verdicts, the journal's reasons. Real holdings, like the trades.
+  app.get('/api/depot', async (req, res, next) => {
+    try {
+      res.json(await readDepot(req.query.sync === '1'));
     } catch (e) {
       next(e);
     }

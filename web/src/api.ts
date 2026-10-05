@@ -33,6 +33,7 @@ import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
+import type { DepotResponse } from '../../src/analysis/depot';
 import type { ManualResearchTool } from '../../src/models';
 import type { ResearchKind, ResearchReport } from '../../src/research/kinds';
 import type { BacktestOverview } from '../../src/backtest-service';
@@ -137,6 +138,8 @@ export const api = {
     jsonFetch<OpenTrades>(`${BASE}/trades/open?${new URLSearchParams({
       ...(symbol ? { symbol } : {}), ...(sync ? { sync: '1' } : {}),
     })}`),
+  /** The depot weighed against the model; `sync` asks umsatz first. */
+  getDepot: (sync = false) => jsonFetch<DepotResponse>(`${BASE}/depot${sync ? '?sync=1' : ''}`),
   /** Mark trades as needing no reason. */
   dismissTrades: (ids: number[]) =>
     jsonFetch<{ dismissed: number }>(`${BASE}/trades/dismiss`, {

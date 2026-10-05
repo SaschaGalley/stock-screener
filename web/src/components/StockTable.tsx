@@ -11,7 +11,7 @@ import {
   ROW_RULE, HEADER_RULE, CELL_RULE,
 } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
-import { ChartIcon, GearIcon, JournalIcon, PulseIcon } from './icons';
+import { ChartIcon, DepotIcon, GearIcon, JournalIcon, PulseIcon } from './icons';
 import { averageScore, groupRows, scoreColor, toggleGroup, type ListView } from './stockList';
 import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
 import Term from './Term';
@@ -29,6 +29,7 @@ interface Props {
   onOpenEvaluation: () => void;
   onOpenFeed: () => void;
   onOpenJournal: () => void;
+  onOpenDepot: () => void;
   /** Symbol → stages the queue currently has in flight for it. */
   activity?: Record<string, string[]>;
   /** Shared with the rail, so collapsing the columns doesn't move the list. */
@@ -84,7 +85,7 @@ const TRAILING_COLUMNS = 8;
  * one fact, and reads better as one cell than as two columns.
  */
 export default function StockTable({
-  rows, total, loading, view, onViewChange, onSelect, onOpenAdmin, onOpenEvaluation, onOpenFeed, onOpenJournal,
+  rows, total, loading, view, onViewChange, onSelect, onOpenAdmin, onOpenEvaluation, onOpenFeed, onOpenJournal, onOpenDepot,
   activity = {}, scrollAnchor,
 }: Props) {
   // The table only exists while it is on screen, so it is always the visible
@@ -214,6 +215,13 @@ export default function StockTable({
           <StockListControls view={view} onChange={onViewChange} layout="bar" />
         </div>
         <div className="ml-auto flex items-center gap-3 sm:ml-0">
+          <button
+            onClick={onOpenDepot}
+            title="Depot — die Positionen aus umsatz gegen das Modell: Gewichte, Urteile, Begründungen"
+            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
+          >
+            <DepotIcon />
+          </button>
           <button
             onClick={onOpenJournal}
             title="Journal — was ich gelesen, gedacht, gekauft und verkauft habe, und warum"

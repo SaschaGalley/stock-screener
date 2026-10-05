@@ -11,7 +11,7 @@
 
 import { getConfig } from './config.js';
 import { readAppState, writeAppState } from './db/admin.js';
-import { dismissTrades, openTrades, replaceTrades, type TradeRow } from './db/trades-store.js';
+import { dismissTrades, openTrades, replaceTrades, savePrices, type TradeRow } from './db/trades-store.js';
 import { TRADE_KINDS, type OpenTrades, type TradeKind } from './journal.js';
 import { logger } from './utils/logger.js';
 
@@ -50,23 +50,46 @@ export function tradeFromUmsatz(v: unknown): TradeRow | null {
   };
 }
 
-/** Fetch every trade from umsatz and replace the copy. Throws when umsatz cannot be read. */
-export async function syncTrades(): Promise<{ total: number; added: number }> {
+/** GET a stock-cli route of umsatz. Throws with a message fit for the page. */
+async function fromUmsatz(path: string): Promise<unknown> {
   const { umsatzApiUrl, umsatzApiKey } = getConfig();
   if (!umsatzApiKey) throw new Error('UMSATZ_API_KEY ist nicht gesetzt.');
+  const res = await fetch(`${umsatzApiUrl.replace(/\/$/, '')}/integrations/stock-cli/${path}`, {
+    headers: { 'x-api-key': umsatzApiKey },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`umsatz antwortet auf /${path} mit ${res.status}${res.status === 401 ? ' — der Schlüssel passt nicht' : ''}`);
+  return res.json();
+}
+
+/** One price as umsatz sends it, or null when it is not one. */
+export function priceFromUmsatz(v: unknown): { isin: string; day: string; priceEur: number } | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  const isin = typeof o.isin === 'string' ? o.isin.trim().toUpperCase() : '';
+  const day = typeof o.day === 'string' ? o.day.slice(0, 10) : '';
+  const price = typeof o.priceEur === 'number' ? o.priceEur : Number(o.priceEur);
+  return isin && /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(price) && price > 0 ? { isin, day, priceEur: price } : null;
+}
+
+/**
+ * Fetch every trade and each asset's newest euro price from umsatz, and
+ * replace the copy. Throws when umsatz cannot be read.
+ */
+export async function syncTrades(): Promise<{ total: number; added: number }> {
   try {
-    const res = await fetch(`${umsatzApiUrl.replace(/\/$/, '')}/integrations/stock-cli/trades`, {
-      headers: { 'x-api-key': umsatzApiKey },
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) throw new Error(`umsatz antwortet mit ${res.status}${res.status === 401 ? ' — der Schlüssel passt nicht' : ''}`);
-    const body = await res.json() as { trades?: unknown };
+    const [body, priced] = await Promise.all([
+      fromUmsatz('trades') as Promise<{ trades?: unknown }>,
+      fromUmsatz('prices') as Promise<{ prices?: unknown }>,
+    ]);
     if (!Array.isArray(body.trades)) throw new Error('umsatz hat keine Liste von Trades geschickt');
     const rows = body.trades.map(tradeFromUmsatz).filter((r): r is TradeRow => r !== null);
     const out = await replaceTrades(SOURCE, rows);
+    const prices = Array.isArray(priced.prices) ? priced.prices.map(priceFromUmsatz).filter((p) => p !== null) : [];
+    await savePrices(SOURCE, prices);
     await writeAppState(SYNCED_AT, new Date().toISOString());
     await writeAppState(SYNC_ERROR, '');
-    logger.info(`Trades from umsatz: ${out.total}, ${out.added} new`);
+    logger.info(`Trades from umsatz: ${out.total}, ${out.added} new; ${prices.length} prices`);
     return out;
   } catch (e) {
     const message = e instanceof Error && e.name === 'TimeoutError' ? 'umsatz antwortet nicht' : (e as Error).message;
@@ -75,23 +98,30 @@ export async function syncTrades(): Promise<{ total: number; added: number }> {
   }
 }
 
+/** Sync when the copy is older than ten minutes, or when asked to; a failure is recorded, not thrown. */
+export async function syncTradesIfStale(force = false): Promise<void> {
+  if (!getConfig().umsatzApiKey) return;
+  const last = await readAppState(SYNCED_AT);
+  if (force || !last || Date.now() - Date.parse(last) > SYNC_EVERY_MS) {
+    await syncTrades().catch(() => { /* recorded in SYNC_ERROR */ });
+  }
+}
+
+/** When the copy was last refreshed, and why the last attempt failed if it did. */
+export async function tradesSyncState(): Promise<{ configured: boolean; syncedAt: string | null; syncError: string | null }> {
+  const [syncedAt, syncError] = await Promise.all([readAppState(SYNCED_AT), readAppState(SYNC_ERROR)]);
+  return { configured: !!getConfig().umsatzApiKey, syncedAt, syncError: syncError || null };
+}
+
 /**
  * The trades still waiting for a reason, synced first when the copy is older
  * than ten minutes (or `force`). A failed sync is reported beside the trades
  * from before, not instead of them.
  */
 export async function readOpenTrades(symbol?: string, force = false): Promise<OpenTrades> {
-  const configured = !!getConfig().umsatzApiKey;
-  if (configured) {
-    const last = await readAppState(SYNCED_AT);
-    if (force || !last || Date.now() - Date.parse(last) > SYNC_EVERY_MS) {
-      await syncTrades().catch(() => { /* recorded in SYNC_ERROR */ });
-    }
-  }
-  const [syncedAt, syncError, trades] = await Promise.all([
-    readAppState(SYNCED_AT), readAppState(SYNC_ERROR), openTrades(symbol),
-  ]);
-  return { configured, syncedAt, syncError: syncError || null, trades };
+  await syncTradesIfStale(force);
+  const [state, trades] = await Promise.all([tradesSyncState(), openTrades(symbol)]);
+  return { ...state, trades };
 }
 
 export const ignoreTrades = (ids: number[]) => dismissTrades(ids);
