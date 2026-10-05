@@ -14,6 +14,13 @@ const ConfigSchema = z.object({
   pplxApiKey: z.string().optional(),
   distillApiKey: z.string().optional(),
   distillApiUrl: z.string().default('http://localhost:3000'),
+  /**
+   * umsatz, the owner's bookkeeping, and the key it gives stock-cli: where the
+   * journal reads every trade from to ask what it was for. Without a key the
+   * journal simply has no trades to offer.
+   */
+  umsatzApiUrl: z.string().default('http://localhost:8505'),
+  umsatzApiKey: z.string().optional(),
   // A malformed briefing-type id should disable the feature, not crash the
   // process; a bad LOG_LEVEL should fall back to 'info'. `.catch()` degrades
   // gracefully instead of failing safeParse for the whole config.
@@ -74,6 +81,8 @@ export function getConfig(): EnvConfig {
     pplxApiKey: process.env.PPLX_API_KEY,
     distillApiKey: process.env.DISTILL_API_KEY,
     distillApiUrl: process.env.DISTILL_API_URL,
+    umsatzApiUrl: process.env.UMSATZ_API_URL,
+    umsatzApiKey: process.env.UMSATZ_API_KEY || undefined,
     databaseUrl: process.env.DATABASE_URL,
     // CACHE_DIR is still honoured so an existing deployment keeps finding its
     // downloaded filings after the rename.

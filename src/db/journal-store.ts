@@ -5,6 +5,7 @@ import { query, queryOne } from './client.js';
 
 export interface JournalRow {
   id:        number;
+  tradeIds:  number[];
   day:       string;
   kind:      JournalKind;
   symbols:   string[];
@@ -13,7 +14,7 @@ export interface JournalRow {
   updatedAt: string;
 }
 
-const COLUMNS = `id, day, kind, symbols, body, created_at AS "createdAt", updated_at AS "updatedAt"`;
+const COLUMNS = `id, day, kind, symbols, body, trade_ids AS "tradeIds", created_at AS "createdAt", updated_at AS "updatedAt"`;
 
 type Raw = Omit<JournalRow, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date };
 const row = (r: Raw): JournalRow => ({ ...r, createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString() });
@@ -58,8 +59,8 @@ export async function journalRevisions(ids: number[]): Promise<Map<number, Journ
 
 export async function createJournal(e: JournalInput): Promise<JournalRow> {
   const r = await queryOne<Raw>(
-    `INSERT INTO journal_entries (day, kind, symbols, body) VALUES ($1, $2, $3, $4) RETURNING ${COLUMNS}`,
-    [e.day, e.kind, e.symbols, e.body],
+    `INSERT INTO journal_entries (day, kind, symbols, body, trade_ids) VALUES ($1, $2, $3, $4, $5) RETURNING ${COLUMNS}`,
+    [e.day, e.kind, e.symbols, e.body, e.tradeIds],
   );
   return row(r!);
 }
@@ -77,9 +78,9 @@ export async function updateJournal(id: number, e: JournalInput): Promise<Journa
     [id, e.day, e.kind, e.symbols, e.body],
   );
   const r = await queryOne<Raw>(
-    `UPDATE journal_entries SET day = $2, kind = $3, symbols = $4, body = $5, updated_at = now()
+    `UPDATE journal_entries SET day = $2, kind = $3, symbols = $4, body = $5, trade_ids = $6, updated_at = now()
       WHERE id = $1 AND deleted_at IS NULL RETURNING ${COLUMNS}`,
-    [id, e.day, e.kind, e.symbols, e.body],
+    [id, e.day, e.kind, e.symbols, e.body, e.tradeIds],
   );
   return r ? row(r) : null;
 }

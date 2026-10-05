@@ -31,7 +31,7 @@ import type { HistoryMultiple, SectorMultiples, ValuationHistory } from '../../s
 import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
-import type { JournalEntry, JournalInput, JournalKind } from '../../src/journal';
+import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
 import type { ManualResearchTool } from '../../src/models';
 import type { BacktestOverview } from '../../src/backtest-service';
@@ -131,6 +131,16 @@ export const api = {
     }),
   deleteJournal: (id: number) =>
     jsonFetch<{ ok: true }>(`${BASE}/journal/${id}`, { method: 'DELETE' }),
+  /** Purchases and sales from umsatz still waiting for a reason; `sync` asks umsatz first. */
+  getOpenTrades: (symbol?: string, sync = false) =>
+    jsonFetch<OpenTrades>(`${BASE}/trades/open?${new URLSearchParams({
+      ...(symbol ? { symbol } : {}), ...(sync ? { sync: '1' } : {}),
+    })}`),
+  /** Mark trades as needing no reason. */
+  dismissTrades: (ids: number[]) =>
+    jsonFetch<{ dismissed: number }>(`${BASE}/trades/dismiss`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+    }),
   /** The situation of the named stocks on `day` — run-up, volume, our verdict, a report due. */
   getEntryContext: (symbols: string[], day: string, kind: JournalKind) =>
     jsonFetch<{ contexts: EntryContext[] }>(

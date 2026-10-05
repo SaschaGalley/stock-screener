@@ -5,7 +5,7 @@ import { api } from '../api';
 import { fmtSignedPct } from '../format';
 import {
   JOURNAL_KINDS, JOURNAL_LABEL, JOURNAL_SINCE, linkMentions, mentionedSymbols, normalizeSymbols,
-  type JournalEntry, type JournalInput, type JournalKind, type JournalMove,
+  type JournalEntry, type JournalInput, type JournalKind, type JournalMove, type OpenTrades, type Trade,
 } from '../../../src/journal';
 import type { EntryContext } from '../../../src/analysis/entry-context';
 
@@ -58,6 +58,10 @@ export default function Journal({ symbol, suggest, startOpen = false }: Props) {
   const [editing, setEditing] = useState<number | null>(null);
   const [off, setOff] = useState<Set<JournalKind>>(() => new Set());
   const [search, setSearch] = useState('');
+  // A trade from the bookkeeping being given its reason: the editor starts from it.
+  const [draft, setDraft] = useState<Draft | null>(null);
+  // Bumped after a save that gave trades their reason, so the list of open ones is read again.
+  const [tradesTick, setTradesTick] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -97,20 +101,30 @@ export default function Journal({ symbol, suggest, startOpen = false }: Props) {
 
   return (
     <div className="space-y-3">
+      <OpenTradesPanel
+        symbol={symbol}
+        tick={tradesTick}
+        onExplain={(d) => { setDraft(d); setComposing(true); setFresh((n) => n + 1); }}
+      />
+
       {composing ? (
         <Editor
           key={fresh}
           symbol={symbol}
           suggest={suggest}
-          draftKey={symbol ?? '*'}
+          draft={draft ?? undefined}
+          // A trade's reason is its own text; the half-written note stays where it was.
+          draftKey={draft ? undefined : symbol ?? '*'}
           submitLabel="Eintragen"
           onSave={async (input) => {
             put(await api.addJournal(input));
-            writeDraft(symbol ?? '*', '');
+            if (!draft) writeDraft(symbol ?? '*', '');
+            if (input.tradeIds.length > 0) setTradesTick((n) => n + 1);
+            setDraft(null);
             setFresh((n) => n + 1);
             if (!startOpen) setComposing(false);
           }}
-          onCancel={startOpen ? undefined : () => setComposing(false)}
+          onCancel={startOpen && !draft ? undefined : () => { setDraft(null); setFresh((n) => n + 1); if (!startOpen) setComposing(false); }}
         />
       ) : (
         <button
@@ -226,11 +240,13 @@ function EntryCard({ entry, onEdit, onDelete }: { entry: JournalEntry; onEdit: (
           {situationOpen && <Situation symbols={entry.symbols} day={entry.day} kind={entry.kind} />}
         </details>
       )}
-      {(backdated || entry.revisions.length > 0) && (
+      {(backdated || entry.revisions.length > 0 || entry.tradeIds.length > 0) && (
         <footer className="mt-1.5 text-2xs text-ink-500">
-          {backdated && <span>nachgetragen am {fmtDay(written)}</span>}
-          {backdated && entry.revisions.length > 0 && <span> · </span>}
-          {entry.revisions.length > 0 && <Revisions entry={entry} />}
+          {[
+            entry.tradeIds.length > 0 && <span key="t">zu {entry.tradeIds.length} {entry.tradeIds.length === 1 ? 'Trade' : 'Trades'} aus umsatz</span>,
+            backdated && <span key="b">nachgetragen am {fmtDay(written)}</span>,
+            entry.revisions.length > 0 && <Revisions key="r" entry={entry} />,
+          ].filter(Boolean).flatMap((x, i) => (i === 0 ? [x] : [<span key={`s${i}`}> · </span>, x]))}
         </footer>
       )}
     </article>
@@ -293,8 +309,10 @@ function Markdown({ body, muted = false }: { body: string; muted?: boolean }) {
   );
 }
 
-function Editor({ initial, symbol, suggest, draftKey, submitLabel, onSave, onCancel }: {
+function Editor({ initial, draft, symbol, suggest, draftKey, submitLabel, onSave, onCancel }: {
   initial?: JournalEntry;
+  /** A new entry that starts from trades rather than empty. */
+  draft?: Draft;
   symbol?: string;
   suggest?: string[];
   /** Where an unsaved new entry is kept, so leaving the page does not lose it. */
@@ -304,12 +322,14 @@ function Editor({ initial, symbol, suggest, draftKey, submitLabel, onSave, onCan
   onCancel?: () => void;
 }) {
   const listId = useId();
-  const [day, setDay] = useState(initial?.day ?? today());
-  const [kind, setKind] = useState<JournalKind>(initial?.kind ?? 'note');
+  const [day, setDay] = useState(initial?.day ?? draft?.day ?? today());
+  const [kind, setKind] = useState<JournalKind>(initial?.kind ?? draft?.kind ?? 'note');
+  const tradeIds = initial?.tradeIds ?? draft?.tradeIds ?? [];
   const [body, setBody] = useState(() => initial?.body ?? (draftKey ? readDraft(draftKey) : ''));
   // The field holds the stocks named outright; those mentioned as $TICKER in
   // the text are read from it and shown beside the field, not copied into it.
   const [field, setField] = useState(() => {
+    if (draft) return draft.symbols.join(' ');
     if (!initial) return symbol ?? '';
     const inText = new Set(mentionedSymbols(initial.body));
     return initial.symbols.filter((s) => !inText.has(s)).join(' ');
@@ -325,7 +345,7 @@ function Editor({ initial, symbol, suggest, draftKey, submitLabel, onSave, onCan
   const textRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const el = textRef.current;
-    if (!el || !(initial || onCancel)) return;
+    if (!el || !(initial || draft || onCancel)) return;
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -340,7 +360,7 @@ function Editor({ initial, symbol, suggest, draftKey, submitLabel, onSave, onCan
     setBusy(true);
     setError(null);
     try {
-      await onSave({ day, kind, symbols: named, body });
+      await onSave({ day, kind, symbols: named, body, tradeIds });
       if (draftKey) writeDraft(draftKey, '');
     } catch (e) {
       setError((e as Error).message);
@@ -351,6 +371,7 @@ function Editor({ initial, symbol, suggest, draftKey, submitLabel, onSave, onCan
 
   return (
     <div className="space-y-2 rounded border border-ink-700 bg-ink-900 p-3">
+      {draft && <p className="text-2xs text-ink-400">Begründung für {draft.label}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex overflow-hidden rounded border border-ink-700">
           {JOURNAL_KINDS.map((k) => (
@@ -507,5 +528,144 @@ function Situation({ symbols, day, kind, live = false }: {
         </p>
       )}
     </div>
+  );
+}
+
+/** A new entry that starts from trades: what they were, and the line that says so. */
+interface Draft {
+  day:      string;
+  kind:     JournalKind;
+  symbols:  string[];
+  tradeIds: number[];
+  label:    string;
+}
+
+const fmtQty = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 4 });
+const fmtMoney = (n: number, currency: string) =>
+  `${n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+
+/** Trades of one stock on one day in one direction: one decision, filled in tranches. */
+interface TradeGroup {
+  key:      string;
+  day:      string;
+  kind:     'buy' | 'sell';
+  symbol:   string | null;
+  name:     string;
+  quantity: number;
+  /** Weighted by the shares of each tranche. */
+  price:    number;
+  currency: string;
+  ids:      number[];
+}
+
+function groupTrades(trades: Trade[]): TradeGroup[] {
+  const out = new Map<string, TradeGroup>();
+  for (const t of trades) {
+    if (t.kind !== 'buy' && t.kind !== 'sell') continue;
+    const key = `${t.day}|${t.isin}|${t.kind}|${t.currency}`;
+    const g = out.get(key);
+    if (g) {
+      g.price = (g.price * g.quantity + t.price * t.quantity) / (g.quantity + t.quantity);
+      g.quantity += t.quantity;
+      g.ids.push(t.id);
+    } else {
+      out.set(key, {
+        key, day: t.day, kind: t.kind, symbol: t.symbol, name: t.name,
+        quantity: t.quantity, price: t.price, currency: t.currency, ids: [t.id],
+      });
+    }
+  }
+  return [...out.values()];
+}
+
+const TRADES_PAGE = 6;
+
+/**
+ * Purchases and sales from the bookkeeping that no entry has given a reason
+ * yet. One click starts the entry from them; another marks one as needing
+ * none. Nothing shows while umsatz is not connected.
+ */
+function OpenTradesPanel({ symbol, tick, onExplain }: {
+  symbol?: string;
+  tick: number;
+  onExplain: (draft: Draft) => void;
+}) {
+  const [open, setOpen] = useState<OpenTrades | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [limit, setLimit] = useState(TRADES_PAGE);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load(sync: boolean) {
+    setError(null);
+    try {
+      setOpen(await api.getOpenTrades(symbol, sync));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  useEffect(() => { void load(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [symbol, tick]);
+
+  async function dismiss(g: TradeGroup) {
+    try {
+      await api.dismissTrades(g.ids);
+      await load(false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  if (error) return <p className="text-2xs text-red-400">⚠ {error}</p>;
+  if (!open?.configured) return null;
+  const groups = groupTrades(open.trades);
+  if (groups.length === 0 && !open.syncError) return null;
+
+  return (
+    <section className="rounded border border-ink-700 bg-ink-900 px-3 py-2">
+      <div className="mb-1.5 flex flex-wrap items-center gap-2">
+        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-400">
+          Ohne Begründung <span className="font-mono text-ink-500">{groups.length}</span>
+        </h3>
+        <span className="text-2xs text-ink-600">Käufe und Verkäufe aus umsatz</span>
+        <button
+          onClick={async () => { setSyncing(true); await load(true); setSyncing(false); }}
+          disabled={syncing}
+          title={open.syncedAt ? `Zuletzt abgeglichen ${new Date(open.syncedAt).toLocaleString('de-DE')}` : undefined}
+          className="ml-auto text-2xs text-ink-400 hover:text-ink-200 disabled:opacity-40"
+        >
+          {syncing ? '⟳ gleiche ab …' : '↻ Abgleichen'}
+        </button>
+      </div>
+      {open.syncError && <p className="mb-1 text-2xs text-amber-300">⚠ {open.syncError}</p>}
+      <ul className="space-y-1">
+        {groups.slice(0, limit).map((g) => (
+          <li key={g.key} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+            <span className="w-20 font-mono text-ink-400">{fmtDay(g.day)}</span>
+            <span className={`rounded border px-1.5 py-px text-2xs font-medium ${KIND_BADGE[g.kind]}`}>{JOURNAL_LABEL[g.kind]}</span>
+            <span className="font-mono text-ink-100">{g.symbol ?? '—'}</span>
+            <span className="min-w-0 truncate text-ink-400">{g.name}</span>
+            <span className="text-2xs text-ink-500">{fmtQty(g.quantity)} × {fmtMoney(g.price, g.currency)}</span>
+            <span className="ml-auto flex gap-3 text-2xs">
+              <button
+                onClick={() => onExplain({
+                  day: g.day, kind: g.kind, symbols: g.symbol ? [g.symbol] : [], tradeIds: g.ids,
+                  label: `${JOURNAL_LABEL[g.kind]} ${fmtQty(g.quantity)} × ${g.symbol ?? g.name} am ${fmtDay(g.day)}`,
+                })}
+                className="text-accent hover:text-accent-hover"
+              >
+                Begründen
+              </button>
+              <button onClick={() => void dismiss(g)} title="Braucht keine Begründung" className="text-ink-500 hover:text-ink-300">
+                Ignorieren
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {groups.length > limit && (
+        <button onClick={() => setLimit((l) => l + TRADES_PAGE * 3)} className="mt-1 text-2xs text-ink-400 hover:text-ink-200">
+          + {groups.length - limit} weitere
+        </button>
+      )}
+    </section>
   );
 }

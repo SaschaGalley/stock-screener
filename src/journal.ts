@@ -97,6 +97,8 @@ export interface JournalMove {
 
 export interface JournalEntry {
   id:        number;
+  /** The trades this entry gives the reason for. Empty for a note. */
+  tradeIds:  number[];
   day:       string;
   kind:      JournalKind;
   symbols:   string[];
@@ -110,8 +112,40 @@ export interface JournalEntry {
 }
 
 export interface JournalInput {
-  day:     string;
-  kind:    JournalKind;
-  symbols: string[];
-  body:    string;
+  day:      string;
+  kind:     JournalKind;
+  symbols:  string[];
+  body:     string;
+  tradeIds: number[];
+}
+
+/**
+ * What a booking in the depot was. Only a purchase and a sale were decided;
+ * a savings plan runs by itself and a spin-off happens to the holder.
+ */
+export const TRADE_KINDS = ['buy', 'sell', 'savings-plan', 'spin-off'] as const;
+export type TradeKind = (typeof TRADE_KINDS)[number];
+
+/** A trade from umsatz, the owner's bookkeeping. */
+export interface Trade {
+  id:        number;
+  day:       string;
+  isin:      string;
+  /** This app's ticker when a stored stock carries the ISIN, the bookkeeping's own symbol otherwise. */
+  symbol:    string | null;
+  name:      string;
+  assetType: string;
+  kind:      TradeKind;
+  quantity:  number;
+  price:     number;
+  currency:  string;
+}
+
+/** The trades still waiting for a reason, and whether there is anywhere to get them from. */
+export interface OpenTrades {
+  configured: boolean;
+  syncedAt:   string | null;
+  /** Why the last sync failed, when it did; the trades are then the ones from before. */
+  syncError:  string | null;
+  trades:     Trade[];
 }

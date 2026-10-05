@@ -42,7 +42,11 @@ export function parseJournalInput(raw: unknown): JournalInput {
   if (kind !== 'note' && symbols.length === 0) {
     throw new JournalInputError('Ein Kauf oder Verkauf braucht die Aktie.');
   }
-  return { day, kind, symbols, body };
+  // The trades from the bookkeeping this entry gives the reason for.
+  const tradeIds = Array.isArray(o.tradeIds)
+    ? [...new Set(o.tradeIds.filter((x): x is number => Number.isInteger(x) && (x as number) > 0))]
+    : [];
+  return { day, kind, symbols, body, tradeIds };
 }
 
 export async function readJournal(symbol?: string): Promise<JournalEntry[]> {

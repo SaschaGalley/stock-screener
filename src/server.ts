@@ -60,6 +60,7 @@ import {
   addJournal, editJournal, entryContexts, JournalInputError, parseJournalInput, readJournal, removeJournal,
 } from './journal-service.js';
 import { isJournalKind } from './journal.js';
+import { ignoreTrades, readOpenTrades } from './trades-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
   analystCoverage, analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord,
@@ -1143,6 +1144,27 @@ export function createApp(): express.Express {
       next(e);
     }
   });
+  // ── /api/trades ────────────────────────────────────────────────────────────
+  // The purchases and sales from umsatz still waiting for a reason. Real
+  // holdings: never log or print a row of them.
+  app.get('/api/trades/open', async (req, res, next) => {
+    try {
+      const symbol = typeof req.query.symbol === 'string' && req.query.symbol ? req.query.symbol : undefined;
+      res.json(await readOpenTrades(symbol, req.query.sync === '1'));
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.post('/api/trades/dismiss', async (req, res, next) => {
+    try {
+      const raw = (req.body as { ids?: unknown } | undefined)?.ids;
+      const ids = Array.isArray(raw) ? raw.filter((x): x is number => Number.isInteger(x) && (x as number) > 0) : [];
+      res.json({ dismissed: ids.length ? await ignoreTrades(ids) : 0 });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   app.post('/api/journal', journalWrite((req) => addJournal(parseJournalInput(req.body))));
   app.put('/api/journal/:id', journalWrite(async (req) => {
     const id = journalId(String(req.params.id));

@@ -43,6 +43,9 @@ x-app-env: &app-env
   DISTILL_API_KEY: ${DISTILL_API_KEY:-}
   DISTILL_API_URL: ${DISTILL_API_URL:-http://localhost:3000}
   DISTILL_BRIEFING_TYPE_ID: ${DISTILL_BRIEFING_TYPE_ID:-}
+  # umsatz: the trades the journal asks the reason for. Its STOCK_CLI_API_KEY.
+  UMSATZ_API_URL: ${UMSATZ_API_URL:-http://localhost:8505}
+  UMSATZ_API_KEY: ${UMSATZ_API_KEY:-}
   # ── Hatchet ────────────────────────────────────────────────────────────────
   # Optional: without a token the app falls back to its own in-process cron and
   # runs the watchlist serially, exactly as it did before.
