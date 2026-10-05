@@ -34,6 +34,7 @@ import type { Timeline } from '../../src/analysis/timeline';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
 import type { DepotResponse } from '../../src/analysis/depot';
+import type { ReviewResponse } from '../../src/review-service';
 import type { ManualResearchTool } from '../../src/models';
 import type { ResearchKind, ResearchReport } from '../../src/research/kinds';
 import type { BacktestOverview } from '../../src/backtest-service';
@@ -138,6 +139,8 @@ export const api = {
     jsonFetch<OpenTrades>(`${BASE}/trades/open?${new URLSearchParams({
       ...(symbol ? { symbol } : {}), ...(sync ? { sync: '1' } : {}),
     })}`),
+  /** My purchases and sales against the S&P 500, with the patterns across them. */
+  getReview: () => jsonFetch<ReviewResponse>(`${BASE}/review`),
   /** The depot weighed against the model; `sync` asks umsatz first. */
   getDepot: (sync = false) => jsonFetch<DepotResponse>(`${BASE}/depot${sync ? '?sync=1' : ''}`),
   /** Mark trades as needing no reason. */

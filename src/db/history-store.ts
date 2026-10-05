@@ -174,16 +174,16 @@ export async function quoteCurrencies(): Promise<string[]> {
 /** Closes for several tickers at once, from `from` on — the cross-section's read. */
 export async function readPriceBarsMany(
   tickers: string[], from?: string,
-): Promise<Map<string, { day: string; close: number; adjClose: number | null }[]>> {
-  const res = await query<{ ticker: string; day: string; close: number; adj_close: number | null }>(
-    `SELECT ticker, day, close, adj_close FROM price_bars
+): Promise<Map<string, { day: string; close: number; adjClose: number | null; volume: number | null }[]>> {
+  const res = await query<{ ticker: string; day: string; close: number; adj_close: number | null; volume: number | null }>(
+    `SELECT ticker, day, close, adj_close, volume FROM price_bars
       WHERE ticker = ANY($1) AND ($2::date IS NULL OR day >= $2) ORDER BY ticker, day`,
     [tickers.map((t) => t.toUpperCase()), from ?? null],
   );
-  const out = new Map<string, { day: string; close: number; adjClose: number | null }[]>();
+  const out = new Map<string, { day: string; close: number; adjClose: number | null; volume: number | null }[]>();
   for (const r of res.rows) {
     const list = out.get(r.ticker) ?? [];
-    list.push({ day: r.day, close: r.close, adjClose: r.adj_close });
+    list.push({ day: r.day, close: r.close, adjClose: r.adj_close, volume: r.volume === null ? null : Number(r.volume) });
     out.set(r.ticker, list);
   }
   return out;

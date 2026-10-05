@@ -15,6 +15,7 @@ const EvaluationPage = lazy(() => import('./pages/EvaluationPage'));
 const FeedPage = lazy(() => import('./pages/FeedPage'));
 const JournalPage = lazy(() => import('./pages/JournalPage'));
 const DepotPage = lazy(() => import('./pages/DepotPage'));
+const ReviewPage = lazy(() => import('./pages/ReviewPage'));
 import { applyListView, DEFAULT_LIST_VIEW, type ListView } from './components/stockList';
 import { EMPTY_ANCHOR, type ListScrollAnchor } from './components/useListScroll';
 import type { Settings, OverviewRow, ProgressEvent, SearchChoice } from './types';
@@ -31,12 +32,12 @@ const DEFAULT_SETTINGS: Settings = {
  *
  * `#/overview` is the list, `#/stock/AAPL` is the list with that stock open
  * beside it, `#/admin` is the administration, `#/evaluation` the score's
- * track record, `#/journal` my own notes and trades, `#/depot` the depot against the model. Bare `#AAPL` still resolves to a
+ * track record, `#/journal` my own notes and trades, `#/depot` the depot against the model, `#/review` my decisions looked back on. Bare `#AAPL` still resolves to a
  * stock: those links are in bookmarks and history, and honouring them costs one
  * branch. No hash is the list — the app's resting state is the whole list, not
  * an empty detail pane waiting to be told what to show.
  */
-type ViewName = 'overview' | 'analysis' | 'admin' | 'evaluation' | 'feed' | 'journal' | 'depot';
+type ViewName = 'overview' | 'analysis' | 'admin' | 'evaluation' | 'feed' | 'journal' | 'depot' | 'review';
 
 interface RouteState {
   view:   ViewName;
@@ -54,6 +55,7 @@ function readRoute(): RouteState {
   if (key === 'feed')     return { view: 'feed', symbol: null };
   if (key === 'journal')  return { view: 'journal', symbol: null };
   if (key === 'depot')    return { view: 'depot', symbol: null };
+  if (key === 'review')   return { view: 'review', symbol: null };
   if (key === 'stock')    return { view: 'analysis', symbol: tail ? tail.toUpperCase() : null };
   return { view: 'analysis', symbol: raw.toUpperCase() };   // legacy `#AAPL`
 }
@@ -64,6 +66,7 @@ function routeToHash(route: RouteState): string {
   if (route.view === 'feed')     return '#/feed';
   if (route.view === 'journal')  return '#/journal';
   if (route.view === 'depot')    return '#/depot';
+  if (route.view === 'review')   return '#/review';
   if (route.view === 'analysis' && route.symbol) return `#/stock/${route.symbol}`;
   return '#/overview';
 }
@@ -431,8 +434,9 @@ export default function App() {
   const isFeed       = route.view === 'feed';
   const isJournal    = route.view === 'journal';
   const isDepot      = route.view === 'depot';
+  const isReview     = route.view === 'review';
   const isAnalysis   = route.view === 'analysis' && selected !== null;
-  const isTable      = !isAdmin && !isEvaluation && !isFeed && !isJournal && !isDepot && !isAnalysis;
+  const isTable      = !isAdmin && !isEvaluation && !isFeed && !isJournal && !isDepot && !isReview && !isAnalysis;
 
   // Esc is the keyboard counterpart of the ✕ — for the analysis and the
   // administration alike. Skipped while a field has focus, where Esc means
@@ -482,6 +486,7 @@ export default function App() {
         {isFeed && <FeedPage onClose={closeOverlay} onSelect={handleSelectSymbol} />}
         {isJournal && <JournalPage onClose={closeOverlay} symbols={rows.map((r) => r.symbol)} />}
         {isDepot && <DepotPage onClose={closeOverlay} />}
+        {isReview && <ReviewPage onClose={closeOverlay} />}
       </Suspense>
 
       {/* The list at full width. Cheap to rebuild, so it mounts and unmounts. */}
@@ -588,7 +593,7 @@ export default function App() {
 
       {/* One add field for the whole window, below whichever density is up —
           the table used to have no way to add a stock at all. */}
-      {!isAdmin && !isEvaluation && !isJournal && !isDepot && (
+      {!isAdmin && !isEvaluation && !isJournal && !isDepot && !isReview && (
         <AnalyzeForm
           onAdd={addStock}
           analyzing={loading}

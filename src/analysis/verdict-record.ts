@@ -87,7 +87,8 @@ function at(bars: readonly Bar[], day: string): number {
   return found;
 }
 
-function addMonths(day: string, months: number): string {
+/** The day a horizon ends on. A month past the 31st runs into the next: 31 August and three months is 1 December. */
+export function addMonths(day: string, months: number): string {
   const d = new Date(`${day}T00:00:00Z`);
   d.setUTCMonth(d.getUTCMonth() + months);
   return d.toISOString().slice(0, 10);

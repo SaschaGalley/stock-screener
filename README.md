@@ -88,6 +88,8 @@ There is one list of stocks, shown at two densities. There are no tabs and no to
 
 **Depot** (the briefcase icon, `#/depot`, `GET /api/depot`) — the positions summed from umsatz's trades at moving-average cost, valued at its euro prices, against the model: weight, gain, verdict, sector, the reason in the journal and the newest thesis check, with what stands out — a position above 15 % (funds excepted), a sector above 35 % of the stocks, a SELL verdict, a contradicted thesis, a purchase without a reason — and the watchlist's BUYs not held. No target weights: the score as a portfolio rule failed the test fixed before the backtest ran, so beside the verdicts stands what each has been worth there (`src/analysis/depot.ts`). The holdings are real; see CLAUDE.md for how to work with them.
 
+**Rückblick** (linked from the journal and the depot, `#/review`, `GET /api/review`) — every purchase and sale, from the journal and from umsatz, each decision once (an entry and the trades it explains are one, dated by the trade), measured the way our verdicts are: against the S&P 500, one to twelve months on and up to today (`decisionOutcomes` in `src/stock-history-service.ts`, the verdict record's own `callOutcomes`). A purchase was right when the stock beat the index afterwards, a sale when it lagged. Beside each, the reason given and the situation it was made in, read as of that day; above them the groups compared — after a run, a jump or a crowd against the rest, with the model against it, with a reason against without — each with how many decisions it rests on, and sentences only where both sides have at least five (`src/analysis/review.ts`).
+
 **Analyse** — the same list collapsed to a rail, with one stock open beside it. A row click opens it; clicking that same row again closes it, as does the **✕** at the top right of the analysis, or `Esc`.
 
 The list does not move when any of that happens. The two densities share the row markup for every column both of them show (`StockRowCells.tsx`) and declare one row height between them, so a row is the same two lines at the same size on either side of the click. The scroll position travels as *which stock was at the top of the box, and how far down it sat* — the one thing a table and a rail can both honour, since pixels do not survive a trip between two different elements. The rail carries the same sticky column-label row as the table for the same reason: without it the two scroll boxes start their content at different places, and the list at the very top cannot be reproduced at all.
@@ -122,7 +124,7 @@ Adding a stock (`+ Hinzufügen` at the bottom of the window, under either densit
 
 **⚙ Administration** — schedule, pipeline steps, watchlist and run log; closed by the same ✕, in the same corner. See [Nightly pipeline](#nightly-pipeline) below.
 
-**URLs**: `#/stock/AAPL`, `#/overview`, `#/admin`, `#/feed`, `#/evaluation`, `#/journal`, `#/depot` — reload and browser back/forward work everywhere. No hash is the list. Old `#AAPL` links still resolve to a stock.
+**URLs**: `#/stock/AAPL`, `#/overview`, `#/admin`, `#/feed`, `#/evaluation`, `#/journal`, `#/depot`, `#/review` — reload and browser back/forward work everywhere. No hash is the list. Old `#AAPL` links still resolve to a stock.
 
 Collapsing back to the table never interrupts a running analysis: the analysis pane stays mounted (hidden) so its progress stream survives the detour.
 

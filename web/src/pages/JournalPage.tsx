@@ -17,10 +17,11 @@ export default function JournalPage({ onClose, symbols }: { onClose: () => void;
         <div className="flex items-center gap-3">
           <h2 className="text-base font-semibold text-ink-100">Journal</h2>
           <span className="text-xs text-ink-500">Was ich gelesen, gedacht, gekauft und verkauft habe — und warum</span>
+          <a href="#/review" className="ml-auto text-xs text-accent hover:underline">Rückblick →</a>
           <button
             onClick={onClose}
             title="Schließen (Esc)"
-            className="ml-auto rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
+            className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
           >
             <CloseIcon />
           </button>

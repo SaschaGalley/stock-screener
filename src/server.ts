@@ -65,6 +65,7 @@ import {
 import { isJournalKind, normalizeSymbols } from './journal.js';
 import { ignoreTrades, readOpenTrades } from './trades-service.js';
 import { readDepot } from './depot-service.js';
+import { readReview } from './review-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
   analystCoverage, analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord,
@@ -1188,6 +1189,15 @@ export function createApp(): express.Express {
   app.get('/api/depot', async (req, res, next) => {
     try {
       res.json(await readDepot(req.query.sync === '1'));
+    } catch (e) {
+      next(e);
+    }
+  });
+  // My purchases and sales looked back on: each against the S&P 500 at one to
+  // twelve months, beside the situation it was made in. Real holdings.
+  app.get('/api/review', async (req, res, next) => {
+    try {
+      res.json(await readReview(req.query.sync === '1'));
     } catch (e) {
       next(e);
     }

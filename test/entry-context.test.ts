@@ -43,11 +43,13 @@ describe('the situation before a purchase', () => {
     assert.match(text, /am Jahreshoch, \+2\d,\d % über dem Tief/);
     assert.match(text, /Modell-Urteil SELL \(Score 2,1\)/);
     assert.match(text, /Quartalszahlen am/);
+    assert.equal(c.impulse, true);
   });
 
   it('reads the day as it was: an entry before the run-up sees none of it', () => {
     const c = entryContext('XYZ', 'buy', series[n - 10].day, series, { score: 4.5, verdict: 'BUY' }, null);
     assert.deepEqual(c.flags, []);
+    assert.equal(c.impulse, false);
     assert.equal(c.jumps.length, 0);
   });
 

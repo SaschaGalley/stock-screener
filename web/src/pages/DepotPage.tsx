@@ -50,6 +50,7 @@ export default function DepotPage({ onClose }: { onClose: () => void }) {
           <span className="text-xs text-ink-500">gegen das Modell</span>
           {view && <span className="font-mono text-sm text-ink-200">{eur(view.totalEur)}</span>}
           <div className="ml-auto flex items-center gap-3">
+            <a href="#/review" className="text-xs text-accent hover:underline">Rückblick →</a>
             {data?.configured && (
               <button
                 onClick={async () => { setSyncing(true); await load(true); setSyncing(false); }}

@@ -38,12 +38,19 @@ export interface EntryContext {
   earnings:  string | null;
   /** What stands out, as sentences. Empty when nothing does. */
   flags:     string[];
+  /**
+   * Whether the market had just done something to prompt the trade — a run, a
+   * jump, a crowd, the year's extreme, a report days away — as opposed to the
+   * model's verdict, which is a reason of a different kind.
+   */
+  impulse:   boolean;
 }
 
 const DAY_MS = 86_400_000;
 const pct = (x: number) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(1).replace('.', ',')} %`;
 const fmtDay = (d: string) => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}.`;
 
+const MODEL_FLAG = 'Modell-Urteil';
 /** How far a stock has to move in five days before it counts as a run. */
 const RUN = 0.10;
 /** Volume this many times the usual is a crowd. */
@@ -121,14 +128,15 @@ export function entryContext(
   if (model.verdict) {
     const v = model.verdict.toUpperCase();
     const score = model.score !== null ? ` (Score ${model.score.toFixed(1).replace('.', ',')})` : '';
-    if (buying && v.includes('SELL')) flags.push(`Modell-Urteil ${model.verdict}${score}`);
-    if (!buying && v.includes('BUY')) flags.push(`Modell-Urteil ${model.verdict}${score}`);
+    if (buying && v.includes('SELL')) flags.push(`${MODEL_FLAG} ${model.verdict}${score}`);
+    if (!buying && v.includes('BUY')) flags.push(`${MODEL_FLAG} ${model.verdict}${score}`);
   }
   if (earnings) flags.push(`Quartalszahlen am ${fmtDay(earnings)} — ${buying ? 'gekauft' : 'verkauft'} kurz davor`);
+  const impulse = flags.some((f) => !f.startsWith(MODEL_FLAG));
 
   return {
     symbol, asOf: last?.day ?? null, close: last?.close ?? null,
     change5: c5, change20: c20, fromHigh, fromLow, volumeRatio, jumps,
-    score: model.score, verdict: model.verdict, earnings, flags,
+    score: model.score, verdict: model.verdict, earnings, flags, impulse,
   };
 }

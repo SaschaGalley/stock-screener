@@ -81,7 +81,7 @@ const VERDICT_SCORE_KEY = 'score.final.score';
 /** The index with its dividends, as the stocks' adjusted closes have theirs. */
 const RECORD_BENCHMARK = 'SPY';
 
-type StoredBar = { day: string; close: number; adjClose: number | null };
+type StoredBar = { day: string; close: number; adjClose: number | null; volume: number | null };
 const totalReturn = (bars: readonly StoredBar[] | undefined): Bar[] => (bars ?? []).map((b) => ({ day: b.day, close: b.adjClose ?? b.close }));
 const daysBefore = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) - n * DAY_MS).toISOString().slice(0, 10);
 
@@ -100,6 +100,33 @@ function inBenchmarkCurrency(bars: Bar[], currency: string, fx: Map<string, Stor
     .map((c) => ({ day: c.date, close: c.close }));
 }
 
+/**
+ * The total-return series to measure calls on, from `from` on: the index's,
+ * and each stock's in the index's currency — or in its own, with `restated`
+ * false, when that currency's rate is not archived. The raw bars come along
+ * for the price as quoted and for what else a caller reads from them.
+ */
+async function returnSeries(symbols: string[], from: string): Promise<{
+  bench: Bar[];
+  bars: Map<string, StoredBar[]>;
+  of: (symbol: string) => { series: Bar[]; restated: boolean } | null;
+}> {
+  const facts = await symbolFacts(symbols);
+  const currencyOf = (s: string) => majorCurrency(facts.get(s.toUpperCase())?.currency) ?? BENCHMARK_CURRENCY;
+  const fxTickers = [...new Set(symbols.map(currencyOf))].filter((c) => c !== BENCHMARK_CURRENCY).map((c) => fxTicker(c, BENCHMARK_CURRENCY));
+  const bars = await readPriceBarsMany([...symbols, RECORD_BENCHMARK, ...fxTickers], from);
+  const bench = totalReturn(bars.get(RECORD_BENCHMARK));
+  return {
+    bench, bars,
+    of: (s) => {
+      const own = totalReturn(bars.get(s.toUpperCase()));
+      if (own.length === 0) return null;
+      const usd = inBenchmarkCurrency(own, currencyOf(s), bars);
+      return { series: usd ?? own, restated: usd !== null };
+    },
+  };
+}
+
 /** One stock's calls with their outcomes — against the index when its currency could be restated, else on their own. */
 async function outcomesFor(
   symbols: string[], series: Map<string, Series[]>,
@@ -109,27 +136,45 @@ async function outcomesFor(
   const outcomes = new Map<string, CallOutcome[]>();
   const unrestated = new Set<string>();
   if (!first) return { outcomes, unpriced: 0, unrestated };
-  const facts = await symbolFacts(symbols);
-  const currencyOf = (s: string) => majorCurrency(facts.get(s.toUpperCase())?.currency) ?? BENCHMARK_CURRENCY;
-  const fxTickers = [...new Set(symbols.map(currencyOf))].filter((c) => c !== BENCHMARK_CURRENCY).map((c) => fxTicker(c, BENCHMARK_CURRENCY));
   // A few days before the first call: its entry is the last close at or before it.
-  const bars = await readPriceBarsMany([...symbols, RECORD_BENCHMARK, ...fxTickers], daysBefore(first, 10));
-  const bench = totalReturn(bars.get(RECORD_BENCHMARK));
+  const { bench, bars, of } = await returnSeries(symbols, daysBefore(first, 10));
   let unpriced = 0;
   for (const s of symbols) {
     const cs = calls.get(s) ?? [];
     if (cs.length === 0) continue;
-    const stored = bars.get(s.toUpperCase()) ?? [];
-    const own = totalReturn(stored);
-    if (own.length === 0) { unpriced++; continue; }
-    const usd = inBenchmarkCurrency(own, currencyOf(s), bars);
-    if (!usd) unrestated.add(s);
+    const r = of(s);
+    if (!r) { unpriced++; continue; }
+    if (!r.restated) unrestated.add(s);
     // Returns from the adjusted dollar closes; the price shown is the day's own close, as quoted.
+    const stored = bars.get(s.toUpperCase()) ?? [];
     const quoted = (day: string) => stored.filter((b) => b.day <= day).at(-1)?.close;
-    outcomes.set(s, callOutcomes(cs, usd ?? own, usd && bench.length ? bench : null)
+    outcomes.set(s, callOutcomes(cs, r.series, r.restated && bench.length ? bench : null)
       .map((o) => ({ ...o, price: quoted(o.day) ?? o.price })));
   }
   return { outcomes, unpriced, unrestated };
+}
+
+/**
+ * Each decision measured as a call of its own: a purchase as a buy, a sale as
+ * a sell, from its day to each horizon and to the newest close. Null for a
+ * stock with no stored prices. Also hands back the raw bars, which the review
+ * reads the situation on each day from.
+ */
+export async function decisionOutcomes(decisions: { key: string; symbol: string; day: string; side: 'buy' | 'sell' }[], from: string): Promise<{
+  outcomes: Map<string, CallOutcome | null>;
+  bars: Map<string, StoredBar[]>;
+}> {
+  const symbols = [...new Set(decisions.map((d) => d.symbol.toUpperCase()))];
+  const outcomes = new Map<string, CallOutcome | null>();
+  if (symbols.length === 0) return { outcomes, bars: new Map() };
+  const { bench, bars, of } = await returnSeries(symbols, from);
+  for (const d of decisions) {
+    const r = of(d.symbol);
+    const call = { day: d.day, verdict: d.side === 'buy' ? 'BUY' : 'SELL', from: null, score: null };
+    const [o] = r ? callOutcomes([call], r.series, r.restated && bench.length ? bench : null) : [];
+    outcomes.set(d.key, o ?? null);
+  }
+  return { outcomes, bars };
 }
 
 /** The headline fair value in force on a day — the primary models' median — and their range. */
