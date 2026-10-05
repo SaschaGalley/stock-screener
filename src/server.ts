@@ -14,7 +14,7 @@ import {
   deleteAnalysis, deleteSymbol, latestSnapshotForAll, latestPointsForAll, latestValueForAll, scoreInstants,
   latestDocument, listAnalyses, listDocuments, listMetrics, listSymbols,
   readAnalysis, readDistillLax, readFinancialsMeta, readFinancialsLax,
-  readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax, readDeepResearchLax, writePerplexity,
+  readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax, readDeepResearchLax,
   readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry, symbolCounts, refreshedWithin,
   recentVerdictChanges, peersByIndustry, peersBySymbol, StoredPeer,
 } from './db/store.js';
@@ -41,7 +41,10 @@ import type {
 import {
   DEFAULT_PERPLEXITY_MODEL, isManualResearchTool, isPerplexityModel, MANUAL_RESEARCH_TOOLS, MODELS, PerplexityModelId,
 } from './models.js';
-import { manualResearchPrompt, pastedResearch } from './data/perplexity.js';
+import {
+  deleteResearch, listResearch, pasteResearch, ResearchInputError, researchPromptFor,
+} from './research/research.js';
+import { isResearchKind } from './research/kinds.js';
 import {
   DistillUnauthorizedError,
   DistillEntityUnresolvedError,
@@ -59,7 +62,7 @@ import { refreshPerplexity } from './perplexity-service.js';
 import {
   addJournal, editJournal, entryContexts, JournalInputError, parseJournalInput, readJournal, removeJournal,
 } from './journal-service.js';
-import { isJournalKind } from './journal.js';
+import { isJournalKind, normalizeSymbols } from './journal.js';
 import { ignoreTrades, readOpenTrades } from './trades-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
@@ -462,36 +465,60 @@ export function createApp(): express.Express {
     }
   });
 
-  // ── GET /api/stocks/:symbol/research-prompt · POST …/research-paste ────────
-  // Deep research without the API: the brief to copy into a chat app's
-  // research mode, and its answer pasted back. `save: false` only reads the
-  // paste and says what it found, so a wrong paste is seen before it is kept;
-  // `save: true` stores it in the deep research slot every analysis reads.
-  app.get('/api/stocks/:symbol/research-prompt', async (req, res, next) => {
+  // ── /api/research ──────────────────────────────────────────────────────────
+  // Research without the API: the prompt for a kind of research to copy into
+  // a chat app's research mode, and its answer pasted back. `save: false`
+  // only reads the paste and says what it found, so a wrong paste is seen
+  // before it is kept. The company brief is kept in the deep research slot
+  // every analysis reads; the other kinds as research reports.
+  const researchSymbols = (v: unknown) => normalizeSymbols(
+    Array.isArray(v) ? v : typeof v === 'string' ? v.split(/[\s,]+/) : [],
+  );
+  const researchError = (e: unknown, res: Response, next: NextFunction) => {
+    if (e instanceof ResearchInputError) res.status(400).json({ error: e.message });
+    else next(e);
+  };
+  app.get('/api/research/prompt', async (req, res, next) => {
     try {
-      const symbol = req.params.symbol.toUpperCase();
-      const companyName = (await readFinancialsLax(symbol))?.companyName ?? symbol;
-      res.json({ symbol, companyName, prompt: manualResearchPrompt(symbol, companyName) });
+      if (!isResearchKind(req.query.kind)) {
+        res.status(400).json({ error: `Unbekannte Recherche: ${String(req.query.kind)}` });
+        return;
+      }
+      const question = typeof req.query.question === 'string' ? req.query.question : null;
+      res.json({ prompt: await researchPromptFor(req.query.kind, researchSymbols(req.query.symbols), question) });
+    } catch (e) {
+      researchError(e, res, next);
+    }
+  });
+  app.post('/api/research/paste', async (req, res, next) => {
+    try {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const tool = body.tool ?? MANUAL_RESEARCH_TOOLS[0];
+      if (!isResearchKind(body.kind) || !isManualResearchTool(tool) || typeof body.text !== 'string') {
+        res.status(400).json({ error: 'kind, tool und text werden gebraucht' });
+        return;
+      }
+      res.json(await pasteResearch({
+        kind: body.kind, symbols: researchSymbols(body.symbols), tool, text: body.text, save: body.save === true,
+        question: typeof body.question === 'string' ? body.question : null,
+      }));
+    } catch (e) {
+      researchError(e, res, next);
+    }
+  });
+  app.get('/api/research', async (req, res, next) => {
+    try {
+      const symbol = typeof req.query.symbol === 'string' && req.query.symbol ? req.query.symbol : undefined;
+      res.json({ reports: await listResearch(symbol) });
     } catch (e) {
       next(e);
     }
   });
-  app.post('/api/stocks/:symbol/research-paste', async (req, res, next) => {
+  app.delete('/api/research/:id', async (req, res, next) => {
     try {
-      const symbol = req.params.symbol.toUpperCase();
-      const body = (req.body ?? {}) as { text?: unknown; tool?: unknown; save?: unknown };
-      const tool = body.tool ?? MANUAL_RESEARCH_TOOLS[0];
-      if (!isManualResearchTool(tool)) {
-        res.status(400).json({ error: `Unbekanntes Werkzeug: ${String(tool)}` });
-        return;
-      }
-      const pasted = typeof body.text === 'string' ? pastedResearch(body.text, tool) : null;
-      if (!pasted) {
-        res.status(400).json({ error: 'Nichts Verwertbares erkannt — weder die JSON-Antwort noch ein Bericht in Textform.' });
-        return;
-      }
-      if (body.save === true) await writePerplexity(symbol, pasted.context);
-      res.json({ symbol, saved: body.save === true, summary: pasted.summary });
+      const id = /^\d+$/.test(req.params.id) ? Number(req.params.id) : null;
+      if (id === null || !(await deleteResearch(id))) res.status(404).json({ error: 'Bericht nicht gefunden' });
+      else res.json({ ok: true });
     } catch (e) {
       next(e);
     }

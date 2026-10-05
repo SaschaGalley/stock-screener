@@ -145,7 +145,7 @@ const PPLX_API_URL = 'https://api.perplexity.ai/chat/completions';
  * statements carry), and the dates ahead. "Independent" is defined rather than
  * left to the model, and the proponents must be named.
  */
-const SYSTEM_PROMPT =
+export const SYSTEM_PROMPT =
   'You are a senior buy-side equity analyst preparing the research file for an investment ' +
   'committee. You separate evidence from opinion, you name who argues what, and you quantify ' +
   'whenever a figure exists. You are paid to find what consensus is missing, in either ' +
@@ -317,16 +317,20 @@ export function researchPrompt(ticker: string, companyName: string): { system: s
  */
 export function manualResearchPrompt(ticker: string, companyName: string): string {
   const { system, user } = researchPrompt(ticker, companyName);
-  return `${system}\n\n${user}\n\n`
-    + 'Write the full URL into every "source" field, never a citation number. '
-    + 'Put the JSON in a single ```json code block.';
+  return `${system}\n\n${user}\n\n${MANUAL_ANSWER_RULE}`;
 }
+
+/** What every brief pasted into a chat app ends with — see `manualResearchPrompt`. */
+export const MANUAL_ANSWER_RULE =
+  'Write the full URL into every "source" field, never a citation number. '
+  + 'Put the JSON in a single ```json code block.';
 
 // ── Parsing ──────────────────────────────────────────────────────────────────
 
-const text = (v: unknown): string =>
+/** A string from a model's JSON, citation markers and runs of space removed; '' for anything else. */
+export const text = (v: unknown): string =>
   typeof v === 'string' ? v.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim() : '';
-const optText = (v: unknown): string | null => text(v) || null;
+export const optText = (v: unknown): string | null => text(v) || null;
 
 function finding(v: unknown): PerplexityFinding | null {
   if (!v || typeof v !== 'object') return null;
@@ -411,13 +415,12 @@ function claimOf(weakest: 'management-only' | 'opinion') {
 }
 
 /**
- * The structured answer, or null when there is none to be had.
- *
- * Lenient on shape and strict on substance: a missing list is an empty one, an
- * unknown evidence label reads as the weakest, and an item with no text is
- * dropped. What is never done is inventing a finding the model did not return.
+ * The JSON object in a model's answer, wherever it sits: after the thinking,
+ * inside a fence, after a sentence of preamble — or cut off, in which case the
+ * items that finished are kept. Null when there is no object to be had. Every
+ * research answer is read through this, the brief's and the pasted ones alike.
  */
-export function parseFindings(answer: string): PerplexityFindings | null {
+export function extractJson(answer: string): Record<string, unknown> | null {
   // The reasoning models think aloud before they answer, and the thinking may
   // hold braces and fences of its own. An unclosed block is a truncated one,
   // and then there is no answer after it.
@@ -425,21 +428,32 @@ export function parseFindings(answer: string): PerplexityFindings | null {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/)?.[1];
   const start = raw.indexOf('{');
   const body = (fenced ?? (start >= 0 ? raw.slice(start) : raw)).trim();
-
-  let obj: Record<string, unknown>;
-  try {
-    obj = JSON.parse(body) as Record<string, unknown>;
-  } catch {
-    // A truncated answer still holds every item that finished. Keep those
-    // rather than throw away a paid call over the one that did not.
-    const salvaged = salvageTruncatedJson(body);
-    if (salvaged === null) return null;
+  const parse = (t: string) => {
     try {
-      obj = JSON.parse(salvaged) as Record<string, unknown>;
+      const v = JSON.parse(t) as unknown;
+      return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null;
     } catch {
-      return null;
+      return undefined;
     }
-  }
+  };
+  const whole = parse(body);
+  if (whole !== undefined) return whole;
+  // A truncated answer still holds every item that finished. Keep those
+  // rather than throw away a paid call over the one that did not.
+  const salvaged = salvageTruncatedJson(body);
+  return salvaged === null ? null : parse(salvaged) ?? null;
+}
+
+/**
+ * The structured answer, or null when there is none to be had.
+ *
+ * Lenient on shape and strict on substance: a missing list is an empty one, an
+ * unknown evidence label reads as the weakest, and an item with no text is
+ * dropped. What is never done is inventing a finding the model did not return.
+ */
+export function parseFindings(answer: string): PerplexityFindings | null {
+  const obj = extractJson(answer);
+  if (!obj) return null;
   const list = <T>(v: unknown, f: (x: unknown) => T | null): T[] =>
     Array.isArray(v) ? v.map(f).filter((x): x is T => x !== null) : [];
   return {

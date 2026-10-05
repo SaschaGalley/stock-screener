@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
-  DEEP_RESEARCH_MODEL, DEFAULT_PERPLEXITY_MODEL, MANUAL_RESEARCH_TOOLS, type ManualResearchTool,
-  type PerplexityModelId, perplexityLabel,
+  DEEP_RESEARCH_MODEL, DEFAULT_PERPLEXITY_MODEL, type PerplexityModelId, perplexityLabel,
 } from '../../../../src/models';
+import { ManualResearch, ResearchReports } from '../ManualResearch';
 import { api } from '../../api';
 import PerplexityBrief from './PerplexityBrief';
 import type {
@@ -14,7 +14,6 @@ import type {
   DistillInsight,
   PerplexityContext,
   PplxChoice,
-  ResearchPasteResponse,
 } from '../../types';
 
 interface Props {
@@ -288,14 +287,16 @@ function PerplexitySection({
 }
 
 /**
- * Deep research, kept beside the regular brief.
+ * Research beyond the regular brief: the deep company report, kept beside it,
+ * and the research run by hand for reading — the preview of a report, the
+ * check of my own theses, a question across several stocks.
  *
- * Its own block because it is its own purchase: through the API about a
- * dollar and several minutes a report, against a few cents for the brief. The
- * other way in is a subscription: copy the brief, run it in a chat app's
- * research mode, paste the answer back. Either way every analysis inside the
- * window set in the admin settings reads it, so a report kept today shapes the
- * verdicts of the next weeks — the buttons say so.
+ * The company report is its own purchase: through the API about a dollar and
+ * several minutes, against a few cents for the brief. The other way in is a
+ * subscription: copy the prompt, run it in a chat app's research mode, paste
+ * the answer back. Either way every analysis inside the window set in the
+ * admin settings reads it, so a report kept today shapes the verdicts of the
+ * next weeks — the buttons say so. The other kinds are for reading only.
  */
 function DeepResearchSection({ symbol, deep, onRefreshed }: {
   symbol: string;
@@ -304,10 +305,8 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
 }) {
   const refresh = usePerplexityRefresh(symbol, DEEP_RESEARCH_MODEL, onRefreshed);
   const cost = perplexityLabel(DEEP_RESEARCH_MODEL);
-  const [pasting, setPasting] = useState(false);
-  // The brief, shown to copy by hand where the browser refuses the clipboard.
-  const [promptText, setPromptText] = useState<string | null>(null);
-  useEffect(() => { setPasting(false); setPromptText(null); }, [symbol]);
+  // Bumped after a report other than the company brief is kept, so the list is read again.
+  const [tick, setTick] = useState(0);
 
   function start() {
     if (!window.confirm(
@@ -325,19 +324,10 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
         </h3>
         <div className="flex flex-wrap items-center gap-2">
           {deep && <BriefMeta context={deep} />}
-          <CopyPromptButton symbol={symbol} onBlocked={setPromptText} />
-          <button
-            onClick={() => setPasting((p) => !p)}
-            className={`rounded border px-2 py-1 text-2xs font-medium transition ${
-              pasting ? 'border-ink-600 bg-ink-700 text-ink-50' : 'border-ink-700 bg-ink-900 text-ink-200 hover:bg-ink-800'
-            }`}
-          >
-            Ergebnis einfügen
-          </button>
           <button
             onClick={start}
             disabled={refresh.busy}
-            title={`Über die API: ${cost} — Dutzende Suchen, 3–5 Minuten.`}
+            title={`Firmenbericht über die API: ${cost} — Dutzende Suchen, 3–5 Minuten.`}
             className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-2xs font-medium text-ink-400 transition hover:bg-ink-800 hover:text-ink-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {refresh.busy ? '⟳ läuft…' : 'API'}
@@ -347,191 +337,38 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
 
       {refresh.busy && <Busy>⟳ Deep Research läuft — Perplexity sucht und schreibt drei bis fünf Minuten. Die Seite kann offen bleiben.</Busy>}
       {refresh.error && <Failed>{refresh.error}</Failed>}
-      {promptText && (
-        <div className="mb-3">
-          <div className="mb-1 flex items-center justify-between text-2xs text-ink-500">
-            <span>Die Zwischenablage ist gesperrt — hier markieren und kopieren:</span>
-            <button onClick={() => setPromptText(null)} className="text-ink-400 hover:text-ink-200">Schließen</button>
-          </div>
-          <textarea
-            readOnly
-            value={promptText}
-            rows={8}
-            onFocus={(e) => e.currentTarget.select()}
-            className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-1 font-mono text-2xs text-ink-300"
-          />
-        </div>
-      )}
-      {pasting && (
-        <PasteResearch
-          symbol={symbol}
-          replaces={deep}
-          onSaved={() => { setPasting(false); onRefreshed(); }}
+      <div className="mb-3">
+        <ManualResearch
+          kinds={['company', 'earnings', 'thesis']}
+          symbols={[symbol]}
+          replaces={(kind) => kind === 'company' && deep
+            ? `Ersetzt den Bericht vom ${new Date(deep.fetchedAt).toLocaleDateString()} in den Analysen; der alte bleibt im Archiv.`
+            : null}
+          onSaved={(kind) => (kind === 'company' ? onRefreshed() : setTick((n) => n + 1))}
         />
-      )}
+      </div>
 
       {deep ? (
         <details className="rounded border border-ink-800 bg-ink-950 px-3 py-2" open>
           <summary className="cursor-pointer text-2xs text-ink-500">
-            Bericht vom {new Date(deep.fetchedAt).toLocaleDateString()} — geht in jede Analyse ein, solange er im Zeitfenster liegt
+            Firmenbericht vom {new Date(deep.fetchedAt).toLocaleDateString()} — geht in jede Analyse ein, solange er im Zeitfenster liegt
           </summary>
           <div className="mt-2 max-h-[48rem] overflow-y-auto">
             <PerplexityBrief context={deep} />
           </div>
           <Citations urls={deep.citations} />
         </details>
-      ) : !pasting && (
+      ) : (
         <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-xs text-ink-500">
-          Kein Deep-Research-Bericht für {symbol}. Am günstigsten mit einem Abo: „Prompt kopieren“, in
+          Kein Firmenbericht für {symbol}. Am günstigsten mit einem Abo: „Prompt kopieren“, in
           Perplexity (oder ChatGPT, Claude, Gemini) im Research-Modus laufen lassen, die Antwort mit
           „Ergebnis einfügen“ zurückholen. Über die API kostet er {cost}.
         </div>
       )}
-    </div>
-  );
-}
 
-/**
- * The brief, filled in for this stock, onto the clipboard. Where the browser
- * refuses the clipboard, it goes to `onBlocked` to be shown instead.
- */
-function CopyPromptButton({ symbol, onBlocked }: { symbol: string; onBlocked: (prompt: string) => void }) {
-  const [state, setState] = useState<'idle' | 'busy' | 'copied'>('idle');
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setState('idle'); setError(null); }, [symbol]);
-
-  async function copy() {
-    setState('busy');
-    setError(null);
-    try {
-      const { prompt } = await api.getResearchPrompt(symbol);
-      try {
-        await navigator.clipboard.writeText(prompt);
-        setState('copied');
-        setTimeout(() => setState('idle'), 2500);
-      } catch {
-        onBlocked(prompt);
-        setState('idle');
-      }
-    } catch (e) {
-      setError((e as Error).message);
-      setState('idle');
-    }
-  }
-
-  return (
-    <>
-      <button
-        onClick={() => void copy()}
-        disabled={state === 'busy'}
-        title="Den Recherche-Auftrag für diese Aktie kopieren — für den Research-Modus von Perplexity, ChatGPT, Claude oder Gemini"
-        className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-2xs font-medium text-ink-200 transition hover:bg-ink-800 disabled:opacity-40"
-      >
-        {state === 'copied' ? '✓ Kopiert' : 'Prompt kopieren'}
-      </button>
-      {error && <span className="text-2xs text-amber-300">⚠ {error}</span>}
-    </>
-  );
-}
-
-const COUNT_LABELS: [keyof ResearchPasteResponse['summary']['counts'], string, string][] = [
-  ['debate', 'Streitfrage', 'Streitfragen'], ['events', 'Ereignis', 'Ereignisse'], ['kpis', 'Kennzahl', 'Kennzahlen'],
-  ['bearEvidence', 'Gegenbeleg', 'Gegenbelege'], ['bullClaims', 'Bullen-These', 'Bullen-Thesen'],
-  ['bearClaims', 'Bären-These', 'Bären-Thesen'], ['catalysts', 'Termin', 'Termine'],
-];
-
-/**
- * The answer from the chat app, pasted back. Read as it is pasted, so what
- * was found shows before anything is kept; kept with one click.
- */
-function PasteResearch({ symbol, replaces, onSaved }: {
-  symbol: string;
-  replaces: PerplexityContext | null;
-  onSaved: () => void;
-}) {
-  const [tool, setTool] = useState<ManualResearchTool>(MANUAL_RESEARCH_TOOLS[0]);
-  const [text, setText] = useState('');
-  const [summary, setSummary] = useState<ResearchPasteResponse['summary'] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setSummary(null);
-    setError(null);
-    if (!text.trim()) return;
-    let live = true;
-    const t = setTimeout(() => {
-      api.pasteResearch(symbol, text, tool, false)
-        .then((r) => { if (live) setSummary(r.summary); })
-        .catch((e) => { if (live) setError((e as Error).message); });
-    }, 300);
-    return () => { live = false; clearTimeout(t); };
-  }, [symbol, text, tool]);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await api.pasteResearch(symbol, text, tool, true);
-      onSaved();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const found = summary && (summary.structured
-    ? COUNT_LABELS.filter(([k]) => summary.counts[k] > 0)
-      .map(([k, one, many]) => `${summary.counts[k]} ${summary.counts[k] === 1 ? one : many}`).join(' · ')
-    : 'kein JSON gefunden — wird als Bericht in Textform übernommen');
-
-  return (
-    <div className="mb-3 space-y-2 rounded border border-ink-700 bg-ink-900 p-3">
-      <div className="flex flex-wrap items-center gap-2 text-2xs text-ink-500">
-        <span>Antwort aus</span>
-        <div className="flex overflow-hidden rounded border border-ink-700">
-          {MANUAL_RESEARCH_TOOLS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTool(t)}
-              className={`px-2 py-0.5 text-2xs transition ${
-                t === tool ? 'bg-ink-700 font-medium text-ink-50' : 'bg-ink-950 text-ink-400 hover:text-ink-200'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+      <div className="mt-3">
+        <ResearchReports symbol={symbol} tick={tick} title="Weitere Recherchen" />
       </div>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={6}
-        autoFocus
-        placeholder="Die komplette Antwort hier einfügen — das JSON samt Codeblock, oder den Bericht, wenn das Werkzeug keinen JSON geschrieben hat."
-        className="w-full resize-y rounded border border-ink-700 bg-ink-950 px-2 py-1.5 font-mono text-2xs text-ink-200 placeholder:font-sans placeholder:text-ink-600 focus:border-ink-500 focus:outline-none"
-      />
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => void save()}
-          disabled={!summary || saving}
-          className="rounded bg-accent px-3 py-1 text-xs font-medium text-ink-950 transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {saving ? 'Speichere …' : 'Übernehmen'}
-        </button>
-        {found && (
-          <span className="text-2xs text-ink-400">
-            Erkannt: {found}{summary.sources > 0 && ` · ${summary.sources} ${summary.sources === 1 ? 'Quelle' : 'Quellen'}`}
-          </span>
-        )}
-        {error && <span className="text-2xs text-amber-300">⚠ {error}</span>}
-      </div>
-      {replaces && (
-        <p className="text-2xs text-ink-600">
-          Ersetzt den Bericht vom {new Date(replaces.fetchedAt).toLocaleDateString()} in den Analysen; der alte bleibt im Archiv.
-        </p>
-      )}
     </div>
   );
 }

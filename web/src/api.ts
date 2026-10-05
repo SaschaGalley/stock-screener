@@ -34,6 +34,7 @@ import type { Timeline } from '../../src/analysis/timeline';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
 import type { ManualResearchTool } from '../../src/models';
+import type { ResearchKind, ResearchReport } from '../../src/research/kinds';
 import type { BacktestOverview } from '../../src/backtest-service';
 import type { CalibrationOverview } from '../../src/calibration-service';
 import type { VerdictEvidence } from '../../src/backtest/result';
@@ -206,14 +207,23 @@ export const api = {
       },
     ),
 
-  /** The deep research brief, filled in for this stock, to run in a chat app. */
-  getResearchPrompt: (symbol: string) =>
-    jsonFetch<ResearchPromptResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/research-prompt`),
-  /** Read a pasted report; with `save`, keep it as the stock's deep research. */
-  pasteResearch: (symbol: string, text: string, tool: ManualResearchTool, save: boolean) =>
-    jsonFetch<ResearchPasteResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/research-paste`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, tool, save }),
+  /** The prompt for a kind of research, filled in, to run in a chat app's research mode. */
+  getResearchPrompt: (kind: ResearchKind, symbols: string[], question?: string) =>
+    jsonFetch<ResearchPromptResponse>(`${BASE}/research/prompt?${new URLSearchParams({
+      kind, symbols: symbols.join(','), ...(question ? { question } : {}),
+    })}`),
+  /** Read a pasted answer; with `save`, keep it. */
+  pasteResearch: (input: {
+    kind: ResearchKind; symbols: string[]; question?: string; text: string; tool: ManualResearchTool; save: boolean;
+  }) =>
+    jsonFetch<ResearchPasteResponse>(`${BASE}/research/paste`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
     }),
+  /** Research reports naming `symbol`, or all of them — every kind but the company brief. */
+  getResearch: (symbol?: string) =>
+    jsonFetch<{ reports: ResearchReport[] }>(`${BASE}/research${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`),
+  deleteResearch: (id: number) =>
+    jsonFetch<{ ok: true }>(`${BASE}/research/${id}`, { method: 'DELETE' }),
 
   deleteAnalysis: (symbol: string, hash: string) =>
     jsonFetch<{ ok: boolean; symbol: string; hash: string }>(
