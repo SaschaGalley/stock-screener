@@ -617,7 +617,9 @@ function OpenTradesPanel({ symbol, tick, onExplain }: {
   if (error) return <p className="text-2xs text-red-400">⚠ {error}</p>;
   if (!open?.configured) return null;
   const groups = groupTrades(open.trades);
-  if (groups.length === 0 && !open.syncError) return null;
+  // A failed sync is the journal page's to report; a stock page shows the
+  // panel only for trades of its own stock, not the same error on every page.
+  if (groups.length === 0 && (!open.syncError || symbol)) return null;
 
   return (
     <section className="rounded border border-ink-700 bg-ink-900 px-3 py-2">

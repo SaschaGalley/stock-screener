@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { tradeFromUmsatz } from '../src/trades-service.js';
+import { tradeFromUmsatz, umsatzJson } from '../src/trades-service.js';
 
 const sent = {
   id: '00000000-0000-0000-0000-000000000001', day: '2026-03-12', isin: 'xx0000000001', symbol: 'exa',
@@ -31,5 +31,25 @@ describe('a trade from umsatz', () => {
       { ...sent, id: '' }, { ...sent, day: '12.3.2026' }, { ...sent, isin: null },
       { ...sent, quantity: 'ten' }, { ...sent, kind: 'transfer' }, null, 'x',
     ]) assert.equal(tradeFromUmsatz(broken), null);
+  });
+});
+
+describe('what umsatz answered', () => {
+  const url = 'https://umsatz.example/integrations/stock-cli/trades';
+  const answer = (body: string, status: number, type: string) => new Response(body, { status, headers: { 'content-type': type } });
+
+  it('reads JSON', async () => {
+    assert.deepEqual(await umsatzJson(answer('{"trades":[]}', 200, 'application/json; charset=utf-8'), url), { trades: [] });
+  });
+
+  it('names the admin page for what it is, instead of a JSON parse error', async () => {
+    await assert.rejects(umsatzJson(answer('<!DOCTYPE html><html></html>', 200, 'text/html'), url),
+      /Unter https:\/\/umsatz\.example antwortet keine umsatz-API, sondern eine Webseite/);
+  });
+
+  it('says what a wrong key, a missing route and any other failure mean', async () => {
+    await assert.rejects(umsatzJson(answer('', 401, 'application/json'), url), /lehnt den Schlüssel ab/);
+    await assert.rejects(umsatzJson(answer('', 404, 'application/json'), url), /\/integrations\/stock-cli\/trades nicht — ist umsatz/);
+    await assert.rejects(umsatzJson(answer('', 502, 'text/html'), url), /antwortet mit 502/);
   });
 });

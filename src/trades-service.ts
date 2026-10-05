@@ -18,6 +18,7 @@ import { logger } from './utils/logger.js';
 const SOURCE = 'umsatz';
 const SYNCED_AT = 'trades.umsatz.syncedAt';
 const SYNC_ERROR = 'trades.umsatz.syncError';
+const SYNC_TRIED_AT = 'trades.umsatz.triedAt';
 /** The journal page asks on every visit; umsatz is asked at most this often. */
 const SYNC_EVERY_MS = 10 * 60_000;
 
@@ -54,11 +55,28 @@ export function tradeFromUmsatz(v: unknown): TradeRow | null {
 async function fromUmsatz(path: string): Promise<unknown> {
   const { umsatzApiUrl, umsatzApiKey } = getConfig();
   if (!umsatzApiKey) throw new Error('UMSATZ_API_KEY ist nicht gesetzt.');
-  const res = await fetch(`${umsatzApiUrl.replace(/\/$/, '')}/integrations/stock-cli/${path}`, {
-    headers: { 'x-api-key': umsatzApiKey },
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`umsatz antwortet auf /${path} mit ${res.status}${res.status === 401 ? ' — der Schlüssel passt nicht' : ''}`);
+  const url = `${umsatzApiUrl.replace(/\/$/, '')}/integrations/stock-cli/${path}`;
+  const res = await fetch(url, { headers: { 'x-api-key': umsatzApiKey }, signal: AbortSignal.timeout(20_000) });
+  return umsatzJson(res, url);
+}
+
+/**
+ * The body of umsatz's answer, or an error that says what is wrong in words
+ * the page can show. umsatz serves its API and its admin from two hosts, and
+ * the admin answers every path with its own page and a 200 — so a URL that
+ * points at the admin does not fail, it returns HTML, which `res.json()`
+ * reports as "Unexpected token '<'".
+ */
+export async function umsatzJson(res: Response, url: string): Promise<unknown> {
+  const where = (() => { try { return new URL(url).origin; } catch { return url; } })();
+  if (res.status === 401) throw new Error(`umsatz unter ${where} lehnt den Schlüssel ab — UMSATZ_API_KEY und STOCK_CLI_API_KEY müssen gleich sein.`);
+  if (res.status === 404) throw new Error(`Unter ${where} gibt es ${new URL(url).pathname} nicht — ist umsatz mit der stock-cli-Schnittstelle deployt?`);
+  if (!res.ok) throw new Error(`umsatz unter ${where} antwortet mit ${res.status}.`);
+  const type = res.headers.get('content-type') ?? '';
+  if (!type.includes('json')) {
+    throw new Error(`Unter ${where} antwortet keine umsatz-API, sondern eine Webseite. UMSATZ_API_URL muss auf die API zeigen `
+      + '(dieselbe Adresse wie VITE_API_URL in umsatz), nicht auf die Admin-Oberfläche.');
+  }
   return res.json();
 }
 
@@ -92,7 +110,11 @@ export async function syncTrades(): Promise<{ total: number; added: number }> {
     logger.info(`Trades from umsatz: ${out.total}, ${out.added} new; ${prices.length} prices`);
     return out;
   } catch (e) {
-    const message = e instanceof Error && e.name === 'TimeoutError' ? 'umsatz antwortet nicht' : (e as Error).message;
+    const where = getConfig().umsatzApiUrl;
+    const message = e instanceof Error && e.name === 'TimeoutError' ? `umsatz unter ${where} antwortet nicht`
+      // Node's fetch says only "fetch failed" for a refused or unresolvable host.
+      : e instanceof TypeError && e.message === 'fetch failed' ? `umsatz unter ${where} ist nicht erreichbar — stimmt UMSATZ_API_URL?`
+      : (e as Error).message;
     await writeAppState(SYNC_ERROR, message);
     throw new Error(message);
   }
@@ -101,8 +123,12 @@ export async function syncTrades(): Promise<{ total: number; added: number }> {
 /** Sync when the copy is older than ten minutes, or when asked to; a failure is recorded, not thrown. */
 export async function syncTradesIfStale(force = false): Promise<void> {
   if (!getConfig().umsatzApiKey) return;
-  const last = await readAppState(SYNCED_AT);
-  if (force || !last || Date.now() - Date.parse(last) > SYNC_EVERY_MS) {
+  // By the last attempt, not the last success: a sync that keeps failing
+  // would otherwise be retried by every page that reads the trades.
+  const [last, tried] = await Promise.all([readAppState(SYNCED_AT), readAppState(SYNC_TRIED_AT)]);
+  const newest = [last, tried].filter((x): x is string => !!x).map(Date.parse).reduce((a, b) => Math.max(a, b), 0);
+  if (force || Date.now() - newest > SYNC_EVERY_MS) {
+    await writeAppState(SYNC_TRIED_AT, new Date().toISOString());
     await syncTrades().catch(() => { /* recorded in SYNC_ERROR */ });
   }
 }
