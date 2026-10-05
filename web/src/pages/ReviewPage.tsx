@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { CloseIcon } from '../components/icons';
+import { ManualResearch, ReportCard } from '../components/ManualResearch';
 import { fmtSignedPct } from '../format';
 import { decisionRight, MIN_COMPARE, type ModelStance, type ReviewedDecision } from '../../../src/analysis/review';
 import { RECORD_HORIZONS } from '../../../src/analysis/verdict-record';
 import type { ReviewResponse } from '../../../src/review-service';
+import { REVIEW_CAUSE_LABEL, type ResearchReport, type ReviewCause } from '../../../src/research/kinds';
+
+type Check = Extract<ResearchReport, { kind: 'review' }>;
 
 const fmtDay = (d: string) => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}.${d.slice(0, 4)}`;
 const SIDE_LABEL = { buy: 'Kauf', sell: 'Verkauf' } as const;
@@ -35,10 +39,34 @@ export default function ReviewPage({ onClose }: { onClose: () => void }) {
   const [data, setData] = useState<ReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
+  // The look-backs researched by hand, by the decision they look back on — newest first.
+  const [checks, setChecks] = useState<Map<string, Check[]>>(new Map());
+
+  const loadChecks = () => api.getResearch()
+    .then((r) => {
+      const by = new Map<string, Check[]>();
+      for (const x of r.reports) {
+        if (x.kind !== 'review' || !x.decision) continue;
+        by.set(x.decision, [...(by.get(x.decision) ?? []), x]);
+      }
+      setChecks(by);
+    })
+    .catch(() => { /* the review stands without them */ });
 
   useEffect(() => {
     api.getReview().then(setData).catch((e) => setError((e as Error).message));
+    void loadChecks();
   }, []);
+
+  // What the newest check of each decision says about where its result came from.
+  const causes = useMemo(() => {
+    const c = new Map<ReviewCause, number>();
+    for (const list of checks.values()) {
+      const cause = list[0]?.data?.cause;
+      if (cause) c.set(cause, (c.get(cause) ?? 0) + 1);
+    }
+    return c;
+  }, [checks]);
 
   const shown = data ? data.decisions.filter(FILTERS.find((f) => f.key === filter)!.test) : [];
   return (
@@ -69,7 +97,14 @@ export default function ReviewPage({ onClose }: { onClose: () => void }) {
           <>
             <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">Was sich zeigt</h3>
-              <ul className="space-y-0.5 text-sm text-ink-200">{data.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+              <ul className="space-y-0.5 text-sm text-ink-200">
+                {data.notes.map((n) => <li key={n}>{n}</li>)}
+                {causes.size > 0 && (
+                  <li>
+                    Rückblick-Checks: {[...causes].map(([k, n]) => `${REVIEW_CAUSE_LABEL[k]} (${n}×)`).join('; ')}.
+                  </li>
+                )}
+              </ul>
               <p className="mt-2 text-2xs text-ink-500">
                 Gemessen wie unsere Urteile: Aktie gegen den S&amp;P 500 (SPY, mit Dividenden), in Dollar, vom Tag der
                 Entscheidung an. Ein Kauf lag richtig, wenn die Aktie danach vorn lag, ein Verkauf, wenn sie zurückblieb.
@@ -130,7 +165,9 @@ export default function ReviewPage({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
               <ul className="space-y-2">
-                {shown.map((d) => <DecisionCard key={d.key} d={d} />)}
+                {shown.map((d) => (
+                  <DecisionCard key={d.key} d={d} checks={checks.get(d.key) ?? []} onChecked={() => void loadChecks()} />
+                ))}
               </ul>
             </section>
           </>
@@ -140,8 +177,9 @@ export default function ReviewPage({ onClose }: { onClose: () => void }) {
   );
 }
 
-function DecisionCard({ d }: { d: ReviewedDecision }) {
+function DecisionCard({ d, checks, onChecked }: { d: ReviewedDecision; checks: Check[]; onChecked: () => void }) {
   const s = d.situation;
+  const [checking, setChecking] = useState(false);
   return (
     <li className="rounded border border-ink-800 bg-ink-950 px-3 py-2 text-xs">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -178,6 +216,34 @@ function DecisionCard({ d }: { d: ReviewedDecision }) {
       </div>
       {s && s.flags.length > 0 && (
         <ul className="mt-1 text-2xs text-amber-300">{s.flags.map((f) => <li key={f}>⚠ {f}</li>)}</ul>
+      )}
+      {checks.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {checks.map((c) => (
+            <ReportCard key={c.id} report={c} open={false} onDelete={async () => {
+              if (!window.confirm('Diesen Rückblick-Check löschen?')) return;
+              await api.deleteResearch(c.id).catch(() => undefined);
+              onChecked();
+            }} />
+          ))}
+        </div>
+      )}
+      {d.symbol && (
+        <div className="mt-1.5">
+          <button onClick={() => setChecking((v) => !v)} className="text-2xs text-ink-500 hover:text-ink-200">
+            {checking ? '▾' : '▸'} {checks.length ? 'Neuer Rückblick-Check' : 'Rückblick-Check: hat die Begründung gehalten?'}
+          </button>
+          {checking && (
+            <div className="mt-1.5">
+              <ManualResearch
+                kinds={['review']}
+                symbols={[d.symbol]}
+                decision={d.key}
+                onSaved={() => { setChecking(false); onChecked(); }}
+              />
+            </div>
+          )}
+        </div>
       )}
     </li>
   );

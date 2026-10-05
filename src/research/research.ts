@@ -18,10 +18,13 @@ import { listJournal } from '../db/journal-store.js';
 import { readFinancialsLax, writePerplexity } from '../db/store.js';
 import type { ManualResearchTool } from '../models.js';
 import {
-  RESEARCH_KIND_META, THEME_POSITIONS, THESIS_VERDICTS,
-  type EarningsPreview, type ResearchDataByKind, type ResearchKind, type ResearchPasteSummary, type ResearchReport,
-  type ThemePosition, type ThemeResearch, type ThesisCheck, type ThesisVerdict,
+  RESEARCH_KIND_META, REVIEW_CAUSES, REVIEW_VERDICTS, THEME_POSITIONS, THESIS_VERDICTS,
+  type DecisionCheck, type EarningsPreview, type ResearchDataByKind, type ResearchKind, type ResearchPasteSummary,
+  type ResearchReport, type ReviewCause, type ReviewVerdict, type ThemePosition, type ThemeResearch, type ThesisCheck,
+  type ThesisVerdict,
 } from './kinds.js';
+import { RECORD_HORIZONS } from '../analysis/verdict-record.js';
+import { readReview } from '../review-service.js';
 
 export class ResearchInputError extends Error {}
 
@@ -51,8 +54,74 @@ const THESIS_ENTRIES = 15;
 const THESIS_CHARS = 1500;
 const JOURNAL_KIND_EN = { note: 'note', buy: 'purchase', sell: 'sale' } as const;
 
+const signed = (x: number) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}%`;
+
+/**
+ * The prompt for looking back on one decision: what was done, the reason as
+ * written, the situation that day and what the stock did against the index
+ * since. Shares and amounts stay out — the judgement needs none of them.
+ */
+async function reviewPrompt(symbol: string, decisionKey: string | null | undefined): Promise<string> {
+  if (!decisionKey) throw new ResearchInputError('Welche Entscheidung?');
+  const review = await readReview();
+  const d = review.decisions.find((x) => x.key === decisionKey);
+  if (!d || d.symbol !== symbol) throw new ResearchInputError('Diese Entscheidung gibt es nicht mehr.');
+  const c = await named(symbol);
+  const body = d.entryId !== null ? (await listJournal()).find((e) => e.id === d.entryId)?.body ?? null : null;
+  const s = d.situation;
+  const legs = d.outcome
+    ? [
+      ...RECORD_HORIZONS.flatMap((h) => {
+        const l = d.outcome!.horizons[h];
+        return l && l.index !== null ? [`${h} month${h === 1 ? '' : 's'}: stock ${signed(l.stock)}, S&P 500 ${signed(l.index)}`] : [];
+      }),
+      ...(d.outcome.since && d.outcome.since.index !== null
+        ? [`to today: stock ${signed(d.outcome.since.stock)}, S&P 500 ${signed(d.outcome.since.index)}`] : []),
+    ]
+    : [];
+  const action = d.side === 'buy' ? 'bought' : 'sold';
+  return wrap(`An investor ${action} ${c.name} (${c.ticker}) on ${d.day}.
+
+Their reason, written at the time (often German):
+${body ? `"""\n${body}\n"""` : 'No reason was written down.'}
+
+That day: ${s?.flags.length ? s.flags.join('; ') : 'nothing unusual in price, volume or the year\'s range'}${
+  s?.verdict ? `; the investor's own model rated the stock ${s.verdict}` : ''}.
+
+Since then, total return in US dollars against the S&P 500:
+${legs.length ? legs.map((l) => `- ${l}`).join('\n') : '- not measurable from the prices on file'}
+
+Judge the decision in hindsight, as of ${today()}, from evidence rather than from the price alone:
+
+1. "what_happened": the dated events since ${d.day} that moved the stock against the index, and the
+   effect of each.
+2. "reason_check": for each part of the stated reason, whether it played out — with figures. Without
+   a written reason, what most likely prompted the ${d.side === 'buy' ? 'purchase' : 'sale'}, given the situation that day.
+3. "verdict": did the reason hold? "held" | "partly" | "failed" | "too_early".
+4. "cause": did the result — good or bad — come from the stated reason ("reason"), from something the
+   reason did not consider ("other"), "mixed", or "unclear". Being right for the wrong reason is "other".
+5. "drivers": what actually drove the stock against the index since the decision.
+6. "lesson": one or two sentences the investor can apply to the next decision — specific to what
+   happened here, not generic advice.
+7. "now": whether the original reason still applies today, and what would show that it no longer does.
+
+Return ONLY this JSON:
+{
+  "what_happened": [{"date": "YYYY-MM-DD", "event": "...", "effect": "...", "source": "url"}],
+  "reason_check":  "...",
+  "verdict":       "partly",
+  "cause":         "mixed",
+  "drivers":       "...",
+  "lesson":        "...",
+  "now":           "..."
+}`);
+}
+
 /** The prompt to copy for `kind`. Throws a ResearchInputError when it cannot be built. */
-export async function researchPromptFor(kind: ResearchKind, symbols: string[], question?: string | null): Promise<string> {
+export async function researchPromptFor(
+  kind: ResearchKind, symbols: string[], extra: { question?: string | null; decision?: string | null } = {},
+): Promise<string> {
+  const { question, decision } = extra;
   const scope = RESEARCH_KIND_META[kind].scope;
   if (symbols.length === 0) throw new ResearchInputError('Welche Aktie?');
   if (scope === 'one' && symbols.length > 1) throw new ResearchInputError(`${RESEARCH_KIND_META[kind].label} gilt einer Aktie.`);
@@ -131,6 +200,8 @@ Return ONLY this JSON:
 }`);
   }
 
+  if (kind === 'review') return reviewPrompt(symbols[0], decision);
+
   // theme
   const q = question?.trim();
   if (!q) throw new ResearchInputError('Welche Frage?');
@@ -195,6 +266,18 @@ export const RESEARCH_PARSERS: { [K in keyof ResearchDataByKind]: (o: Record<str
     } : null)),
     missed: list(o.missed, (x) => (text(x.point) ? { point: text(x.point), source: optText(x.source) } : null)),
   }),
+  review: (o): DecisionCheck => ({
+    // An unknown grade reads as the most cautious one: a label the model invented never passes a reason.
+    verdict:      oneOf<ReviewVerdict>(REVIEW_VERDICTS, o.verdict, 'too_early'),
+    cause:        oneOf<ReviewCause>(REVIEW_CAUSES, o.cause, 'unclear'),
+    reasonCheck:  text(o.reason_check ?? o.reasonCheck),
+    drivers:      text(o.drivers),
+    lesson:       text(o.lesson),
+    now:          optText(o.now),
+    whatHappened: list(o.what_happened ?? o.whatHappened, (x) => (text(x.event) ? {
+      date: optText(x.date), event: text(x.event), effect: text(x.effect), source: optText(x.source),
+    } : null)),
+  }),
   theme: (o): ThemeResearch => ({
     answer:        text(o.answer),
     companies:     list(o.companies, (x) => (text(x.ticker) ? {
@@ -236,6 +319,14 @@ function foundIn<K extends keyof ResearchDataByKind>(kind: K, d: ResearchDataByK
       sources: [...t.theses.flatMap((x) => x.sources), ...t.missed.map((x) => x.source)].filter((x): x is string => !!x),
     };
   }
+  if (kind === 'review') {
+    const r = d as DecisionCheck;
+    return {
+      found: counted([[r.reasonCheck ? 1 : 0, 'Prüfung der Begründung', 'Prüfungen'], [r.whatHappened.length, 'Ereignis', 'Ereignisse'],
+        [r.lesson ? 1 : 0, 'Lehre', 'Lehren']]),
+      sources: r.whatHappened.map((x) => x.source).filter((x): x is string => !!x),
+    };
+  }
   const m = d as ThemeResearch;
   return {
     found: counted([[m.answer ? 1 : 0, 'Antwort', 'Antworten'], [m.companies.length, 'Firma', 'Firmen'],
@@ -252,7 +343,8 @@ const MIN_PROSE = 400;
  * when there is nothing to keep.
  */
 export async function pasteResearch(input: {
-  kind: ResearchKind; symbols: string[]; question?: string | null; text: string; tool: ManualResearchTool; save: boolean;
+  kind: ResearchKind; symbols: string[]; question?: string | null; decision?: string | null;
+  text: string; tool: ManualResearchTool; save: boolean;
 }): Promise<{ saved: boolean; summary: ResearchPasteSummary }> {
   const { kind, symbols, tool, save } = input;
   if (symbols.length === 0) throw new ResearchInputError('Welche Aktie?');
@@ -280,10 +372,11 @@ export async function pasteResearch(input: {
     throw new ResearchInputError('Nichts Verwertbares erkannt — weder die JSON-Antwort noch ein Bericht in Textform.');
   }
   if (save) {
-    const prompt = await researchPromptFor(kind, symbols, input.question).catch(() => '');
+    const prompt = await researchPromptFor(kind, symbols, { question: input.question, decision: input.decision }).catch(() => '');
     await query(
-      `INSERT INTO research_reports (kind, symbols, question, tool, prompt, raw, data) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [kind, symbols, input.question?.trim() || null, tool, prompt, input.text, structured ? JSON.stringify(data) : null],
+      `INSERT INTO research_reports (kind, symbols, question, decision, tool, prompt, raw, data) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [kind, symbols, input.question?.trim() || null, kind === 'review' ? input.decision ?? null : null,
+        tool, prompt, input.text, structured ? JSON.stringify(data) : null],
     );
   }
   return { saved: save, summary: { structured, found, sources: new Set(sources).size } };
@@ -292,16 +385,16 @@ export async function pasteResearch(input: {
 /** The reports naming `symbol`, or all of them, newest first. */
 export async function listResearch(symbol?: string): Promise<ResearchReport[]> {
   const res = await query<{
-    id: number; kind: ResearchReport['kind']; symbols: string[]; question: string | null; tool: string;
+    id: number; kind: ResearchReport['kind']; symbols: string[]; question: string | null; decision: string | null; tool: string;
     created_at: Date; data: unknown; raw: string;
   }>(
-    `SELECT id, kind, symbols, question, tool, created_at, data, raw FROM research_reports
+    `SELECT id, kind, symbols, question, decision, tool, created_at, data, raw FROM research_reports
       WHERE deleted_at IS NULL AND ($1::text IS NULL OR symbols @> ARRAY[$1::text])
       ORDER BY created_at DESC`,
     [symbol?.toUpperCase() ?? null],
   );
   return res.rows.map((r) => ({
-    id: r.id, kind: r.kind, symbols: r.symbols, question: r.question, tool: r.tool,
+    id: r.id, kind: r.kind, symbols: r.symbols, question: r.question, decision: r.decision, tool: r.tool,
     createdAt: r.created_at.toISOString(), data: r.data, raw: r.raw,
   }) as ResearchReport);
 }

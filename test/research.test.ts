@@ -10,7 +10,7 @@ import { describe, it } from 'node:test';
 import { pasteResearch, RESEARCH_PARSERS, ResearchInputError } from '../src/research/research.js';
 
 const fence = (o: unknown) => 'Here is the research:\n```json\n' + JSON.stringify(o) + '\n```';
-const preview = (kind: 'company' | 'earnings' | 'thesis' | 'theme', body: string) =>
+const preview = (kind: 'company' | 'earnings' | 'thesis' | 'theme' | 'review', body: string) =>
   pasteResearch({ kind, symbols: ['XYZ'], question: 'Who wins?', text: body, tool: 'Perplexity', save: false });
 
 describe('a preview of the next report', () => {
@@ -56,6 +56,23 @@ describe('a question across several stocks', () => {
       companies: [{ ticker: 'googl', position: 'leader' }, { ticker: 'msft', position: 'winning' }, { position: 'x' }],
     });
     assert.deepEqual(d.companies.map((c) => [c.ticker, c.position]), [['GOOGL', 'leader'], ['MSFT', 'unclear']]);
+  });
+});
+
+describe('a look back on one decision', () => {
+  it('never passes a reason on a grade it does not know, and keeps what happened', async () => {
+    const answer = {
+      verdict: 'mostly held', cause: 'OTHER', reason_check: 'The AI thesis played out [2].', drivers: 'Rates fell.',
+      lesson: 'Size a hype purchase smaller.', now: 'Still applies.',
+      what_happened: [{ date: '2026-07-22', event: 'Q2 beat', effect: '+8% on the day', source: 'https://a.example/q2' }, { event: '' }],
+    };
+    const d = RESEARCH_PARSERS.review(answer);
+    assert.equal(d.verdict, 'too_early');
+    assert.equal(d.cause, 'other');
+    assert.equal(d.reasonCheck, 'The AI thesis played out.');
+    assert.equal(d.whatHappened.length, 1);
+    const r = await preview('review', fence(answer));
+    assert.deepEqual(r.summary, { structured: true, found: ['1 Prüfung der Begründung', '1 Ereignis', '1 Lehre'], sources: 1 });
   });
 });
 

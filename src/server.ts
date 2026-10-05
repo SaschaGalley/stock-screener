@@ -486,8 +486,10 @@ export function createApp(): express.Express {
         res.status(400).json({ error: `Unbekannte Recherche: ${String(req.query.kind)}` });
         return;
       }
-      const question = typeof req.query.question === 'string' ? req.query.question : null;
-      res.json({ prompt: await researchPromptFor(req.query.kind, researchSymbols(req.query.symbols), question) });
+      const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+      res.json({ prompt: await researchPromptFor(req.query.kind, researchSymbols(req.query.symbols), {
+        question: str(req.query.question), decision: str(req.query.decision),
+      }) });
     } catch (e) {
       researchError(e, res, next);
     }
@@ -503,6 +505,7 @@ export function createApp(): express.Express {
       res.json(await pasteResearch({
         kind: body.kind, symbols: researchSymbols(body.symbols), tool, text: body.text, save: body.save === true,
         question: typeof body.question === 'string' ? body.question : null,
+        decision: typeof body.decision === 'string' ? body.decision : null,
       }));
     } catch (e) {
       researchError(e, res, next);

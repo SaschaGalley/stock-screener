@@ -6,7 +6,7 @@
  * Pure and dependency-free so the web app can import it.
  */
 
-export const RESEARCH_KINDS = ['company', 'earnings', 'thesis', 'theme'] as const;
+export const RESEARCH_KINDS = ['company', 'earnings', 'thesis', 'theme', 'review'] as const;
 export type ResearchKind = (typeof RESEARCH_KINDS)[number];
 
 export const RESEARCH_KIND_META: Record<ResearchKind, {
@@ -31,6 +31,10 @@ export const RESEARCH_KIND_META: Record<ResearchKind, {
   theme: {
     label: 'Themen-Recherche', scope: 'many',
     hint:  'Eine Frage über mehrere Aktien, z. B. wer das KI-Rennen gewinnt',
+  },
+  review: {
+    label: 'Rückblick-Check', scope: 'one',
+    hint:  'Ob die Begründung eines Kaufs oder Verkaufs gehalten hat — und ob das Ergebnis aus ihr kam',
   },
 };
 
@@ -90,10 +94,40 @@ export interface ThemeResearch {
   watch:         { date: string | null; event: string; why: string }[];
 }
 
+export const REVIEW_VERDICTS = ['held', 'partly', 'failed', 'too_early'] as const;
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+export const REVIEW_VERDICT_LABEL: Record<ReviewVerdict, string> = {
+  held:      'Begründung hat gehalten',
+  partly:    'teilweise gehalten',
+  failed:    'nicht gehalten',
+  too_early: 'noch zu früh',
+};
+
+/** Whether the result came from the reason given, or from something it did not consider. */
+export const REVIEW_CAUSES = ['reason', 'other', 'mixed', 'unclear'] as const;
+export type ReviewCause = (typeof REVIEW_CAUSES)[number];
+export const REVIEW_CAUSE_LABEL: Record<ReviewCause, string> = {
+  reason:  'Ergebnis kam aus der Begründung',
+  other:   'Ergebnis kam aus etwas anderem',
+  mixed:   'teils, teils',
+  unclear: 'unklar',
+};
+
+export interface DecisionCheck {
+  verdict:      ReviewVerdict;
+  cause:        ReviewCause;
+  reasonCheck:  string;
+  drivers:      string;
+  lesson:       string;
+  now:          string | null;
+  whatHappened: { date: string | null; event: string; effect: string; source: string | null }[];
+}
+
 export interface ResearchDataByKind {
   earnings: EarningsPreview;
   thesis:   ThesisCheck;
   theme:    ThemeResearch;
+  review:   DecisionCheck;
 }
 
 /** A report kept from a pasted answer — every kind but the company brief. */
@@ -103,6 +137,8 @@ export type ResearchReport = {
     kind:      K;
     symbols:   string[];
     question:  string | null;
+    /** For a review: the decision it looks back on (`Decision.key` in `analysis/review.ts`). */
+    decision:  string | null;
     tool:      string;
     createdAt: string;
     /** The parsed answer; null when the tool wrote prose, which is then in `raw`. */

@@ -329,7 +329,8 @@ export const MANUAL_ANSWER_RULE =
 
 /** A string from a model's JSON, citation markers and runs of space removed; '' for anything else. */
 export const text = (v: unknown): string =>
-  typeof v === 'string' ? v.replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim() : '';
+  // The space before a marker goes with it: "played out [2]." is "played out.", not "played out .".
+  typeof v === 'string' ? v.replace(/\s*\[\d+\]/g, '').replace(/\s+/g, ' ').trim() : '';
 export const optText = (v: unknown): string | null => text(v) || null;
 
 function finding(v: unknown): PerplexityFinding | null {

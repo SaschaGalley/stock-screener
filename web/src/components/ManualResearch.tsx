@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { MANUAL_RESEARCH_TOOLS, type ManualResearchTool } from '../../../src/models';
 import {
-  RESEARCH_KIND_META, THEME_POSITION_LABEL, THESIS_VERDICT_LABEL,
-  type ResearchKind, type ResearchPasteSummary, type ResearchReport, type ThesisVerdict,
+  RESEARCH_KIND_META, REVIEW_CAUSE_LABEL, REVIEW_VERDICT_LABEL, THEME_POSITION_LABEL, THESIS_VERDICT_LABEL,
+  type ResearchKind, type ResearchPasteSummary, type ResearchReport, type ReviewVerdict, type ThesisVerdict,
 } from '../../../src/research/kinds';
 
 /**
@@ -11,11 +11,13 @@ import {
  * research mode, paste the answer back. What the answer was read as shows
  * before it is kept.
  */
-export function ManualResearch({ kinds, symbols, question, replaces, onSaved }: {
+export function ManualResearch({ kinds, symbols, question, decision, replaces, onSaved }: {
   kinds: ResearchKind[];
   symbols: string[];
   /** For a theme: the question asked across the stocks. */
   question?: string;
+  /** For a review: the decision it looks back on. */
+  decision?: string;
   /** A line on what keeping the answer replaces, when it does. */
   replaces?: (kind: ResearchKind) => string | null;
   onSaved: (kind: ResearchKind) => void;
@@ -33,7 +35,7 @@ export function ManualResearch({ kinds, symbols, question, replaces, onSaved }: 
   async function copy() {
     setError(null);
     try {
-      const { prompt } = await api.getResearchPrompt(kind, symbols, question);
+      const { prompt } = await api.getResearchPrompt(kind, symbols, { question, decision });
       try {
         await navigator.clipboard.writeText(prompt);
         setPromptText(null);
@@ -107,6 +109,7 @@ export function ManualResearch({ kinds, symbols, question, replaces, onSaved }: 
           kind={kind}
           symbols={symbols}
           question={question}
+          decision={decision}
           replaces={replaces?.(kind) ?? null}
           onSaved={() => { setPasting(false); onSaved(kind); }}
         />
@@ -115,10 +118,11 @@ export function ManualResearch({ kinds, symbols, question, replaces, onSaved }: 
   );
 }
 
-function PasteAnswer({ kind, symbols, question, replaces, onSaved }: {
+function PasteAnswer({ kind, symbols, question, decision, replaces, onSaved }: {
   kind: ResearchKind;
   symbols: string[];
   question?: string;
+  decision?: string;
   replaces: string | null;
   onSaved: () => void;
 }) {
@@ -127,7 +131,7 @@ function PasteAnswer({ kind, symbols, question, replaces, onSaved }: {
   const [summary, setSummary] = useState<ResearchPasteSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const input = (save: boolean) => ({ kind, symbols, question, text, tool, save });
+  const input = (save: boolean) => ({ kind, symbols, question, decision, text, tool, save });
 
   // Read as it is pasted, so what was found shows before anything is kept.
   useEffect(() => {
@@ -246,31 +250,65 @@ export function ResearchReports({ symbol, kinds, tick, title }: {
   return (
     <div className="space-y-2">
       <h4 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">{title}</h4>
-      {reports.map((r, i) => (
-        <details key={r.id} open={i === 0} className="group rounded border border-ink-800 bg-ink-950 px-3 py-2">
-          <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 text-xs">
-            <span className="font-medium text-ink-200">{RESEARCH_KIND_META[r.kind].label}</span>
-            {r.question && <span className="text-ink-300">„{r.question}“</span>}
-            {r.kind === 'theme' && <span className="font-mono text-2xs text-ink-500">{r.symbols.join(' ')}</span>}
-            <span className="text-2xs text-ink-500">{r.tool} · {fmtDay(r.createdAt)}</span>
-            <button
-              onClick={(e) => { e.preventDefault(); void remove(r); }}
-              className="ml-auto text-2xs text-ink-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-            >
-              Löschen
-            </button>
-          </summary>
-          <div className="mt-2 text-xs leading-relaxed text-ink-300">
-            <ReportBody report={r} />
-          </div>
-        </details>
-      ))}
+      {reports.map((r, i) => <ReportCard key={r.id} report={r} open={i === 0} onDelete={() => void remove(r)} />)}
     </div>
   );
 }
 
+/** One report, collapsible, with its kind, tool and day on the summary line. */
+export function ReportCard({ report: r, open, onDelete }: { report: ResearchReport; open: boolean; onDelete: () => void }) {
+  return (
+    <details open={open} className="group rounded border border-ink-800 bg-ink-950 px-3 py-2">
+      <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 text-xs">
+        <span className="font-medium text-ink-200">{RESEARCH_KIND_META[r.kind].label}</span>
+        {r.question && <span className="text-ink-300">„{r.question}“</span>}
+        {r.kind === 'theme' && <span className="font-mono text-2xs text-ink-500">{r.symbols.join(' ')}</span>}
+        {r.kind === 'review' && r.data && (
+          <span className={`rounded border px-1.5 py-px text-2xs ${REVIEW_BADGE[r.data.verdict]}`}>{REVIEW_VERDICT_LABEL[r.data.verdict]}</span>
+        )}
+        <span className="text-2xs text-ink-500">{r.tool} · {fmtDay(r.createdAt)}</span>
+        <button
+          onClick={(e) => { e.preventDefault(); onDelete(); }}
+          className="ml-auto text-2xs text-ink-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+        >
+          Löschen
+        </button>
+      </summary>
+      <div className="mt-2 text-xs leading-relaxed text-ink-300">
+        <ReportBody report={r} />
+      </div>
+    </details>
+  );
+}
+
+const REVIEW_BADGE: Record<ReviewVerdict, string> = {
+  held:      'border-emerald-800 bg-emerald-950 text-emerald-400',
+  partly:    'border-amber-800 bg-amber-950 text-amber-300',
+  failed:    'border-red-800 bg-red-950 text-red-400',
+  too_early: 'border-ink-700 bg-ink-800 text-ink-400',
+};
+
 function ReportBody({ report: r }: { report: ResearchReport }) {
   if (!r.data) return <div className="whitespace-pre-wrap">{r.raw}</div>;
+  if (r.kind === 'review') {
+    const d = r.data;
+    return (
+      <div className="space-y-2">
+        <p className="text-ink-400">{REVIEW_CAUSE_LABEL[d.cause]}</p>
+        {d.lesson && <p className="rounded border border-accent/30 bg-accent-soft px-2 py-1 text-ink-100"><span className="font-medium">Lehre:</span> {d.lesson}</p>}
+        {d.reasonCheck && <Block title="Die Begründung im Nachhinein"><p>{d.reasonCheck}</p></Block>}
+        {d.drivers && <Block title="Was die Aktie tatsächlich bewegt hat"><p>{d.drivers}</p></Block>}
+        {d.now && <Block title="Gilt der Grund heute noch?"><p>{d.now}</p></Block>}
+        {d.whatHappened.length > 0 && (
+          <Block title="Was seitdem passiert ist">
+            <ul>{d.whatHappened.map((w, i) => (
+              <li key={i}>{w.date && <span className="font-mono text-ink-400">{w.date} </span>}{w.event}{w.effect && <span className="text-ink-500"> — {w.effect}</span>} <Source url={w.source} /></li>
+            ))}</ul>
+          </Block>
+        )}
+      </div>
+    );
+  }
   if (r.kind === 'earnings') {
     const d = r.data;
     return (

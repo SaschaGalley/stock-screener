@@ -214,13 +214,15 @@ export const api = {
     ),
 
   /** The prompt for a kind of research, filled in, to run in a chat app's research mode. */
-  getResearchPrompt: (kind: ResearchKind, symbols: string[], question?: string) =>
+  getResearchPrompt: (kind: ResearchKind, symbols: string[], extra: { question?: string; decision?: string } = {}) =>
     jsonFetch<ResearchPromptResponse>(`${BASE}/research/prompt?${new URLSearchParams({
-      kind, symbols: symbols.join(','), ...(question ? { question } : {}),
+      kind, symbols: symbols.join(','),
+      ...(extra.question ? { question: extra.question } : {}), ...(extra.decision ? { decision: extra.decision } : {}),
     })}`),
   /** Read a pasted answer; with `save`, keep it. */
   pasteResearch: (input: {
-    kind: ResearchKind; symbols: string[]; question?: string; text: string; tool: ManualResearchTool; save: boolean;
+    kind: ResearchKind; symbols: string[]; question?: string; decision?: string;
+    text: string; tool: ManualResearchTool; save: boolean;
   }) =>
     jsonFetch<ResearchPasteResponse>(`${BASE}/research/paste`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
