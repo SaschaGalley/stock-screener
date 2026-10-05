@@ -64,27 +64,31 @@ export async function savePriceEvents(ticker: string, events: PriceEventRow[]): 
   );
 }
 
-/** How many days of a ticker are stored, and the first of them. */
-export async function priceCoverage(ticker: string): Promise<{ days: number; first: string | null }> {
-  const row = await queryOne<{ days: string; first: string | null }>(
-    'SELECT count(*) AS days, min(day) AS first FROM price_bars WHERE ticker = $1', [ticker.toUpperCase()],
+/** How many days of a ticker are stored, the first of them and the last. */
+export async function priceCoverage(ticker: string): Promise<{ days: number; first: string | null; last: string | null }> {
+  const row = await queryOne<{ days: string; first: string | null; last: string | null }>(
+    'SELECT count(*) AS days, min(day) AS first, max(day) AS last FROM price_bars WHERE ticker = $1', [ticker.toUpperCase()],
   );
-  return { days: Number(row?.days ?? 0), first: row?.first ?? null };
+  return { days: Number(row?.days ?? 0), first: row?.first ?? null, last: row?.last ?? null };
 }
 
 /**
- * Watchlist stocks with no stored day since `since`, or none at all — every
- * symbol outside the reference universe, watched or not, with financials or not.
+ * The stocks the archive keeps whether or not anything refreshes them, each
+ * with its newest stored day: every symbol outside the reference universe,
+ * every ticker a trade names — the app's own where it knows the ISIN, umsatz's
+ * otherwise — and every one a purchase or sale in the journal names.
  */
-export async function watchlistPricesBehind(since: string): Promise<string[]> {
-  const res = await query<{ symbol: string }>(
-    `SELECT s.symbol FROM symbols s
-      WHERE NOT s.reference
-        AND NOT EXISTS (SELECT 1 FROM price_bars p WHERE p.ticker = s.symbol AND p.day >= $1)
-      ORDER BY s.symbol`,
-    [since],
+export async function archivedStocks(): Promise<{ ticker: string; newest: string | null }[]> {
+  const res = await query<{ ticker: string; newest: string | null }>(
+    `WITH wanted AS (
+       SELECT symbol AS ticker FROM symbols WHERE NOT reference
+       UNION SELECT COALESCE(symbol, source_symbol) FROM trades WHERE removed_at IS NULL
+       UNION SELECT unnest(symbols) FROM journal_entries WHERE deleted_at IS NULL AND kind IN ('buy', 'sell')
+     )
+     SELECT ticker, (SELECT max(day) FROM price_bars p WHERE p.ticker = wanted.ticker) AS newest
+       FROM wanted WHERE ticker IS NOT NULL ORDER BY ticker`,
   );
-  return res.rows.map((r) => r.symbol);
+  return res.rows;
 }
 
 /** Append rating actions; one already on file is left as first seen. */

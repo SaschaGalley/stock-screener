@@ -8,7 +8,7 @@ import { logger } from '../utils/logger.js';
 const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'], validation: { logErrors: false, logOptionsErrors: false } } as any);
 
 const VIX_SYMBOL = '^VIX';
-const SPY_SYMBOL = '^GSPC';
+export const SPY_SYMBOL = '^GSPC';
 const DXY_SYMBOL = 'DX-Y.NYB';
 
 // Yahoo `assetProfile.sector` → SPDR sector ETF

@@ -8,15 +8,16 @@
 import { join } from 'path';
 
 import { getConfig } from './config.js';
+import { readAppConfig, scheduledSymbols } from './app-config.js';
 import { readAppState, writeAppState } from './db/admin.js';
 import {
-  lastMacroDay, priceCoverage, quoteCurrencies, saveAnalystActions, saveInsiderTransactions, saveMacroSeries, savePriceBars,
-  savePriceEvents, watchlistPricesBehind,
+  archivedStocks, lastMacroDay, priceCoverage, quoteCurrencies, saveAnalystActions, saveInsiderTransactions, saveMacroSeries,
+  savePriceBars, savePriceEvents,
 } from './db/history-store.js';
 import { getImpliedERPSeries } from './data/damodaran.js';
 import { fetchSeriesSince, READ_FRED_SERIES } from './data/fred.js';
 import { saveSnapshot } from './db/store.js';
-import { BENCHMARK_CURRENCY, BENCHMARK_TICKERS } from './data/macro.js';
+import { BENCHMARK_CURRENCY, BENCHMARK_TICKERS, SPY_SYMBOL } from './data/macro.js';
 import { fxTicker, majorCurrency } from './currencies.js';
 import type { YahooRaw } from './data/yahoo-raw.js';
 import { priceHistory, type PriceHistory } from './backtest/prices.js';
@@ -28,7 +29,7 @@ const RAW_VERSION = 1;
 const BACKFILL_YEARS = 10;
 /** Fewer stored days than this and the long history has not been fetched yet. */
 const BACKFILLED_DAYS = 2000;
-/** A watchlist stock whose newest bar is older than this is fetched by the daily archive: a long weekend, and a day. */
+/** A stock whose newest bar is older than this is fetched by the daily archive: a long weekend, and a day. */
 const PRICES_STALE_DAYS = 5;
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -104,19 +105,23 @@ async function ensureLongPriceHistory(ticker: string): Promise<boolean> {
 }
 
 /**
- * Every watchlist stock's prices, whether or not anything refreshes it.
+ * The prices of every stock the app measures, whether or not anything
+ * refreshes it: the watchlist, and whatever was bought or sold.
  *
  * Otherwise the archive is a by-product of a stock's own refresh, and that
  * leaves gaps nothing reports: a stock on the watchlist before the archive
  * existed had no bars until its next refresh — never, with the schedule off —
- * and one the nightly run passes over (switched off, or without financials to
- * refresh) gets none at all. The journal's moves, the decision review and the
- * verdict record then skip it in silence. One history per stock that is
- * behind, a decade for one never fetched; a stock refreshed last night is not.
+ * and one the nightly run passes over (switched off, without financials to
+ * refresh, or never on the watchlist, only in the depot) gets none at all. The
+ * journal's moves, the decision review and the verdict record then skip it in
+ * silence. One history per stock that is behind, a decade for one never fetched.
  */
-export async function topUpWatchlistPrices(): Promise<void> {
-  const since = new Date(Date.now() - PRICES_STALE_DAYS * 86_400_000).toISOString().slice(0, 10);
-  for (const ticker of await watchlistPricesBehind(since)) {
+export async function topUpStockPrices(): Promise<void> {
+  const [stocks, refreshed, index] = await Promise.all([
+    archivedStocks(), readAppConfig().then(scheduledSymbols), priceCoverage(SPY_SYMBOL),
+  ]);
+  const stale = new Date(Date.now() - PRICES_STALE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  for (const ticker of pricesBehind(stocks, new Set(refreshed), index.last, stale)) {
     try {
       if (await ensureLongPriceHistory(ticker)) continue;
       const px = await priceHistory(ticker, yearsAgo(1), pricesDir(), 1);
@@ -128,16 +133,34 @@ export async function topUpWatchlistPrices(): Promise<void> {
 }
 
 /**
+ * The stocks the daily archive fetches. Any stock is behind with nothing
+ * stored, or with nothing for `stale` on — its own refresh lapsed. One the
+ * nightly run does not refresh is also behind as soon as the index has a day
+ * it lacks: nothing else will fetch it, and the journal and the review measure
+ * up to its newest close. A stock the nightly run refreshes is left to it,
+ * rather than fetched twice a night.
+ */
+export function pricesBehind(
+  stocks: { ticker: string; newest: string | null }[],
+  refreshed: ReadonlySet<string>, index: string | null, stale: string,
+): string[] {
+  return stocks
+    .filter((s) => s.newest === null || s.newest < stale || (!refreshed.has(s.ticker) && index !== null && s.newest < index))
+    .map((s) => s.ticker);
+}
+
+/**
  * The market's own series, once a day per process: a refresh touches a hundred
  * stocks a night and every one of them is measured against the same ones. And
- * the watchlist's own prices where its refreshes left them behind.
+ * the stocks' own prices where their refreshes left them behind.
  */
 let archivedDay: string | null = null;
 async function dailyArchive(): Promise<void> {
   if (archivedDay === today()) return;
   archivedDay = today();
+  // The index first: the stocks nothing else refreshes are kept level with it.
   await refreshBenchmarks();
-  await topUpWatchlistPrices();
+  await topUpStockPrices();
   await syncMacroSeries();
 }
 
