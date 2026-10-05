@@ -57,8 +57,9 @@ import { currentScoreCard, rescoreIfScoringChanged, storedInputs } from './db/re
 import { refreshStockData } from './refresh.js';
 import { refreshPerplexity } from './perplexity-service.js';
 import {
-  addJournal, editJournal, JournalInputError, parseJournalInput, readJournal, removeJournal,
+  addJournal, editJournal, entryContexts, JournalInputError, parseJournalInput, readJournal, removeJournal,
 } from './journal-service.js';
+import { isJournalKind } from './journal.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
   analystCoverage, analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord,
@@ -1124,6 +1125,20 @@ export function createApp(): express.Express {
     try {
       const symbol = typeof req.query.symbol === 'string' && req.query.symbol ? req.query.symbol : undefined;
       res.json({ entries: await readJournal(symbol) });
+    } catch (e) {
+      next(e);
+    }
+  });
+  // The situation of the named stocks on a day — run-up, volume, our verdict,
+  // a report due — for a purchase or sale about to be entered, or one past.
+  app.get('/api/journal/context', async (req, res, next) => {
+    try {
+      const symbols = typeof req.query.symbols === 'string' ? req.query.symbols.split(',') : [];
+      const day = typeof req.query.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.day)
+        ? req.query.day
+        : new Date().toISOString().slice(0, 10);
+      const kind = isJournalKind(req.query.kind) ? req.query.kind : 'buy';
+      res.json({ contexts: await entryContexts(symbols, day, kind) });
     } catch (e) {
       next(e);
     }

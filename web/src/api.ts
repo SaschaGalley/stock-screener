@@ -31,7 +31,8 @@ import type { HistoryMultiple, SectorMultiples, ValuationHistory } from '../../s
 import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
-import type { JournalEntry, JournalInput } from '../../src/journal';
+import type { JournalEntry, JournalInput, JournalKind } from '../../src/journal';
+import type { EntryContext } from '../../src/analysis/entry-context';
 import type { ManualResearchTool } from '../../src/models';
 import type { BacktestOverview } from '../../src/backtest-service';
 import type { CalibrationOverview } from '../../src/calibration-service';
@@ -130,6 +131,11 @@ export const api = {
     }),
   deleteJournal: (id: number) =>
     jsonFetch<{ ok: true }>(`${BASE}/journal/${id}`, { method: 'DELETE' }),
+  /** The situation of the named stocks on `day` — run-up, volume, our verdict, a report due. */
+  getEntryContext: (symbols: string[], day: string, kind: JournalKind) =>
+    jsonFetch<{ contexts: EntryContext[] }>(
+      `${BASE}/journal/context?symbols=${encodeURIComponent(symbols.join(','))}&day=${day}&kind=${kind}`,
+    ),
   /** Every stored verdict as a call, against the index — cached on the server for hours. */
   getVerdictRecordSummary: () => jsonFetch<VerdictRecordSummary>(`${BASE}/verdict-record`),
   getTimeline: (symbol: string, days = 365) =>

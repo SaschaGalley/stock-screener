@@ -8,12 +8,15 @@
  * back to last spring gets last spring's close.
  */
 
-import { readPriceBarsMany } from './db/history-store.js';
+import { entryContext, type EntryContext } from './analysis/entry-context.js';
+import { readPriceBars, readPriceBarsMany } from './db/history-store.js';
+import { readFinancialsLax, readSeries } from './db/store.js';
 import {
   createJournal, deleteJournal, journalRevisions, listJournal, updateJournal, type JournalRow,
 } from './db/journal-store.js';
 import {
-  isJournalKind, mentionedSymbols, normalizeSymbols, type JournalEntry, type JournalInput, type JournalMove,
+  isJournalKind, mentionedSymbols, normalizeSymbols, type JournalEntry, type JournalInput, type JournalKind,
+  type JournalMove,
 } from './journal.js';
 import { invalidateFeed } from './stock-history-service.js';
 
@@ -109,4 +112,31 @@ export function moveSince(bars: { day: string; close: number }[], day: string): 
   // A close more than the lookback before the entry is a gap in the history, not its day.
   if (Date.parse(day) - Date.parse(from.day) > LOOKBACK_DAYS * DAY_MS) return null;
   return { fromDay: from.day, fromClose: from.close, toDay: to.day, toClose: to.close, change: to.close / from.close - 1 };
+}
+
+/** How many stocks one look at the situation covers — an entry naming more is about a theme, not a trade. */
+const CONTEXT_LIMIT = 5;
+
+/**
+ * The situation of each stock on `day`: the run-up, the volume, the year's
+ * high and low, our own verdict then, and a report due within the week. Read
+ * before a purchase is entered and beside it afterwards.
+ */
+export async function entryContexts(symbols: string[], day: string, kind: JournalKind): Promise<EntryContext[]> {
+  // A year for the high, the low and what counts as a jump, and a margin for the averages.
+  const from = new Date(Date.parse(day) - 400 * DAY_MS).toISOString().slice(0, 10);
+  // Only the next scheduled report is stored, so it says something about now, not about last spring.
+  const recent = Date.now() - Date.parse(day) < 2 * DAY_MS;
+  return Promise.all(normalizeSymbols(symbols).slice(0, CONTEXT_LIMIT).map(async (symbol) => {
+    const [bars, series, financials] = await Promise.all([
+      readPriceBars(symbol, from),
+      readSeries(symbol, ['score.final.score', 'score.final.verdict'], { to: new Date(`${day}T23:59:59`) }),
+      recent ? readFinancialsLax(symbol) : null,
+    ]);
+    const newest = (key: string) => series.find((x) => x.key === key)?.points.at(-1);
+    return entryContext(symbol, kind, day, bars, {
+      score:   newest('score.final.score')?.value ?? null,
+      verdict: newest('score.final.verdict')?.text ?? null,
+    }, financials?.nextEarningsDate ?? null);
+  }));
 }

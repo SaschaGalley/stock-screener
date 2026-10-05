@@ -150,14 +150,19 @@ export async function lastMacroDay(series: string): Promise<string | null> {
 // `date` columns arrive as 'YYYY-MM-DD' strings (see the type parser in
 // `client.ts`) and are passed through as they are.
 
-/** A ticker's daily closes, oldest first — split-adjusted, on today's basis. */
-export async function readPriceBars(ticker: string, from?: string): Promise<{ day: string; close: number; adjClose: number | null }[]> {
-  const res = await query<{ day: string; close: number; adj_close: number | null }>(
-    `SELECT day, close, adj_close FROM price_bars
+/**
+ * A ticker's daily closes, oldest first — split-adjusted, on today's basis.
+ * Volume is null on bars that came in with a closes-only backfill.
+ */
+export async function readPriceBars(
+  ticker: string, from?: string,
+): Promise<{ day: string; close: number; adjClose: number | null; volume: number | null }[]> {
+  const res = await query<{ day: string; close: number; adj_close: number | null; volume: number | null }>(
+    `SELECT day, close, adj_close, volume FROM price_bars
       WHERE ticker = $1 AND ($2::date IS NULL OR day >= $2) ORDER BY day`,
     [ticker.toUpperCase(), from ?? null],
   );
-  return res.rows.map((r) => ({ day: r.day, close: r.close, adjClose: r.adj_close }));
+  return res.rows.map((r) => ({ day: r.day, close: r.close, adjClose: r.adj_close, volume: r.volume === null ? null : Number(r.volume) }));
 }
 
 /** Every quote currency a stored symbol trades in. */

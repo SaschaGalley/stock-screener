@@ -7,6 +7,7 @@ import {
   JOURNAL_KINDS, JOURNAL_LABEL, JOURNAL_SINCE, linkMentions, mentionedSymbols, normalizeSymbols,
   type JournalEntry, type JournalInput, type JournalKind, type JournalMove,
 } from '../../../src/journal';
+import type { EntryContext } from '../../../src/analysis/entry-context';
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
@@ -202,6 +203,8 @@ function ByMonth({ entries, children }: { entries: JournalEntry[]; children: (e:
 
 function EntryCard({ entry, onEdit, onDelete }: { entry: JournalEntry; onEdit: () => void; onDelete: () => void }) {
   const moves = new Map(entry.moves.map((m) => [m.symbol, m]));
+  // Read when opened: each look is a year of prices per stock.
+  const [situationOpen, setSituationOpen] = useState(false);
   // Written down well after the day it is about: worth knowing when reading the reason.
   const written = entry.createdAt.slice(0, 10);
   const backdated = (Date.parse(written) - Date.parse(entry.day)) / 86_400_000 > 1;
@@ -217,6 +220,12 @@ function EntryCard({ entry, onEdit, onDelete }: { entry: JournalEntry; onEdit: (
         </span>
       </header>
       <Markdown body={entry.body} />
+      {entry.kind !== 'note' && entry.symbols.length > 0 && (
+        <details className="mt-1.5 text-2xs text-ink-500" onToggle={(e) => setSituationOpen(e.currentTarget.open)}>
+          <summary className="cursor-pointer hover:text-ink-300">Lage am {fmtDay(entry.day)}</summary>
+          {situationOpen && <Situation symbols={entry.symbols} day={entry.day} kind={entry.kind} />}
+        </details>
+      )}
       {(backdated || entry.revisions.length > 0) && (
         <footer className="mt-1.5 text-2xs text-ink-500">
           {backdated && <span>nachgetragen am {fmtDay(written)}</span>}
@@ -375,6 +384,9 @@ function Editor({ initial, symbol, suggest, draftKey, submitLabel, onSave, onCan
       {fromText.length > 0 && (
         <p className="text-2xs text-ink-500">Aus dem Text verknüpft: <span className="font-mono text-ink-300">{fromText.join(' ')}</span></p>
       )}
+      {kind !== 'note' && named.length + fromText.length > 0 && (
+        <Situation symbols={[...named, ...fromText]} day={day} kind={kind} live />
+      )}
 
       {preview ? (
         <div className="min-h-[6rem] rounded border border-ink-800 bg-ink-950 px-3 py-2">
@@ -413,6 +425,87 @@ function Editor({ initial, symbol, suggest, draftKey, submitLabel, onSave, onCan
         </span>
         {error && <span className="w-full text-xs text-red-400">⚠ {error}</span>}
       </div>
+    </div>
+  );
+}
+
+const fmtFactor = (x: number) => `${x.toFixed(1).replace('.', ',')}×`;
+
+/**
+ * What had just happened to each stock when it was bought or sold: the
+ * run-up, the volume, where it stood in its year, our own verdict, a report
+ * due. Before a purchase it is the moment to ask whether the stock is being
+ * chased; afterwards it is what the reason was written in.
+ */
+function Situation({ symbols, day, kind, live = false }: {
+  symbols: string[];
+  day: string;
+  kind: JournalKind;
+  /** In the editor, before the entry exists: read again as the fields change. */
+  live?: boolean;
+}) {
+  const [contexts, setContexts] = useState<EntryContext[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const key = symbols.join(',');
+
+  useEffect(() => {
+    let alive = true;
+    setError(null);
+    // Typing a ticker is a keystroke at a time; wait until it settles.
+    const t = setTimeout(() => {
+      api.getEntryContext(symbols, day, kind)
+        .then((r) => { if (alive) setContexts(r.contexts); })
+        .catch((e) => { if (alive) setError((e as Error).message); });
+    }, live ? 400 : 0);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, day, kind, live]);
+
+  if (error) return <p className="mt-1 text-2xs text-red-400">⚠ {error}</p>;
+  if (!contexts) return <p className="mt-1 text-2xs text-ink-600">Lese die Lage …</p>;
+  const known = contexts.filter((c) => c.asOf);
+  if (known.length === 0) {
+    return live ? <p className="text-2xs text-ink-600">Keine Kurse gespeichert für {key.replace(/,/g, ', ')}.</p> : null;
+  }
+  const anyFlag = known.some((c) => c.flags.length > 0);
+  const buying = kind !== 'sell';
+
+  return (
+    <div className={`mt-1 space-y-1.5 rounded border px-2.5 py-2 text-2xs ${
+      live && anyFlag ? 'border-amber-800 bg-amber-950/40' : 'border-ink-800 bg-ink-950'
+    }`}>
+      {live && (
+        <div className="font-semibold uppercase tracking-wider text-ink-500">
+          Lage vor dem {buying ? 'Kauf' : 'Verkauf'}
+        </div>
+      )}
+      {known.map((c) => (
+        <div key={c.symbol}>
+          <div className="flex flex-wrap gap-x-2 text-ink-400">
+            <span className="font-mono text-ink-200">{c.symbol}</span>
+            {c.change5 !== null && <span>5 T {fmtSignedPct(c.change5)}</span>}
+            {c.change20 !== null && <span>20 T {fmtSignedPct(c.change20)}</span>}
+            {c.fromHigh !== null && <span>{fmtSignedPct(c.fromHigh)} vom Jahreshoch</span>}
+            {c.volumeRatio !== null && <span>Volumen {fmtFactor(c.volumeRatio)}</span>}
+            {c.verdict && <span>Modell {c.verdict}{c.score !== null && ` ${c.score.toFixed(1).replace('.', ',')}`}</span>}
+            {c.asOf !== day && <span className="text-ink-600">Kurse vom {fmtDay(c.asOf!)}</span>}
+          </div>
+          {c.flags.length > 0 && (
+            <ul className="mt-0.5 space-y-0.5 text-amber-300">
+              {c.flags.map((f) => <li key={f}>⚠ {f}</li>)}
+            </ul>
+          )}
+        </div>
+      ))}
+      {live && (
+        <p className="text-ink-500">
+          {anyFlag
+            ? (buying
+              ? 'Würdest du auch kaufen, wenn das nicht gerade passiert wäre? Schreib den Grund auf, der dann noch gilt.'
+              : 'Würdest du auch verkaufen, wenn das nicht gerade passiert wäre? Schreib den Grund auf, der dann noch gilt.')
+            : 'Nichts Auffälliges in Kurs, Volumen und Modell.'}
+        </p>
+      )}
     </div>
   );
 }
