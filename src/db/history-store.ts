@@ -72,6 +72,21 @@ export async function priceCoverage(ticker: string): Promise<{ days: number; fir
   return { days: Number(row?.days ?? 0), first: row?.first ?? null };
 }
 
+/**
+ * Watchlist stocks with no stored day since `since`, or none at all — every
+ * symbol outside the reference universe, watched or not, with financials or not.
+ */
+export async function watchlistPricesBehind(since: string): Promise<string[]> {
+  const res = await query<{ symbol: string }>(
+    `SELECT s.symbol FROM symbols s
+      WHERE NOT s.reference
+        AND NOT EXISTS (SELECT 1 FROM price_bars p WHERE p.ticker = s.symbol AND p.day >= $1)
+      ORDER BY s.symbol`,
+    [since],
+  );
+  return res.rows.map((r) => r.symbol);
+}
+
 /** Append rating actions; one already on file is left as first seen. */
 export async function saveAnalystActions(symbol: string, rows: AnalystActionRow[]): Promise<void> {
   const valid = rows.filter((r) => r.firm && !Number.isNaN(Date.parse(r.gradedAt)));

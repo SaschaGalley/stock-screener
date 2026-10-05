@@ -1,9 +1,8 @@
 /**
  * The archive: what a refresh fetched, kept beyond the payload it fed.
  *
- * Best effort by design. Nothing in the analysis reads these tables yet, so a
- * failure here is logged and the refresh carries on — a day's archive lost is
- * a gap in a record, a refresh lost is a stale page.
+ * Best effort by design: a failure here is logged and the refresh carries on —
+ * a day's archive lost is a gap in a record, a refresh lost is a stale page.
  */
 
 import { join } from 'path';
@@ -12,7 +11,7 @@ import { getConfig } from './config.js';
 import { readAppState, writeAppState } from './db/admin.js';
 import {
   lastMacroDay, priceCoverage, quoteCurrencies, saveAnalystActions, saveInsiderTransactions, saveMacroSeries, savePriceBars,
-  savePriceEvents,
+  savePriceEvents, watchlistPricesBehind,
 } from './db/history-store.js';
 import { getImpliedERPSeries } from './data/damodaran.js';
 import { fetchSeriesSince, READ_FRED_SERIES } from './data/fred.js';
@@ -29,8 +28,12 @@ const RAW_VERSION = 1;
 const BACKFILL_YEARS = 10;
 /** Fewer stored days than this and the long history has not been fetched yet. */
 const BACKFILLED_DAYS = 2000;
+/** A watchlist stock whose newest bar is older than this is fetched by the daily archive: a long weekend, and a day. */
+const PRICES_STALE_DAYS = 5;
 
 const today = () => new Date().toISOString().slice(0, 10);
+const yearsAgo = (years: number) => `${Number(today().slice(0, 4)) - years}${today().slice(4)}`;
+const pricesDir = () => join(getConfig().dataDir, 'backtest', 'prices');
 
 /** Finnhub's `/stock/metric` as received, split by how often each half changes. */
 export interface FinnhubArchive {
@@ -78,34 +81,63 @@ export async function savePriceHistory(ticker: string, px: PriceHistory): Promis
 /**
  * Ten years of a ticker, once. The nightly refresh only fetches the last year;
  * the first time a ticker is seen, the decade before it is fetched too, so the
- * archive does not start on the day it was switched on. Tried once per ticker:
- * a listing younger than ten years would otherwise ask every night.
+ * archive does not start on the day it was switched on. Done once per ticker
+ * that answered: a listing younger than ten years would otherwise ask every
+ * night. One that did not answer is asked again next time — marking it done
+ * anyway left a stock whose first fetch hit a Yahoo hiccup on one year for good.
+ *
+ * Whether Yahoo was asked, so a caller does not ask again for less.
  */
-async function ensureLongPriceHistory(ticker: string): Promise<void> {
+async function ensureLongPriceHistory(ticker: string): Promise<boolean> {
   const key = `prices.backfill.${ticker.toUpperCase()}`;
-  if (await readAppState(key)) return;
+  if (await readAppState(key)) return false;
   if ((await priceCoverage(ticker)).days >= BACKFILLED_DAYS) {
     await writeAppState(key, today());
-    return;
+    return false;
   }
-  const from = `${Number(today().slice(0, 4)) - BACKFILL_YEARS}${today().slice(4)}`;
-  const px = await priceHistory(ticker, from, join(getConfig().dataDir, 'backtest', 'prices'));
-  if (px) {
-    await savePriceHistory(ticker, px);
-    logger.info(`${ticker}: price archive backfilled from ${px.dates[0]} (${px.dates.length} days)`);
-  }
+  const px = await priceHistory(ticker, yearsAgo(BACKFILL_YEARS), pricesDir());
+  if (!px) return true;
+  await savePriceHistory(ticker, px);
+  logger.info(`${ticker}: price archive backfilled from ${px.dates[0]} (${px.dates.length} days)`);
   await writeAppState(key, today());
+  return true;
+}
+
+/**
+ * Every watchlist stock's prices, whether or not anything refreshes it.
+ *
+ * Otherwise the archive is a by-product of a stock's own refresh, and that
+ * leaves gaps nothing reports: a stock on the watchlist before the archive
+ * existed had no bars until its next refresh — never, with the schedule off —
+ * and one the nightly run passes over (switched off, or without financials to
+ * refresh) gets none at all. The journal's moves, the decision review and the
+ * verdict record then skip it in silence. One history per stock that is
+ * behind, a decade for one never fetched; a stock refreshed last night is not.
+ */
+export async function topUpWatchlistPrices(): Promise<void> {
+  const since = new Date(Date.now() - PRICES_STALE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  for (const ticker of await watchlistPricesBehind(since)) {
+    try {
+      if (await ensureLongPriceHistory(ticker)) continue;
+      const px = await priceHistory(ticker, yearsAgo(1), pricesDir(), 1);
+      if (px) await savePriceHistory(ticker, px);
+    } catch (e) {
+      logger.warn(`${ticker}: price archive not topped up — ${(e as Error).message}`);
+    }
+  }
 }
 
 /**
  * The market's own series, once a day per process: a refresh touches a hundred
- * stocks a night and every one of them is measured against the same ones.
+ * stocks a night and every one of them is measured against the same ones. And
+ * the watchlist's own prices where its refreshes left them behind.
  */
 let archivedDay: string | null = null;
 async function dailyArchive(): Promise<void> {
   if (archivedDay === today()) return;
   archivedDay = today();
   await refreshBenchmarks();
+  await topUpWatchlistPrices();
   await syncMacroSeries();
 }
 
@@ -114,15 +146,13 @@ async function dailyArchive(): Promise<void> {
  * a stored stock trades in, so its returns can be restated in the benchmarks'.
  */
 async function refreshBenchmarks(): Promise<void> {
-  const dir = join(getConfig().dataDir, 'backtest', 'prices');
+  const dir = pricesDir();
   const currencies = new Set((await quoteCurrencies()).map((c) => majorCurrency(c)!));
   currencies.delete(BENCHMARK_CURRENCY);
   const fx = [...currencies].sort().map((c) => fxTicker(c, BENCHMARK_CURRENCY));
   for (const ticker of [...BENCHMARK_TICKERS, ...fx]) {
     const coverage = await priceCoverage(ticker);
-    const years = coverage.days >= BACKFILLED_DAYS ? 1 : BACKFILL_YEARS;
-    const from = `${Number(today().slice(0, 4)) - years}${today().slice(4)}`;
-    const px = await priceHistory(ticker, from, dir, 1);
+    const px = await priceHistory(ticker, yearsAgo(coverage.days >= BACKFILLED_DAYS ? 1 : BACKFILL_YEARS), dir, 1);
     if (px) await savePriceHistory(ticker, px);
   }
 }
