@@ -174,6 +174,17 @@ export const DEEP_RESEARCH_MODEL: PerplexityModelId = 'sonar-deep-research';
 /** Used when Perplexity is asked for without a model. */
 export const DEFAULT_PERPLEXITY_MODEL: PerplexityModelId = 'sonar-pro';
 
+/**
+ * Where a deep research report can come from besides the API: the research
+ * mode of a chat app on a subscription, run with the copied brief and pasted
+ * back in by hand. Stored in the deep research slot all the same — the first
+ * is the default.
+ */
+export const MANUAL_RESEARCH_TOOLS = ['Perplexity', 'ChatGPT', 'Claude', 'Gemini'] as const;
+export type ManualResearchTool = (typeof MANUAL_RESEARCH_TOOLS)[number];
+export const isManualResearchTool = (v: unknown): v is ManualResearchTool =>
+  typeof v === 'string' && (MANUAL_RESEARCH_TOOLS as readonly string[]).includes(v);
+
 export function isPerplexityModel(v: unknown): v is PerplexityModelId {
   return typeof v === 'string' && (PERPLEXITY_MODEL_IDS as string[]).includes(v);
 }

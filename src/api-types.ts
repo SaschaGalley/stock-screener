@@ -20,7 +20,7 @@
 import type { StockFinancials, MarketSignals, NewsItem, SectorMedians, TechnicalSignals, TimingReadings } from './types.js';
 import type { AnalysisManifestEntry } from './db/store.js';
 import type { ComputedMetrics } from './analysis/computeMetrics.js';
-import type { PerplexityContext } from './data/perplexity.js';
+import type { PastedResearchSummary, PerplexityContext } from './data/perplexity.js';
 import type { DistillBundle } from './data/distill.js';
 import type { DistillEntityHit } from './data/distill-entities.js';
 import type { MarketRates } from './data/fred.js';
@@ -297,6 +297,20 @@ export interface DistillRefreshResponse {
   /** One line: how many dossiers and insights came back. */
   detail: string;
   bundle: DistillBundle;
+}
+
+/** `GET /api/stocks/:symbol/research-prompt` — the brief to run in a chat app's research mode. */
+export interface ResearchPromptResponse {
+  symbol:      string;
+  companyName: string;
+  prompt:      string;
+}
+
+/** `POST /api/stocks/:symbol/research-paste` — what a pasted report was read as, and whether it was kept. */
+export interface ResearchPasteResponse {
+  symbol:  string;
+  saved:   boolean;
+  summary: PastedResearchSummary;
 }
 
 /** `POST /api/stocks/:symbol/perplexity-refresh` — one billed call, past the cache window. */

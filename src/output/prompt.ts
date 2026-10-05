@@ -533,7 +533,7 @@ export function buildNarrativePrompt(
   // one wins.
   const deep = !deepResearch ? ''
     : `
-### Tiefenrecherche (Perplexity Deep Research vom ${deepResearch.fetchedAt.slice(0, 10)} — gezielt beauftragt, Dutzende Suchen)
+### Tiefenrecherche (${deepResearch.pastedFrom ? `${deepResearch.pastedFrom}, Research-Modus` : 'Perplexity Deep Research'} vom ${deepResearch.fetchedAt.slice(0, 10)} — gezielt beauftragt, Dutzende Suchen)
 
 Gleiche Gliederung und Einstufung wie die Web-Recherche, aber breiter gesucht und länger
 begründet. Sie kann älter sein: wo sie und eine neuere Recherche sich widersprechen, gilt

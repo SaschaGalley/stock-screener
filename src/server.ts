@@ -14,7 +14,7 @@ import {
   deleteAnalysis, deleteSymbol, latestSnapshotForAll, latestPointsForAll, latestValueForAll, scoreInstants,
   latestDocument, listAnalyses, listDocuments, listMetrics, listSymbols,
   readAnalysis, readDistillLax, readFinancialsMeta, readFinancialsLax,
-  readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax, readDeepResearchLax,
+  readFundamentals, readMarketSignalsMeta, readNewsLax, readPerplexityLax, readDeepResearchLax, writePerplexity,
   readSeries, seriesForAll, latestVerdictsForAll, CachedAnalysisEntry, symbolCounts, refreshedWithin,
   recentVerdictChanges, peersByIndustry, peersBySymbol, StoredPeer,
 } from './db/store.js';
@@ -38,7 +38,10 @@ import type {
   AnalysisListEntry, BacktestResponse, ConsensusBand, EvaluationResponse, OverviewRow, PeerRow, PeersResponse,
   StockSummary,
 } from './api-types.js';
-import { DEFAULT_PERPLEXITY_MODEL, isPerplexityModel, MODELS, PerplexityModelId } from './models.js';
+import {
+  DEFAULT_PERPLEXITY_MODEL, isManualResearchTool, isPerplexityModel, MANUAL_RESEARCH_TOOLS, MODELS, PerplexityModelId,
+} from './models.js';
+import { manualResearchPrompt, pastedResearch } from './data/perplexity.js';
 import {
   DistillUnauthorizedError,
   DistillEntityUnresolvedError,
@@ -452,6 +455,41 @@ export function createApp(): express.Express {
       );
 
       res.json({ ok: true, symbol, perplexity });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/stocks/:symbol/research-prompt · POST …/research-paste ────────
+  // Deep research without the API: the brief to copy into a chat app's
+  // research mode, and its answer pasted back. `save: false` only reads the
+  // paste and says what it found, so a wrong paste is seen before it is kept;
+  // `save: true` stores it in the deep research slot every analysis reads.
+  app.get('/api/stocks/:symbol/research-prompt', async (req, res, next) => {
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      const companyName = (await readFinancialsLax(symbol))?.companyName ?? symbol;
+      res.json({ symbol, companyName, prompt: manualResearchPrompt(symbol, companyName) });
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.post('/api/stocks/:symbol/research-paste', async (req, res, next) => {
+    try {
+      const symbol = req.params.symbol.toUpperCase();
+      const body = (req.body ?? {}) as { text?: unknown; tool?: unknown; save?: unknown };
+      const tool = body.tool ?? MANUAL_RESEARCH_TOOLS[0];
+      if (!isManualResearchTool(tool)) {
+        res.status(400).json({ error: `Unbekanntes Werkzeug: ${String(tool)}` });
+        return;
+      }
+      const pasted = typeof body.text === 'string' ? pastedResearch(body.text, tool) : null;
+      if (!pasted) {
+        res.status(400).json({ error: 'Nichts Verwertbares erkannt — weder die JSON-Antwort noch ein Bericht in Textform.' });
+        return;
+      }
+      if (body.save === true) await writePerplexity(symbol, pasted.context);
+      res.json({ symbol, saved: body.save === true, summary: pasted.summary });
     } catch (e) {
       next(e);
     }

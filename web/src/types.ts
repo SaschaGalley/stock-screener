@@ -37,6 +37,8 @@ export type {
   DistillEntityCandidate,
   DistillEntityUnresolvedResponse,
   PerplexityRefreshResponse,
+  ResearchPromptResponse,
+  ResearchPasteResponse,
   EvaluationResponse,
   BacktestResponse,
   VerdictChangesResponse,

@@ -9,6 +9,8 @@ import type {
   ProgressEvent,
   DistillRefreshResponse,
   PerplexityRefreshResponse,
+  ResearchPromptResponse,
+  ResearchPasteResponse,
   PplxChoice,
   OverviewRow,
   MetricCatalogEntry,
@@ -30,6 +32,7 @@ import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
 import type { JournalEntry, JournalInput } from '../../src/journal';
+import type { ManualResearchTool } from '../../src/models';
 import type { BacktestOverview } from '../../src/backtest-service';
 import type { CalibrationOverview } from '../../src/calibration-service';
 import type { VerdictEvidence } from '../../src/backtest/result';
@@ -186,6 +189,15 @@ export const api = {
         body: JSON.stringify(model ? { model } : {}),
       },
     ),
+
+  /** The deep research brief, filled in for this stock, to run in a chat app. */
+  getResearchPrompt: (symbol: string) =>
+    jsonFetch<ResearchPromptResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/research-prompt`),
+  /** Read a pasted report; with `save`, keep it as the stock's deep research. */
+  pasteResearch: (symbol: string, text: string, tool: ManualResearchTool, save: boolean) =>
+    jsonFetch<ResearchPasteResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/research-paste`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, tool, save }),
+    }),
 
   deleteAnalysis: (symbol: string, hash: string) =>
     jsonFetch<{ ok: boolean; symbol: string; hash: string }>(

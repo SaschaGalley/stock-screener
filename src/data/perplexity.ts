@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { DEFAULT_PERPLEXITY_MODEL, PerplexityModelId } from '../models.js';
+import { DEEP_RESEARCH_MODEL, DEFAULT_PERPLEXITY_MODEL, type ManualResearchTool, PerplexityModelId } from '../models.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -111,6 +111,8 @@ export interface PerplexityContext {
   raw?: string;
   /** Why the answer ended — `stop`, or `length` when it ran into the ceiling. */
   finishReason?: string;
+  /** Run in a chat app and pasted in by hand — which one. Absent on API rows. */
+  pastedFrom?: ManualResearchTool;
 }
 
 const PPLX_API_URL = 'https://api.perplexity.ai/chat/completions';
@@ -668,4 +670,62 @@ function looksLikeRefusal(text: string): boolean {
   let hits = 0;
   for (const cue of refusalCues) if (lower.includes(cue)) hits++;
   return hits >= 2;
+}
+
+// ── Pasted by hand ───────────────────────────────────────────────────────────
+
+/** What a pasted report was read as — shown before it is kept. */
+export interface PastedResearchSummary {
+  /** The JSON the brief asks for was found; otherwise the text is kept as prose. */
+  structured: boolean;
+  counts:     Record<'debate' | 'events' | 'kpis' | 'bearEvidence' | 'bullClaims' | 'bearClaims' | 'catalysts', number>;
+  sources:    number;
+}
+
+/**
+ * A report run in a chat app with the copied brief and pasted back, stored as
+ * the API's would be. Null when there is nothing in it to keep.
+ *
+ * The JSON is read with the same lenient parser as the API's answer. Without
+ * one — a tool that wrote a report instead — the text is kept as prose, as
+ * an unstructured API answer is: the analysis reads `synthesis` either way.
+ * The sources are the URLs the items name; the app keeps its numbered list
+ * beside the answer rather than in it.
+ */
+export function pastedResearch(text: string, tool: ManualResearchTool): { context: PerplexityContext; summary: PastedResearchSummary } | null {
+  const findings = parseFindings(text);
+  const items = findings
+    ? [...findings.events, ...findings.bearEvidence, ...findings.bullClaims, ...(findings.bearClaims ?? []), ...(findings.kpis ?? [])]
+    : [];
+  const counts: PastedResearchSummary['counts'] = {
+    debate:       findings?.debate?.length ?? 0,
+    events:       findings?.events.length ?? 0,
+    kpis:         findings?.kpis?.length ?? 0,
+    bearEvidence: findings?.bearEvidence.length ?? 0,
+    bullClaims:   findings?.bullClaims.length ?? 0,
+    bearClaims:   findings?.bearClaims?.length ?? 0,
+    catalysts:    findings?.catalysts?.length ?? 0,
+  };
+  const structured = !!findings && Object.values(counts).some((n) => n > 0);
+  const prose = text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').replace(/\[\d+\]/g, '').replace(/[ \t]+/g, ' ').trim();
+  // An empty JSON skeleton, a stray sentence or a refusal is nothing to keep.
+  if (!structured && (looksLikeRefusal(prose) || prose.startsWith('{'))) return null;
+
+  const urls = structured
+    ? items.map((i) => i.source)
+    : [...prose.matchAll(/https?:\/\/[^\s)\]>"']+/g)].map((m) => m[0]);
+  const citations = [...new Set(urls.filter((u): u is string => !!u && /^https?:\/\//.test(u)))];
+  return {
+    context: {
+      model:     DEEP_RESEARCH_MODEL,
+      synthesis: structured ? renderFindings(findings!) : prose,
+      citations,
+      fetchedAt: new Date().toISOString(),
+      ...(structured ? { findings: findings! } : {}),
+      promptHash: PERPLEXITY_PROMPT_HASH,
+      raw: text,
+      pastedFrom: tool,
+    },
+    summary: { structured, counts, sources: citations.length },
+  };
 }
