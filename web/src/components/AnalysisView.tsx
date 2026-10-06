@@ -184,7 +184,7 @@ function AnalysisView({
           <CloseButton onClose={onClose} />
         </div>
         <div className="flex flex-1 items-center justify-center text-sm text-ink-500">
-          Loading {symbol}…
+          Lade {symbol} …
         </div>
       </div>
     );
@@ -213,10 +213,10 @@ function AnalysisView({
         </header>
         <div className="flex flex-1 items-center justify-center p-8 text-center">
           <div className="max-w-md">
-            <p className="mb-2 text-sm text-amber-400">{error || "No data"}</p>
+            <p className="mb-2 text-sm text-amber-400">{error || "Keine Daten"}</p>
             <p className="text-xs text-ink-500">
-              Click <span className="font-mono">↻ Refresh</span> above to
-              re-fetch from Yahoo &amp; Finnhub.
+              <span className="font-mono">↻ Daten holen</span> oben lädt sie neu von
+              Yahoo und Finnhub.
             </p>
           </div>
         </div>
@@ -346,18 +346,12 @@ function AnalysisView({
               )}
               {/* How the score came about — the calculation behind the verdict, after the case for and against */}
               {analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
-              {!llm && (
-                <div className="rounded-lg border border-amber-700 bg-amber-950 p-4 text-center text-sm text-amber-200">
-                  No LLM analysis cached for the current settings. Open the right
-                  sidebar and click <strong>Run Analysis</strong> to generate one.
-                </div>
-              )}
             </TabPane>
 
             <TabPane on={tab === 'chart'} seen={shown.has('chart')}>
               {/* THE CHART — levels, channels, lines, a model's reading; as large as the screen allows */}
               <Section fixed
-                title="Chart & Technical Signals"
+                title="Chart & Technik"
                 info="section.technicals"
                 subtitle="Trend, Unterstützungen, Widerstände, Kanäle, Timing und KI-Chartlesung"
                 storageKey="technicals"
@@ -375,18 +369,18 @@ function AnalysisView({
               {bundle.marketSignals && (
                 <More label="Renditen, Volatilität, relative Stärke, Optionen, Revisionen und Makro">
                   <Section fixed
-                    title="Price Action"
+                    title="Kursentwicklung"
                     finding={priceActionFinding(bundle.marketSignals)}
                     info="section.priceAction"
-                    subtitle="returns, volatility, position, relative strength"
+                    subtitle="Renditen, Volatilität, Position, relative Stärke"
                   >
                     <PriceAction marketSignals={bundle.marketSignals} />
                   </Section>
                   <Section fixed
-                    title="Market Context"
+                    title="Marktumfeld"
                     finding={marketContextFinding(bundle.marketSignals)}
                     info="section.marketContext"
-                    subtitle="options, analyst revisions, macro"
+                    subtitle="Optionen, Analystenrevisionen, Makro"
                   >
                     <MarketContext marketSignals={bundle.marketSignals} />
                   </Section>
@@ -399,18 +393,18 @@ function AnalysisView({
               {(m.composite.primary.models.length > 0 ||
                 m.composite.conservative.models.length > 0) && (
                 <Section fixed
-                  title="Fair Value Distribution"
+                  title="Fairer Wert nach Modellen"
                   info="section.fairValue"
                   finding={fairValueFinding(m, f.price, money)}
                 >
                   <div className="mb-2 text-xs text-ink-500">
                     <span className="mr-3">
                       <span className="inline-block h-2 w-3 rounded-sm bg-emerald-500 align-middle"></span>{" "}
-                      Primary (filled) · market-aligned
+                      Primär (gefüllt) · marktnah
                     </span>
                     <span>
                       <span className="inline-block h-2 w-3 rounded-sm border border-emerald-500 align-middle"></span>{" "}
-                      Conservative (outlined) · value lens
+                      Konservativ (umrandet) · Substanzblick
                     </span>
                   </div>
                   <div
@@ -439,16 +433,16 @@ function AnalysisView({
               </Section>
               {/* TIER 4: VALUATION DETAILS */}
               <Section fixed
-                title="Valuation Models"
+                title="Bewertungsmodelle"
                 finding={modelsFinding(m, f.price, money)}
                 info="section.valuationModels"
-                subtitle="DCF, peer multiples, reverse DCF"
+                subtitle="DCF, Peer-Multiples, Reverse-DCF"
               >
                 <ValuationDetail metrics={m} price={f.price} />
               </Section>
               {/* TIER 7: PEER COMPARISON */}
               {bundle.sectorMedians && (
-                <Section fixed title="Peer Group Comparison" finding={peersFinding(m, bundle.sectorMedians ?? null)} info="section.peers">
+                <Section fixed title="Vergleich mit Peers" finding={peersFinding(m, bundle.sectorMedians ?? null)} info="section.peers">
                   <PeerCompare
                     ratios={m.ratios}
                     evMultiples={m.evMultiples}
@@ -466,12 +460,12 @@ function AnalysisView({
                 f.website ||
                 f.isin ||
                 f.industry) && (
-                <Section fixed title="About the Company" finding={companyFinding(f)}>
+                <Section fixed title="Über das Unternehmen" finding={companyFinding(f)}>
                   <CompanyInfo financials={f} />
                 </Section>
               )}
               {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}
-              <Section fixed title="Fundamentals" finding={fundamentalsFinding(f, m)} info="section.fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
+              <Section fixed title="Geschäftszahlen" finding={fundamentalsFinding(f, m)} info="section.fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
                 <div className="space-y-5">
                   {f.fundamentalsHistory &&
                     (f.fundamentalsHistory.revenue?.length > 0 ||
@@ -495,12 +489,12 @@ function AnalysisView({
               {/* TIER 6: EARNINGS (history + forward) */}
               {(f.earningsSurprises?.length > 0 ||
                 f.earningsEstimates?.length > 0) && (
-                <Section fixed title="Earnings" finding={earningsFinding(f)} info="section.earnings">
+                <Section fixed title="Quartalszahlen" finding={earningsFinding(f)} info="section.earnings">
                   <EarningsBlock financials={f} />
                 </Section>
               )}
               {/* TIER 5: QUALITY & RISK */}
-              <Section fixed title="Quality & Risk Scores" finding={qualityFinding(m)} info="section.quality">
+              <Section fixed title="Qualität & Risiko" finding={qualityFinding(m)} info="section.quality">
                 <BalanceChecks health={m.health} />
                 <QualityScores metrics={m} />
               </Section>
@@ -526,7 +520,7 @@ function AnalysisView({
                 <VerdictTrackRecord symbol={symbol} />
               </Section>
               {/* TIER 10: OWNERSHIP & FLOW */}
-              <Section fixed title="Ownership & Insider Activity" finding={ownershipFinding(f, big)} info="section.ownership">
+              <Section fixed title="Eigentümer & Insider" finding={ownershipFinding(f, big)} info="section.ownership">
                 <div className="space-y-5">
                   <OwnershipFlow financials={f} />
                   <HoldersPanel symbol={symbol} />
@@ -540,7 +534,7 @@ function AnalysisView({
                 <StockTimeline symbol={symbol} />
               </Section>
               {/* TIER 11: DISTILL + PERPLEXITY + NEWS + SEARCH TRACES */}
-              <Section fixed title="Research & News" finding={researchFinding(bundle.news, bundle.perplexity, bundle.deepResearch ?? null)} info="section.research">
+              <Section fixed title="Research & Nachrichten" finding={researchFinding(bundle.news, bundle.perplexity, bundle.deepResearch ?? null)} info="section.research">
                 <NewsAndResearch
                   symbol={symbol}
                   news={bundle.news}
@@ -596,7 +590,7 @@ function RefreshOnlyButton({
       disabled={busy}
       className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {busy ? "⟳ Refreshing…" : "↻ Refresh"}
+      {busy ? "⟳ Hole Daten …" : "↻ Daten holen"}
     </button>
   );
 }

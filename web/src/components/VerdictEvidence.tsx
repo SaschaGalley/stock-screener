@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import type { VerdictEvidence as Evidence } from '../../../src/backtest/result';
 import { positionIn } from '../../../src/backtest/fair-value';
@@ -43,10 +43,16 @@ export default function VerdictEvidence({ verdict }: { verdict: string }) {
   if (!rows.length) return null;
   const firm = rows.some((r) => r.tStat !== null && Math.abs(r.tStat) >= FIRM_T);
 
+  const first = rows[0], last = rows[rows.length - 1];
   return (
-    <div className="mt-3 rounded border border-ink-800 bg-ink-950 px-3 py-2">
-      <div className="text-2xs uppercase tracking-wider text-ink-500">Was {verdict} im Backtest brachte</div>
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+    <EvidenceFold
+      summary={<>
+        Im Backtest lag {verdict} nach {months(first.horizon)} {pct(first.meanExcess)}
+        {last !== first && <>, nach {months(last.horizon)} {pct(last.meanExcess)}</>} gegenüber der Durchschnittsaktie —{' '}
+        <span className={firm ? 'text-ink-200' : ''}>{firm ? 'belegt' : 'kein Beleg'}</span>
+      </>}
+    >
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
         {rows.map((r) => {
           const solid = r.tStat !== null && Math.abs(r.tStat) >= FIRM_T;
           const color = r.meanExcess === null ? 'text-ink-500' : r.meanExcess >= 0 ? 'text-emerald-400' : 'text-red-400';
@@ -68,6 +74,29 @@ export default function VerdictEvidence({ verdict }: { verdict: string }) {
         {firm ? 'Fett: mindestens zwei Standardfehler von null.' : 'Kein Wert liegt zwei Standardfehler von null — eine Richtung, kein Beleg.'}
         {e.fidelity?.rho != null && <> Der nachgebaute Score folgt dem der App mit einer Rangkorrelation von {e.fidelity.rho.toFixed(2).replace('.', ',')}.</>}
       </p>
+    </EvidenceFold>
+  );
+}
+
+/**
+ * The backtest beside a headline number, as one line that already says the
+ * result, and the full reading on a click. In the verdict card the reading
+ * took more room than the verdict; the line keeps its point — whether the
+ * number has earned anything — where the eye is. Not remembered.
+ */
+function EvidenceFold({ summary, children }: { summary: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 rounded border border-ink-800 bg-ink-950 px-3 py-1.5 text-2xs leading-snug">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-start gap-1.5 text-left text-ink-400 transition hover:text-ink-200"
+      >
+        <span className={`mt-px inline-block w-2 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+        <span>{summary}</span>
+      </button>
+      {open && <div className="mt-1.5 pl-3.5 text-ink-400">{children}</div>}
     </div>
   );
 }
@@ -102,9 +131,15 @@ export function FairValueEvidence({ price, primary }: {
   const ic = (v: number | null) => (v === null ? '—' : v.toFixed(3).replace('.', ',').replace('-', '−'));
 
   return (
-    <div className="mt-2 rounded border border-ink-800 bg-ink-950 px-3 py-2 text-2xs leading-snug text-ink-400">
-      <div className="uppercase tracking-wider text-ink-500">Was die Marge im Backtest hieß</div>
-      <p className="mt-1">
+    <EvidenceFold
+      summary={<>
+        Im Backtest sagte die Lücke zum fairen Wert{' '}
+        <span className={firm.length ? 'text-ink-200' : ''}>
+          {firm.length ? `die Rendite bei ${firm.map((r) => months(r.horizon)).join(', ')} voraus` : 'keine Rendite voraus'}
+        </span>
+      </>}
+    >
+      <p>
         {firm.length
           ? <>Die Lücke zum fairen Wert sagte die Rendite bei {firm.map((r) => months(r.horizon)).join(', ')} voraus. </>
           : <>Die Lücke zum fairen Wert sagte keine Rendite voraus. </>}
@@ -123,6 +158,6 @@ export function FairValueEvidence({ price, primary }: {
         </p>
       )}
       <p className="mt-1 text-ink-500">Die Marge beschreibt die Modelle, sie ist keine erwartete Rendite.</p>
-    </div>
+    </EvidenceFold>
   );
 }

@@ -72,7 +72,7 @@ export default function VerdictHero({
         // Not "AI Verdict" any more, and the rename is the honest part: the
         // score is arithmetic blended with a prose read, and only the sentence
         // underneath it was written by a model.
-        title="Verdict"
+        title="Urteil"
         info="card.verdict"
         // The prose is a point-in-time opinion: without its date it reads as
         // current even when it predates the last earnings report. The score
@@ -136,13 +136,13 @@ export default function VerdictHero({
       </Card>
 
       {/* Composite Intrinsic Value — Primary tier headline + Conservative sub-line */}
-      <Card title="Composite Intrinsic Value" info="card.composite">
+      <Card title="Fairer Wert" info="card.composite">
         {composite.primary.median !== null ? (
           <div className="flex h-full flex-col">
             <div className={`rounded border px-3 py-2 ${mosBgColor(compositeMoS)}`}>
               <div className="flex items-baseline justify-between">
                 <span className="text-xs uppercase tracking-wider text-ink-400">
-                  Primary · {composite.primary.models.length} models
+                  Primär · {composite.primary.models.length} Modelle
                 </span>
                 <Term k="concept.upside" className={`font-mono text-sm font-semibold ${mosColor(compositeMoS)}`}>
                   {fmtSignedPct(compositeMoS)}
@@ -152,16 +152,16 @@ export default function VerdictHero({
                 {fmtPrice(composite.primary.median)}
               </div>
               <div className="mt-1 text-xs text-ink-400">
-                <Term k="concept.modelRange">Range</Term>: <span className="font-mono">{fmtPrice(composite.primary.min)} – {fmtPrice(composite.primary.max)}</span>
+                <Term k="concept.modelRange">Spanne</Term>: <span className="font-mono">{fmtPrice(composite.primary.min)} – {fmtPrice(composite.primary.max)}</span>
               </div>
             </div>
 
             {composite.conservative.median !== null && (
               <div className="mt-2 flex items-baseline justify-between rounded border border-ink-700 bg-ink-950 px-3 py-1.5 text-xs">
                 <div>
-                  <Term k="metrics.composite.conservative.median" className="text-2xs uppercase tracking-wider text-ink-500">Conservative lens</Term>
+                  <Term k="metrics.composite.conservative.median" className="text-2xs uppercase tracking-wider text-ink-500">Konservativ</Term>
                   <span className="ml-1 text-ink-600">·</span>
-                  <span className="ml-1 text-2xs text-ink-500">{composite.conservative.models.length} models</span>
+                  <span className="ml-1 text-2xs text-ink-500">{composite.conservative.models.length} Modelle</span>
                 </div>
                 <span className="font-mono text-ink-300">{fmtPrice(composite.conservative.median)}</span>
               </div>
@@ -169,15 +169,15 @@ export default function VerdictHero({
 
             <FairValueEvidence price={price} primary={composite.primary} />
 
-            <div className="mt-auto pt-2 flex items-center gap-1.5 text-xs text-ink-500">
+            <div className="mt-auto flex flex-wrap items-center gap-x-1.5 pt-2 text-xs text-ink-500">
               <Term k="metrics.composite.confidence">
-                conf {Number.isFinite(composite.confidence) ? composite.confidence.toFixed(1) : '—'}/10
+                Konfidenz {Number.isFinite(composite.confidence) ? composite.confidence.toFixed(1).replace('.', ',') : '—'}/10
               </Term>
               {composite.pctPrimaryUndervalued !== null && composite.pctPrimaryUndervalued !== undefined && (
                 <>
                   <span>·</span>
                   <Term k="metrics.composite.pctPrimaryUndervalued">
-                    {(composite.pctPrimaryUndervalued * 100).toFixed(0)}% of primary bullish
+                    {(composite.pctPrimaryUndervalued * 100).toFixed(0)} % der Modelle darüber
                   </Term>
                 </>
               )}
@@ -185,18 +185,18 @@ export default function VerdictHero({
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-ink-500">
-            No applicable primary models
+            Kein primäres Modell anwendbar
           </div>
         )}
       </Card>
 
       {/* Analyst Consensus */}
-      <Card title="Analyst Consensus" info="card.analysts">
+      <Card title="Analystenkonsens" info="card.analysts">
         {analyst.targetMeanPrice ? (
           <div className="flex h-full flex-col">
             <div className={`rounded border px-3 py-2 ${mosBgColor(analystMoS)}`}>
               <div className="flex items-baseline justify-between">
-                <Term k="financials.targetMeanPrice" className="text-xs uppercase tracking-wider text-ink-400">Avg Target</Term>
+                <Term k="financials.targetMeanPrice" className="text-xs uppercase tracking-wider text-ink-400">Ø Kursziel</Term>
                 <Term k="concept.upside" className={`font-mono text-sm font-semibold ${mosColor(analystMoS)}`}>
                   {fmtSignedPct(analystMoS)}
                 </Term>
@@ -206,14 +206,14 @@ export default function VerdictHero({
                   {fmtPrice(analyst.targetMeanPrice)}
                 </span>
                 {analyst.analystCount && (
-                  <span className="text-xs text-ink-500">{analyst.analystCount} analysts</span>
+                  <span className="text-xs text-ink-500">{analyst.analystCount} Analysten</span>
                 )}
               </div>
             </div>
             {analyst.analystTargetLow !== null && analyst.analystTargetHigh !== null && (
               <div className="mt-2 text-xs text-ink-400">
-                <Term k="concept.targetRange">Range</Term>: <span className="font-mono">{fmtPrice(analyst.analystTargetLow)}</span> – <span className="font-mono">{fmtPrice(analyst.analystTargetHigh)}</span>
-                {analyst.analystTargetMedian && <> · median <span className="font-mono">{fmtPrice(analyst.analystTargetMedian)}</span></>}
+                <Term k="concept.targetRange">Spanne</Term>: <span className="font-mono">{fmtPrice(analyst.analystTargetLow)}</span> – <span className="font-mono">{fmtPrice(analyst.analystTargetHigh)}</span>
+                {analyst.analystTargetMedian && <> · Median <span className="font-mono">{fmtPrice(analyst.analystTargetMedian)}</span></>}
               </div>
             )}
             <TargetDispersion a={analyst} />
@@ -233,7 +233,7 @@ export default function VerdictHero({
           </div>
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-ink-500">
-            No analyst coverage
+            Keine Analysten-Abdeckung
           </div>
         )}
       </Card>

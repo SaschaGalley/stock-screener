@@ -57,7 +57,7 @@ export const GLOSSARY = {
   'financials.enterpriseValue':
     'Unternehmenswert: Börsenwert plus Schulden minus Cash. Der Preis für das ganze Geschäft, schuldenfrei gerechnet. Er ist die Basis der EV-Multiples, die Firmen mit unterschiedlicher Verschuldung vergleichbar machen.',
   'concept.range52w':
-    'Tiefster und höchster Schlusskurs der letzten 52 Wochen. Wo der Kurs darin steht, zeigt „Price Action“.',
+    'Tiefster und höchster Schlusskurs der letzten 52 Wochen. Wo der Kurs darin steht, zeigt die Kursentwicklung im Chart-Tab.',
   'financials.beta':
     'Wie stark die Aktie mit dem S&P 500 mitschwingt, gemessen über fünf Jahre Monatsrenditen. 1 heißt wie der Markt, 1,5 heißt 50 % stärker, 0,5 heißt halb so stark. Über das CAPM bestimmt Beta die Eigenkapitalkosten in DCF, DDM, EPV und Residual Income.',
 
