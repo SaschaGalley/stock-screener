@@ -333,8 +333,9 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
       schema: SynthesisOutputSchema,
       // The largest of the three: two sides of up to nine points each and a
       // thesis over the longest prompt. GOOGL truncated at 2048 on the first
-      // live run; the longer bullets need the headroom.
-      maxTokens: 6000,
+      // live run; the longer bullets, and since October their headlines, need
+      // the headroom.
+      maxTokens: 7000,
     })
     .catch((e): SynthesisOutput | null => {
       logger.warn(`${f.symbol}: synthesis failed — falling back to the computed findings (${(e as Error).message})`);

@@ -10,7 +10,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { caseLines, readCases } from '../src/cases.js';
+import { caseLines, readCases, type CasePointView } from '../src/cases.js';
+
+const plain = (...texts: string[]): CasePointView[] => texts.map((text) => ({ title: null, text }));
 
 describe('reading the stored case', () => {
   it('takes today\'s sections as they are', () => {
@@ -18,17 +20,17 @@ describe('reading the stored case', () => {
       bullCase: { theses: ['Platform lock-in widens spend per customer'], figures: ['ROIC 28% vs WACC 10%'], triggers: ['Q3 cRPO above 21%'] },
       bearCase: { theses: ['AI agents erode seats'], figures: ['Conservative fair value 57% below price'], triggers: [] },
     });
-    assert.deepEqual(c.bull.theses, ['Platform lock-in widens spend per customer']);
-    assert.deepEqual(c.bear.figures, ['Conservative fair value 57% below price']);
+    assert.deepEqual(c.bull.theses, plain('Platform lock-in widens spend per customer'));
+    assert.deepEqual(c.bear.figures, plain('Conservative fair value 57% below price'));
     assert.deepEqual(c.bull.unsorted, []);
     assert.deepEqual(c.undirected, []);
   });
 
   it('keeps a flat list unsorted rather than guessing a section for it', () => {
     const c = readCases({ bullCase: ['ROIC 64%', 'Guide raised'], bearCase: ['P/E 39x'], keyRisks: ['Antitrust ruling'] });
-    assert.deepEqual(c.bull.unsorted, ['ROIC 64%', 'Guide raised']);
+    assert.deepEqual(c.bull.unsorted, plain('ROIC 64%', 'Guide raised'));
     assert.deepEqual(c.bull.theses, []);
-    assert.deepEqual(c.bear.unsorted, ['P/E 39x', 'Antitrust ruling'], 'old risks read as bear points');
+    assert.deepEqual(c.bear.unsorted, plain('P/E 39x', 'Antitrust ruling'), 'old risks read as bear points');
   });
 
   it('moves each legacy trigger to the side its arrow points to, without the arrow', () => {
@@ -36,9 +38,25 @@ describe('reading the stored case', () => {
       bullCase: [], bearCase: [],
       watch: ['↑ wenn Umsatzwachstum >9% yoy', '↓ Wenn Regulatoren eingreifen', 'Kurs kreuzt die 200-Tage-Linie'],
     });
-    assert.deepEqual(c.bull.triggers, ['Umsatzwachstum >9% yoy']);
-    assert.deepEqual(c.bear.triggers, ['Regulatoren eingreifen']);
+    assert.deepEqual(c.bull.triggers, plain('Umsatzwachstum >9% yoy'));
+    assert.deepEqual(c.bear.triggers, plain('Regulatoren eingreifen'));
     assert.deepEqual(c.undirected, ['Kurs kreuzt die 200-Tage-Linie'], 'no arrow, no guessed direction');
+  });
+
+  it('keeps a headline beside its text, and drops one that says nothing the text does not', () => {
+    const c = readCases({
+      bullCase: {
+        theses: [{ title: 'Lock-in widens spend', text: 'Every new workflow raises spend per customer.' }, 'An old point without one'],
+        figures: [{ title: '  ', text: 'ROIC 28% vs WACC 10%' }, { title: 'Same', text: 'Same' }],
+        triggers: [],
+      },
+      bearCase: [],
+    });
+    assert.deepEqual(c.bull.theses, [
+      { title: 'Lock-in widens spend', text: 'Every new workflow raises spend per customer.' },
+      { title: null, text: 'An old point without one' },
+    ]);
+    assert.deepEqual(c.bull.figures, plain('ROIC 28% vs WACC 10%', 'Same'));
   });
 
   it('splits a schema-v3 paragraph into its sentences', () => {
@@ -57,5 +75,7 @@ describe('the case as text', () => {
     const fmt = { bullet: '- ', heading: (l: string) => `${l}:` };
     assert.deepEqual(caseLines(c.bull, 'bull', fmt), ['Thesen:', '- A', '', 'Hebt das Urteil, wenn:', '- B']);
     assert.ok(caseLines(c.bear, 'bear', fmt).includes('Senkt das Urteil, wenn:'));
+    const titled = readCases({ bullCase: { theses: [{ title: 'Lock-in', text: 'Spend per customer grows.' }], figures: [], triggers: [] }, bearCase: [] });
+    assert.deepEqual(caseLines(titled.bull, 'bull', fmt), ['Thesen:', '- Lock-in: Spend per customer grows.']);
   });
 });

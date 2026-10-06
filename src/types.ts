@@ -996,10 +996,22 @@ const CASE_SECTION_DESCRIPTION: Record<CaseSection, string> = {
   triggers: 'Observable conditions that would move the verdict in this side\'s direction',
 };
 
+/**
+ * One point: a headline and its text since 7 October 2026, the text alone
+ * before that and for triggers. See `CasePoint` in `src/cases.ts`.
+ */
+export const CasePointSchema = z.union([
+  z.string().min(1),
+  z.object({
+    title: z.string().describe('A headline of 3–7 words that carries the point itself, not a label like "Valuation"'),
+    text:  z.string().min(1).describe('The point in full; does not repeat the headline'),
+  }),
+]);
+
 /** One side of the case in sections — see `src/cases.ts` for why it is split. */
 export const CaseSideSchema = z.object(
-  Object.fromEntries(Object.entries(CASE_SECTION_DESCRIPTION).map(([k, d]) => [k, z.array(z.string()).describe(d)])) as
-    Record<CaseSection, z.ZodArray<z.ZodString>>,
+  Object.fromEntries(Object.entries(CASE_SECTION_DESCRIPTION).map(([k, d]) => [k, z.array(CasePointSchema).describe(d)])) as
+    Record<CaseSection, z.ZodArray<typeof CasePointSchema>>,
 );
 
 /**
@@ -1053,8 +1065,8 @@ export type NarrativeOutput = z.infer<typeof NarrativeOutputSchema>;
  * owed. Generous at the top so one point too many does not cost the call.
  */
 const CaseSideOutputSchema = z.object({
-  theses:   z.array(z.string()).min(1).max(5),
-  figures:  z.array(z.string()).min(1).max(4),
+  theses:   z.array(CasePointSchema).min(1).max(5),
+  figures:  z.array(CasePointSchema).min(1).max(4),
   triggers: z.array(z.string()).max(3).default([]),
 } satisfies Record<CaseSection, z.ZodTypeAny>);
 

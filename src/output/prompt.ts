@@ -755,6 +755,10 @@ sieht. Jede Seite hat drei Abschnitte, und jeder hat eine andere Aufgabe:
   Bear-Seite nach unten: eine Kennzahl, die eine Schwelle kreuzt, eine terminierte
   Entscheidung, ein Quartal. Schreib nur die Bedingung, ohne „wenn" und ohne Pfeil —
   die Überschrift sagt die Richtung. Keine allgemeinen Risiken.
+- Jede These und jeder Zahlen-Punkt bekommt eine Überschrift (\`title\`, 3–7 Wörter):
+  die Aussage selbst als Schlagzeile, so dass wer nur die Überschriften liest, den
+  Fall schon kennt — „Kapitalrendite weit über Kapitalkosten", nicht „Rendite" oder
+  „Bewertung". Der Text (\`text\`) führt sie aus und wiederholt sie nicht.
 - **Risiken gehören in die Bear-Thesen**, nicht in eine eigene Liste: was noch nicht
   eingetreten ist, aber den Fall brechen würde, mit dem, was es auslöst.
 - Führe in jedem Abschnitt mit dem stärksten Punkt. Keine Konnektoren zwischen den
@@ -770,13 +774,13 @@ ${GERMAN_STYLE}
 Antworte als JSON:
 {
   "bullCase": {
-    "theses":   ["2–4 Wirkungsketten"],
-    "figures":  ["1–3 Punkte aus den Zahlen"],
+    "theses":   [{ "title": "Schlagzeile", "text": "Wirkungskette" }],
+    "figures":  [{ "title": "Schlagzeile", "text": "Zahl mit Maßstab und Bedeutung" }],
     "triggers": ["1–2 Bedingungen, die das Urteil heben würden"]
   },
   "bearCase": {
-    "theses":   ["2–4 Wirkungsketten, Risiken eingeschlossen"],
-    "figures":  ["1–3 Punkte aus den Zahlen"],
+    "theses":   [{ "title": "Schlagzeile", "text": "Wirkungskette, Risiken eingeschlossen" }],
+    "figures":  [{ "title": "Schlagzeile", "text": "Zahl mit Maßstab und Bedeutung" }],
     "triggers": ["1–2 Bedingungen, die das Urteil senken würden"]
   },
   "thesis":           "ein Satz",

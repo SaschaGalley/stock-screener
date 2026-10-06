@@ -3,7 +3,7 @@ import { useMoney } from '../currency';
 import { fmtSignedPct } from '../format';
 import {
   CASE_SECTION_LABEL, CASE_TITLE, readCases,
-  type CaseDirection, type CaseSection, type CaseView, type StoredCases,
+  type CaseDirection, type CasePointView, type CaseSection, type CaseView, type StoredCases,
 } from '../../../src/cases';
 import Term from './Term';
 
@@ -133,16 +133,20 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
-function Points({ points, bulletClass, muted = false }: { points: string[]; bulletClass: string; muted?: boolean }) {
+/**
+ * A section's points. A point with a headline shows it above its text, so a
+ * side can be read by its headlines alone; older points are the text alone.
+ */
+function Points({ points, bulletClass, muted = false }: { points: CasePointView[]; bulletClass: string; muted?: boolean }) {
   return (
-    <ul className="space-y-2">
+    <ul className="space-y-2.5">
       {points.map((p, i) => (
-        <li
-          key={i}
-          className={`flex gap-2 leading-relaxed ${muted ? 'text-[13px] text-ink-400' : 'text-sm text-ink-300'}`}
-        >
+        <li key={i} className="flex gap-2 leading-relaxed">
           <span className={`mt-0.5 shrink-0 ${bulletClass}`}>·</span>
-          <span>{p}</span>
+          <div className="min-w-0">
+            {p.title && <div className={`font-semibold text-ink-100 ${muted ? 'text-[13px]' : 'text-sm'}`}>{p.title}</div>}
+            <div className={muted ? 'text-[13px] text-ink-400' : 'text-sm text-ink-300'}>{p.text}</div>
+          </div>
         </li>
       ))}
     </ul>
