@@ -65,6 +65,7 @@ import {
 import { isJournalKind, normalizeSymbols } from './journal.js';
 import { ignoreTrades, readOpenTrades } from './trades-service.js';
 import { readDepot } from './depot-service.js';
+import { ChartReadInputError, readChart, runChartRead } from './chart-service.js';
 import { readReview } from './review-service.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
@@ -1276,7 +1277,7 @@ export function createApp(): express.Express {
     try {
       const symbol = req.params.symbol.toUpperCase();
       const kind = req.params.kind;
-      const allowed = ['distill', 'perplexity', 'verdict', 'search_trace'] as const;
+      const allowed = ['distill', 'perplexity', 'verdict', 'search_trace', 'chart'] as const;
       if (!(allowed as readonly string[]).includes(kind)) {
         res.status(400).json({ error: `unknown document kind "${kind}"`, allowed });
         return;
@@ -1306,6 +1307,32 @@ export function createApp(): express.Express {
       res.json({ symbol, period: raw, rows: await readFundamentals(symbol, raw) });
     } catch (e) {
       next(e);
+    }
+  });
+
+  // ── GET /api/stocks/:symbol/chart ──────────────────────────────────────────
+  // Two years of daily bars from the archive, the moving averages over them,
+  // what `analysis/chart.ts` reads in them, and the newest model reading.
+  app.get('/api/stocks/:symbol/chart', async (req, res, next) => {
+    try {
+      res.json(await readChart(req.params.symbol.toUpperCase()));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── POST /api/stocks/:symbol/chart-read ────────────────────────────────────
+  // A model reads the chart: patterns, levels, scenarios. One call, by hand,
+  // kept as a `chart` document. Body: `{ model?: string }`.
+  app.post('/api/stocks/:symbol/chart-read', async (req, res, next) => {
+    req.setTimeout(5 * 60 * 1000);
+    res.setTimeout(5 * 60 * 1000);
+    try {
+      const model = (req.body as { model?: unknown } | undefined)?.model;
+      res.json(await runChartRead(req.params.symbol.toUpperCase(), typeof model === 'string' ? model : null));
+    } catch (e) {
+      if (e instanceof ChartReadInputError) res.status(400).json({ error: e.message });
+      else next(e);
     }
   });
 
@@ -1838,6 +1865,8 @@ if (isMain) {
         logger.info(`  GET  /api/stocks/:symbol/series?keys=  — any recorded metric over time`);
         logger.info(`  GET  /api/stocks/:symbol/documents/:k  — Distill/Perplexity/verdict history`);
         logger.info(`  GET  /api/stocks/:symbol/fundamentals  — reported figures by fiscal period`);
+        logger.info(`  GET  /api/stocks/:symbol/chart         — bars, levels, channels, chart reading`);
+        logger.info(`  POST /api/stocks/:symbol/chart-read    — a model reads the chart`);
         logger.info(`  GET  /api/stocks/:symbol/analyses      — list stored verdict combos`);
         logger.info(`  POST /api/analyze                      — run analysis (body: {input, model, search, pplx})`);
         logger.info(`  GET  /api/config · PUT /api/config     — operational settings`);

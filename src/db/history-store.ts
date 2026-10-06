@@ -184,6 +184,22 @@ export async function readPriceBars(
   return res.rows.map((r) => ({ day: r.day, close: r.close, adjClose: r.adj_close, volume: r.volume === null ? null : Number(r.volume) }));
 }
 
+/**
+ * A ticker's full daily bars, oldest first, for drawing and reading the chart.
+ * The close is split-adjusted like everything in the table; open, high and low
+ * are null where a closes-only backfill wrote the bar.
+ */
+export async function readPriceBarsOhlc(
+  ticker: string, from?: string,
+): Promise<{ day: string; open: number | null; high: number | null; low: number | null; close: number; volume: number | null }[]> {
+  const res = await query<{ day: string; open: number | null; high: number | null; low: number | null; close: number; volume: number | null }>(
+    `SELECT day, open, high, low, close, volume FROM price_bars
+      WHERE ticker = $1 AND ($2::date IS NULL OR day >= $2) ORDER BY day`,
+    [ticker.toUpperCase(), from ?? null],
+  );
+  return res.rows.map((r) => ({ ...r, volume: r.volume === null ? null : Number(r.volume) }));
+}
+
 /** Every quote currency a stored symbol trades in. */
 export async function quoteCurrencies(): Promise<string[]> {
   const res = await query<{ currency: string }>('SELECT DISTINCT currency FROM symbols WHERE currency IS NOT NULL');

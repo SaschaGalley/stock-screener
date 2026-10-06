@@ -298,7 +298,19 @@ export const GLOSSARY = {
 
   // ── Technicals ───────────────────────────────────────────────────────────
   'section.technicals':
-    'Was der Kursverlauf allein sagt, im Stil von TradingView: Gleitende Durchschnitte (Trend) und Oszillatoren (überkauft/überverkauft) stimmen je mit Kauf, Neutral oder Verkauf ab. Kurzfristige Signale, kein Urteil über den Wert.',
+    'Was der Kursverlauf allein sagt: Trendstruktur, Unterstützungen und Widerstände, Regressionskanäle, Trendlinien, Volumenprofil, Divergenzen, Ausbrüche und offene Kurslücken — gerechnet aus den archivierten Tageskursen. Dazu auf Wunsch die Lesart eines Sprachmodells und die klassische Indikator-Abstimmung. Beschreibung des Charts, kein Urteil über den Wert; nichts davon fließt in Score oder Urteil ein.',
+  'tech.levels':
+    'Preise, an denen der Kurs mehrfach gedreht hat. Wendepunkte stammen aus einem Zickzack, der eine Bewegung erst als Wende zählt, wenn der Kurs danach um drei typische Tagesbewegungen (ATR) zurückläuft. Wendepunkte innerhalb von rund 0,6 ATR werden zu einer Marke zusammengefasst; Stärke heißt: viele und jüngere Berührungen. Unter dem Kurs heißt eine Marke Unterstützung, darüber Widerstand. Rollentausch: Die Marke hat den Kurs von beiden Seiten gedreht.',
+  'tech.channels':
+    'Eine Gerade durch die logarithmierten Schlusskurse des Zeitraums, mit Rändern bei zwei Standardabweichungen. σ sagt, wo der letzte Kurs zwischen den Rändern steht: −2 am unteren, +2 am oberen. R² sagt, wie gerade der Weg war — unter 0,3 ist der Kanal eher eine Wolke. Die Liste zeigt den 3-Monats-Kanal; nur dessen Lage hat der Backtest geprüft.',
+  'tech.trendlines':
+    'Die Linie durch die letzten beiden Wendetiefs (Unterstützung) und die durch die letzten beiden Wendehochs (Widerstand), bis heute verlängert. Gebrochen heißt: Ein Schlusskurs lag seitdem deutlich jenseits der Linie.',
+  'tech.profile':
+    'Wo im letzten Jahr gehandelt wurde: das Volumen jedes Tages gleichmäßig über seine Spanne verteilt. Der POC ist der Preis mit dem meisten Umsatz, die Zone darum hält 70 % des Volumens. Viele Marktteilnehmer haben dort ihren Einstand — solche Preise wirken oft als Marke.',
+  'tech.chartRead':
+    'Ein Sprachmodell bekommt die Wochenkerzen der letzten zwei Jahre, die Tageskerzen des letzten Quartals und die hier gerechneten Marken — keine Nachrichten, keine Fundamentaldaten, kein Urteil — und liest daraus Chartmuster, die Marken, die es für wichtig hält, und Szenarien mit Auslösern. Ungeprüft: Chartmuster haben im Backtest dieser App keinen Nachweis, und Modelle sehen Muster auch, wo keine sind.',
+  'tech.vote':
+    'Die klassische Zusammenfassung im Stil von TradingView: zwölf gleitende Durchschnitte und sieben Oszillatoren stimmen je mit Kauf, Neutral oder Verkauf ab. Grob und kurzfristig; hier nur noch zum Nachschlagen.',
   'tech.movingAverages': 'Zwölf gleitende Durchschnitte (SMA und EMA über 10–200 Tage). Kurs darüber stimmt für Kauf, darunter für Verkauf. Viele Kaufstimmen heißen: Aufwärtstrend auf allen Zeitskalen.',
   'tech.oscillators': 'Sieben Oszillatoren (RSI, Stochastik, MACD, CCI, Williams %R, Momentum, Bollinger %B). Sie messen, ob der Kurs zu weit, zu schnell gelaufen ist.',
   'tech.overall': 'Durchschnitt der beiden Gruppen, gleich gewichtet, damit die zwölf Durchschnitte die sieben Oszillatoren nicht überstimmen.',

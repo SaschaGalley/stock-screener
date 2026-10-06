@@ -85,7 +85,8 @@ export type SnapshotKind =
   // changes; this is what the reader saw on the day.
   | 'score_card';
 
-export type DocumentKind = 'distill' | 'perplexity' | 'verdict' | 'search_trace';
+// `chart`: an LLM's reading of the price chart (`chart-service.ts`).
+export type DocumentKind = 'distill' | 'perplexity' | 'verdict' | 'search_trace' | 'chart';
 
 function hashOf(value: unknown): Buffer {
   return createHash('sha256').update(JSON.stringify(value ?? null)).digest();

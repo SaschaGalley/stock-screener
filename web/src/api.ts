@@ -31,6 +31,7 @@ import type { HistoryMultiple, SectorMultiples, ValuationHistory } from '../../s
 import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
+import type { ChartReadDoc, ChartResponse } from '../../src/analysis/chart';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
 import type { DepotResponse } from '../../src/analysis/depot';
@@ -161,6 +162,15 @@ export const api = {
     jsonFetch<{ symbol: string; data: Holders | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/holders`),
   getIncomeFlow: (symbol: string) =>
     jsonFetch<{ symbol: string; data: IncomeFlows | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/income-flow`),
+
+  /** Two years of daily bars, the levels and channels read from them, and the newest model reading. */
+  getChart: (symbol: string) =>
+    jsonFetch<ChartResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/chart`),
+  /** A model reads the chart — one call, up to a minute or two on a reasoning model. */
+  runChartRead: (symbol: string, model: string) =>
+    jsonFetch<ChartReadDoc>(`${BASE}/stocks/${encodeURIComponent(symbol)}/chart-read`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }),
+    }),
 
   /** Five years rebuilt month by month — a few seconds the first time a stock is opened each day. */
   getValuationHistory: (symbol: string) =>

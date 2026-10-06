@@ -11,7 +11,7 @@ interface Props {
  * Pure price-action context — what has the stock DONE? Returns over time,
  * volatility, position relative to peaks, and relative strength vs the
  * benchmarks. Deliberately excludes momentum indicators (RSI, MACD, MAs)
- * since those live in the Technical Signals gauge above.
+ * since those live in the chart section above.
  */
 export default function PriceAction({ marketSignals: ms }: Props) {
   const t = ms?.technicals;

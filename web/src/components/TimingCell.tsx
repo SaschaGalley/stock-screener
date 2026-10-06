@@ -61,7 +61,8 @@ function today(key: string, t: TimingReadings): string {
  */
 const SHOWN_HORIZONS = [1, 6];
 
-function Evidence({ t, verdict, evidence }: { t: TimingReadings; verdict: string | null; evidence: VerdictEvidence | null }) {
+/** The readings beside the backtest — the list's hover, and the stock page's timing block. */
+export function TimingEvidence({ t, verdict, evidence }: { t: TimingReadings; verdict: string | null; evidence: VerdictEvidence | null }) {
   const study = evidence?.timing ?? null;
   const group = verdict ? timingGroup(verdict) : 'all';
   const label = TIMING_GROUPS.find((g) => g.key === group)!.label;
@@ -130,14 +131,17 @@ export default function TimingCell({ row, evidence }: { row: OverviewRow; eviden
   return (
     <div>
       <div className="flex items-center whitespace-nowrap text-xs leading-4 text-ink-300">
-        <Tip focusable={false} content={<Evidence t={timing} verdict={row.recommendation} evidence={evidence} />}>
+        <Tip focusable={false} content={<TimingEvidence t={timing} verdict={row.recommendation} evidence={evidence} />}>
           <span className="font-mono">{d.arrow}</span> {place(timing)}
         </Tip>
         <SetupBadge row={row} study={evidence?.setups ?? null} />
       </div>
-      <Tip focusable={false} className="block" content={<Evidence t={timing} verdict={row.recommendation} evidence={evidence} />}>
+      <Tip focusable={false} className="block" content={<TimingEvidence t={timing} verdict={row.recommendation} evidence={evidence} />}>
         <span className="whitespace-nowrap font-mono text-2xs leading-4 text-ink-500">1M {pct(timing.m1, 0)} · RSI {num(timing.rsi14, 0)}</span>
       </Tip>
     </div>
   );
 }
+
+/** The channel's direction and the price's place in it, as the list says them — for the stock page's summary. */
+export { direction as channelDirection, place as channelPlace };

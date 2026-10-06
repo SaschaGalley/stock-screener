@@ -5,6 +5,7 @@ import type {
   StockBundle,
   AnalysisFlagsKey,
   CachedAnalysisEntry,
+  OverviewRow,
 } from "../types";
 import VerdictHero from "./VerdictHero";
 import VerdictChanges from "./VerdictChanges";
@@ -27,7 +28,7 @@ import ValuationDetail from "./sections/ValuationDetail";
 import QualityScores from "./sections/QualityScores";
 import FundamentalsGrid from "./sections/FundamentalsGrid";
 import PeerCompare from "./sections/PeerCompare";
-import TechnicalSignalsPanel from "./sections/TechnicalSignalsPanel";
+import ChartTechnicals from "./sections/ChartTechnicals";
 import PriceAction from "./sections/PriceAction";
 import MarketContext from "./sections/MarketContext";
 import OwnershipFlow from "./sections/OwnershipFlow";
@@ -65,6 +66,8 @@ interface Props {
   onRerun: () => void;
   /** The flag combination on show, for the verdict card to wear. */
   flagsLabel: string;
+  /** The stock's row in the list: its timing readings and setups, for the chart section. */
+  row?: OverviewRow | null;
 }
 
 function AnalysisView({
@@ -82,6 +85,7 @@ function AnalysisView({
   onOpenPeers,
   onRerun,
   flagsLabel,
+  row,
 }: Props) {
   const [bundle, setBundle] = useState<StockBundle | null>(null);
   const [analysis, setAnalysis] = useState<CachedAnalysisEntry | null>(null);
@@ -427,16 +431,21 @@ function AnalysisView({
               </Section>
             )}
 
-            {/* TIER 8b: TECHNICAL SIGNALS GAUGE (TradingView-style) */}
-            {bundle.technicalSignals && (
-              <Section
-                title="Technical Signals"
-                info="section.technicals"
-                subtitle={`Overall: ${bundle.technicalSignals.overall.verdict.toLowerCase()}`}
-              >
-                <TechnicalSignalsPanel signals={bundle.technicalSignals} />
-              </Section>
-            )}
+            {/* TIER 8b: THE CHART — levels, channels, lines, a model's reading, and the old indicator vote */}
+            <Section
+              title="Chart & Technical Signals"
+              info="section.technicals"
+              subtitle="Trend, Unterstützungen, Widerstände, Kanäle, Timing und KI-Chartlesung"
+              storageKey="technicals"
+            >
+              <ChartTechnicals
+                symbol={symbol}
+                row={row ?? null}
+                timing={bundle.marketSignals?.technicals?.timing ?? null}
+                signals={bundle.technicalSignals}
+                model={flags.model}
+              />
+            </Section>
 
             {/* TIER 9a: PRICE ACTION — what HAS the stock done (returns, vol, RS) */}
             {bundle.marketSignals && (

@@ -558,6 +558,7 @@ export default function App() {
               onOpenPeers={openPeers}
               onRerun={rerunSelected}
               flagsLabel={flagsLabel(settings)}
+              row={rows.find((r) => r.symbol === selected) ?? null}
             />
           )}
         </main>

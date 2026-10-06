@@ -50,7 +50,8 @@ export function firingSetups(row: OverviewRow): Setup[] {
   return SETUPS.filter((s) => s.fires({ t, fairGap }));
 }
 
-function Plan({ row, t, setups, study }: { row: OverviewRow; t: TimingReadings; setups: Setup[]; study: SetupStudy | null }) {
+/** Each setup's idea and record, the trade plan and the risk — the badge's hover, and the stock page's. */
+export function SetupPlan({ row, t, setups, study }: { row: OverviewRow; t: TimingReadings; setups: Setup[]; study: SetupStudy | null }) {
   const risk = riskOf(row, t);
   return (
     <div className="max-w-md">
@@ -124,7 +125,7 @@ export default function SetupBadge({ row, study }: { row: OverviewRow; study: Se
     <Tip
       focusable={false}
       className={`ml-1 rounded border px-1 text-3xs leading-3.5 ${carried ? 'border-emerald-700 text-emerald-300' : 'border-ink-700 text-ink-400'}`}
-      content={<Plan row={row} t={t} setups={setups} study={study} />}
+      content={<SetupPlan row={row} t={t} setups={setups} study={study} />}
     >
       {setups.length === 1 ? setups[0].title : `${setups.length} Setups`}
     </Tip>
