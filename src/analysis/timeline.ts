@@ -97,7 +97,7 @@ export function bigMoves(bars: { day: string; close: number }[], from: string): 
     .filter((x) => Math.abs(x.r) >= threshold)
     .map((x) => ({
       day: x.day, kind: 'move' as const, tone: x.r > 0 ? 'positive' as const : 'negative' as const,
-      title: `Kurs ${x.r > 0 ? '+' : '−'}${(Math.abs(x.r) * 100).toFixed(1)} % an einem Tag`,
+      title: `Kurs ${x.r > 0 ? '+' : '−'}${(Math.abs(x.r) * 100).toFixed(1).replace('.', ',')} % an einem Tag`,
       detail: `Mehr als das ${Math.round(Math.abs(x.r) / sd)}-Fache der üblichen Tagesbewegung`,
     }));
 }

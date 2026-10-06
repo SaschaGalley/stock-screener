@@ -26,7 +26,7 @@ import {
   snapshotHistory, symbolFacts, type Series,
 } from './db/store.js';
 import { journalForSymbols } from './db/journal-store.js';
-import { fmtBig, fmtPrice } from './format.js';
+import { deNumber, fmtBigDe, fmtPriceDe } from './format.js';
 import { JOURNAL_LABEL, journalHeadline } from './journal.js';
 import type { NewsItem } from './types.js';
 import { RECOMMENDATIONS } from './verdict.js';
@@ -264,6 +264,25 @@ async function computeRecordSummary(): Promise<VerdictRecordSummary> {
 
 // ── Timeline ────────────────────────────────────────────────────────────────
 
+const dayDe = (d: string) => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}.${d.slice(0, 4)}`;
+
+/** Words that make a filer a company or a fund rather than a person. */
+const ENTITY = /\b(INC|LLC|LP|LTD|CORP|CO|PLC|TRUST|FUND|HOLDINGS?|PARTNERS|CAPITAL|GROUP|AG|SA|NV|GMBH)\b\.?/i;
+
+/**
+ * A filer as a person is named: SEC filings write "HOOD AMY E", surname
+ * first and shouted, and a timeline of those read like a log. A person's
+ * name of two to four words becomes "Amy E Hood"; a company keeps its order
+ * and only loses the capitals. Mixed-case names are left be.
+ */
+export function personName(raw: string): string {
+  if (raw !== raw.toUpperCase()) return raw;
+  const cased = raw.toLowerCase().replace(/(^|[\s\-'.])(\p{L})/gu, (_, sep: string, c: string) => sep + c.toUpperCase());
+  const words = cased.trim().split(/\s+/);
+  if (ENTITY.test(raw) || words.length < 2 || words.length > 4) return cased;
+  return [...words.slice(1), words[0]].join(' ');
+}
+
 const verdictRank = (v: string) => RECOMMENDATIONS.indexOf(v as (typeof RECOMMENDATIONS)[number]);
 /** The longest a company takes to report a quarter: a 10-Q is due within 45 days, an annual report within 90. */
 const REPORT_LAG_DAYS = 100;
@@ -271,7 +290,8 @@ const REPORT_LAG_DAYS = 100;
 export async function stockTimeline(symbol: string, days = 365): Promise<Timeline> {
   const from = new Date(Date.now() - days * DAY_MS).toISOString().slice(0, 10);
   const f = await readFinancialsLax(symbol);
-  const money = (n: number) => fmtPrice(n, f?.tradingCurrency);
+  // The timeline is read on the German page and in the feed: German amounts and dates.
+  const money = (n: number) => fmtPriceDe(n, f?.tradingCurrency);
   const [actions, trades, priceEvents, bars, verdicts, quarters, briefs, news, journal] = await Promise.all([
     readAnalystActions(symbol),
     readInsiderTransactions(symbol),
@@ -308,9 +328,9 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
     if (!t.tradedOn || kind === 'other') continue;
     events.push({
       day: t.tradedOn, kind: 'insider', tone: kind === 'purchase' ? 'positive' : 'negative',
-      title: `${t.filer ?? 'Insider'}${t.relation ? ` (${t.relation})` : ''}: ${kind === 'purchase' ? 'Kauf' : 'Verkauf'}`,
+      title: `${kind === 'purchase' ? 'Kauf' : 'Verkauf'} von ${t.filer ? personName(t.filer) : 'einem Insider'}${t.relation ? ` (${t.relation})` : ''}`,
       detail: [t.shares !== null ? `${Math.round(t.shares).toLocaleString('de-DE')} Aktien` : null,
-        t.value ? fmtBig(t.value, f?.tradingCurrency) : null].filter(Boolean).join(' · ') || null,
+        t.value ? fmtBigDe(t.value, f?.tradingCurrency) : null].filter(Boolean).join(' · ') || null,
     });
   }
 
@@ -327,7 +347,7 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
     events.push({
       day: v.at.slice(0, 10), kind: 'verdict', tone: better ? 'positive' : 'negative',
       title: `Urteil ${v.from} → ${v.to}`,
-      detail: v.fromScore !== null && v.toScore !== null ? `Score ${v.fromScore.toFixed(1)} → ${v.toScore.toFixed(1)}` : null,
+      detail: v.fromScore !== null && v.toScore !== null ? `Score ${deNumber(v.fromScore, 1)} → ${deNumber(v.toScore, 1)}` : null,
     });
   }
 
@@ -348,8 +368,8 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
     const reported = seen && (Date.parse(seen) - Date.parse(end)) / DAY_MS <= REPORT_LAG_DAYS ? seen : null;
     events.push({
       day: reported ?? end, kind: 'earnings', tone: s === undefined ? 'neutral' : s >= 0 ? 'positive' : 'negative',
-      title: `Quartal bis ${end}: EPS ${money(q.epsActual)}${q.epsEstimate !== undefined ? ` vs. ${money(q.epsEstimate)} erwartet` : ''}`,
-      detail: s !== undefined ? `${s >= 0 ? 'Übertroffen' : 'Verfehlt'} um ${(Math.abs(s) * 100).toFixed(1)} %` : null,
+      title: `Quartalszahlen bis ${dayDe(end)}: Gewinn je Aktie ${money(q.epsActual)}${q.epsEstimate !== undefined ? `, erwartet ${money(q.epsEstimate)}` : ''}`,
+      detail: s !== undefined ? `Erwartung ${s >= 0 ? 'übertroffen' : 'verfehlt'} um ${deNumber(Math.abs(s) * 100, 1)} %` : null,
     });
   }
 

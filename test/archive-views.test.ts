@@ -9,6 +9,7 @@ import { describe, it } from 'node:test';
 import { splitFactorAfter, targetOutcomes, trackRecord, type AnalystAction } from '../src/analysis/analyst-accuracy.js';
 import { flowFromRow, flowLinks, ttmFlow } from '../src/analysis/income-flow.js';
 import { analystEvent, bigMoves } from '../src/analysis/timeline.js';
+import { personName } from '../src/stock-history-service.js';
 
 /** Two years of daily bars rising from 100 by 0.1 a day. */
 const bars = Array.from({ length: 730 }, (_, k) => ({
@@ -104,5 +105,17 @@ describe('the timeline', () => {
     const moves = bigMoves(quiet, '2025-01-01');
     assert.equal(moves.length, 1);
     assert.equal(moves[0].day, '2025-12-30');
+  });
+});
+
+describe('insider names', () => {
+  it('turns a filing\'s shouted surname-first name into a person\'s name', () => {
+    assert.equal(personName('HOOD AMY E'), 'Amy E Hood');
+    assert.equal(personName('NEWSTEAD JENNIFER'), 'Jennifer Newstead');
+  });
+
+  it('keeps a company\'s order and a mixed-case name as written', () => {
+    assert.equal(personName('BERKSHIRE HATHAWAY INC'), 'Berkshire Hathaway Inc');
+    assert.equal(personName('Jane Doe'), 'Jane Doe');
   });
 });
