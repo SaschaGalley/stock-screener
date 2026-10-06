@@ -38,6 +38,7 @@ import CompanyInfo from "./sections/CompanyInfo";
 import FundamentalsHistoryChart from "./charts/FundamentalsHistoryChart";
 import { CloseIcon } from "./icons";
 import StockTabs, { type StockTab } from "./StockTabs";
+import OverviewCards from "./OverviewCards";
 // Markdown and the editor are only wanted once the section is opened.
 const Journal = lazy(() => import("./Journal"));
 import { CurrencyProvider } from "../currency";
@@ -305,10 +306,19 @@ function AnalysisView({
                   analystStrongSell: f.analystStrongSell,
                 }}
                 // How the verdict was arrived at — the calculation, not a retelling.
-                breakdown={analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
                 verdictChanges={<VerdictChanges symbol={symbol} refreshKey={refreshKey} />}
                 coverage={coverage}
               />
+              {/* ONE CARD PER TOPIC — what each tab says, and a click to it */}
+              <OverviewCards
+                symbol={symbol}
+                f={f}
+                m={m}
+                sector={bundle.sectorMedians ?? null}
+                card={analysis?.scoreCard ?? null}
+                onTab={onTab}
+              />
+
               {/* TIER 2: THE CASE FOR AND AGAINST — what a reader wants right after the verdict. */}
               {llm && (
                 <BullBearRisks
@@ -326,6 +336,8 @@ function AnalysisView({
                   }}
                 />
               )}
+              {/* How the score came about — the calculation behind the verdict, after the case for and against */}
+              {analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
               {!llm && (
                 <div className="rounded-lg border border-amber-700 bg-amber-950 p-4 text-center text-sm text-amber-200">
                   No LLM analysis cached for the current settings. Open the right
