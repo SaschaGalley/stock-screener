@@ -334,12 +334,12 @@ function AnalysisView({
                   scenarios={{
                     price: f.price,
                     bull: [
-                      { label: 'DCF p90', value: m.dcf.fairValueBull, hint: 'Der Wert, den 90 % der DCF-Szenarien nicht erreichen — das optimistische Ende der Simulation' },
-                      { label: 'Kursziel hoch', value: f.analystTargetHigh, hint: 'Das höchste Kursziel der Analysten' },
+                      { label: 'DCF optimistisch', value: m.dcf.fairValueBull, hint: 'Der Wert, den 90 % der DCF-Szenarien nicht erreichen — das optimistische Ende der Simulation' },
+                      { label: 'höchstes Kursziel', value: f.analystTargetHigh, hint: 'Das höchste Kursziel der Analysten' },
                     ],
                     bear: [
-                      { label: 'DCF p10', value: m.dcf.fairValueBear, hint: 'Der Wert, den 90 % der DCF-Szenarien übertreffen — das pessimistische Ende der Simulation' },
-                      { label: 'Kursziel tief', value: f.analystTargetLow, hint: 'Das niedrigste Kursziel der Analysten' },
+                      { label: 'DCF pessimistisch', value: m.dcf.fairValueBear, hint: 'Der Wert, den 90 % der DCF-Szenarien übertreffen — das pessimistische Ende der Simulation' },
+                      { label: 'tiefstes Kursziel', value: f.analystTargetLow, hint: 'Das niedrigste Kursziel der Analysten' },
                     ],
                   }}
                 />

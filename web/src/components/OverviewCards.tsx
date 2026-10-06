@@ -8,6 +8,7 @@ import type { TimelineEvent } from '../../../src/analysis/timeline';
 import { useArchive } from './useArchive';
 import { KIND_DOT, TONE_MARK, TONE_TEXT } from './timelineStyle';
 import type { StockTab } from './StockTabs';
+import { nearestLevels, placeAnswer, rsiWord, trendAnswer } from '../../../src/analysis/chart-reading';
 
 /**
  * One card per topic at the top of the stock page: what the topic says, in a
@@ -69,13 +70,14 @@ function TopicCard({ tab, label, headline, tone, children, onTab, className = ''
   );
 }
 
+/** Label left, figure right, one line each — the label gives way before the figure wraps. */
 function Facts({ rows }: { rows: [string, ReactNode][] }) {
   return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+    <dl className="space-y-0.5">
       {rows.map(([k, v]) => (
-        <div key={k} className="contents">
-          <dt className="text-ink-500">{k}</dt>
-          <dd className="text-right font-mono text-ink-200">{v}</dd>
+        <div key={k} className="flex items-baseline justify-between gap-3">
+          <dt className="min-w-0 truncate text-ink-500">{k}</dt>
+          <dd className="whitespace-nowrap text-right text-ink-200">{v}</dd>
         </div>
       ))}
     </dl>
@@ -84,33 +86,35 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
 
 // ── Chart ────────────────────────────────────────────────────────────────────
 
-const TREND = { up: 'Aufwärtstrend', down: 'Abwärtstrend', sideways: 'Seitwärts' } as const;
-
+/** The same answers the chart tab gives, so the card and the tab never disagree. */
 function ChartCard({ a, bars, onTab }: { a: ChartAnalysis | null | undefined; bars: ChartResponse['bars']; onTab: (t: StockTab) => void }) {
   if (a === undefined) return <TopicCard tab="chart" label="Chart" headline="…" tone="neutral" onTab={onTab}>Lade Kursdaten …</TopicCard>;
   if (a === null) return <TopicCard tab="chart" label="Chart" headline="Zu wenige Kurse" tone="neutral" onTab={onTab}>Für eine Chartanalyse fehlen die Tageskurse.</TopicCard>;
-  const q = a.channels.find((c) => c.sessions === 63);
-  const where = !q ? '' : q.z <= -1 ? ', unten im Kanal' : q.z >= 1 ? ', oben im Kanal' : ', Mitte des Kanals';
-  const sup = a.levels.filter((l) => l.kind === 'support')[0];
-  const res = a.levels.filter((l) => l.kind === 'resistance').at(-1);
+  const trend = trendAnswer(a);
+  const place = placeAnswer(a);
+  const { support: sup, resistance: res } = nearestLevels(a);
+  const rsi = a.rsi14 !== null ? rsiWord(a.rsi14) : null;
+  const vs200 = a.ma.sma200 !== null ? a.close / a.ma.sma200 - 1 : null;
   return (
     <TopicCard
       tab="chart" label="Chart" onTab={onTab} className="sm:col-span-2"
-      tone={a.structure.trend === 'up' ? 'bull' : a.structure.trend === 'down' ? 'bear' : 'neutral'}
-      headline={`${TREND[a.structure.trend]}${where}`}
+      tone={trend.tone}
+      headline={`${trend.answer}${place ? ` · ${place.answer}` : ''}`}
     >
-      <div className="grid gap-x-4 gap-y-2 sm:grid-cols-[3fr_2fr]">
+      <div className="grid gap-x-5 gap-y-2 sm:grid-cols-[3fr_2fr]">
       <Spark closes={bars.slice(-126).map((b) => b.close)} support={sup?.price ?? null} resistance={res?.price ?? null} />
       <Facts rows={[
-        ['Widerstand', res ? `${de(res.price, 2)} (${pct(res.distance)})` : '—'],
-        ['Unterstützung', sup ? `${de(sup.price, 2)} (${pct(sup.distance)})` : '—'],
-        ['RSI 14', a.rsi14 !== null ? de(a.rsi14, 0) : '—'],
-        ['vs. SMA 200', a.ma.sma200 !== null ? pct(a.close / a.ma.sma200 - 1) : '—'],
+        ['Decke', res ? <><span className="font-mono">{de(res.price, 2)}</span> <span className="text-ink-500">{pct(res.distance)}</span></> : 'keine'],
+        ['Boden', sup ? <><span className="font-mono">{de(sup.price, 2)}</span> <span className="text-ink-500">{pct(sup.distance)}</span></> : 'keiner'],
+        ['Schwung', rsi ? <><span className={TONE_TEXT_ANSWER[rsi.tone]}>{rsi.word}</span> <span className="text-ink-500">RSI {de(a.rsi14!, 0)}</span></> : '—'],
+        ['200-Tage-Linie', vs200 !== null ? `${de(Math.abs(vs200 * 100), 0)} % ${vs200 >= 0 ? 'darüber' : 'darunter'}` : '—'],
       ]} />
       </div>
     </TopicCard>
   );
 }
+
+const TONE_TEXT_ANSWER = { bull: 'text-emerald-400', bear: 'text-red-400', neutral: 'text-ink-200' } as const;
 
 /** Half a year of closes, with the nearest support and resistance as dashed lines. */
 function Spark({ closes, support, resistance }: { closes: number[]; support: number | null; resistance: number | null }) {
@@ -152,10 +156,10 @@ function ValuationCard({ f, m, sector, pillar, onTab }: {
     >
       <RangeBar price={f.price} t={t} />
       <Facts rows={[
-        ['Fairer Wert', t.median !== null ? fmtPrice(t.median) : '—'],
-        ['KGV · Branche', `${pe !== null ? de(pe, 1) : '—'} · ${sectorPe !== null ? de(sectorPe, 1) : '—'}`],
-        ['EV/EBITDA · Branche', `${ev !== null ? de(ev, 1) : '—'} · ${sectorEv !== null ? de(sectorEv, 1) : '—'}`],
-        ...(pillar !== null ? [['Säule Bewertung', `${de(pillar, 1)}/10`] as [string, string]] : []),
+        ['Fairer Wert', <span className="font-mono">{t.median !== null ? fmtPrice(t.median) : '—'}</span>],
+        ['KGV', <><span className="font-mono">{pe !== null ? de(pe, 1) : '—'}</span>{sectorPe !== null && <span className="text-ink-500"> Branche {de(sectorPe, 1)}</span>}</>],
+        ['EV/EBITDA', <><span className="font-mono">{ev !== null ? de(ev, 1) : '—'}</span>{sectorEv !== null && <span className="text-ink-500"> Branche {de(sectorEv, 1)}</span>}</>],
+        ...(pillar !== null ? [['Bewertung im Score', `${de(pillar, 1)} von 10`] as [string, string]] : []),
       ]} />
     </TopicCard>
   );
@@ -192,9 +196,9 @@ function BusinessCard({ f, sector, quality, health, onTab }: {
       tone={avg === null ? 'neutral' : avg >= 6.5 ? 'bull' : avg <= 3.5 ? 'bear' : 'neutral'}
     >
       <Facts rows={[
-        ['Umsatz', pct(f.revenueGrowth)],
-        ['Op. Marge · Branche', `${share(f.operatingMargin)} · ${share(sector?.operatingMargin)}`],
-        ['ROIC', share(f.roic)],
+        ['Umsatz', <>{pct(f.revenueGrowth)} <span className="text-ink-500">zum Vorjahr</span></>],
+        ['Marge', <>{share(f.operatingMargin)}{sector?.operatingMargin != null && <span className="text-ink-500"> Branche {share(sector.operatingMargin)}</span>}</>],
+        ['Kapitalrendite', share(f.roic)],
         ['Nächste Zahlen', f.nextEarningsDate ? dayDe(f.nextEarningsDate) + f.nextEarningsDate.slice(2, 4) : '—'],
       ]} />
     </TopicCard>
@@ -217,7 +221,7 @@ function OwnersCard({ f, onTab }: { f: StockFinancials; onTab: (t: StockTab) => 
       tone={crowdedShort ? 'bear' : (f.insiderBuyCount ?? 0) > 0 && buy > sell ? 'bull' : 'neutral'}
     >
       <Facts rows={[
-        ['Insider 6 M', `+${fmtBig(buy)} / −${fmtBig(sell)}`],
+        ['Insider', buy === 0 && sell === 0 ? 'keine Geschäfte' : buy >= sell ? `kauften ${fmtBig(buy - sell)} in 6 M` : `verkauften ${fmtBig(sell - buy)} in 6 M`],
         ['Institutionen', share(f.institutionsPercentHeld)],
         ['Leerverkauft', share(short, 1)],
         ['Analysten', f.analystCount ? `${f.analystCount}` : '—'],

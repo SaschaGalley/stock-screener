@@ -4,6 +4,7 @@ import { scoreBarColor, scoreColor } from '../stockList';
 import { deNumber, verdictForScore } from '../../format';
 import CheckMark, { type CheckMarkKind } from '../CheckMark';
 import Term from '../Term';
+import { deProse } from '../prose';
 import { DIMENSION_GLOSSARY, GLOSSARY, PILLAR_GLOSSARY } from '../../glossary';
 
 /**
@@ -292,10 +293,10 @@ function Details({ card }: { card: ScoreCard }) {
               subtitle={`${narrative.sources.join(', ') || 'keine Quellen'} · ohne Kenntnis der Bewertung gelesen`
                 + (narrative.spread != null ? ` · Median aus ${narrative.runs} Lesungen, Spanne ${deNumber(narrative.spread, 1)}` : '')}
             >
-              {narrative.summary}
+              {deProse(narrative.summary)}
               {narrative.events.length > 0 && (
                 <ul className="mt-2 space-y-0.5 text-2xs text-ink-500">
-                  {narrative.events.map((e, i) => <li key={i}>· {e}</li>)}
+                  {narrative.events.map((e, i) => <li key={i}>· {deProse(e)}</li>)}
                 </ul>
               )}
             </Note>

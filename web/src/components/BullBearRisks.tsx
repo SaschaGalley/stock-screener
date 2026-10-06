@@ -6,6 +6,7 @@ import {
   type CaseDirection, type CasePointView, type CaseSection, type CaseView, type StoredCases,
 } from '../../../src/cases';
 import Term from './Term';
+import { deProse } from './prose';
 
 /** A price this side of the case would put on the stock, with where it comes from. */
 export interface CaseScenario {
@@ -112,9 +113,9 @@ function CaseCard({ direction, side, price, scenarios }: {
       </div>
 
       {side.triggers.length > 0 && (
-        // mt-auto: both columns end on their triggers at the same height,
-        // however long either side's argument ran.
-        <div className="mt-auto pt-4">
+        // Right under the argument: pinned to the bottom to line the two
+        // columns up, they left a hole wherever one side ran shorter.
+        <div className="pt-4">
           <div className="border-t border-ink-800 pt-3">
             <SectionLabel>
               <span className={`mr-1 ${a.text}`}>{a.arrow}</span>{label('triggers')} …
@@ -191,8 +192,8 @@ function Point({ p, bulletClass, muted }: { p: CasePointView; bulletClass: strin
     >
       <span className={`mt-0.5 shrink-0 ${bulletClass}`}>•</span>
       <div className="min-w-0">
-        {p.title && <div className={`font-semibold text-ink-50 ${muted ? 'text-sm' : 'text-[15px]'}`}>{p.title}</div>}
-        <div className={`${muted ? 'text-[13px] text-ink-400' : 'text-sm text-ink-300'} ${long && !open ? 'line-clamp-2' : ''}`}>{p.text}</div>
+        {p.title && <div className={`font-semibold text-ink-50 ${muted ? 'text-sm' : 'text-[15px]'}`}>{deProse(p.title)}</div>}
+        <div className={`${muted ? 'text-[13px] text-ink-400' : 'text-sm text-ink-300'} ${long && !open ? 'line-clamp-2' : ''}`}>{deProse(p.text)}</div>
       </div>
     </li>
   );
