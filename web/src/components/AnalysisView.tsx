@@ -28,7 +28,7 @@ import ValuationDetail from "./sections/ValuationDetail";
 import QualityScores from "./sections/QualityScores";
 import FundamentalsGrid from "./sections/FundamentalsGrid";
 import PeerCompare from "./sections/PeerCompare";
-import ChartTechnicals from "./sections/ChartTechnicals";
+import ChartTab from "./chart/ChartTab";
 import ScoreHistoryChart from "./charts/ScoreHistoryChart";
 import OwnershipFlow from "./sections/OwnershipFlow";
 import EarningsBlock from "./sections/EarningsBlock";
@@ -348,23 +348,16 @@ function AnalysisView({
             </TabPane>
 
             <TabPane on={tab === 'chart'} seen={shown.has('chart')}>
-              {/* THE CHART — levels, channels, lines, a model's reading; as large as the screen allows */}
-              <Section fixed
-                title="Chart & Technik"
-                info="section.technicals"
-                subtitle="Trend, Unterstützungen, Widerstände, Kanäle, Timing und KI-Chartlesung"
-                storageKey="technicals"
-              >
-                <ChartTechnicals
-                  symbol={symbol}
-                  row={row ?? null}
-                  timing={bundle.marketSignals?.technicals?.timing ?? null}
-                  signals={bundle.technicalSignals}
-                  model={flags.model}
-                  chartHeight="clamp(420px, 62vh, 760px)"
-                  marketSignals={bundle.marketSignals}
-                />
-              </Section>
+              {/* THE CHART AND WHAT IT SAYS — a card per question, the answer in each header */}
+              <ChartTab
+                symbol={symbol}
+                row={row ?? null}
+                timing={bundle.marketSignals?.technicals?.timing ?? null}
+                signals={bundle.technicalSignals}
+                model={flags.model}
+                chartHeight="clamp(420px, 62vh, 760px)"
+                marketSignals={bundle.marketSignals}
+              />
             </TabPane>
 
             <TabPane on={tab === 'valuation'} seen={shown.has('valuation')}>

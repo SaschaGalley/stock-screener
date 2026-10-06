@@ -152,11 +152,12 @@ export interface Squeeze {
   percentile: number;
 }
 
-/** One thing the chart says, as a sentence, with which way it leans. */
+/** One thing the chart says: a headline, a sentence that explains it, and which way it leans. */
 export interface ChartFinding {
-  key:  string;
-  tone: 'bull' | 'bear' | 'neutral';
-  text: string;
+  key:   string;
+  tone:  'bull' | 'bear' | 'neutral';
+  title: string;
+  text:  string;
 }
 
 export interface ChartAnalysis {
@@ -686,92 +687,140 @@ function channelPhrase(c: Channel, grammatical: 'dat' | 'nom'): string {
   return `${way} ${n.name} (${pct(channelMove(c), 0)} in ${n.span}) ${where}${z}`;
 }
 
+/** How a level is known, said plainly: "zweimal getestet, zuletzt 9.9.", "das Jahreshoch". */
+export function levelWhy(l: PriceLevel): string {
+  if (l.source === 'high52') return 'das Jahreshoch';
+  if (l.source === 'low52') return 'das Jahrestief';
+  if (l.source === 'poc') return 'der Kurs, zu dem im Jahr am meisten gehandelt wurde';
+  const times = l.touches === 1 ? 'einmal' : l.touches === 2 ? 'zweimal' : `${l.touches}-mal`;
+  return `${times} umgekehrt, zuletzt am ${dayDe(l.lastDay).slice(0, -2)}${l.flipped ? ', früher die andere Seite' : ''}`;
+}
+
+const BREAK_WHAT: Record<PriceLevel['source'], string> = {
+  swing: 'eine Marke aus früheren Wendepunkten', high52: 'das Jahreshoch', low52: 'das Jahrestief', poc: 'den Volumenschwerpunkt',
+};
+
+/** "1,0 % unter dem Kurs" — a distance as a reader says it. */
+const away = (d: number) => `${de(Math.abs(d * 100), 1)} % ${d >= 0 ? 'über' : 'unter'} dem Kurs`;
+
+/** The structure in a sentence that does not repeat its headline. */
+function structurePlain(st: ChartAnalysis['structure']): string {
+  if (!st.highs || !st.lows) return 'Zu wenige Wendepunkte, um Hochs und Tiefs zu vergleichen.';
+  const word = { higher: 'höher', lower: 'tiefer', equal: 'gleich hoch' } as const;
+  const shape = st.highs === 'lower' && st.lows === 'higher' ? ' — ein symmetrisches Dreieck'
+    : st.highs === 'equal' && st.lows === 'higher' ? ' — ein aufsteigendes Dreieck'
+    : st.highs === 'lower' && st.lows === 'equal' ? ' — ein absteigendes Dreieck' : '';
+  return `Das letzte Hoch lag ${word[st.highs]} als das davor, das letzte Tief ${word[st.lows]}${shape}.`;
+}
+
 function findingsOf(a: Omit<ChartAnalysis, 'findings'>): ChartFinding[] {
   const out: ChartFinding[] = [];
-  const push = (key: string, tone: ChartFinding['tone'], text: string) => out.push({ key, tone, text });
+  const push = (key: string, tone: ChartFinding['tone'], title: string, text: string) => out.push({ key, tone, title, text });
 
-  push('structure', a.structure.trend === 'up' ? 'bull' : a.structure.trend === 'down' ? 'bear' : 'neutral', a.structure.text);
+  const st = a.structure;
+  push('structure', st.trend === 'up' ? 'bull' : st.trend === 'down' ? 'bear' : 'neutral',
+    st.highs === 'lower' && st.lows === 'higher' ? 'Die Spanne zieht sich zusammen'
+      : st.highs === 'equal' && st.lows === 'higher' ? 'Druck nach oben'
+      : st.highs === 'lower' && st.lows === 'equal' ? 'Druck nach unten'
+      : st.highs === 'higher' && st.lows === 'lower' ? 'Die Spanne weitet sich'
+      : st.trend === 'up' ? 'Höhere Hochs, höhere Tiefs'
+      : st.trend === 'down' ? 'Tiefere Hochs, tiefere Tiefs'
+      : 'Keine klare Struktur',
+    structurePlain(st));
 
   const q = a.channels.find((c) => c.sessions === 63);
   if (q) {
-    push('channel', channelTone(q), `Im ${channelPhrase(q, 'dat')}${q.r2 < 0.3 ? ' — der Kanal ist unscharf (R² ' + de(q.r2) + ')' : ''}.`);
+    push('channel', channelTone(q), 'Im Kanal', `Im ${channelPhrase(q, 'dat')}${q.r2 < 0.3 ? ' — der Kanal ist unscharf (R² ' + de(q.r2) + ')' : ''}.`);
     // A blurred quarter says little; a longer channel that is straight says more.
     const clear = a.channels.filter((c) => c.sessions > 63 && c.r2 >= 0.5).sort((x, y) => y.r2 - x.r2)[0];
-    if (q.r2 < 0.3 && clear) push('channel-long', channelTone(clear), `Klarer ist der ${channelPhrase(clear, 'nom')}, R² ${de(clear.r2)}.`);
+    if (q.r2 < 0.3 && clear) push('channel-long', channelTone(clear), 'Längerer Kanal', `Klarer ist der ${channelPhrase(clear, 'nom')}, R² ${de(clear.r2)}.`);
   }
 
   const at = a.levels.find((l) => l.distanceAtr !== null && Math.abs(l.distanceAtr) < AT_LEVEL_ATR);
-  if (at) push('at-level', 'neutral', `Der Kurs steht an der Marke ${levelPhrase(at)} — ob sie hält, entscheidet die nächste Bewegung.`);
+  if (at) {
+    push('at-level', 'neutral', `Kurs an der Marke ${de(at.price)}`,
+      `${at.kind === 'support' ? 'Eine Unterstützung' : 'Ein Widerstand'} ${away(at.distance)} — ${levelWhy(at)}. Ob sie hält, entscheidet die nächste Bewegung.`);
+  }
   const beyond = (l: PriceLevel) => l !== at;
   const support = a.levels.filter((l) => l.kind === 'support' && beyond(l))[0];
   const resistance = a.levels.filter((l) => l.kind === 'resistance' && beyond(l)).at(-1);
-  if (support) push('support', 'neutral', `Nächste Unterstützung ${levelPhrase(support)}.`);
-  if (resistance) push('resistance', 'neutral', `Nächster Widerstand ${levelPhrase(resistance)}.`);
+  if (support) push('support', 'neutral', `Nächste Unterstützung ${de(support.price)}`, `${away(support.distance)} — ${levelWhy(support)}.`);
+  if (resistance) push('resistance', 'neutral', `Nächster Widerstand ${de(resistance.price)}`, `${away(resistance.distance)} — ${levelWhy(resistance)}.`);
   if (support && resistance && support.distance < 0) {
     const ratio = resistance.distance / -support.distance;
     push('room', ratio >= 2 ? 'bull' : ratio <= 0.5 ? 'bear' : 'neutral',
+      ratio >= 2 ? 'Mehr Luft nach oben' : ratio <= 0.5 ? 'Mehr Luft nach unten' : 'Luft in beide Richtungen',
       `Bis zum Widerstand ${pct(resistance.distance)}, bis zur Unterstützung ${pct(support.distance)}: Verhältnis ${de(ratio, 1)} : 1.`);
   }
 
   const ma = a.ma;
-  if (ma.stack === 'bull') push('ma', 'bull', 'Kurs über 20-, 50- und 200-Tage-Linie, die Linien steigend gestaffelt.');
-  else if (ma.stack === 'bear') push('ma', 'bear', 'Kurs unter 20-, 50- und 200-Tage-Linie, die Linien fallend gestaffelt.');
+  if (ma.stack === 'bull') push('ma', 'bull', 'Über allen Durchschnitten', 'Kurs über der 20-, 50- und 200-Tage-Linie, und die Linien liegen steigend übereinander.');
+  else if (ma.stack === 'bear') push('ma', 'bear', 'Unter allen Durchschnitten', 'Kurs unter der 20-, 50- und 200-Tage-Linie, und die Linien liegen fallend übereinander.');
   else if (ma.sma200 !== null) {
     const over = a.close > ma.sma200;
-    push('ma', over ? 'bull' : 'bear', `Kurs ${over ? 'über' : 'unter'} der 200-Tage-Linie (${pct(a.close / ma.sma200 - 1)}), die kürzeren Linien uneinheitlich.`);
+    push('ma', over ? 'bull' : 'bear', over ? 'Über der 200-Tage-Linie' : 'Unter der 200-Tage-Linie',
+      `${pct(a.close / ma.sma200 - 1)} gegen die 200-Tage-Linie; die kürzeren Linien sind uneinheitlich.`);
   }
   if (ma.cross && daysBetween(ma.cross.day, a.asOf) <= 365) {
-    push('cross', ma.cross.kind === 'golden' ? 'bull' : 'bear',
-      `${ma.cross.kind === 'golden' ? 'Golden Cross' : 'Death Cross'} am ${dayDe(ma.cross.day)}: die 50-Tage-Linie ${ma.cross.kind === 'golden' ? 'über' : 'unter'} die 200-Tage-Linie.`);
+    const golden = ma.cross.kind === 'golden';
+    push('cross', golden ? 'bull' : 'bear', golden ? 'Golden Cross' : 'Death Cross',
+      `Am ${dayDe(ma.cross.day)} ist die 50-Tage-Linie ${golden ? 'über' : 'unter'} die 200-Tage-Linie gekreuzt.`);
   }
 
   for (const t of a.trendlines) {
-    const name = t.kind === 'support' ? 'Unterstützungslinie' : 'Widerstandslinie';
+    const lows = t.kind === 'support';
     if (t.broken) {
-      push(`trendline-${t.kind}`, t.kind === 'support' ? 'bear' : 'bull',
-        `${name} durch die Wendepunkte vom ${dayDe(t.from.day)} und ${dayDe(t.to.day)} am ${dayDe(t.brokenAt!)} gebrochen.`);
+      push(`trendline-${t.kind}`, lows ? 'bear' : 'bull', lows ? 'Linie unter den Tiefs gebrochen' : 'Linie über den Hochs durchbrochen',
+        `Die Linie durch die ${lows ? 'Tiefs' : 'Hochs'} vom ${dayDe(t.from.day)} und ${dayDe(t.to.day)} wurde am ${dayDe(t.brokenAt!)} ${lows ? 'nach unten' : 'nach oben'} verlassen.`);
     } else {
+      const rising = t.slope > 0;
       push(`trendline-${t.kind}`, 'neutral',
-        `${name} durch ${dayDe(t.from.day)} und ${dayDe(t.to.day)} (${pct(Math.exp(t.slope) - 1, 0)} p. a.) liegt heute bei ${de(t.now)} (${pct(t.now / a.close - 1)}).`);
+        `${rising ? 'Steigende' : 'Fallende'} Linie ${lows ? 'unter den Tiefs' : 'über den Hochs'}`,
+        `Durch die ${lows ? 'Tiefs' : 'Hochs'} vom ${dayDe(t.from.day)} und ${dayDe(t.to.day)}; heute bei ${de(t.now)}, ${away(t.now / a.close - 1)}.`);
     }
   }
 
   for (const b of a.breakouts) {
-    const vol = b.volumeRatio !== null ? `, Volumen ${de(b.volumeRatio, 1)}-mal üblich${b.volumeRatio < 1.2 ? ' (schwach bestätigt)' : ''}` : '';
-    push(`breakout-${b.level}`, b.dir === 'up' ? 'bull' : 'bear',
-      `${b.dir === 'up' ? 'Ausbruch über' : 'Bruch unter'} ${de(b.level)} (${SOURCE_LABEL[b.source]}) am ${dayDe(b.day)}${vol}.`);
+    const vol = b.volumeRatio !== null ? `, mit ${de(b.volumeRatio, 1)}-fachem Volumen${b.volumeRatio < 1.2 ? ' (schwach bestätigt)' : ''}` : '';
+    push(`breakout-${b.level}`, b.dir === 'up' ? 'bull' : 'bear', `${b.dir === 'up' ? 'Ausbruch über' : 'Bruch unter'} ${de(b.level)}`,
+      `Am ${dayDe(b.day)} ${b.dir === 'up' ? 'über' : 'unter'} ${BREAK_WHAT[b.source]}${vol}.`);
   }
 
   for (const d of a.divergences) {
-    push(`divergence-${d.kind}`, d.kind === 'bullish' ? 'bull' : 'bear', d.kind === 'bearish'
-      ? `Bärische Divergenz: neues Hoch am ${dayDe(d.to.day)} bei schwächerem RSI (${de(d.to.rsi, 0)} gegen ${de(d.from.rsi, 0)}).`
-      : `Bullische Divergenz: neues Tief am ${dayDe(d.to.day)} bei stärkerem RSI (${de(d.to.rsi, 0)} gegen ${de(d.from.rsi, 0)}).`);
+    push(`divergence-${d.kind}`, d.kind === 'bullish' ? 'bull' : 'bear', d.kind === 'bearish' ? 'Schwung lässt nach' : 'Abwärtsdruck lässt nach', d.kind === 'bearish'
+      ? `Bärische Divergenz: neues Hoch am ${dayDe(d.to.day)}, aber der RSI steigt nicht mit (${de(d.to.rsi, 0)} gegen ${de(d.from.rsi, 0)}).`
+      : `Bullische Divergenz: neues Tief am ${dayDe(d.to.day)}, aber der RSI fällt nicht mit (${de(d.to.rsi, 0)} gegen ${de(d.from.rsi, 0)}).`);
   }
 
   if (a.rsi14 !== null && (a.rsi14 >= 70 || a.rsi14 <= 30)) {
-    push('rsi', a.rsi14 >= 70 ? 'bear' : 'bull', `RSI ${de(a.rsi14, 0)}: ${a.rsi14 >= 70 ? 'überkauft' : 'überverkauft'}.`);
+    push('rsi', a.rsi14 >= 70 ? 'bear' : 'bull', a.rsi14 >= 70 ? 'Heiß gelaufen' : 'Ausverkauft',
+      `RSI ${de(a.rsi14, 0)} — ${a.rsi14 >= 70 ? 'über 70 gilt als überkauft' : 'unter 30 gilt als überverkauft'}.`);
   }
 
   if (a.squeeze && a.squeeze.percentile <= SQUEEZE_PERCENTILE) {
-    push('squeeze', 'neutral', `Die Bollinger-Bänder sind so eng wie an kaum einem Tag des Jahres (enger als ${Math.round((1 - a.squeeze.percentile) * 100)} %) — oft die Ruhe vor einer größeren Bewegung, deren Richtung offen ist.`);
+    push('squeeze', 'neutral', 'Ruhe vor einer Bewegung',
+      `Die Bollinger-Bänder sind enger als an ${Math.round((1 - a.squeeze.percentile) * 100)} % der Tage des Jahres — oft kommt danach eine größere Bewegung, deren Richtung offen ist.`);
   }
 
   if (a.profile) {
     const p = a.profile;
     const where = a.close > p.valueHigh ? 'über' : a.close < p.valueLow ? 'unter' : 'innerhalb';
     push('profile', where === 'über' ? 'bull' : where === 'unter' ? 'bear' : 'neutral',
-      `Volumenschwerpunkt des Jahres bei ${de(p.poc)}; der Kurs liegt ${where} der Zone, in der 70 % gehandelt wurden (${de(p.valueLow)}–${de(p.valueHigh)}).`);
+      where === 'über' ? 'Über dem Hauptumsatzbereich' : where === 'unter' ? 'Unter dem Hauptumsatzbereich' : 'Im Hauptumsatzbereich',
+      `70 % des Jahresvolumens wurden zwischen ${de(p.valueLow)} und ${de(p.valueHigh)} gehandelt, am meisten bei ${de(p.poc)}.`);
   }
 
   for (const g of a.gaps.slice(0, 2)) {
-    push(`gap-${g.day}`, 'neutral', `Offene Kurslücke ${g.dir === 'up' ? 'nach oben' : 'nach unten'} vom ${dayDe(g.day)}: ${de(g.low)}–${de(g.high)}.`);
+    push(`gap-${g.day}`, 'neutral', `Offene Kurslücke ${de(g.low)}–${de(g.high)}`,
+      `Am ${dayDe(g.day)} ${g.dir === 'up' ? 'nach oben' : 'nach unten'} gesprungen; der Kurs ist seither nicht zurückgekommen, um sie zu schließen.`);
   }
 
   if (a.fibonacci) {
     const f = a.fibonacci;
     const near = f.levels.find((l) => Math.abs(l.price / a.close - 1) <= 0.015);
     if (near) {
-      push('fibonacci', 'neutral', `Kurs nahe am ${de(near.ratio * 100, 1)}-%-Retracement (${de(near.price)}) der ${f.dir === 'up' ? 'Aufwärtsbewegung' : 'Abwärtsbewegung'} vom ${dayDe(f.from.day)} bis ${dayDe(f.to.day)}.`);
+      push('fibonacci', 'neutral', `An der ${de(near.ratio * 100, 1)}-%-Marke`,
+        `Der Kurs steht dort, wo ${de(near.ratio * 100, 1)} % der ${f.dir === 'up' ? 'Aufwärtsbewegung' : 'Abwärtsbewegung'} vom ${dayDe(f.from.day)} bis ${dayDe(f.to.day)} zurückgegeben wären (${de(near.price)}) — eine Marke, auf die viele achten.`);
     }
   }
   return out;

@@ -50,11 +50,19 @@ export interface SetupInputs {
   fairGap: number | null;
 }
 
+/** One condition of a setup, said as the page says it. */
+export interface SetupCondition {
+  label: string;
+  met:   (x: SetupInputs) => boolean;
+}
+
 export interface Setup {
   key:   string;
   title: string;
   /** The idea behind it, as its proponents put it. */
   idea:  string;
+  /** What has to hold, every one of them; the page shows which do today. */
+  conditions: readonly SetupCondition[];
   fires: (x: SetupInputs) => boolean;
 }
 
@@ -63,32 +71,43 @@ const UNDERVALUED = Math.log(1.25);
 const bounced = (t: TimingReadings) =>
   t.lowAgo >= BOUNCE.minAgo && t.lowAgo <= BOUNCE.maxAgo && t.fromLow126 >= BOUNCE.minRise;
 
+const C = {
+  undervalued: { label: 'mindestens 25 % unter dem fairen Wert', met: ({ fairGap }) => fairGap !== null && fairGap >= UNDERVALUED },
+  lowBand:     { label: 'am unteren Rand des 3-Monats-Kanals', met: ({ t }) => t.channelZ !== null && t.channelZ <= -1 },
+  bounced:     { label: 'vor 3 bis 15 Handelstagen vom 6-Monats-Tief abgeprallt, seitdem 5 % höher', met: ({ t }) => bounced(t) },
+  above200:    { label: 'über der 200-Tage-Linie', met: ({ t }) => t.distSma200 !== null && t.distSma200 > 0 },
+  rsiLow:      { label: 'RSI unter 35', met: ({ t }) => t.rsi14 !== null && t.rsi14 < 35 },
+  nearHigh:    { label: 'höchstens 1 % unter dem Jahreshoch', met: ({ t }) => t.fromHigh252 !== null && t.fromHigh252 >= Math.log(0.99) },
+} satisfies Record<string, SetupCondition>;
+
+const setup = (s: Omit<Setup, 'fires'>): Setup => ({ ...s, fires: (x) => s.conditions.every((c) => c.met(x)) });
+
 export const SETUPS: readonly Setup[] = [
-  {
+  setup({
     key: 'undervalued-low-band', title: 'Unterbewertet, unten im Kanal',
     idea: 'Mindestens 25 % unter dem fairen Wert und am unteren Rand des 3-Monats-Kanals: Der Kurs ist unten im Band und kommt zurück.',
-    fires: ({ t, fairGap }) => fairGap !== null && fairGap >= UNDERVALUED && t.channelZ !== null && t.channelZ <= -1,
-  },
-  {
+    conditions: [C.undervalued, C.lowBand],
+  }),
+  setup({
     key: 'undervalued-bounce', title: 'Unterbewertet, vom Tief abgeprallt',
     idea: 'Mindestens 25 % unter dem fairen Wert und gerade vom 6-Monats-Tief abgeprallt: Der Boden ist gefunden.',
-    fires: ({ t, fairGap }) => fairGap !== null && fairGap >= UNDERVALUED && bounced(t),
-  },
-  {
+    conditions: [C.undervalued, C.bounced],
+  }),
+  setup({
     key: 'dip-in-uptrend', title: 'Rücksetzer im Aufwärtstrend',
     idea: 'Über der 200-Tage-Linie, aber RSI unter 35: ein kurzer Rücksetzer in einem intakten Trend.',
-    fires: ({ t }) => t.distSma200 !== null && t.distSma200 > 0 && t.rsi14 !== null && t.rsi14 < 35,
-  },
-  {
+    conditions: [C.above200, C.rsiLow],
+  }),
+  setup({
     key: 'new-high', title: 'Am Jahreshoch',
     idea: 'Höchstens 1 % unter dem höchsten Schlusskurs des Jahres: Was neue Hochs macht, macht weitere.',
-    fires: ({ t }) => t.fromHigh252 !== null && t.fromHigh252 >= Math.log(0.99),
-  },
-  {
+    conditions: [C.nearHigh],
+  }),
+  setup({
     key: 'bounce', title: 'Vom Tief abgeprallt',
     idea: 'Das 6-Monats-Tief vor 3 bis 15 Handelstagen, seitdem 5 % höher — gleich, was die Firma wert ist.',
-    fires: ({ t }) => bounced(t),
-  },
+    conditions: [C.bounced],
+  }),
 ];
 
 /** Stop, target and what the distance to each is worth, from a price and its typical move. */
