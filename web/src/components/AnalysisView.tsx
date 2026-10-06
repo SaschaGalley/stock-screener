@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense } from 'react';
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import type {
   StockBundle,
@@ -37,6 +37,7 @@ import NewsAndResearch from "./sections/NewsAndResearch";
 import CompanyInfo from "./sections/CompanyInfo";
 import FundamentalsHistoryChart from "./charts/FundamentalsHistoryChart";
 import { CloseIcon } from "./icons";
+import StockTabs, { type StockTab } from "./StockTabs";
 // Markdown and the editor are only wanted once the section is opened.
 const Journal = lazy(() => import("./Journal"));
 import { CurrencyProvider } from "../currency";
@@ -68,6 +69,19 @@ interface Props {
   flagsLabel: string;
   /** The stock's row in the list: its timing readings and setups, for the chart section. */
   row?: OverviewRow | null;
+  /** The topic on show; the page always opens on the overview. */
+  tab: StockTab;
+  onTab: (tab: StockTab) => void;
+}
+
+/**
+ * One tab's content. Built the first time the tab is opened and kept while
+ * the stock is, so going back to a tab finds its charts as they were and
+ * fetches nothing twice.
+ */
+function TabPane({ on, seen, children }: { on: boolean; seen: boolean; children: ReactNode }) {
+  if (!seen) return null;
+  return <div className={on ? 'space-y-4' : 'hidden'}>{children}</div>;
 }
 
 function AnalysisView({
@@ -86,6 +100,8 @@ function AnalysisView({
   onRerun,
   flagsLabel,
   row,
+  tab,
+  onTab,
 }: Props) {
   const [bundle, setBundle] = useState<StockBundle | null>(null);
   const [analysis, setAnalysis] = useState<CachedAnalysisEntry | null>(null);
@@ -93,6 +109,22 @@ function AnalysisView({
   const [bundleLoading, setBundleLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [localRefresh, setLocalRefresh] = useState(0);
+  // The tabs opened for this stock; a new stock starts with the one on show.
+  const [seen, setSeen] = useState<{ symbol: string; tabs: Set<StockTab> }>(() => ({ symbol, tabs: new Set([tab]) }));
+  useEffect(() => {
+    setSeen((prev) => (prev.symbol !== symbol
+      ? { symbol, tabs: new Set([tab]) }
+      : prev.tabs.has(tab) ? prev : { symbol, tabs: new Set(prev.tabs).add(tab) }));
+  }, [symbol, tab]);
+  const shown = new Set<StockTab>(seen.symbol === symbol ? [...seen.tabs, tab] : [tab]);
+  // A new tab starts at its top.
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => { scroller.current?.scrollTo({ top: 0 }); }, [symbol, tab]);
+  // How many entries the journal holds, beside its tab — read again on leaving it, after an entry was added.
+  const journalCount = useArchive(
+    () => api.getJournal(symbol).then((r) => ({ data: r.entries.length })),
+    [symbol, tab === 'journal'],
+  ).data ?? null;
   // Firm by firm, behind the consensus card — before the early returns, as hooks must be.
   const coverage = useArchive(() => api.getCoverage(symbol), [symbol, refreshKey, localRefresh]).data ?? null;
 
@@ -240,270 +272,272 @@ function AnalysisView({
           analyzing={analyzing}
         />
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl space-y-4 px-3 py-4 sm:px-6 sm:py-5">
-            {/* TIER 0: Company info — restored after refactor */}
-            {(f.description ||
-              f.employees ||
-              f.website ||
-              f.isin ||
-              f.industry) && (
-              <Section title="About the Company" defaultOpen={false}>
-                <CompanyInfo financials={f} />
-              </Section>
-            )}
+        <StockTabs tab={tab} onTab={onTab} counts={{ journal: journalCount ?? undefined }} />
 
-            {/* TIER 1: AT-A-GLANCE VERDICT */}
-            <VerdictHero
-              price={f.price}
-              composite={m.composite}
-              llm={llm && {
-                ...llm,
-                capReasons:     analysis?.scoreCard
-                  && verdictForScore(analysis.scoreCard.final.score) !== analysis.scoreCard.final.verdict
-                  ? analysis.scoreCard.factor.caps.map((c) => c.reason)
-                  : [],
-              }}
-              llmGeneratedAt={analysis?.generatedAt ?? null}
-              llmModel={analysis?.flags.model ?? null}
-              flagsLabel={flagsLabel}
-              onOpenAnalysis={onOpenAnalysis}
-              analyst={{
-                targetMeanPrice: f.targetMeanPrice,
-                analystTargetLow: f.analystTargetLow,
-                analystTargetHigh: f.analystTargetHigh,
-                analystTargetMedian: f.analystTargetMedian,
-                analystCount: f.analystCount,
-                analystStrongBuy: f.analystStrongBuy,
-                analystBuy: f.analystBuy,
-                analystHold: f.analystHold,
-                analystSell: f.analystSell,
-                analystStrongSell: f.analystStrongSell,
-              }}
-              // How the verdict was arrived at — the calculation, not a retelling.
-              breakdown={analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
-              verdictChanges={<VerdictChanges symbol={symbol} refreshKey={refreshKey} />}
-              coverage={coverage}
-            />
-
-            {/* TIER 2: THE CASE FOR AND AGAINST — what a reader wants right after the verdict. */}
-            {llm && (
-              <BullBearRisks
-                llm={llm}
-                scenarios={{
-                  price: f.price,
-                  bull: [
-                    { label: 'DCF p90', value: m.dcf.fairValueBull, hint: 'Der Wert, den 90 % der DCF-Szenarien nicht erreichen — das optimistische Ende der Simulation' },
-                    { label: 'Kursziel hoch', value: f.analystTargetHigh, hint: 'Das höchste Kursziel der Analysten' },
-                  ],
-                  bear: [
-                    { label: 'DCF p10', value: m.dcf.fairValueBear, hint: 'Der Wert, den 90 % der DCF-Szenarien übertreffen — das pessimistische Ende der Simulation' },
-                    { label: 'Kursziel tief', value: f.analystTargetLow, hint: 'Das niedrigste Kursziel der Analysten' },
-                  ],
+        <div ref={scroller} className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-5">
+            <TabPane on={tab === 'overview'} seen={shown.has('overview')}>
+              {/* TIER 1: AT-A-GLANCE VERDICT */}
+              <VerdictHero
+                price={f.price}
+                composite={m.composite}
+                llm={llm && {
+                  ...llm,
+                  capReasons:     analysis?.scoreCard
+                    && verdictForScore(analysis.scoreCard.final.score) !== analysis.scoreCard.final.verdict
+                    ? analysis.scoreCard.factor.caps.map((c) => c.reason)
+                    : [],
                 }}
+                llmGeneratedAt={analysis?.generatedAt ?? null}
+                llmModel={analysis?.flags.model ?? null}
+                flagsLabel={flagsLabel}
+                onOpenAnalysis={onOpenAnalysis}
+                analyst={{
+                  targetMeanPrice: f.targetMeanPrice,
+                  analystTargetLow: f.analystTargetLow,
+                  analystTargetHigh: f.analystTargetHigh,
+                  analystTargetMedian: f.analystTargetMedian,
+                  analystCount: f.analystCount,
+                  analystStrongBuy: f.analystStrongBuy,
+                  analystBuy: f.analystBuy,
+                  analystHold: f.analystHold,
+                  analystSell: f.analystSell,
+                  analystStrongSell: f.analystStrongSell,
+                }}
+                // How the verdict was arrived at — the calculation, not a retelling.
+                breakdown={analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
+                verdictChanges={<VerdictChanges symbol={symbol} refreshKey={refreshKey} />}
+                coverage={coverage}
               />
-            )}
-
-            {/* TIER 2b: MY OWN VIEW — notes, purchases, sales and why, beside the case for and against */}
-            <Section title="Mein Journal" info="section.journal" subtitle="Notizen, Käufe und Verkäufe zu dieser Aktie — und warum" storageKey="journal">
-              <Suspense fallback={<p className="text-xs text-ink-500">Lade Journal …</p>}>
-                <Journal symbol={symbol} />
-              </Suspense>
-            </Section>
-
-            {/* TIER 2c: THE CHART — the verdict says whether, this says when: levels, channels, lines, a model's reading */}
-            <Section
-              title="Chart & Technical Signals"
-              info="section.technicals"
-              subtitle="Trend, Unterstützungen, Widerstände, Kanäle, Timing und KI-Chartlesung"
-              storageKey="technicals"
-            >
-              <ChartTechnicals
-                symbol={symbol}
-                row={row ?? null}
-                timing={bundle.marketSignals?.technicals?.timing ?? null}
-                signals={bundle.technicalSignals}
-                model={flags.model}
-              />
-            </Section>
-
-            {/* TIER 3: COMPOSITE BAR CHART (Primary + Conservative tiers) */}
-            {(m.composite.primary.models.length > 0 ||
-              m.composite.conservative.models.length > 0) && (
-              <Section
-                title="Fair Value Distribution"
-                info="section.fairValue"
-                subtitle={`Primary ${sym}${m.composite.primary.median?.toFixed(0) ?? "—"} · Conservative ${sym}${m.composite.conservative.median?.toFixed(0) ?? "—"}`}
-              >
-                <div className="mb-2 text-xs text-ink-500">
-                  <span className="mr-3">
-                    <span className="inline-block h-2 w-3 rounded-sm bg-emerald-500 align-middle"></span>{" "}
-                    Primary (filled) · market-aligned
-                  </span>
-                  <span>
-                    <span className="inline-block h-2 w-3 rounded-sm border border-emerald-500 align-middle"></span>{" "}
-                    Conservative (outlined) · value lens
-                  </span>
-                </div>
-                <div
-                  style={{
-                    height: Math.max(
-                      180,
-                      (m.composite.primary.models.length +
-                        m.composite.conservative.models.length) *
-                        28 +
-                        80,
-                    ),
+              {/* TIER 2: THE CASE FOR AND AGAINST — what a reader wants right after the verdict. */}
+              {llm && (
+                <BullBearRisks
+                  llm={llm}
+                  scenarios={{
+                    price: f.price,
+                    bull: [
+                      { label: 'DCF p90', value: m.dcf.fairValueBull, hint: 'Der Wert, den 90 % der DCF-Szenarien nicht erreichen — das optimistische Ende der Simulation' },
+                      { label: 'Kursziel hoch', value: f.analystTargetHigh, hint: 'Das höchste Kursziel der Analysten' },
+                    ],
+                    bear: [
+                      { label: 'DCF p10', value: m.dcf.fairValueBear, hint: 'Der Wert, den 90 % der DCF-Szenarien übertreffen — das pessimistische Ende der Simulation' },
+                      { label: 'Kursziel tief', value: f.analystTargetLow, hint: 'Das niedrigste Kursziel der Analysten' },
+                    ],
                   }}
+                />
+              )}
+              {!llm && (
+                <div className="rounded-lg border border-amber-700 bg-amber-950 p-4 text-center text-sm text-amber-200">
+                  No LLM analysis cached for the current settings. Open the right
+                  sidebar and click <strong>Run Analysis</strong> to generate one.
+                </div>
+              )}
+            </TabPane>
+
+            <TabPane on={tab === 'chart'} seen={shown.has('chart')}>
+              {/* THE CHART — levels, channels, lines, a model's reading; as large as the screen allows */}
+              <Section fixed
+                title="Chart & Technical Signals"
+                info="section.technicals"
+                subtitle="Trend, Unterstützungen, Widerstände, Kanäle, Timing und KI-Chartlesung"
+                storageKey="technicals"
+              >
+                <ChartTechnicals
+                  symbol={symbol}
+                  row={row ?? null}
+                  timing={bundle.marketSignals?.technicals?.timing ?? null}
+                  signals={bundle.technicalSignals}
+                  model={flags.model}
+                  chartHeight="clamp(420px, 62vh, 760px)"
+                />
+              </Section>
+              {/* TIER 9a: PRICE ACTION — what HAS the stock done (returns, vol, RS) */}
+              {bundle.marketSignals && (
+                <Section fixed
+                  title="Price Action"
+                  info="section.priceAction"
+                  subtitle="returns, volatility, position, relative strength"
                 >
-                  <CompositeChart composite={m.composite} price={f.price} />
+                  <PriceAction marketSignals={bundle.marketSignals} />
+                </Section>
+              )}
+              {/* TIER 9b: MARKET CONTEXT — what's around the stock (options, revisions, macro) */}
+              {bundle.marketSignals && (
+                <Section fixed
+                  title="Market Context"
+                  info="section.marketContext"
+                  subtitle="options, analyst revisions, macro"
+                >
+                  <MarketContext marketSignals={bundle.marketSignals} />
+                </Section>
+              )}
+            </TabPane>
+
+            <TabPane on={tab === 'valuation'} seen={shown.has('valuation')}>
+              {/* TIER 3: COMPOSITE BAR CHART (Primary + Conservative tiers) */}
+              {(m.composite.primary.models.length > 0 ||
+                m.composite.conservative.models.length > 0) && (
+                <Section fixed
+                  title="Fair Value Distribution"
+                  info="section.fairValue"
+                  subtitle={`Primary ${sym}${m.composite.primary.median?.toFixed(0) ?? "—"} · Conservative ${sym}${m.composite.conservative.median?.toFixed(0) ?? "—"}`}
+                >
+                  <div className="mb-2 text-xs text-ink-500">
+                    <span className="mr-3">
+                      <span className="inline-block h-2 w-3 rounded-sm bg-emerald-500 align-middle"></span>{" "}
+                      Primary (filled) · market-aligned
+                    </span>
+                    <span>
+                      <span className="inline-block h-2 w-3 rounded-sm border border-emerald-500 align-middle"></span>{" "}
+                      Conservative (outlined) · value lens
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      height: Math.max(
+                        180,
+                        (m.composite.primary.models.length +
+                          m.composite.conservative.models.length) *
+                          28 +
+                          80,
+                      ),
+                    }}
+                  >
+                    <CompositeChart composite={m.composite} price={f.price} />
+                  </div>
+                </Section>
+              )}
+              {/* TIER 3b: THE SAME QUESTION OVER FIVE YEARS — is today unusual for this stock? */}
+              <Section fixed
+                title="Bewertung im Zeitverlauf"
+                info="section.valuationHistory"
+                subtitle="Fair Value, Gewinn und Multiples der letzten fünf Jahre"
+                storageKey="valuation-history"
+              >
+                <ValuationHistory symbol={symbol} liveFairValue={m.composite.primary.median} />
+              </Section>
+              {/* TIER 4: VALUATION DETAILS */}
+              <Section fixed
+                title="Valuation Models"
+                info="section.valuationModels"
+                subtitle="DCF, peer multiples, reverse DCF"
+              >
+                <ValuationDetail metrics={m} price={f.price} />
+              </Section>
+              {/* TIER 7: PEER COMPARISON */}
+              {bundle.sectorMedians && (
+                <Section fixed title="Peer Group Comparison" info="section.peers">
+                  <PeerCompare
+                    ratios={m.ratios}
+                    evMultiples={m.evMultiples}
+                    financials={f}
+                    sectorMedians={bundle.sectorMedians}
+                  />
+                </Section>
+              )}
+            </TabPane>
+
+            <TabPane on={tab === 'business'} seen={shown.has('business')}>
+              {/* TIER 0: Company info — restored after refactor */}
+              {(f.description ||
+                f.employees ||
+                f.website ||
+                f.isin ||
+                f.industry) && (
+                <Section fixed title="About the Company">
+                  <CompanyInfo financials={f} />
+                </Section>
+              )}
+              {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}
+              <Section fixed title="Fundamentals" info="section.fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
+                <div className="space-y-5">
+                  {f.fundamentalsHistory &&
+                    (f.fundamentalsHistory.revenue?.length > 0 ||
+                      f.fundamentalsHistory.netIncome?.length > 0 ||
+                      f.fundamentalsHistory.eps?.length > 0) && (
+                      <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
+                        <FundamentalsHistoryChart history={f.fundamentalsHistory} />
+                        <MarginTrends history={f.fundamentalsHistory} />
+                      </div>
+                    )}
+                  <IncomeFlowChart symbol={symbol} />
+                  <FundamentalsGrid
+                    financials={f}
+                    ratios={m.ratios}
+                    evMultiples={m.evMultiples}
+                  />
                 </div>
               </Section>
-            )}
-
-            {/* TIER 3b: THE SAME QUESTION OVER FIVE YEARS — is today unusual for this stock? */}
-            <Section
-              title="Bewertung im Zeitverlauf"
-              info="section.valuationHistory"
-              subtitle="Fair Value, Gewinn und Multiples der letzten fünf Jahre"
-              storageKey="valuation-history"
-            >
-              <ValuationHistory symbol={symbol} liveFairValue={m.composite.primary.median} />
-            </Section>
-
-            {/* TIER 4: VALUATION DETAILS */}
-            <Section
-              title="Valuation Models"
-              info="section.valuationModels"
-              subtitle="DCF, peer multiples, reverse DCF"
-            >
-              <ValuationDetail metrics={m} price={f.price} />
-            </Section>
-
-            {/* TIER 5: QUALITY & RISK */}
-            <Section title="Quality & Risk Scores" info="section.quality">
-              <BalanceChecks health={m.health} />
-              <QualityScores metrics={m} />
-            </Section>
-
-            {/* TIER 6: EARNINGS (history + forward) */}
-            {(f.earningsSurprises?.length > 0 ||
-              f.earningsEstimates?.length > 0) && (
-              <Section title="Earnings" info="section.earnings">
-                <EarningsBlock financials={f} />
+              {/* TIER 6: EARNINGS (history + forward) */}
+              {(f.earningsSurprises?.length > 0 ||
+                f.earningsEstimates?.length > 0) && (
+                <Section fixed title="Earnings" info="section.earnings">
+                  <EarningsBlock financials={f} />
+                </Section>
+              )}
+              {/* TIER 5: QUALITY & RISK */}
+              <Section fixed title="Quality & Risk Scores" info="section.quality">
+                <BalanceChecks health={m.health} />
+                <QualityScores metrics={m} />
               </Section>
-            )}
+            </TabPane>
 
-            {/* TIER 7b: HOW GOOD THE TARGETS IN THE CONSENSUS CARD HAVE BEEN */}
-            <Section
-              title="Analysten: Trefferquote"
-              info="section.analystRecord"
-              subtitle="Jedes archivierte Kursziel gegen den Kurs ein Jahr später"
-              storageKey="analyst-record"
-            >
-              <AnalystTrackRecord symbol={symbol} />
-            </Section>
+            <TabPane on={tab === 'analysts'} seen={shown.has('analysts')}>
+              {/* TIER 7b: HOW GOOD THE TARGETS IN THE CONSENSUS CARD HAVE BEEN */}
+              <Section fixed
+                title="Analysten: Trefferquote"
+                info="section.analystRecord"
+                subtitle="Jedes archivierte Kursziel gegen den Kurs ein Jahr später"
+                storageKey="analyst-record"
+              >
+                <AnalystTrackRecord symbol={symbol} />
+              </Section>
+              {/* TIER 7c: THE SAME QUESTION, ASKED OF OUR OWN VERDICTS */}
+              <Section fixed
+                title="Unser Urteil: Trefferquote"
+                info="section.verdictRecord"
+                subtitle="Jeder Urteilswechsel gegen den S&P 500 danach"
+                storageKey="verdict-record"
+              >
+                <VerdictTrackRecord symbol={symbol} />
+              </Section>
+              {/* TIER 10: OWNERSHIP & FLOW */}
+              <Section fixed title="Ownership & Insider Activity" info="section.ownership">
+                <div className="space-y-5">
+                  <OwnershipFlow financials={f} />
+                  <HoldersPanel symbol={symbol} />
+                </div>
+              </Section>
+            </TabPane>
 
-            {/* TIER 7c: THE SAME QUESTION, ASKED OF OUR OWN VERDICTS */}
-            <Section
-              title="Unser Urteil: Trefferquote"
-              info="section.verdictRecord"
-              subtitle="Jeder Urteilswechsel gegen den S&P 500 danach"
-              storageKey="verdict-record"
-            >
-              <VerdictTrackRecord symbol={symbol} />
-            </Section>
-
-            {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}
-            <Section title="Fundamentals" info="section.fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
-              <div className="space-y-5">
-                {f.fundamentalsHistory &&
-                  (f.fundamentalsHistory.revenue?.length > 0 ||
-                    f.fundamentalsHistory.netIncome?.length > 0 ||
-                    f.fundamentalsHistory.eps?.length > 0) && (
-                    <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
-                      <FundamentalsHistoryChart history={f.fundamentalsHistory} />
-                      <MarginTrends history={f.fundamentalsHistory} />
-                    </div>
-                  )}
-                <IncomeFlowChart symbol={symbol} />
-                <FundamentalsGrid
-                  financials={f}
-                  ratios={m.ratios}
-                  evMultiples={m.evMultiples}
-                />
-              </div>
-            </Section>
-
-            {/* TIER 7: PEER COMPARISON */}
-            {bundle.sectorMedians && (
-              <Section title="Peer Group Comparison" info="section.peers">
-                <PeerCompare
-                  ratios={m.ratios}
-                  evMultiples={m.evMultiples}
-                  financials={f}
-                  sectorMedians={bundle.sectorMedians}
+            <TabPane on={tab === 'history'} seen={shown.has('history')}>
+              {/* TIER 10b: WHAT HAPPENED WHEN — every archived event on one axis */}
+              <Section fixed title="Zeitleiste" info="section.timeline" subtitle="Journal, Analysten, Insider, Zahlen, Dividenden, Urteil, Ereignisse, Kurssprünge" storageKey="timeline">
+                <StockTimeline symbol={symbol} />
+              </Section>
+              {/* TIER 11: DISTILL + PERPLEXITY + NEWS + SEARCH TRACES */}
+              <Section fixed title="Research & News" info="section.research">
+                <NewsAndResearch
+                  symbol={symbol}
+                  news={bundle.news}
+                  perplexity={bundle.perplexity}
+                  deepResearch={bundle.deepResearch ?? null}
+                  pplx={flags.pplx}
+                  distill={bundle.distill}
+                  searches={analysis?.searches ?? null}
+                  onRefreshed={() => setLocalRefresh((x) => x + 1)}
                 />
               </Section>
-            )}
+            </TabPane>
 
-            {/* TIER 9a: PRICE ACTION — what HAS the stock done (returns, vol, RS) */}
-            {bundle.marketSignals && (
-              <Section
-                title="Price Action"
-                info="section.priceAction"
-                subtitle="returns, volatility, position, relative strength"
-                defaultOpen={false}
-              >
-                <PriceAction marketSignals={bundle.marketSignals} />
+            <TabPane on={tab === 'journal'} seen={shown.has('journal')}>
+              {/* TIER 2b: MY OWN VIEW — notes, purchases, sales and why, beside the case for and against */}
+              <Section fixed title="Mein Journal" info="section.journal" subtitle="Notizen, Käufe und Verkäufe zu dieser Aktie — und warum" storageKey="journal">
+                <Suspense fallback={<p className="text-xs text-ink-500">Lade Journal …</p>}>
+                  <Journal symbol={symbol} />
+                </Suspense>
               </Section>
-            )}
-
-            {/* TIER 9b: MARKET CONTEXT — what's around the stock (options, revisions, macro) */}
-            {bundle.marketSignals && (
-              <Section
-                title="Market Context"
-                info="section.marketContext"
-                subtitle="options, analyst revisions, macro"
-                defaultOpen={false}
-              >
-                <MarketContext marketSignals={bundle.marketSignals} />
-              </Section>
-            )}
-
-            {/* TIER 10: OWNERSHIP & FLOW */}
-            <Section title="Ownership & Insider Activity" info="section.ownership" defaultOpen={false}>
-              <div className="space-y-5">
-                <OwnershipFlow financials={f} />
-                <HoldersPanel symbol={symbol} />
-              </div>
-            </Section>
-
-            {/* TIER 10b: WHAT HAPPENED WHEN — every archived event on one axis */}
-            <Section title="Zeitleiste" info="section.timeline" subtitle="Journal, Analysten, Insider, Zahlen, Dividenden, Urteil, Ereignisse, Kurssprünge" storageKey="timeline">
-              <StockTimeline symbol={symbol} />
-            </Section>
-
-            {/* TIER 11: DISTILL + PERPLEXITY + NEWS + SEARCH TRACES */}
-            <Section title="Research & News" info="section.research" defaultOpen={false}>
-              <NewsAndResearch
-                symbol={symbol}
-                news={bundle.news}
-                perplexity={bundle.perplexity}
-                deepResearch={bundle.deepResearch ?? null}
-                pplx={flags.pplx}
-                distill={bundle.distill}
-                searches={analysis?.searches ?? null}
-                onRefreshed={() => setLocalRefresh((x) => x + 1)}
-              />
-            </Section>
-
-            {!llm && (
-              <div className="rounded-lg border border-amber-700 bg-amber-950 p-4 text-center text-sm text-amber-200">
-                No LLM analysis cached for the current settings. Open the right
-                sidebar and click <strong>Run Analysis</strong> to generate one.
-              </div>
-            )}
+            </TabPane>
           </div>
         </div>
       </div>

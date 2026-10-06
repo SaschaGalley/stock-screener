@@ -7,6 +7,7 @@ import AnalyzeForm from './components/AnalyzeForm';
 import AnalysisModal, { flagsLabel } from './components/AnalysisModal';
 import PeersModal from './components/PeersModal';
 import AnalysisView from './components/AnalysisView';
+import { isStockTab, type StockTab } from './components/StockTabs';
 import ProgressBanner from './components/ProgressBanner';
 // The pages behind the gear, the chart icon and the pulse: loaded when opened,
 // not with the list everyone opens first.
@@ -42,12 +43,14 @@ type ViewName = 'overview' | 'analysis' | 'admin' | 'evaluation' | 'feed' | 'jou
 interface RouteState {
   view:   ViewName;
   symbol: string | null;
+  /** The open stock's tab; null is its overview. */
+  tab?:   StockTab | null;
 }
 
 function readRoute(): RouteState {
   const raw = window.location.hash.replace(/^#\/?/, '');
   if (!raw) return { view: 'overview', symbol: null };
-  const [head, tail] = raw.split('/');
+  const [head, tail, sub] = raw.split('/');
   const key = head.toLowerCase();
   if (key === 'overview') return { view: 'overview', symbol: null };
   if (key === 'admin')    return { view: 'admin', symbol: null };
@@ -56,7 +59,10 @@ function readRoute(): RouteState {
   if (key === 'journal')  return { view: 'journal', symbol: null };
   if (key === 'depot')    return { view: 'depot', symbol: null };
   if (key === 'review')   return { view: 'review', symbol: null };
-  if (key === 'stock')    return { view: 'analysis', symbol: tail ? tail.toUpperCase() : null };
+  if (key === 'stock') {
+    const tab = sub?.toLowerCase();
+    return { view: 'analysis', symbol: tail ? tail.toUpperCase() : null, tab: isStockTab(tab) && tab !== 'overview' ? tab : null };
+  }
   return { view: 'analysis', symbol: raw.toUpperCase() };   // legacy `#AAPL`
 }
 
@@ -67,7 +73,7 @@ function routeToHash(route: RouteState): string {
   if (route.view === 'journal')  return '#/journal';
   if (route.view === 'depot')    return '#/depot';
   if (route.view === 'review')   return '#/review';
-  if (route.view === 'analysis' && route.symbol) return `#/stock/${route.symbol}`;
+  if (route.view === 'analysis' && route.symbol) return `#/stock/${route.symbol}${route.tab ? `/${route.tab}` : ''}`;
   return '#/overview';
 }
 
@@ -161,8 +167,21 @@ export default function App() {
 
   const navigate = useCallback((view: ViewName) => {
     setRoute((prev) => {
-      const next: RouteState = { view, symbol: prev.symbol };
+      const next: RouteState = { view, symbol: prev.symbol, tab: view === 'analysis' ? prev.tab : null };
       writeRoute(next);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Switch the open stock's tab. Pushed rather than replaced: back goes to
+   * the tab before, as it would between pages.
+   */
+  const openTab = useCallback((tab: StockTab) => {
+    setRoute((prev) => {
+      const next: RouteState = { ...prev, tab: tab === 'overview' ? null : tab };
+      const hash = routeToHash(next);
+      if (hash !== window.location.hash) window.history.pushState(null, '', hash);
       return next;
     });
   }, []);
@@ -214,7 +233,12 @@ export default function App() {
       setSelectedRaw(next.symbol);
     };
     window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    // A tab is pushed with `pushState`, and stepping back between two of them is a popstate.
+    window.addEventListener('popstate', onHashChange);
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+      window.removeEventListener('popstate', onHashChange);
+    };
   }, []);
 
   /**
@@ -559,6 +583,8 @@ export default function App() {
               onRerun={rerunSelected}
               flagsLabel={flagsLabel(settings)}
               row={rows.find((r) => r.symbol === selected) ?? null}
+              tab={route.tab ?? 'overview'}
+              onTab={openTab}
             />
           )}
         </main>

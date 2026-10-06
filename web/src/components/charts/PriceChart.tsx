@@ -26,6 +26,8 @@ interface Props {
   layers:   ReadonlySet<ChartLayer>;
   read:     ChartRead | null;
   fmtPrice: (n: number) => string;
+  /** Any CSS height; the chart tab gives it most of the screen. */
+  height?:  number | string;
 }
 
 const de = (x: number, d = 2) => x.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -50,7 +52,7 @@ const alpha = (hex: string, a: number) => {
  * a line that began before the window enters it from the edge instead of
  * starting where the window does.
  */
-export default function PriceChart({ data, sessions, channel, layers, read, fmtPrice }: Props) {
+export default function PriceChart({ data, sessions, channel, layers, read, fmtPrice, height = 440 }: Props) {
   const option = useMemo(() => {
     const { bars, sma, analysis: a } = data;
     const from = Math.max(0, bars.length - sessions);
@@ -278,7 +280,7 @@ export default function PriceChart({ data, sessions, channel, layers, read, fmtP
   }, [data, sessions, channel, layers, read, fmtPrice]);
 
   return (
-    <div style={{ height: 440 }}>
+    <div style={{ height }}>
       <ReactECharts style={{ height: '100%', width: '100%' }} notMerge option={option} />
     </div>
   );

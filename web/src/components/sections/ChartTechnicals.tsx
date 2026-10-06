@@ -25,6 +25,8 @@ interface Props {
   signals:  TechnicalSignals | null;
   /** The model picked for analyses, offered first for the chart reading. */
   model:    string;
+  /** CSS height of the price chart. */
+  chartHeight?: number | string;
 }
 
 const RANGES = [{ sessions: 126, label: '6 M' }, { sessions: 252, label: '1 J' }, { sessions: 504, label: '2 J' }] as const;
@@ -60,7 +62,7 @@ function readLayers(): Set<ChartLayer> {
  * backtest beside them — and, on request, a model's reading of the chart.
  * The old indicator vote stays at the bottom, folded away.
  */
-export default function ChartTechnicals({ symbol, row, timing, signals, model }: Props) {
+export default function ChartTechnicals({ symbol, row, timing, signals, model, chartHeight }: Props) {
   const money = useMoney();
   const evidence = useVerdictEvidence();
   const [data, setData] = useState<ChartResponse | null | undefined>(undefined);
@@ -126,6 +128,7 @@ export default function ChartTechnicals({ symbol, row, timing, signals, model }:
               layers={layers}
               read={read?.read ?? null}
               fmtPrice={money.fmtPrice}
+              height={chartHeight}
             />
           </div>
         </div>
