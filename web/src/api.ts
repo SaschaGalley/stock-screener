@@ -35,14 +35,15 @@ import type { ChartReadDoc, ChartResponse } from '../../src/analysis/chart';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
 import type { DepotResponse } from '../../src/analysis/depot';
-import type { ReviewResponse } from '../../src/review-service';
+import type { ReviewPage, ReviewStats } from '../../src/review-service';
+import type { ReviewFilter, ReviewSort } from '../../src/analysis/review';
 import type { ManualResearchTool } from '../../src/models';
 import type { ResearchKind, ResearchReport } from '../../src/research/kinds';
 import type { BacktestOverview } from '../../src/backtest-service';
 import type { CalibrationOverview } from '../../src/calibration-service';
 import type { VerdictEvidence } from '../../src/backtest/result';
 import type {
-  CoverageView, Feed, IncomeFlows, TrackRecordView, VerdictRecordSummary, VerdictRecordView,
+  CoverageView, FeedPage, IncomeFlows, TrackRecordView, VerdictRecordSummary, VerdictRecordView,
 } from '../../src/stock-history-service';
 
 const BASE = '/api';
@@ -119,7 +120,12 @@ export const api = {
   getVerdictRecord: (symbol: string) =>
     jsonFetch<{ symbol: string; data: VerdictRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/verdicts`),
   /** What happened across the watchlist over the last `days`. */
-  getFeed: (days = 7) => jsonFetch<Feed>(`${BASE}/feed?days=${days}`),
+  /** One page of the watchlist's events; see `pageFeed`. */
+  getFeed: (q: { days: number; off: readonly string[]; q?: string; offset?: number }) => {
+    const p = new URLSearchParams({ days: String(q.days), off: q.off.join(','), offset: String(q.offset ?? 0) });
+    if (q.q?.trim()) p.set('q', q.q.trim());
+    return jsonFetch<FeedPage>(`${BASE}/feed?${p}`);
+  },
 
   /** Every journal entry, newest first — or those naming `symbol`. */
   getJournal: (symbol?: string) =>
@@ -141,7 +147,14 @@ export const api = {
       ...(symbol ? { symbol } : {}), ...(sync ? { sync: '1' } : {}),
     })}`),
   /** My purchases and sales against the S&P 500, with the patterns across them. */
-  getReview: () => jsonFetch<ReviewResponse>(`${BASE}/review`),
+  /** One page of my decisions, filtered and sorted on the server. */
+  getReview: (q: { q?: string; filter?: ReviewFilter; sort?: ReviewSort; offset?: number }) => {
+    const p = new URLSearchParams({ filter: q.filter ?? 'all', sort: q.sort ?? 'newest', offset: String(q.offset ?? 0) });
+    if (q.q?.trim()) p.set('q', q.q.trim());
+    return jsonFetch<ReviewPage>(`${BASE}/review?${p}`);
+  },
+  /** My decisions compared in groups — for the evaluation page. */
+  getReviewStats: () => jsonFetch<ReviewStats>(`${BASE}/review/stats`),
   /** The depot weighed against the model; `sync` asks umsatz first. */
   getDepot: (sync = false) => jsonFetch<DepotResponse>(`${BASE}/depot${sync ? '?sync=1' : ''}`),
   /** Mark trades as needing no reason. */
@@ -238,8 +251,10 @@ export const api = {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
     }),
   /** Research reports naming `symbol`, or all of them — every kind but the company brief. */
-  getResearch: (symbol?: string) =>
-    jsonFetch<{ reports: ResearchReport[] }>(`${BASE}/research${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`),
+  getResearch: (symbol?: string, kind?: ResearchKind) => {
+    const p = new URLSearchParams({ ...(symbol ? { symbol } : {}), ...(kind ? { kind } : {}) });
+    return jsonFetch<{ reports: ResearchReport[] }>(`${BASE}/research${p.size ? `?${p}` : ''}`);
+  },
   deleteResearch: (id: number) =>
     jsonFetch<{ ok: true }>(`${BASE}/research/${id}`, { method: 'DELETE' }),
 

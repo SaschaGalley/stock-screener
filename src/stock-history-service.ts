@@ -16,7 +16,7 @@ import { fxTicker, majorCurrency } from './currencies.js';
 import { BENCHMARK_CURRENCY } from './data/macro.js';
 import { flowFromRow, ttmFlow, type IncomeFlow } from './analysis/income-flow.js';
 import { tradeKind, type Holder, type Holders } from './analysis/holders.js';
-import { analystEvent, bigMoves, type Timeline, type TimelineEvent } from './analysis/timeline.js';
+import { analystEvent, bigMoves, type Timeline, type TimelineEvent, type TimelineKind } from './analysis/timeline.js';
 import type { PerplexityContext } from './data/perplexity.js';
 import {
   readAnalystActions, readInsiderTransactions, readPriceBars, readPriceBarsMany, readPriceEvents, readVerdictChanges,
@@ -479,6 +479,76 @@ async function buildFeed(days: number): Promise<Feed> {
     upcoming: upcoming.sort((a, b) => a.day.localeCompare(b.day)),
     from: new Date(Date.now() - days * DAY_MS).toISOString().slice(0, 10),
     symbols: symbols.length,
+  };
+}
+
+/** What the feed page asks for: a window, the kinds left out, a search, and where the page starts. */
+export interface FeedQuery {
+  days:    number;
+  /** Kinds left out. */
+  off?:    readonly TimelineKind[];
+  /** Matches the ticker, the company name, or the event's title or detail. */
+  q?:      string;
+  offset?: number;
+  /** Events per page; a page ends with its last day, so it can run a little longer. */
+  limit?:  number;
+}
+
+/** One page of the feed, and what the whole filtered window holds. */
+export interface FeedPage {
+  events:   FeedEvent[];
+  /** Where the next page starts, or null on the last. */
+  next:     number | null;
+  /** Events the filter lets through, over all pages. */
+  total:    number;
+  /** Per kind, over the window and the search but whatever is left out — the numbers on the switches. */
+  counts:   Partial<Record<TimelineKind, number>>;
+  /** Per day and kind, over everything the filter lets through, oldest first — for the chart. */
+  perDay:   { day: string; counts: Partial<Record<TimelineKind, number>> }[];
+  upcoming: FeedEvent[];
+  from:     string;
+  symbols:  number;
+}
+
+/** Events a page holds before it closes at the end of a day. */
+export const FEED_PAGE = 60;
+
+/**
+ * The feed a page at a time. Thirty days of a watchlist are a few thousand
+ * events with the news; sent whole, the page built every one of them. The
+ * filtering happens here now, on the cached feed, and the page gets what it
+ * shows plus the counts to draw the rest.
+ */
+export function pageFeed(feed: Feed, query: FeedQuery): FeedPage {
+  const q = query.q?.trim().toLowerCase() ?? '';
+  const off = new Set(query.off ?? []);
+  const matches = (e: FeedEvent) => !q || [e.symbol, e.name, e.title, e.detail]
+    .some((x) => x?.toLowerCase().includes(q));
+  const searched = feed.events.filter(matches);
+  const counts: FeedPage['counts'] = {};
+  for (const e of searched) counts[e.kind] = (counts[e.kind] ?? 0) + 1;
+  const shown = searched.filter((e) => !off.has(e.kind));
+
+  const days = new Map<string, FeedPage['perDay'][number]['counts']>();
+  for (const e of shown) {
+    const c = days.get(e.day) ?? {};
+    c[e.kind] = (c[e.kind] ?? 0) + 1;
+    days.set(e.day, c);
+  }
+
+  const start = Math.max(0, Math.min(query.offset ?? 0, shown.length));
+  let end = Math.min(shown.length, start + Math.max(1, query.limit ?? FEED_PAGE));
+  while (end < shown.length && end > start && shown[end].day === shown[end - 1].day) end++;
+
+  return {
+    events:   shown.slice(start, end),
+    next:     end < shown.length ? end : null,
+    total:    shown.length,
+    counts,
+    perDay:   [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, c]) => ({ day, counts: c })),
+    upcoming: feed.upcoming.filter(matches),
+    from:     feed.from,
+    symbols:  feed.symbols,
   };
 }
 

@@ -383,15 +383,15 @@ export async function pasteResearch(input: {
 }
 
 /** The reports naming `symbol`, or all of them, newest first. */
-export async function listResearch(symbol?: string): Promise<ResearchReport[]> {
+export async function listResearch(symbol?: string, kind?: ResearchReport['kind']): Promise<ResearchReport[]> {
   const res = await query<{
     id: number; kind: ResearchReport['kind']; symbols: string[]; question: string | null; decision: string | null; tool: string;
     created_at: Date; data: unknown; raw: string;
   }>(
     `SELECT id, kind, symbols, question, decision, tool, created_at, data, raw FROM research_reports
-      WHERE deleted_at IS NULL AND ($1::text IS NULL OR symbols @> ARRAY[$1::text])
+      WHERE deleted_at IS NULL AND ($1::text IS NULL OR symbols @> ARRAY[$1::text]) AND ($2::text IS NULL OR kind = $2)
       ORDER BY created_at DESC`,
-    [symbol?.toUpperCase() ?? null],
+    [symbol?.toUpperCase() ?? null, kind ?? null],
   );
   return res.rows.map((r) => ({
     id: r.id, kind: r.kind, symbols: r.symbols, question: r.question, decision: r.decision, tool: r.tool,

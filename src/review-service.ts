@@ -8,8 +8,11 @@
 
 import { entryContext } from './analysis/entry-context.js';
 import {
-  decisionsFrom, reviewOutcome, reviewPatterns, stanceOf, type ReviewedDecision, type PatternRow,
+  decisionsFrom, pageDecisions, reviewOutcome, reviewPatterns, stanceOf,
+  type PatternRow, type ReviewedDecision, type ReviewFilter, type ReviewQuery,
 } from './analysis/review.js';
+import { listResearch } from './research/research.js';
+import type { ReviewCause } from './research/kinds.js';
 import { listJournal } from './db/journal-store.js';
 import { readSeries } from './db/store.js';
 import { allTrades } from './db/trades-store.js';
@@ -30,6 +33,68 @@ export interface ReviewResponse {
   notes:       string[];
   /** Decisions in stocks without stored prices, which cannot be measured. */
   unmeasured:  number;
+}
+
+/** One page of the decisions, with what the filters hold. */
+export interface ReviewPage {
+  configured: boolean;
+  syncedAt:   string | null;
+  syncError:  string | null;
+  decisions:  ReviewedDecision[];
+  total:      number;
+  next:       number | null;
+  counts:     Record<ReviewFilter, number>;
+  unmeasured: number;
+}
+
+/** The groups compared, for the evaluation page. */
+export interface ReviewStats {
+  decisions:  number;
+  unmeasured: number;
+  rows:       PatternRow[];
+  notes:      string[];
+  /** What the newest look-back of each decision named as the cause of its result. */
+  causes:     Partial<Record<ReviewCause, number>>;
+}
+
+/** The review is rebuilt at most this often; a journal entry or a sync clears it at once. */
+const REVIEW_TTL_MS = 5 * 60_000;
+let memo: { at: number; value: Promise<ReviewResponse> } | null = null;
+
+/** Forget the cached review — after a journal entry, which can be a decision. */
+export function invalidateReview(): void {
+  memo = null;
+}
+
+function cachedReview(force: boolean): Promise<ReviewResponse> {
+  if (!force && memo && Date.now() - memo.at < REVIEW_TTL_MS) return memo.value;
+  const entry = { at: Date.now(), value: readReview(force) };
+  entry.value.catch(() => { if (memo === entry) memo = null; });
+  memo = entry;
+  return entry.value;
+}
+
+export async function reviewPage(query: ReviewQuery, force = false): Promise<ReviewPage> {
+  const r = await cachedReview(force);
+  return {
+    configured: r.configured, syncedAt: r.syncedAt, syncError: r.syncError,
+    ...pageDecisions(r.decisions, query),
+    unmeasured: r.unmeasured,
+  };
+}
+
+export async function reviewStats(): Promise<ReviewStats> {
+  const [r, reports] = await Promise.all([cachedReview(false), listResearch(undefined, 'review')]);
+  // Newest first, so the first check seen of a decision is its newest.
+  const seen = new Set<string>();
+  const causes: ReviewStats['causes'] = {};
+  for (const x of reports) {
+    if (x.kind !== 'review' || !x.decision || seen.has(x.decision)) continue;
+    seen.add(x.decision);
+    const cause = x.data?.cause;
+    if (cause) causes[cause] = (causes[cause] ?? 0) + 1;
+  }
+  return { decisions: r.decisions.length, unmeasured: r.unmeasured, rows: r.rows, notes: r.notes, causes };
 }
 
 export async function readReview(force = false): Promise<ReviewResponse> {

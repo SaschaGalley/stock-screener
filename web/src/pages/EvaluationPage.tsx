@@ -1,3 +1,5 @@
+import ReviewStats from '../components/ReviewStats';
+import Tip from '../components/Tip';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import type { BacktestResponse, EvaluationResponse } from '../types';
@@ -27,14 +29,17 @@ import { RECOMMENDATIONS } from '../../../src/verdict';
 
 const HORIZONS = [5, 20, 60];
 
-type Scope = 'watchlist' | 'universe' | 'backtest' | 'calls';
+type Scope = 'watchlist' | 'universe' | 'backtest' | 'calls' | 'decisions';
+/** The scopes that are panels of their own, not views of the score's evaluation. */
+const OWN_PANEL: Scope[] = ['calls', 'decisions'];
 
 export default function EvaluationPage() {
   const [data, setData] = useState<EvaluationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [horizon, setHorizon] = useState(20);
-  const [scope, setScope] = useState<Scope>('watchlist');
+  // `#/evaluation/decisions` opens on my decisions — the review links there.
+  const [scope, setScope] = useState<Scope>(() => (/\/decisions$/.test(window.location.hash) ? 'decisions' : 'watchlist'));
   const [bt, setBt] = useState<BacktestResponse | null>(null);
 
   useEffect(() => {
@@ -85,7 +90,7 @@ export default function EvaluationPage() {
       }
     >
 
-      {scope !== 'calls' && <p className="text-sm leading-relaxed text-ink-300">
+      {!OWN_PANEL.includes(scope) && <p className="text-sm leading-relaxed text-ink-300">
         Sortiert an jedem Handelstag alle Aktien nach dem Score, den sie <em>vorher</em> hatten, und nach
         ihrer Rendite gegenüber dem S&amp;P 500 in den folgenden Handelstagen — in Dollar, damit eine
         Euro-Aktie nicht mit dem Wechselkurs punktet — und misst, wie gut die beiden Reihenfolgen
@@ -97,13 +102,13 @@ export default function EvaluationPage() {
       </p>}
 
       {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
-      {!data && loading && scope !== 'backtest' && scope !== 'calls' && (
+      {!data && loading && scope !== 'backtest' && !OWN_PANEL.includes(scope) && (
         <div className="p-8 text-center text-sm text-ink-500">
           Lade Kurse und rechne — mit dem Referenzuniversum dauert der erste Aufruf ein bis zwei Minuten…
         </div>
       )}
 
-      {(data || bt) && (
+      {(data || bt || OWN_PANEL.includes(scope)) && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-ink-400">Aktien</span>
           {([
@@ -111,25 +116,27 @@ export default function EvaluationPage() {
             ...(data?.universe ? [['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale']] : []),
             ...(bt ? [['backtest', `Backtest (${bt.backtest?.universe ?? 'S&P 500'} seit 2013)`, 'Faktor-Score an jedem Monatsende aus den SEC-Abschlüssen nachgerechnet']] : []),
             ['calls', 'Unsere Urteile', 'Jeder Urteilswechsel gegen den Index danach: Trefferquote nach 1, 3, 6 und 12 Monaten'],
-          ] as [Scope, string, string][]).map(([s, label, title]) => (
-            <button
-              key={s}
-              onClick={() => setScope(s)}
-              title={title}
-              className={`rounded px-2.5 py-1 text-xs transition ${
-                s === scope ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
-              }`}
-            >
-              {label}
-            </button>
+            ['decisions', 'Meine Entscheidungen', 'Meine Käufe und Verkäufe in Gruppen gegen den Index danach: nach einem Sprung, gegen das Modell, ohne Begründung'],
+          ] as [Scope, string, string][]).map(([s, label, hint]) => (
+            <Tip key={s} focusable={false} content={hint}>
+              <button
+                onClick={() => setScope(s)}
+                className={`rounded px-2.5 py-1 text-xs transition ${
+                  s === scope ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
+                }`}
+              >
+                {label}
+              </button>
+            </Tip>
           ))}
         </div>
       )}
 
       {scope === 'backtest' && bt && <BacktestPanel data={bt} />}
       {scope === 'calls' && <VerdictRecordPanel />}
+      {scope === 'decisions' && <ReviewStats />}
 
-      {scope !== 'backtest' && scope !== 'calls' && ev && (
+      {scope !== 'backtest' && !OWN_PANEL.includes(scope) && ev && (
         <>
           {universe && data?.monthly && <LiveExpectations monthly={data.monthly} bt={bt?.backtest ?? null} />}
 

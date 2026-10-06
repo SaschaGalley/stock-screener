@@ -19,6 +19,7 @@ import {
   type JournalMove,
 } from './journal.js';
 import { invalidateFeed } from './stock-history-service.js';
+import { invalidateReview } from './review-service.js';
 
 const DAY_MS = 86_400_000;
 /** How far back to look for the last close before an entry made on a weekend or a holiday. */
@@ -57,6 +58,7 @@ export async function readJournal(symbol?: string): Promise<JournalEntry[]> {
 export async function addJournal(input: JournalInput): Promise<JournalEntry> {
   const row = await createJournal(input);
   invalidateFeed();
+  invalidateReview();
   return (await withContext([row]))[0];
 }
 
@@ -64,12 +66,13 @@ export async function editJournal(id: number, input: JournalInput): Promise<Jour
   const row = await updateJournal(id, input);
   if (!row) return null;
   invalidateFeed();
+  invalidateReview();
   return (await withContext([row]))[0];
 }
 
 export async function removeJournal(id: number): Promise<boolean> {
   const done = await deleteJournal(id);
-  if (done) invalidateFeed();
+  if (done) { invalidateFeed(); invalidateReview(); }
   return done;
 }
 

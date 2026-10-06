@@ -211,3 +211,81 @@ export function reviewPatterns(ds: ReviewedDecision[]): { rows: PatternRow[]; no
   }
   return { rows, notes };
 }
+
+// ── The list a page at a time ────────────────────────────────────────────────
+
+/** How a decision turned out so far: its longest measured horizon, else the time since. */
+export function latestExcess(d: ReviewedDecision): number | null {
+  for (const h of [...RECORD_HORIZONS].reverse()) {
+    const x = d.outcome?.horizons[h]?.excess;
+    if (x !== null && x !== undefined) return x;
+  }
+  return d.outcome?.since?.excess ?? null;
+}
+
+/** Signed so that more is better for either side: a sale gains when the stock lags. */
+const merit = (d: ReviewedDecision) => {
+  const x = latestExcess(d);
+  return x === null ? null : d.side === 'buy' ? x : -x;
+};
+
+export type ReviewFilter = 'all' | 'buy' | 'sell' | 'right' | 'wrong' | 'impulse' | 'against' | 'unexplained';
+
+export const REVIEW_FILTERS: { key: ReviewFilter; label: string; test: (d: ReviewedDecision) => boolean }[] = [
+  { key: 'all',         label: 'Alle',                test: () => true },
+  { key: 'buy',         label: 'Käufe',               test: (d) => d.side === 'buy' },
+  { key: 'sell',        label: 'Verkäufe',            test: (d) => d.side === 'sell' },
+  { key: 'right',       label: 'lagen richtig',       test: (d) => (merit(d) ?? 0) > 0 },
+  { key: 'wrong',       label: 'lagen falsch',        test: (d) => (merit(d) ?? 0) < 0 },
+  { key: 'impulse',     label: 'nach Lauf/Sprung',    test: (d) => d.situation?.impulse === true },
+  { key: 'against',     label: 'gegen das Modell',    test: (d) => d.situation?.stance === 'against' },
+  { key: 'unexplained', label: 'ohne Begründung',     test: (d) => d.reason === null },
+];
+
+export type ReviewSort = 'newest' | 'oldest' | 'best' | 'worst';
+
+export const REVIEW_SORTS: { key: ReviewSort; label: string }[] = [
+  { key: 'newest', label: 'Neueste zuerst' },
+  { key: 'oldest', label: 'Älteste zuerst' },
+  { key: 'best',   label: 'Beste zuerst' },
+  { key: 'worst',  label: 'Schlechteste zuerst' },
+];
+
+export interface ReviewQuery {
+  q?:      string;
+  filter?: ReviewFilter;
+  sort?:   ReviewSort;
+  offset?: number;
+  limit?:  number;
+}
+
+/** Decisions a page shows. */
+export const REVIEW_PAGE = 25;
+
+/**
+ * The decisions a page shows, and how many each filter would — searched by
+ * ticker, name and reason. A few hundred decisions were sent and drawn at
+ * once, each a card with its own research form; the page asks for 25 now.
+ */
+export function pageDecisions(ds: readonly ReviewedDecision[], query: ReviewQuery): {
+  decisions: ReviewedDecision[]; total: number; next: number | null; counts: Record<ReviewFilter, number>;
+} {
+  const q = query.q?.trim().toLowerCase() ?? '';
+  const searched = q ? ds.filter((d) => [d.symbol, d.name, d.reason].some((x) => x?.toLowerCase().includes(q))) : [...ds];
+  const counts = Object.fromEntries(REVIEW_FILTERS.map((f) => [f.key, searched.filter(f.test).length])) as Record<ReviewFilter, number>;
+  const test = REVIEW_FILTERS.find((f) => f.key === (query.filter ?? 'all'))?.test ?? (() => true);
+  const shown = searched.filter(test);
+  const sort = query.sort ?? 'newest';
+  const byDay = (a: ReviewedDecision, b: ReviewedDecision) => b.day.localeCompare(a.day);
+  shown.sort(sort === 'newest' ? byDay
+    : sort === 'oldest' ? (a, b) => -byDay(a, b)
+    // Unmeasured last either way; among equals, newest first.
+    : (a, b) => {
+        const x = merit(a), y = merit(b);
+        if (x === null || y === null) return (x === null ? 1 : 0) - (y === null ? 1 : 0) || byDay(a, b);
+        return (sort === 'best' ? y - x : x - y) || byDay(a, b);
+      });
+  const start = Math.max(0, query.offset ?? 0);
+  const end = Math.min(shown.length, start + Math.max(1, query.limit ?? REVIEW_PAGE));
+  return { decisions: shown.slice(start, end), total: shown.length, next: end < shown.length ? end : null, counts };
+}

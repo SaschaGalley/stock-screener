@@ -66,12 +66,14 @@ import { isJournalKind, normalizeSymbols } from './journal.js';
 import { ignoreTrades, readOpenTrades } from './trades-service.js';
 import { readDepot } from './depot-service.js';
 import { ChartReadInputError, readChart, runChartRead } from './chart-service.js';
-import { readReview } from './review-service.js';
+import { invalidateReview, reviewPage, reviewStats } from './review-service.js';
+import { REVIEW_FILTERS, REVIEW_PAGE, REVIEW_SORTS, type ReviewFilter, type ReviewSort } from './analysis/review.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
-  analystCoverage, analystTrackRecord, incomeFlows, stockHolders, stockTimeline, verdictRecordSummary, verdictTrackRecord,
-  watchlistFeed,
+  analystCoverage, analystTrackRecord, FEED_PAGE, incomeFlows, pageFeed, stockHolders, stockTimeline, verdictRecordSummary,
+  verdictTrackRecord, watchlistFeed,
 } from './stock-history-service.js';
+import { TIMELINE_KINDS, type TimelineKind } from './analysis/timeline.js';
 import { QuoteBrief, quoteBriefs, searchByQuery } from './data/yfinance.js';
 import { yahooTicker } from './data/universe.js';
 import { lastGoodSectorMedians } from './sector-medians.js';
@@ -515,7 +517,9 @@ export function createApp(): express.Express {
   app.get('/api/research', async (req, res, next) => {
     try {
       const symbol = typeof req.query.symbol === 'string' && req.query.symbol ? req.query.symbol : undefined;
-      res.json({ reports: await listResearch(symbol) });
+      // The company report is kept as a Perplexity brief, not among these.
+      const kind = isResearchKind(req.query.kind) && req.query.kind !== 'company' ? req.query.kind : undefined;
+      res.json({ reports: await listResearch(symbol, kind) });
     } catch (e) {
       next(e);
     }
@@ -1023,7 +1027,15 @@ export function createApp(): express.Express {
   app.get('/api/feed', async (req, res, next) => {
     try {
       const days = Number(req.query.days ?? 7);
-      res.json(await watchlistFeed(Number.isFinite(days) ? Math.min(90, Math.max(1, Math.round(days))) : 7, req.query.fresh === '1'));
+      const feed = await watchlistFeed(Number.isFinite(days) ? Math.min(90, Math.max(1, Math.round(days))) : 7, req.query.fresh === '1');
+      const list = (v: unknown) => (typeof v === 'string' && v ? v.split(',') : []);
+      res.json(pageFeed(feed, {
+        days,
+        off:    list(req.query.off).filter((k): k is TimelineKind => (TIMELINE_KINDS as readonly string[]).includes(k)),
+        q:      typeof req.query.q === 'string' ? req.query.q.slice(0, 80) : undefined,
+        offset: Number(req.query.offset) || 0,
+        limit:  Math.min(200, Number(req.query.limit) || FEED_PAGE),
+      }));
     } catch (e) {
       next(e);
     }
@@ -1201,7 +1213,21 @@ export function createApp(): express.Express {
   // twelve months, beside the situation it was made in. Real holdings.
   app.get('/api/review', async (req, res, next) => {
     try {
-      res.json(await readReview(req.query.sync === '1'));
+      const filter = REVIEW_FILTERS.find((f) => f.key === req.query.filter)?.key as ReviewFilter | undefined;
+      const sort = REVIEW_SORTS.find((x) => x.key === req.query.sort)?.key as ReviewSort | undefined;
+      res.json(await reviewPage({
+        q:      typeof req.query.q === 'string' ? req.query.q.slice(0, 80) : undefined,
+        filter, sort,
+        offset: Number(req.query.offset) || 0,
+        limit:  Math.min(100, Number(req.query.limit) || REVIEW_PAGE),
+      }, req.query.sync === '1'));
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.get('/api/review/stats', async (_req, res, next) => {
+    try {
+      res.json(await reviewStats());
     } catch (e) {
       next(e);
     }
@@ -1210,7 +1236,9 @@ export function createApp(): express.Express {
     try {
       const raw = (req.body as { ids?: unknown } | undefined)?.ids;
       const ids = Array.isArray(raw) ? raw.filter((x): x is number => Number.isInteger(x) && (x as number) > 0) : [];
-      res.json({ dismissed: ids.length ? await ignoreTrades(ids) : 0 });
+      const dismissed = ids.length ? await ignoreTrades(ids) : 0;
+      if (dismissed) invalidateReview();
+      res.json({ dismissed });
     } catch (e) {
       next(e);
     }
