@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import Journal from '../components/Journal';
 import { ManualResearch, ResearchReports } from '../components/ManualResearch';
-import { CloseIcon } from '../components/icons';
+import Page from '../components/Page';
 import { normalizeSymbols } from '../../../src/journal';
 import { RESEARCH_KIND_META } from '../../../src/research/kinds';
 
@@ -10,26 +10,12 @@ import { RESEARCH_KIND_META } from '../../../src/research/kinds';
  * whichever stocks it names — or none, for a thought about the market. And
  * the questions that span several stocks, researched by hand.
  */
-export default function JournalPage({ onClose, symbols }: { onClose: () => void; symbols: string[] }) {
+export default function JournalPage({ symbols }: { symbols: string[] }) {
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-4 p-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-base font-semibold text-ink-100">Journal</h2>
-          <span className="text-xs text-ink-500">Was ich gelesen, gedacht, gekauft und verkauft habe — und warum</span>
-          <a href="#/review" className="ml-auto text-xs text-accent hover:underline">Rückblick →</a>
-          <button
-            onClick={onClose}
-            title="Schließen (Esc)"
-            className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
-          >
-            <CloseIcon />
-          </button>
-        </div>
-        <ThemeResearch suggest={symbols} />
-        <Journal suggest={symbols} startOpen />
-      </div>
-    </div>
+    <Page title="Journal" subtitle="Was ich gelesen, gedacht, gekauft und verkauft habe — und warum" width="max-w-3xl">
+      <ThemeResearch suggest={symbols} />
+      <Journal suggest={symbols} startOpen />
+    </Page>
   );
 }
 

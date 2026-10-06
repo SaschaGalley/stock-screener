@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import type { BacktestResponse, EvaluationResponse } from '../types';
-import { CloseIcon } from '../components/icons';
+import Page, { HeaderButton } from '../components/Page';
 import BacktestPanel from '../components/BacktestPanel';
 import LiveExpectations from '../components/LiveExpectations';
 import VerdictRecordPanel from '../components/VerdictRecordPanel';
@@ -29,11 +29,7 @@ const HORIZONS = [5, 20, 60];
 
 type Scope = 'watchlist' | 'universe' | 'backtest' | 'calls';
 
-interface Props {
-  onClose: () => void;
-}
-
-export default function EvaluationPage({ onClose }: Props) {
+export default function EvaluationPage() {
   const [data, setData] = useState<EvaluationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -76,216 +72,200 @@ export default function EvaluationPage({ onClose }: Props) {
   const dailyNoise = perDay > 1 ? 1 / Math.sqrt(perDay - 1) : null;
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-5xl space-y-4 p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-base font-semibold text-ink-100">Auswertung</h2>
-          {ev && (
-            <span className="text-xs text-ink-500">
-              Scores {ev.from ?? '—'} bis {ev.to ?? '—'} · {ev.symbols} Aktien
-              {data && ` · berechnet ${new Date(data.computedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}`}
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={() => void load(true)}
-              disabled={loading}
-              className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-sm text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 disabled:opacity-40"
-            >
-              {loading ? 'Rechne…' : 'Neu berechnen'}
-            </button>
-            <button
-              onClick={onClose}
-              title="Schließen (Esc)"
-              className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
-            >
-              <CloseIcon />
-            </button>
-          </div>
+    <Page
+      title="Auswertung"
+      subtitle={ev ? <>
+        Scores {ev.from ?? '—'} bis {ev.to ?? '—'} · {ev.symbols} Aktien
+        {data && ` · berechnet ${new Date(data.computedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}`}
+      </> : 'Sagt der Score die spätere Rendite voraus?'}
+      actions={
+        <HeaderButton onClick={() => void load(true)} disabled={loading}>
+          {loading ? 'Rechne …' : 'Neu berechnen'}
+        </HeaderButton>
+      }
+    >
+
+      {scope !== 'calls' && <p className="text-sm leading-relaxed text-ink-300">
+        Sortiert an jedem Handelstag alle Aktien nach dem Score, den sie <em>vorher</em> hatten, und nach
+        ihrer Rendite gegenüber dem S&amp;P 500 in den folgenden Handelstagen — in Dollar, damit eine
+        Euro-Aktie nicht mit dem Wechselkurs punktet — und misst, wie gut die beiden Reihenfolgen
+        übereinstimmen (Rang-IC: +1 perfekt, 0 kein Zusammenhang, −1 umgekehrt). Ein brauchbarer Faktor
+        liegt bei 0,03–0,08.{dailyNoise !== null && ` Mit ${perDay} Aktien je Tag schwankt ein einzelner Tag um etwa ±${dailyNoise.toFixed(2).replace('.', ',')}`}
+        {' '}— belastbar wird das erst nach vielen unabhängigen Zeitfenstern, also nach Monaten.
+        „Im Sektor“ vergleicht jede Aktie nur mit ihrem eigenen Sektor: was dort bleibt, ist Aktienauswahl
+        statt einer Wette auf die Branche.
+      </p>}
+
+      {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
+      {!data && loading && scope !== 'backtest' && scope !== 'calls' && (
+        <div className="p-8 text-center text-sm text-ink-500">
+          Lade Kurse und rechne — mit dem Referenzuniversum dauert der erste Aufruf ein bis zwei Minuten…
         </div>
+      )}
 
-        {scope !== 'calls' && <p className="text-sm leading-relaxed text-ink-300">
-          Sortiert an jedem Handelstag alle Aktien nach dem Score, den sie <em>vorher</em> hatten, und nach
-          ihrer Rendite gegenüber dem S&amp;P 500 in den folgenden Handelstagen — in Dollar, damit eine
-          Euro-Aktie nicht mit dem Wechselkurs punktet — und misst, wie gut die beiden Reihenfolgen
-          übereinstimmen (Rang-IC: +1 perfekt, 0 kein Zusammenhang, −1 umgekehrt). Ein brauchbarer Faktor
-          liegt bei 0,03–0,08.{dailyNoise !== null && ` Mit ${perDay} Aktien je Tag schwankt ein einzelner Tag um etwa ±${dailyNoise.toFixed(2).replace('.', ',')}`}
-          {' '}— belastbar wird das erst nach vielen unabhängigen Zeitfenstern, also nach Monaten.
-          „Im Sektor“ vergleicht jede Aktie nur mit ihrem eigenen Sektor: was dort bleibt, ist Aktienauswahl
-          statt einer Wette auf die Branche.
-        </p>}
+      {(data || bt) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-ink-400">Aktien</span>
+          {([
+            ...(data ? [['watchlist', `Watchlist (${data.evaluation.symbols})`, 'Alle Signale, auch Text und alter LLM-Score']] : []),
+            ...(data?.universe ? [['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale']] : []),
+            ...(bt ? [['backtest', `Backtest (${bt.backtest?.universe ?? 'S&P 500'} seit 2013)`, 'Faktor-Score an jedem Monatsende aus den SEC-Abschlüssen nachgerechnet']] : []),
+            ['calls', 'Unsere Urteile', 'Jeder Urteilswechsel gegen den Index danach: Trefferquote nach 1, 3, 6 und 12 Monaten'],
+          ] as [Scope, string, string][]).map(([s, label, title]) => (
+            <button
+              key={s}
+              onClick={() => setScope(s)}
+              title={title}
+              className={`rounded px-2.5 py-1 text-xs transition ${
+                s === scope ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
-        {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
-        {!data && loading && scope !== 'backtest' && scope !== 'calls' && (
-          <div className="p-8 text-center text-sm text-ink-500">
-            Lade Kurse und rechne — mit dem Referenzuniversum dauert der erste Aufruf ein bis zwei Minuten…
-          </div>
-        )}
+      {scope === 'backtest' && bt && <BacktestPanel data={bt} />}
+      {scope === 'calls' && <VerdictRecordPanel />}
 
-        {(data || bt) && (
+      {scope !== 'backtest' && scope !== 'calls' && ev && (
+        <>
+          {universe && data?.monthly && <LiveExpectations monthly={data.monthly} bt={bt?.backtest ?? null} />}
+
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-xs text-ink-400">Aktien</span>
-            {([
-              ...(data ? [['watchlist', `Watchlist (${data.evaluation.symbols})`, 'Alle Signale, auch Text und alter LLM-Score']] : []),
-              ...(data?.universe ? [['universe', `Universum (${data.universe.symbols})`, 'Watchlist + Referenzaktien, nur die aus Zahlen berechneten Signale']] : []),
-              ...(bt ? [['backtest', `Backtest (${bt.backtest?.universe ?? 'S&P 500'} seit 2013)`, 'Faktor-Score an jedem Monatsende aus den SEC-Abschlüssen nachgerechnet']] : []),
-              ['calls', 'Unsere Urteile', 'Jeder Urteilswechsel gegen den Index danach: Trefferquote nach 1, 3, 6 und 12 Monaten'],
-            ] as [Scope, string, string][]).map(([s, label, title]) => (
+            <span className="mr-1 text-xs text-ink-400">Horizont</span>
+            {HORIZONS.map((h) => (
               <button
-                key={s}
-                onClick={() => setScope(s)}
-                title={title}
+                key={h}
+                onClick={() => setHorizon(h)}
                 className={`rounded px-2.5 py-1 text-xs transition ${
-                  s === scope ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
-                }`}
+                  h === horizon ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
+                } ${closedHorizons.has(h) ? '' : 'opacity-50'}`}
+                title={closedHorizons.has(h) ? undefined : 'Noch kein Zeitfenster dieser Länge abgeschlossen'}
               >
-                {label}
+                {h} Handelstage
               </button>
             ))}
           </div>
-        )}
 
-        {scope === 'backtest' && bt && <BacktestPanel data={bt} />}
-        {scope === 'calls' && <VerdictRecordPanel />}
-
-        {scope !== 'backtest' && scope !== 'calls' && ev && (
-          <>
-            {universe && data?.monthly && <LiveExpectations monthly={data.monthly} bt={bt?.backtest ?? null} />}
-
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-xs text-ink-400">Horizont</span>
-              {HORIZONS.map((h) => (
-                <button
-                  key={h}
-                  onClick={() => setHorizon(h)}
-                  className={`rounded px-2.5 py-1 text-xs transition ${
-                    h === horizon ? 'bg-accent font-medium text-ink-950' : 'border border-ink-700 bg-ink-800 text-ink-300 hover:bg-ink-700'
-                  } ${closedHorizons.has(h) ? '' : 'opacity-50'}`}
-                  title={closedHorizons.has(h) ? undefined : 'Noch kein Zeitfenster dieser Länge abgeschlossen'}
-                >
-                  {h} Handelstage
-                </button>
-              ))}
+          {headline && headline.days > 0 && (
+            <div className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3 text-sm text-ink-200">
+              {headlineTitle} über {horizon} Handelstage: Rang-IC <span className="font-mono">{headline.meanIc?.toFixed(2)}</span>
+              {headline.neutralIc !== null && <>, im Sektor <span className="font-mono">{headline.neutralIc.toFixed(2)}</span></>},
+              im oberen Drittel {pct(headline.spread)} gegenüber dem unteren ·{' '}
+              <span className={evidence(headline.tStat, headline.independent).cls}>
+                {evidence(headline.tStat, headline.independent).label}
+              </span>{' '}
+              <span className="text-ink-500">({headline.independent} unabhängige Fenster)</span>
             </div>
+          )}
 
-            {headline && headline.days > 0 && (
-              <div className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3 text-sm text-ink-200">
-                {headlineTitle} über {horizon} Handelstage: Rang-IC <span className="font-mono">{headline.meanIc?.toFixed(2)}</span>
-                {headline.neutralIc !== null && <>, im Sektor <span className="font-mono">{headline.neutralIc.toFixed(2)}</span></>},
-                im oberen Drittel {pct(headline.spread)} gegenüber dem unteren ·{' '}
-                <span className={evidence(headline.tStat, headline.independent).cls}>
-                  {evidence(headline.tStat, headline.independent).label}
-                </span>{' '}
-                <span className="text-ink-500">({headline.independent} unabhängige Fenster)</span>
-              </div>
-            )}
+          <section className="rounded-lg border border-ink-700 bg-ink-900">
+            <header className="border-b border-ink-800 px-4 py-2.5">
+              <h3 className="text-xs font-semibold text-ink-300">Signale</h3>
+              <p className="mt-0.5 text-xs text-ink-500">
+                IC gemittelt über alle Tage · t nur aus nicht überlappenden Fenstern · Im Sektor = IC gegen den eigenen Sektor ·
+                Treffer = Anteil der Tage mit positivem IC · Oben−Unten = Mehrrendite oberes minus unteres Drittel
+              </p>
+            </header>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead className="text-xs text-ink-400">
+                  <tr className="border-b border-ink-800">
+                    <th className="px-4 py-2 text-left font-normal">Signal</th>
+                    <th className="px-2 py-2 text-right font-normal">IC</th>
+                    <th className="w-32 px-2 py-2 font-normal" />
+                    <th className="px-2 py-2 text-right font-normal">t</th>
+                    <th className="px-2 py-2 text-right font-normal">Im Sektor (t)</th>
+                    <th className="px-2 py-2 text-right font-normal">Treffer</th>
+                    <th className="px-2 py-2 text-right font-normal">Oben−Unten</th>
+                    <th className="px-2 py-2 text-right font-normal">Tage / unabh.</th>
+                    <th className="px-4 py-2 text-left font-normal">Aussagekraft</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data!.signals.map((s) => {
+                    const r = rowOf.get(s.key);
+                    if (!r || r.days === 0) return null;
+                    const e = evidence(r.tStat, r.independent);
+                    return (
+                      <tr key={s.key} className="border-b border-ink-800/60 last:border-0">
+                        <td className={`px-4 py-1.5 ${s.pillar ? 'pl-8 text-ink-300' : 'font-medium text-ink-100'}`}>{s.title}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{r.meanIc?.toFixed(2) ?? '—'}</td>
+                        <td className="px-2 py-1.5"><SignedBar value={r.meanIc} scale={0.3} /></td>
+                        <td className="px-2 py-1.5 text-right font-mono text-ink-300">{r.tStat?.toFixed(1) ?? '—'}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
+                          {r.neutralIc === null ? '—' : r.neutralIc.toFixed(2)}
+                          {r.neutralTStat !== null && <span className="text-ink-500"> ({r.neutralTStat.toFixed(1)})</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono text-ink-300">
+                          {r.hitRate === null ? '—' : `${Math.round(r.hitRate * 100)} %`}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono text-ink-300">{pct(r.spread)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-ink-400">{r.days} / {r.independent}</td>
+                        <td className={`px-4 py-1.5 text-xs ${e.cls}`}>{e.label}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {rows.every((r) => r.days === 0) && (
+                <div className="p-6 text-center text-sm text-ink-500">
+                  Noch kein Zeitfenster von {horizon} Handelstagen abgeschlossen.
+                </div>
+              )}
+            </div>
+          </section>
 
+          {labels.length > 0 && (
             <section className="rounded-lg border border-ink-700 bg-ink-900">
               <header className="border-b border-ink-800 px-4 py-2.5">
-                <h3 className="text-xs font-semibold text-ink-300">Signale</h3>
+                <h3 className="text-xs font-semibold text-ink-300">Mehrrendite nach Urteil</h3>
                 <p className="mt-0.5 text-xs text-ink-500">
-                  IC gemittelt über alle Tage · t nur aus nicht überlappenden Fenstern · Im Sektor = IC gegen den eigenen Sektor ·
-                  Treffer = Anteil der Tage mit positivem IC · Oben−Unten = Mehrrendite oberes minus unteres Drittel
+                  Durchschnittliche Rendite gegenüber dem S&amp;P 500 über {horizon} Handelstage, nur nicht überlappende Fenster ·
+                  in Klammern die Zahl der Aktien-Fenster
                 </p>
               </header>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
-                  <thead className="text-xs text-ink-400">
-                    <tr className="border-b border-ink-800">
-                      <th className="px-4 py-2 text-left font-normal">Signal</th>
-                      <th className="px-2 py-2 text-right font-normal">IC</th>
-                      <th className="w-32 px-2 py-2 font-normal" />
-                      <th className="px-2 py-2 text-right font-normal">t</th>
-                      <th className="px-2 py-2 text-right font-normal">Im Sektor (t)</th>
-                      <th className="px-2 py-2 text-right font-normal">Treffer</th>
-                      <th className="px-2 py-2 text-right font-normal">Oben−Unten</th>
-                      <th className="px-2 py-2 text-right font-normal">Tage / unabh.</th>
-                      <th className="px-4 py-2 text-left font-normal">Aussagekraft</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data!.signals.map((s) => {
-                      const r = rowOf.get(s.key);
-                      if (!r || r.days === 0) return null;
-                      const e = evidence(r.tStat, r.independent);
-                      return (
-                        <tr key={s.key} className="border-b border-ink-800/60 last:border-0">
-                          <td className={`px-4 py-1.5 ${s.pillar ? 'pl-8 text-ink-300' : 'font-medium text-ink-100'}`}>{s.title}</td>
-                          <td className="px-2 py-1.5 text-right font-mono">{r.meanIc?.toFixed(2) ?? '—'}</td>
-                          <td className="px-2 py-1.5"><SignedBar value={r.meanIc} scale={0.3} /></td>
-                          <td className="px-2 py-1.5 text-right font-mono text-ink-300">{r.tStat?.toFixed(1) ?? '—'}</td>
-                          <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
-                            {r.neutralIc === null ? '—' : r.neutralIc.toFixed(2)}
-                            {r.neutralTStat !== null && <span className="text-ink-500"> ({r.neutralTStat.toFixed(1)})</span>}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono text-ink-300">
-                            {r.hitRate === null ? '—' : `${Math.round(r.hitRate * 100)} %`}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono text-ink-300">{pct(r.spread)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono text-ink-400">{r.days} / {r.independent}</td>
-                          <td className={`px-4 py-1.5 text-xs ${e.cls}`}>{e.label}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {rows.every((r) => r.days === 0) && (
-                  <div className="p-6 text-center text-sm text-ink-500">
-                    Noch kein Zeitfenster von {horizon} Handelstagen abgeschlossen.
+              <div className="space-y-2 p-4">
+                {labels.map((l) => (
+                  <div key={l.label} className="grid grid-cols-[110px_1fr_auto] items-center gap-3 text-sm">
+                    <span className={`rounded px-2 py-0.5 text-center text-xs font-bold ${recommendationColor(l.label)}`}>{l.label}</span>
+                    <SignedBar value={l.meanExcess} scale={0.1} />
+                    <span className="whitespace-nowrap text-right font-mono text-ink-300">
+                      {pct(l.meanExcess)} <span className="text-ink-500">({l.count})</span>
+                    </span>
                   </div>
-                )}
+                ))}
               </div>
             </section>
+          )}
 
-            {labels.length > 0 && (
-              <section className="rounded-lg border border-ink-700 bg-ink-900">
-                <header className="border-b border-ink-800 px-4 py-2.5">
-                  <h3 className="text-xs font-semibold text-ink-300">Mehrrendite nach Urteil</h3>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    Durchschnittliche Rendite gegenüber dem S&amp;P 500 über {horizon} Handelstage, nur nicht überlappende Fenster ·
-                    in Klammern die Zahl der Aktien-Fenster
-                  </p>
-                </header>
-                <div className="space-y-2 p-4">
-                  {labels.map((l) => (
-                    <div key={l.label} className="grid grid-cols-[110px_1fr_auto] items-center gap-3 text-sm">
-                      <span className={`rounded px-2 py-0.5 text-center text-xs font-bold ${recommendationColor(l.label)}`}>{l.label}</span>
-                      <SignedBar value={l.meanExcess} scale={0.1} />
-                      <span className="whitespace-nowrap text-right font-mono text-ink-300">
-                        {pct(l.meanExcess)} <span className="text-ink-500">({l.count})</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+          {data && data.weights.length > 0 && (
+            <section className="rounded-lg border border-ink-700 bg-ink-900">
+              <header className="border-b border-ink-800 px-4 py-2.5">
+                <h3 className="text-xs font-semibold text-ink-300">Säulengewichte: was die Daten nahelegen</h3>
+                <p className="mt-0.5 text-xs text-ink-500">
+                  IC jeder Säule über {data.weightHorizon} Handelstage{data.universe ? ' im Universum' : ''}, um seinen Standardfehler
+                  zur Null geschrumpft; ein Gewicht kippt um den geschrumpften IC geteilt durch 0,05. Nur ein Vorschlag —
+                  geändert werden die Gewichte im Code, nicht hier.
+                </p>
+              </header>
+              <WeightsTable weights={data.weights} />
+            </section>
+          )}
 
-            {data && data.weights.length > 0 && (
-              <section className="rounded-lg border border-ink-700 bg-ink-900">
-                <header className="border-b border-ink-800 px-4 py-2.5">
-                  <h3 className="text-xs font-semibold text-ink-300">Säulengewichte: was die Daten nahelegen</h3>
-                  <p className="mt-0.5 text-xs text-ink-500">
-                    IC jeder Säule über {data.weightHorizon} Handelstage{data.universe ? ' im Universum' : ''}, um seinen Standardfehler
-                    zur Null geschrumpft; ein Gewicht kippt um den geschrumpften IC geteilt durch 0,05. Nur ein Vorschlag —
-                    geändert werden die Gewichte im Code, nicht hier.
-                  </p>
-                </header>
-                <WeightsTable weights={data.weights} />
-              </section>
-            )}
-
-            <p className="text-xs leading-relaxed text-ink-500">
-              Die Scores vor dem Einbau des aktuellen Modells sind mit den heutigen Regeln nachgerechnet: die Daten sind
-              die damaligen.{' '}
-              {bt?.inForce.fit
-                ? `Die Gewichte sind an den Renditen des Backtests bis ${new Date(bt.inForce.fit.to).toLocaleDateString('de-DE')} `
-                  + 'angepasst — für die Monate davor ist dies kein unabhängiger Test, erst die danach sind es.'
-                : 'Die Regeln sind nicht an Renditen angepasst — sobald sie das werden, ist dies kein Test mehr.'}{' '}
-              Eine Reihe, die endet (z. B. der alte LLM-Score), zählt nur zehn Tage über ihren letzten Wert hinaus.
-            </p>
-          </>
-        )}
-      </div>
-    </div>
+          <p className="text-xs leading-relaxed text-ink-500">
+            Die Scores vor dem Einbau des aktuellen Modells sind mit den heutigen Regeln nachgerechnet: die Daten sind
+            die damaligen.{' '}
+            {bt?.inForce.fit
+              ? `Die Gewichte sind an den Renditen des Backtests bis ${new Date(bt.inForce.fit.to).toLocaleDateString('de-DE')} `
+                + 'angepasst — für die Monate davor ist dies kein unabhängiger Test, erst die danach sind es.'
+              : 'Die Regeln sind nicht an Renditen angepasst — sobald sie das werden, ist dies kein Test mehr.'}{' '}
+            Eine Reihe, die endet (z. B. der alte LLM-Score), zählt nur zehn Tage über ihren letzten Wert hinaus.
+          </p>
+        </>
+      )}
+    </Page>
   );
 }

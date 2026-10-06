@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, ConfigResponse, JobRun, SchedulerStatus, SearchChoice } from '../types';
 import { MODELS, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel } from '../../../src/models';
-import { CloseIcon } from '../components/icons';
+import Page from '../components/Page';
 import { BacktestStatusLine, useBacktestOverview } from '../components/BacktestRuns';
 import CalibrationPanel from '../components/CalibrationPanel';
 
@@ -103,12 +103,7 @@ function DaysInput({ value, onChange }: { value: number; onChange: (v: number) =
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-interface Props {
-  /** Close the administration and go back to the list. */
-  onClose: () => void;
-}
-
-export default function AdminPage({ onClose }: Props) {
+export default function AdminPage() {
   const [meta, setMeta] = useState<ConfigResponse | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [jobs, setJobs] = useState<SchedulerStatus | null>(null);
@@ -236,473 +231,461 @@ export default function AdminPage({ onClose }: Props) {
   }
 
   if (!config || !meta) {
-    return <div className="p-8 text-center text-sm text-ink-500">{error ?? 'Lade Konfiguration…'}</div>;
+    return <Page title="Administration"><div className="p-8 text-center text-sm text-ink-500">{error ?? 'Lade Konfiguration …'}</div></Page>;
   }
 
   const analysis = config.steps.analysis;
   const watchedCount = meta.symbols.filter((s) => config.watchlist[s.symbol] !== false).length;
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-5xl space-y-4 p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-base font-semibold text-ink-100">Administration</h2>
-          <span className="text-xs text-ink-500">Dateien: <span className="font-mono">{meta.dataDir}</span></span>
-          <div className="ml-auto flex items-center gap-2">
-            {dirty && <span className="text-xs text-amber-400">ungespeicherte Änderungen</span>}
-            <button
-              onClick={save}
-              disabled={!dirty || saving}
-              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-ink-950 transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {saving ? 'Speichere…' : 'Speichern'}
-            </button>
-            {/* Same mark, same corner, same meaning as on an open analysis. */}
-            <button
-              onClick={onClose}
-              className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
-              title="Zurück zur Übersicht (Esc)"
-              aria-label="Administration schließen"
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>
-        )}
-        {notice && (
-          <div className="rounded border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm text-emerald-400">{notice}</div>
-        )}
-
-        {/* ── Zeitplan ───────────────────────────────────────────────────── */}
-        <Card
-          title="Zeitplan"
-          hint="Ein Lauf, seriell pro Aktie: Daten → Distill → Analyse. Parallel würde dieselben Caches und dieselben Rate-Limits gleichzeitig treffen."
+    <Page
+      title="Administration"
+      subtitle={<>Dateien: <span className="font-mono">{meta.dataDir}</span></>}
+      actions={<>
+        {dirty && <span className="text-xs text-amber-400">ungespeicherte Änderungen</span>}
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-ink-950 transition hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Toggle
-            checked={config.schedule.enabled}
-            onChange={(v) => patch((d) => { d.schedule.enabled = v; })}
-            label="Zeitplan aktiv"
-            // Three states, not two. `nextRun` is only known when the
-            // in-process scheduler owns the cron; Hatchet does not report one,
-            // so an installed Hatchet cron would otherwise read as "none".
-            hint={jobs?.nextRun
-              ? `Nächster Lauf: ${fmtDateTime(jobs.nextRun)}`
-              : jobs?.cron
-                ? `Installiert: ${jobs.cron} (${jobs.timezone})`
-                : 'Kein Cron installiert'}
+          {saving ? 'Speichere …' : 'Speichern'}
+        </button>
+      </>}
+    >
+
+      {error && (
+        <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>
+      )}
+      {notice && (
+        <div className="rounded border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm text-emerald-400">{notice}</div>
+      )}
+
+      {/* ── Zeitplan ───────────────────────────────────────────────────── */}
+      <Card
+        title="Zeitplan"
+        hint="Ein Lauf, seriell pro Aktie: Daten → Distill → Analyse. Parallel würde dieselben Caches und dieselben Rate-Limits gleichzeitig treffen."
+      >
+        <Toggle
+          checked={config.schedule.enabled}
+          onChange={(v) => patch((d) => { d.schedule.enabled = v; })}
+          label="Zeitplan aktiv"
+          // Three states, not two. `nextRun` is only known when the
+          // in-process scheduler owns the cron; Hatchet does not report one,
+          // so an installed Hatchet cron would otherwise read as "none".
+          hint={jobs?.nextRun
+            ? `Nächster Lauf: ${fmtDateTime(jobs.nextRun)}`
+            : jobs?.cron
+              ? `Installiert: ${jobs.cron} (${jobs.timezone})`
+              : 'Kein Cron installiert'}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-ink-400">Cron</label>
+          <input
+            value={config.schedule.cron}
+            onChange={(e) => patch((d) => { d.schedule.cron = e.target.value; })}
+            className={`${inputCls} w-40 font-mono`}
+            placeholder="0 0 * * *"
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-xs text-ink-400">Cron</label>
-            <input
-              value={config.schedule.cron}
-              onChange={(e) => patch((d) => { d.schedule.cron = e.target.value; })}
-              className={`${inputCls} w-40 font-mono`}
-              placeholder="0 0 * * *"
-            />
-            <span className="text-xs text-ink-500">{describeCron(config.schedule.cron)}</span>
-            <label className="ml-3 text-xs text-ink-400">Zeitzone</label>
-            <input
-              value={config.schedule.timezone}
-              onChange={(e) => patch((d) => { d.schedule.timezone = e.target.value; })}
-              className={`${inputCls} w-44 font-mono`}
-            />
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {CRON_PRESETS.map((p) => (
-              <button
-                key={p.cron}
-                onClick={() => patch((d) => { d.schedule.cron = p.cron; })}
-                className={`rounded border px-2 py-0.5 text-xs transition ${
-                  config.schedule.cron === p.cron
-                    ? 'border-accent bg-accent-soft text-ink-100'
-                    : 'border-ink-700 text-ink-400 hover:bg-ink-800'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </Card>
-
-        {/* ── Schritte ───────────────────────────────────────────────────── */}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card title="1 · Marktdaten" hint="Yahoo, Finnhub, FRED, Makro + Technicals">
-            <Toggle
-              checked={config.steps.data.enabled}
-              onChange={(v) => patch((d) => { d.steps.data.enabled = v; })}
-              label="Daten aktualisieren"
-              hint="Schreibt zusätzlich einen Verlaufspunkt (Kurs, Ziel, Fair Value)."
-            />
-          </Card>
-
-          <Card title="2 · Distill" hint="Dossiers + frische Insights">
-            <Toggle
-              checked={config.steps.distill.enabled}
-              onChange={(v) => patch((d) => { d.steps.distill.enabled = v; })}
-              label="Distill einbeziehen"
-              hint={meta.keys.distill ? meta.distillApiUrl : 'DISTILL_API_KEY fehlt — Schritt wird übersprungen'}
-            />
-            <p className="text-xs leading-relaxed text-ink-500">
-              Holt das Firmen-Dossier, die Dossiers der Sektoren der Aktie und die rohen
-              Insights, die keines davon wiedergibt. Kostenlos — es gibt nichts mehr
-              einzustellen, weil kein bezahlter Aufruf mehr nötig ist.
-            </p>
-          </Card>
-
-          <Card title="3 · Analyse" hint="Nur wenn das Verdict zu alt ist">
-            <Toggle
-              checked={analysis.enabled}
-              onChange={(v) => patch((d) => { d.steps.analysis.enabled = v; })}
-              label="Analyse mitziehen"
-              hint="Läuft direkt nach Daten + Distill derselben Aktie."
-            />
-            {/* One grid for every labelled field, so the inputs line up in a
-                column whatever the label's length. */}
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
-              <label className="text-xs text-ink-400">max. Alter</label>
-              <DaysInput
-                value={analysis.maxAgeDays}
-                onChange={(v) => patch((d) => { d.steps.analysis.maxAgeDays = v; })}
-              />
-
-              <label className="text-xs text-ink-400">Modell</label>
-              <select
-                value={analysis.model}
-                onChange={(e) => patch((d) => { d.steps.analysis.model = e.target.value; })}
-                className={`${inputCls} w-full min-w-0`}
-              >
-                {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                {!MODELS.some((m) => m.id === analysis.model) && (
-                  <option value={analysis.model}>{analysis.model} (eigenes)</option>
-                )}
-              </select>
-
-              <span className="self-start pt-0.5 text-xs text-ink-400">Websuche</span>
-              <div className="flex flex-wrap gap-1.5">
-                {SEARCH_CHOICES.map((choice) => {
-                  const on = analysis.search.includes(choice);
-                  return (
-                    <button
-                      key={choice}
-                      onClick={() => patch((d) => {
-                        const list = new Set(d.steps.analysis.search);
-                        if (on) list.delete(choice); else list.add(choice);
-                        d.steps.analysis.search = [...list].sort();
-                      })}
-                      className={`rounded border px-2 py-0.5 text-xs transition ${
-                        on ? 'border-accent bg-accent-soft text-ink-100' : 'border-ink-700 text-ink-400 hover:bg-ink-800'
-                      }`}
-                    >
-                      {choice}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <label className="text-xs text-ink-400">Perplexity</label>
-              <select
-                value={analysis.pplx ?? 'none'}
-                onChange={(e) => patch((d) => {
-                  const v = e.target.value;
-                  d.steps.analysis.pplx = v === 'none' ? null : (v as PerplexityModelId);
-                })}
-                className={`${inputCls} w-full min-w-0`}
-              >
-                <option value="none">aus</option>
-                {PERPLEXITY_MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>{perplexityLabel(m.id)}</option>
-                ))}
-              </select>
-              {analysis.pplx && (
-                <p className="col-start-2 -mt-1 text-2xs text-ink-500">
-                  {PERPLEXITY_MODELS.find((m) => m.id === analysis.pplx)?.note}
-                </p>
-              )}
-
-              <label className="text-xs text-ink-400">Recherche-Cache</label>
-              <DaysInput
-                value={config.perplexity.maxAgeDays}
-                onChange={(v) => patch((d) => { d.perplexity.maxAgeDays = v; })}
-              />
-
-              <label className="text-xs text-ink-400">Deep Research</label>
-              <DaysInput
-                value={config.perplexity.deepMaxAgeDays}
-                onChange={(v) => patch((d) => { d.perplexity.deepMaxAgeDays = v; })}
-              />
-            </div>
-            <p className="text-xs leading-relaxed text-ink-500">
-              Der Recherche-Cache gilt für jede Analyse, auch für manuelle Re-runs —
-              jeder Aufruf kostet; ↻ Refresh unter Research &amp; News fragt sofort neu.
-              Deep Research wird nur dort von Hand angefordert und geht so lange
-              zusätzlich in jede Analyse ein.
-            </p>
-          </Card>
-        </div>
-
-        {/* ── Referenzuniversum ──────────────────────────────────────────── */}
-        <Card
-          title={`Referenzuniversum (${meta.referenceSymbols} gespeichert)`}
-          hint="S&P 500, EURO STOXX 50 und DAX, nach der Watchlist rotierend aktualisiert und nur mit Zahlen bewertet — die Grundgesamtheit für Kalibrierung und Auswertung. Erscheint nie in der Liste, wird nie analysiert."
-        >
-          <Toggle
-            checked={config.universe.enabled}
-            onChange={(v) => patch((d) => { d.universe.enabled = v; })}
-            label="Referenzuniversum pflegen"
-            hint="Nur bei vollständigen Läufen, nicht bei einzeln gestarteten Aktien."
+          <span className="text-xs text-ink-500">{describeCron(config.schedule.cron)}</span>
+          <label className="ml-3 text-xs text-ink-400">Zeitzone</label>
+          <input
+            value={config.schedule.timezone}
+            onChange={(e) => patch((d) => { d.schedule.timezone = e.target.value; })}
+            className={`${inputCls} w-44 font-mono`}
           />
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-ink-400">Pro Nacht</label>
-            <input
-              type="number"
-              min={0}
-              max={600}
-              value={config.universe.batchSize}
-              onChange={(e) => patch((d) => {
-                d.universe.batchSize = Math.max(0, Math.min(600, Math.round(Number(e.target.value) || 0)));
-              })}
-              className={`${inputCls} w-20 text-right font-mono`}
-            />
-            <span className="text-xs text-ink-500">
-              Aktien{config.universe.batchSize > 0 && meta.universeSize > 0
-                && ` · jede der ${meta.universeSize} etwa alle ${Math.max(1, Math.round(meta.universeSize / config.universe.batchSize))} Nächte`}
-            </span>
-          </div>
-          {meta.universeSize > 0 && (
-            <p className="text-xs text-ink-400">
-              {meta.universeFresh} von {meta.universeSize} in den letzten 7 Tagen aktualisiert
-            </p>
-          )}
-          <CalibrationPanel committed={meta.calibration} />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {CRON_PRESETS.map((p) => (
+            <button
+              key={p.cron}
+              onClick={() => patch((d) => { d.schedule.cron = p.cron; })}
+              className={`rounded border px-2 py-0.5 text-xs transition ${
+                config.schedule.cron === p.cron
+                  ? 'border-accent bg-accent-soft text-ink-100'
+                  : 'border-ink-700 text-ink-400 hover:bg-ink-800'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* ── Schritte ───────────────────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card title="1 · Marktdaten" hint="Yahoo, Finnhub, FRED, Makro + Technicals">
+          <Toggle
+            checked={config.steps.data.enabled}
+            onChange={(v) => patch((d) => { d.steps.data.enabled = v; })}
+            label="Daten aktualisieren"
+            hint="Schreibt zusätzlich einen Verlaufspunkt (Kurs, Ziel, Fair Value)."
+          />
         </Card>
 
-        {/* ── Backtest ───────────────────────────────────────────────────── */}
-        <Card
-          title="Backtest"
-          hint="Rechnet den Faktor-Score an jedem Monatsende seit 2013 für den S&P 1500 nach und prüft ihn an den Renditen danach. Einmal im Monat genügt: Er rechnet Monatsenden, und ein neues kommt einmal im Monat. Läuft als eigener Prozess, eine Viertelstunde mit warmem Cache, beim ersten Mal rund eine Stunde."
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            <Toggle
-              checked={config.backtest.enabled}
-              onChange={(v) => patch((d) => { d.backtest.enabled = v; })}
-              label="Monatlich automatisch"
-            />
-            <label className="text-xs text-ink-400">Cron</label>
-            <input
-              value={config.backtest.cron}
-              onChange={(e) => patch((d) => { d.backtest.cron = e.target.value; })}
-              className={`${inputCls} w-32 font-mono`}
-              title="5 Felder, in der Zeitzone des Zeitplans; Standard: am 2. um 14 Uhr"
-            />
-            {backtest.data?.schedule.next && (
-              <span className="text-xs text-ink-500">nächster Lauf {new Date(backtest.data.schedule.next).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</span>
-            )}
-            <button
-              onClick={() => void runBacktest()}
-              disabled={!!backtest.data?.running}
-              className="ml-auto rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
-            >
-              Jetzt rechnen
-            </button>
-          </div>
-          {backtest.data && <p className="text-xs"><BacktestStatusLine o={backtest.data} /></p>}
-        </Card>
-
-        {/* ── Benachrichtigungen ─────────────────────────────────────────── */}
-        <Card
-          title="Benachrichtigungen"
-          hint="Ein Urteilswechsel auf der Watchlist wird gemeldet, sobald er einen weiteren Nachtlauf gehalten hat — ein Score auf der Bandgrenze meldet sich so nicht jede Nacht. Alle Wechsel stehen außerdem über der Übersicht. Dazu nach dem Nachtlauf der Watchlist ein Überblick über alles andere, was seit dem letzten passiert ist."
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-xs text-ink-400">Format</label>
-            <select
-              value={config.alerts.format}
-              onChange={(e) => patch((d) => { d.alerts.format = e.target.value as typeof d.alerts.format; })}
-              className={inputCls}
-            >
-              <option value="json">JSON (Slack, Discord, …)</option>
-              <option value="ntfy">ntfy</option>
-            </select>
-            <label className="text-xs text-ink-400">{config.alerts.format === 'ntfy' ? 'Topic-URL' : 'Webhook-URL'}</label>
-            <input
-              value={config.alerts.webhookUrl}
-              onChange={(e) => patch((d) => { d.alerts.webhookUrl = e.target.value.trim(); })}
-              placeholder={config.alerts.format === 'ntfy'
-                ? 'https://ntfy.sh/dein-topic'
-                : 'https://hooks.slack.com/… oder https://discord.com/api/webhooks/…'}
-              className={`${inputCls} min-w-[280px] flex-1 font-mono`}
-            />
-            <button
-              onClick={() => void testAlert()}
-              disabled={!config.alerts.webhookUrl || dirty}
-              title={dirty ? 'Erst speichern' : 'Eine Testnachricht an die gespeicherte URL senden'}
-              className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
-            >
-              Test senden
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-xs text-ink-300">
-              <input
-                type="checkbox"
-                checked={config.alerts.digest}
-                onChange={(e) => patch((d) => { d.alerts.digest = e.target.checked; })}
-              />
-              Täglicher Überblick nach dem Nachtlauf
-            </label>
-            <span className="text-xs text-ink-500">
-              Herabstufungen und Kursziele, Insider-Trades, Quartalszahlen, Kurssprünge und Recherche-Funde der Watchlist,
-              jedes Ereignis einmal; dazu die Quartalszahlen der nächsten drei Tage. Nichts Neues, keine Nachricht.
-            </span>
-            <button
-              onClick={() => void testDigest()}
-              disabled={!config.alerts.webhookUrl || dirty}
-              title={dirty ? 'Erst speichern' : 'Den Überblick des letzten Tages jetzt senden, als Test markiert'}
-              className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
-            >
-              Überblick testen
-            </button>
-          </div>
+        <Card title="2 · Distill" hint="Dossiers + frische Insights">
+          <Toggle
+            checked={config.steps.distill.enabled}
+            onChange={(v) => patch((d) => { d.steps.distill.enabled = v; })}
+            label="Distill einbeziehen"
+            hint={meta.keys.distill ? meta.distillApiUrl : 'DISTILL_API_KEY fehlt — Schritt wird übersprungen'}
+          />
           <p className="text-xs leading-relaxed text-ink-500">
-            {config.alerts.format === 'ntfy'
-              ? <>Leer = aus. Die URL des ntfy-Topics, auf ntfy.sh oder einem eigenen Server; die ntfy-App abonniert dasselbe
-                  Topic. Titel ist der Wechsel (<span className="font-mono">MSFT: HOLD → BUY</span>), darunter der Score, dazu 📈 oder 📉.
-                  Geschützter Server: <span className="font-mono">https://nutzer:passwort@…/topic</span> oder mit Zugangstoken{' '}
-                  <span className="font-mono">https://:tk_…@…/topic</span>.</>
-              : <>Leer = aus. Gesendet wird ein JSON-POST mit <span className="font-mono">text</span> (Slack) und{' '}
-                  <span className="font-mono">content</span> (Discord) sowie Symbol, altem und neuem Urteil und Score.</>}
+            Holt das Firmen-Dossier, die Dossiers der Sektoren der Aktie und die rohen
+            Insights, die keines davon wiedergibt. Kostenlos — es gibt nichts mehr
+            einzustellen, weil kein bezahlter Aufruf mehr nötig ist.
           </p>
         </Card>
 
-        {/* ── Watchlist ──────────────────────────────────────────────────── */}
-        <Card
-          title={`Watchlist (${watchedCount}/${meta.symbols.length})`}
-          hint="Nur aktivierte Aktien laufen im Zeitplan. Neue Aktien sind automatisch dabei."
-        >
-          <div className="flex gap-2">
-            <button
-              onClick={() => patch((d) => { d.watchlist = {}; })}
-              className="rounded border border-ink-700 px-2 py-1 text-xs text-ink-300 hover:bg-ink-800"
+        <Card title="3 · Analyse" hint="Nur wenn das Verdict zu alt ist">
+          <Toggle
+            checked={analysis.enabled}
+            onChange={(v) => patch((d) => { d.steps.analysis.enabled = v; })}
+            label="Analyse mitziehen"
+            hint="Läuft direkt nach Daten + Distill derselben Aktie."
+          />
+          {/* One grid for every labelled field, so the inputs line up in a
+              column whatever the label's length. */}
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
+            <label className="text-xs text-ink-400">max. Alter</label>
+            <DaysInput
+              value={analysis.maxAgeDays}
+              onChange={(v) => patch((d) => { d.steps.analysis.maxAgeDays = v; })}
+            />
+
+            <label className="text-xs text-ink-400">Modell</label>
+            <select
+              value={analysis.model}
+              onChange={(e) => patch((d) => { d.steps.analysis.model = e.target.value; })}
+              className={`${inputCls} w-full min-w-0`}
             >
-              alle aktivieren
-            </button>
-            <button
-              onClick={() => patch((d) => {
-                d.watchlist = Object.fromEntries(meta.symbols.map((s) => [s.symbol, false]));
-              })}
-              className="rounded border border-ink-700 px-2 py-1 text-xs text-ink-300 hover:bg-ink-800"
-            >
-              alle deaktivieren
-            </button>
-          </div>
-          <div className="grid max-h-72 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto md:grid-cols-3">
-            {meta.symbols.map((s) => {
-              const on = config.watchlist[s.symbol] !== false;
-              return (
-                <label key={s.symbol} className="flex items-center gap-2 truncate">
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={(e) => patch((d) => {
-                      // Absent means "watched", so only an explicit false is stored —
-                      // that keeps new symbols opted in by default.
-                      if (e.target.checked) delete d.watchlist[s.symbol];
-                      else d.watchlist[s.symbol] = false;
-                    })}
-                    className="accent-[var(--color-accent)]"
-                  />
-                  <span className="truncate text-xs text-ink-200">{s.companyName}</span>
-                  <span className="ml-auto shrink-0 font-mono text-2xs text-ink-500">{s.symbol}</span>
+              {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              {!MODELS.some((m) => m.id === analysis.model) && (
+                <option value={analysis.model}>{analysis.model} (eigenes)</option>
+              )}
+            </select>
+
+            <span className="self-start pt-0.5 text-xs text-ink-400">Websuche</span>
+            <div className="flex flex-wrap gap-1.5">
+              {SEARCH_CHOICES.map((choice) => {
+                const on = analysis.search.includes(choice);
+                return (
                   <button
-                    onClick={(e) => { e.preventDefault(); runNow([s.symbol]); }}
-                    disabled={jobs?.running}
-                    title={`Nur ${s.symbol} jetzt laufen lassen`}
-                    className="shrink-0 rounded px-1 text-2xs text-ink-600 hover:bg-ink-800 hover:text-ink-200 disabled:opacity-30"
+                    key={choice}
+                    onClick={() => patch((d) => {
+                      const list = new Set(d.steps.analysis.search);
+                      if (on) list.delete(choice); else list.add(choice);
+                      d.steps.analysis.search = [...list].sort();
+                    })}
+                    className={`rounded border px-2 py-0.5 text-xs transition ${
+                      on ? 'border-accent bg-accent-soft text-ink-100' : 'border-ink-700 text-ink-400 hover:bg-ink-800'
+                    }`}
                   >
-                    ▶
+                    {choice}
                   </button>
-                </label>
-              );
-            })}
-          </div>
-        </Card>
+                );
+              })}
+            </div>
 
-        {/* ── Läufe ──────────────────────────────────────────────────────── */}
-        <Card
-          title="Läufe"
-          hint={jobs?.running
-            ? `Läuft gerade${jobs.current?.currentSymbol ? ` — ${jobs.current.currentSymbol}` : ''}`
-            : `Nächster Lauf: ${fmtDateTime(jobs?.nextRun ?? null)}`}
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => runNow()}
-              disabled={jobs?.running}
-              className="rounded border border-ink-600 bg-ink-800 px-3 py-1.5 text-sm text-ink-100 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+            <label className="text-xs text-ink-400">Perplexity</label>
+            <select
+              value={analysis.pplx ?? 'none'}
+              onChange={(e) => patch((d) => {
+                const v = e.target.value;
+                d.steps.analysis.pplx = v === 'none' ? null : (v as PerplexityModelId);
+              })}
+              className={`${inputCls} w-full min-w-0`}
             >
-              ▶ Jetzt laufen ({jobs?.watched.length ?? 0} Aktien)
-            </button>
-            {jobs?.running && (
-              <button
-                onClick={stopRun}
-                className="rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-sm text-amber-300 transition hover:bg-amber-900"
-              >
-                ■ Stoppen
-              </button>
-            )}
-            {jobs?.current && (
-              <span className="text-xs text-ink-400">
-                {jobs.current.symbols.length}/{jobs.current.totals.symbols} erledigt ·{' '}
-                {fmtDuration(jobs.current.startedAt, null)} ·{' '}
-                <span className="text-ink-500">
-                  Daten {jobs.current.totals.data} · Distill {jobs.current.totals.distill} · Analyse {jobs.current.totals.analysis}
-                  {jobs.current.totals.reference > 0 && ` · Referenz ${jobs.current.totals.reference}`}
-                </span>
-                {jobs.current.totals.failed > 0 && (
-                  <span className="text-red-400"> · {jobs.current.totals.failed} Fehler</span>
-                )}
-              </span>
-            )}
-          </div>
-
-          {(jobs?.runs.length ?? 0) === 0 ? (
-            <p className="text-xs text-ink-500">Noch keine Läufe aufgezeichnet.</p>
-          ) : (
-            <ul className="divide-y divide-ink-800">
-              {jobs!.runs.map((run) => (
-                <RunRow
-                  key={run.id}
-                  run={run}
-                  expanded={expandedRun === run.id}
-                  onToggle={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
-                />
+              <option value="none">aus</option>
+              {PERPLEXITY_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>{perplexityLabel(m.id)}</option>
               ))}
-            </ul>
-          )}
-        </Card>
+            </select>
+            {analysis.pplx && (
+              <p className="col-start-2 -mt-1 text-2xs text-ink-500">
+                {PERPLEXITY_MODELS.find((m) => m.id === analysis.pplx)?.note}
+              </p>
+            )}
 
-        {/* ── Schlüssel ──────────────────────────────────────────────────── */}
-        <Card title="API-Schlüssel" hint="Nur Status — Werte werden ausschließlich aus der .env gelesen und nie ausgeliefert.">
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(meta.keys).map(([name, present]) => (
-              <span
-                key={name}
-                className={`rounded border px-2 py-0.5 text-xs ${
-                  present
-                    ? 'border-emerald-700 bg-emerald-950 text-emerald-400'
-                    : 'border-ink-700 bg-ink-950 text-ink-500'
-                }`}
-              >
-                {present ? '✓' : '○'} {name}
-              </span>
-            ))}
+            <label className="text-xs text-ink-400">Recherche-Cache</label>
+            <DaysInput
+              value={config.perplexity.maxAgeDays}
+              onChange={(v) => patch((d) => { d.perplexity.maxAgeDays = v; })}
+            />
+
+            <label className="text-xs text-ink-400">Deep Research</label>
+            <DaysInput
+              value={config.perplexity.deepMaxAgeDays}
+              onChange={(v) => patch((d) => { d.perplexity.deepMaxAgeDays = v; })}
+            />
           </div>
+          <p className="text-xs leading-relaxed text-ink-500">
+            Der Recherche-Cache gilt für jede Analyse, auch für manuelle Re-runs —
+            jeder Aufruf kostet; ↻ Refresh unter Research &amp; News fragt sofort neu.
+            Deep Research wird nur dort von Hand angefordert und geht so lange
+            zusätzlich in jede Analyse ein.
+          </p>
         </Card>
       </div>
-    </div>
+
+      {/* ── Referenzuniversum ──────────────────────────────────────────── */}
+      <Card
+        title={`Referenzuniversum (${meta.referenceSymbols} gespeichert)`}
+        hint="S&P 500, EURO STOXX 50 und DAX, nach der Watchlist rotierend aktualisiert und nur mit Zahlen bewertet — die Grundgesamtheit für Kalibrierung und Auswertung. Erscheint nie in der Liste, wird nie analysiert."
+      >
+        <Toggle
+          checked={config.universe.enabled}
+          onChange={(v) => patch((d) => { d.universe.enabled = v; })}
+          label="Referenzuniversum pflegen"
+          hint="Nur bei vollständigen Läufen, nicht bei einzeln gestarteten Aktien."
+        />
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-ink-400">Pro Nacht</label>
+          <input
+            type="number"
+            min={0}
+            max={600}
+            value={config.universe.batchSize}
+            onChange={(e) => patch((d) => {
+              d.universe.batchSize = Math.max(0, Math.min(600, Math.round(Number(e.target.value) || 0)));
+            })}
+            className={`${inputCls} w-20 text-right font-mono`}
+          />
+          <span className="text-xs text-ink-500">
+            Aktien{config.universe.batchSize > 0 && meta.universeSize > 0
+              && ` · jede der ${meta.universeSize} etwa alle ${Math.max(1, Math.round(meta.universeSize / config.universe.batchSize))} Nächte`}
+          </span>
+        </div>
+        {meta.universeSize > 0 && (
+          <p className="text-xs text-ink-400">
+            {meta.universeFresh} von {meta.universeSize} in den letzten 7 Tagen aktualisiert
+          </p>
+        )}
+        <CalibrationPanel committed={meta.calibration} />
+      </Card>
+
+      {/* ── Backtest ───────────────────────────────────────────────────── */}
+      <Card
+        title="Backtest"
+        hint="Rechnet den Faktor-Score an jedem Monatsende seit 2013 für den S&P 1500 nach und prüft ihn an den Renditen danach. Einmal im Monat genügt: Er rechnet Monatsenden, und ein neues kommt einmal im Monat. Läuft als eigener Prozess, eine Viertelstunde mit warmem Cache, beim ersten Mal rund eine Stunde."
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <Toggle
+            checked={config.backtest.enabled}
+            onChange={(v) => patch((d) => { d.backtest.enabled = v; })}
+            label="Monatlich automatisch"
+          />
+          <label className="text-xs text-ink-400">Cron</label>
+          <input
+            value={config.backtest.cron}
+            onChange={(e) => patch((d) => { d.backtest.cron = e.target.value; })}
+            className={`${inputCls} w-32 font-mono`}
+            title="5 Felder, in der Zeitzone des Zeitplans; Standard: am 2. um 14 Uhr"
+          />
+          {backtest.data?.schedule.next && (
+            <span className="text-xs text-ink-500">nächster Lauf {new Date(backtest.data.schedule.next).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}</span>
+          )}
+          <button
+            onClick={() => void runBacktest()}
+            disabled={!!backtest.data?.running}
+            className="ml-auto rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
+          >
+            Jetzt rechnen
+          </button>
+        </div>
+        {backtest.data && <p className="text-xs"><BacktestStatusLine o={backtest.data} /></p>}
+      </Card>
+
+      {/* ── Benachrichtigungen ─────────────────────────────────────────── */}
+      <Card
+        title="Benachrichtigungen"
+        hint="Ein Urteilswechsel auf der Watchlist wird gemeldet, sobald er einen weiteren Nachtlauf gehalten hat — ein Score auf der Bandgrenze meldet sich so nicht jede Nacht. Alle Wechsel stehen außerdem über der Übersicht. Dazu nach dem Nachtlauf der Watchlist ein Überblick über alles andere, was seit dem letzten passiert ist."
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-ink-400">Format</label>
+          <select
+            value={config.alerts.format}
+            onChange={(e) => patch((d) => { d.alerts.format = e.target.value as typeof d.alerts.format; })}
+            className={inputCls}
+          >
+            <option value="json">JSON (Slack, Discord, …)</option>
+            <option value="ntfy">ntfy</option>
+          </select>
+          <label className="text-xs text-ink-400">{config.alerts.format === 'ntfy' ? 'Topic-URL' : 'Webhook-URL'}</label>
+          <input
+            value={config.alerts.webhookUrl}
+            onChange={(e) => patch((d) => { d.alerts.webhookUrl = e.target.value.trim(); })}
+            placeholder={config.alerts.format === 'ntfy'
+              ? 'https://ntfy.sh/dein-topic'
+              : 'https://hooks.slack.com/… oder https://discord.com/api/webhooks/…'}
+            className={`${inputCls} min-w-[280px] flex-1 font-mono`}
+          />
+          <button
+            onClick={() => void testAlert()}
+            disabled={!config.alerts.webhookUrl || dirty}
+            title={dirty ? 'Erst speichern' : 'Eine Testnachricht an die gespeicherte URL senden'}
+            className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
+          >
+            Test senden
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-ink-300">
+            <input
+              type="checkbox"
+              checked={config.alerts.digest}
+              onChange={(e) => patch((d) => { d.alerts.digest = e.target.checked; })}
+            />
+            Täglicher Überblick nach dem Nachtlauf
+          </label>
+          <span className="text-xs text-ink-500">
+            Herabstufungen und Kursziele, Insider-Trades, Quartalszahlen, Kurssprünge und Recherche-Funde der Watchlist,
+            jedes Ereignis einmal; dazu die Quartalszahlen der nächsten drei Tage. Nichts Neues, keine Nachricht.
+          </span>
+          <button
+            onClick={() => void testDigest()}
+            disabled={!config.alerts.webhookUrl || dirty}
+            title={dirty ? 'Erst speichern' : 'Den Überblick des letzten Tages jetzt senden, als Test markiert'}
+            className="rounded border border-ink-700 bg-ink-800 px-3 py-1.5 text-xs text-ink-200 transition hover:bg-ink-700 disabled:opacity-40"
+          >
+            Überblick testen
+          </button>
+        </div>
+        <p className="text-xs leading-relaxed text-ink-500">
+          {config.alerts.format === 'ntfy'
+            ? <>Leer = aus. Die URL des ntfy-Topics, auf ntfy.sh oder einem eigenen Server; die ntfy-App abonniert dasselbe
+                Topic. Titel ist der Wechsel (<span className="font-mono">MSFT: HOLD → BUY</span>), darunter der Score, dazu 📈 oder 📉.
+                Geschützter Server: <span className="font-mono">https://nutzer:passwort@…/topic</span> oder mit Zugangstoken{' '}
+                <span className="font-mono">https://:tk_…@…/topic</span>.</>
+            : <>Leer = aus. Gesendet wird ein JSON-POST mit <span className="font-mono">text</span> (Slack) und{' '}
+                <span className="font-mono">content</span> (Discord) sowie Symbol, altem und neuem Urteil und Score.</>}
+        </p>
+      </Card>
+
+      {/* ── Watchlist ──────────────────────────────────────────────────── */}
+      <Card
+        title={`Watchlist (${watchedCount}/${meta.symbols.length})`}
+        hint="Nur aktivierte Aktien laufen im Zeitplan. Neue Aktien sind automatisch dabei."
+      >
+        <div className="flex gap-2">
+          <button
+            onClick={() => patch((d) => { d.watchlist = {}; })}
+            className="rounded border border-ink-700 px-2 py-1 text-xs text-ink-300 hover:bg-ink-800"
+          >
+            alle aktivieren
+          </button>
+          <button
+            onClick={() => patch((d) => {
+              d.watchlist = Object.fromEntries(meta.symbols.map((s) => [s.symbol, false]));
+            })}
+            className="rounded border border-ink-700 px-2 py-1 text-xs text-ink-300 hover:bg-ink-800"
+          >
+            alle deaktivieren
+          </button>
+        </div>
+        <div className="grid max-h-72 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto md:grid-cols-3">
+          {meta.symbols.map((s) => {
+            const on = config.watchlist[s.symbol] !== false;
+            return (
+              <label key={s.symbol} className="flex items-center gap-2 truncate">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={(e) => patch((d) => {
+                    // Absent means "watched", so only an explicit false is stored —
+                    // that keeps new symbols opted in by default.
+                    if (e.target.checked) delete d.watchlist[s.symbol];
+                    else d.watchlist[s.symbol] = false;
+                  })}
+                  className="accent-[var(--color-accent)]"
+                />
+                <span className="truncate text-xs text-ink-200">{s.companyName}</span>
+                <span className="ml-auto shrink-0 font-mono text-2xs text-ink-500">{s.symbol}</span>
+                <button
+                  onClick={(e) => { e.preventDefault(); runNow([s.symbol]); }}
+                  disabled={jobs?.running}
+                  title={`Nur ${s.symbol} jetzt laufen lassen`}
+                  className="shrink-0 rounded px-1 text-2xs text-ink-600 hover:bg-ink-800 hover:text-ink-200 disabled:opacity-30"
+                >
+                  ▶
+                </button>
+              </label>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* ── Läufe ──────────────────────────────────────────────────────── */}
+      <Card
+        title="Läufe"
+        hint={jobs?.running
+          ? `Läuft gerade${jobs.current?.currentSymbol ? ` — ${jobs.current.currentSymbol}` : ''}`
+          : `Nächster Lauf: ${fmtDateTime(jobs?.nextRun ?? null)}`}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => runNow()}
+            disabled={jobs?.running}
+            className="rounded border border-ink-600 bg-ink-800 px-3 py-1.5 text-sm text-ink-100 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ▶ Jetzt laufen ({jobs?.watched.length ?? 0} Aktien)
+          </button>
+          {jobs?.running && (
+            <button
+              onClick={stopRun}
+              className="rounded border border-amber-700 bg-amber-950 px-3 py-1.5 text-sm text-amber-300 transition hover:bg-amber-900"
+            >
+              ■ Stoppen
+            </button>
+          )}
+          {jobs?.current && (
+            <span className="text-xs text-ink-400">
+              {jobs.current.symbols.length}/{jobs.current.totals.symbols} erledigt ·{' '}
+              {fmtDuration(jobs.current.startedAt, null)} ·{' '}
+              <span className="text-ink-500">
+                Daten {jobs.current.totals.data} · Distill {jobs.current.totals.distill} · Analyse {jobs.current.totals.analysis}
+                {jobs.current.totals.reference > 0 && ` · Referenz ${jobs.current.totals.reference}`}
+              </span>
+              {jobs.current.totals.failed > 0 && (
+                <span className="text-red-400"> · {jobs.current.totals.failed} Fehler</span>
+              )}
+            </span>
+          )}
+        </div>
+
+        {(jobs?.runs.length ?? 0) === 0 ? (
+          <p className="text-xs text-ink-500">Noch keine Läufe aufgezeichnet.</p>
+        ) : (
+          <ul className="divide-y divide-ink-800">
+            {jobs!.runs.map((run) => (
+              <RunRow
+                key={run.id}
+                run={run}
+                expanded={expandedRun === run.id}
+                onToggle={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
+              />
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {/* ── Schlüssel ──────────────────────────────────────────────────── */}
+      <Card title="API-Schlüssel" hint="Nur Status — Werte werden ausschließlich aus der .env gelesen und nie ausgeliefert.">
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(meta.keys).map(([name, present]) => (
+            <span
+              key={name}
+              className={`rounded border px-2 py-0.5 text-xs ${
+                present
+                  ? 'border-emerald-700 bg-emerald-950 text-emerald-400'
+                  : 'border-ink-700 bg-ink-950 text-ink-500'
+              }`}
+            >
+              {present ? '✓' : '○'} {name}
+            </span>
+          ))}
+        </div>
+      </Card>
+    </Page>
   );
 }
 

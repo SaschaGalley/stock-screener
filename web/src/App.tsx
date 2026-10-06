@@ -588,8 +588,8 @@ export default function App() {
           detail={isAnalysis}
         />
       )}
-      {/* The other pages keep their own headers; below `lg`, where the left
-          column is not shown, the way to the rest of the app is this row. */}
+      {/* The other pages head themselves (see `Page`); below `lg`, where the
+          left column is not shown, the way to the rest of the app is this row. */}
       {!isTable && !isAnalysis && (
         <div className="flex shrink-0 justify-end border-b border-ink-800 bg-ink-900 px-3 py-1.5 lg:hidden">
           <NavIcons active={nav} onNavigate={navTo} />
@@ -597,12 +597,12 @@ export default function App() {
       )}
 
       <Suspense fallback={<div className="flex-1 p-4 text-sm text-ink-500">Lade …</div>}>
-        {isAdmin && <AdminPage onClose={closeOverlay} />}
-        {isEvaluation && <EvaluationPage onClose={closeOverlay} />}
-        {isFeed && <FeedPage onClose={closeOverlay} onSelect={handleSelectSymbol} />}
-        {isJournal && <JournalPage onClose={closeOverlay} symbols={rows.map((r) => r.symbol)} />}
-        {isDepot && <DepotPage onClose={closeOverlay} />}
-        {isReview && <ReviewPage onClose={closeOverlay} />}
+        {isAdmin && <AdminPage />}
+        {isEvaluation && <EvaluationPage />}
+        {isFeed && <FeedPage onSelect={handleSelectSymbol} />}
+        {isJournal && <JournalPage symbols={rows.map((r) => r.symbol)} />}
+        {isDepot && <DepotPage />}
+        {isReview && <ReviewPage />}
       </Suspense>
 
       {/* The list at full width. Cheap to rebuild, so it mounts and unmounts. */}

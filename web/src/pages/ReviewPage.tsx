@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
-import { CloseIcon } from '../components/icons';
+import Page from '../components/Page';
 import { ManualResearch, ReportCard } from '../components/ManualResearch';
 import { fmtSignedPct } from '../format';
 import { decisionRight, MIN_COMPARE, type ModelStance, type ReviewedDecision } from '../../../src/analysis/review';
@@ -35,7 +35,7 @@ const FILTERS: { key: Filter; label: string; test: (d: ReviewedDecision) => bool
  * for it, and the groups compared — after a jump or not, with the model or
  * against it, with a reason or without. See `analysis/review.ts`.
  */
-export default function ReviewPage({ onClose }: { onClose: () => void }) {
+export default function ReviewPage() {
   const [data, setData] = useState<ReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
@@ -70,110 +70,97 @@ export default function ReviewPage({ onClose }: { onClose: () => void }) {
 
   const shown = data ? data.decisions.filter(FILTERS.find((f) => f.key === filter)!.test) : [];
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-5xl space-y-4 p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-base font-semibold text-ink-100">Rückblick</h2>
-          <span className="text-xs text-ink-500">Meine Käufe und Verkäufe gegen den S&amp;P 500</span>
-          <button
-            onClick={onClose}
-            title="Schließen (Esc)"
-            className="ml-auto rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
-          >
-            <CloseIcon />
-          </button>
-        </div>
+    <Page title="Rückblick" subtitle="Meine Käufe und Verkäufe gegen den S&amp;P 500">
 
-        {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
-        {!data && !error && <p className="p-8 text-center text-sm text-ink-500">Rechne nach …</p>}
-        {data?.syncError && <p className="text-xs text-amber-300">⚠ {data.syncError}</p>}
-        {data && data.decisions.length === 0 && (
-          <p className="text-sm text-ink-500">
-            Noch keine Käufe oder Verkäufe — weder im <a href="#/journal" className="text-accent hover:underline">Journal</a> noch aus umsatz.
-          </p>
-        )}
+      {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
+      {!data && !error && <p className="p-8 text-center text-sm text-ink-500">Rechne nach …</p>}
+      {data?.syncError && <p className="text-xs text-amber-300">⚠ {data.syncError}</p>}
+      {data && data.decisions.length === 0 && (
+        <p className="text-sm text-ink-500">
+          Noch keine Käufe oder Verkäufe — weder im <a href="#/journal" className="text-accent hover:underline">Journal</a> noch aus umsatz.
+        </p>
+      )}
 
-        {data && data.decisions.length > 0 && (
-          <>
-            <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
-              <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Was sich zeigt</h3>
-              <ul className="space-y-0.5 text-sm text-ink-200">
-                {data.notes.map((n) => <li key={n}>{n}</li>)}
-                {causes.size > 0 && (
-                  <li>
-                    Rückblick-Checks: {[...causes].map(([k, n]) => `${REVIEW_CAUSE_LABEL[k]} (${n}×)`).join('; ')}.
-                  </li>
-                )}
-              </ul>
-              <p className="mt-2 text-2xs text-ink-500">
-                Gemessen wie unsere Urteile: Aktie gegen den S&amp;P 500 (SPY, mit Dividenden), in Dollar, vom Tag der
-                Entscheidung an. Ein Kauf lag richtig, wenn die Aktie danach vorn lag, ein Verkauf, wenn sie zurückblieb.
-                Auf ein paar Dutzend Entscheidungen sind das Hinweise, keine Befunde.
-                {data.unmeasured > 0 && ` ${data.unmeasured} Entscheidungen betreffen Werte ohne gespeicherte Kurse und sind nicht gemessen.`}
-              </p>
-            </section>
+      {data && data.decisions.length > 0 && (
+        <>
+          <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
+            <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Was sich zeigt</h3>
+            <ul className="space-y-0.5 text-sm text-ink-200">
+              {data.notes.map((n) => <li key={n}>{n}</li>)}
+              {causes.size > 0 && (
+                <li>
+                  Rückblick-Checks: {[...causes].map(([k, n]) => `${REVIEW_CAUSE_LABEL[k]} (${n}×)`).join('; ')}.
+                </li>
+              )}
+            </ul>
+            <p className="mt-2 text-2xs text-ink-500">
+              Gemessen wie unsere Urteile: Aktie gegen den S&amp;P 500 (SPY, mit Dividenden), in Dollar, vom Tag der
+              Entscheidung an. Ein Kauf lag richtig, wenn die Aktie danach vorn lag, ein Verkauf, wenn sie zurückblieb.
+              Auf ein paar Dutzend Entscheidungen sind das Hinweise, keine Befunde.
+              {data.unmeasured > 0 && ` ${data.unmeasured} Entscheidungen betreffen Werte ohne gespeicherte Kurse und sind nicht gemessen.`}
+            </p>
+          </section>
 
-            <section className="overflow-x-auto rounded-lg border border-ink-800">
-              <table className="w-full min-w-[40rem] text-xs">
-                <thead className="bg-ink-900 text-2xs uppercase tracking-wider text-ink-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Gruppe</th>
-                    {RECORD_HORIZONS.map((h) => <th key={h} className="px-2 py-2 text-right">{h} M</th>)}
+          <section className="overflow-x-auto rounded-lg border border-ink-800">
+            <table className="w-full min-w-[40rem] text-xs">
+              <thead className="bg-ink-900 text-2xs uppercase tracking-wider text-ink-500">
+                <tr>
+                  <th className="px-3 py-2 text-left">Gruppe</th>
+                  {RECORD_HORIZONS.map((h) => <th key={h} className="px-2 py-2 text-right">{h} M</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-800">
+                {data.rows.filter((r) => RECORD_HORIZONS.some((h) => r.cells[h].n > 0)).map((r) => (
+                  <tr key={r.label}>
+                    <td className="px-3 py-1.5 text-ink-300">{r.label}</td>
+                    {RECORD_HORIZONS.map((h) => {
+                      const c = r.cells[h];
+                      const thin = c.n < MIN_COMPARE;
+                      return (
+                        <td key={h} className={`px-2 py-1.5 text-right font-mono ${thin ? 'text-ink-600' : ''}`}
+                          title={c.n ? `${c.n} Entscheidungen; ${Math.round((c.right ?? 0) * 100)} % lagen richtig` : undefined}>
+                          {c.median === null ? '—' : (
+                            <>
+                              <span className={thin ? '' : decisionRight(r.side, c.median) ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedPct(c.median)}</span>
+                              <span className="text-ink-600"> ({c.n})</span>
+                            </>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-ink-800">
-                  {data.rows.filter((r) => RECORD_HORIZONS.some((h) => r.cells[h].n > 0)).map((r) => (
-                    <tr key={r.label}>
-                      <td className="px-3 py-1.5 text-ink-300">{r.label}</td>
-                      {RECORD_HORIZONS.map((h) => {
-                        const c = r.cells[h];
-                        const thin = c.n < MIN_COMPARE;
-                        return (
-                          <td key={h} className={`px-2 py-1.5 text-right font-mono ${thin ? 'text-ink-600' : ''}`}
-                            title={c.n ? `${c.n} Entscheidungen; ${Math.round((c.right ?? 0) * 100)} % lagen richtig` : undefined}>
-                            {c.median === null ? '—' : (
-                              <>
-                                <span className={thin ? '' : decisionRight(r.side, c.median) ? 'text-emerald-400' : 'text-red-400'}>{fmtSignedPct(c.median)}</span>
-                                <span className="text-ink-600"> ({c.n})</span>
-                              </>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="px-3 py-1.5 text-2xs text-ink-600">
-                Median gegenüber dem S&amp;P 500, in Klammern die Zahl der Entscheidungen; grau unter {MIN_COMPARE}. Grün, wo die
-                Gruppe im Median richtig lag — bei Verkäufen heißt das: die Aktie blieb danach zurück.
-              </p>
-            </section>
+                ))}
+              </tbody>
+            </table>
+            <p className="px-3 py-1.5 text-2xs text-ink-600">
+              Median gegenüber dem S&amp;P 500, in Klammern die Zahl der Entscheidungen; grau unter {MIN_COMPARE}. Grün, wo die
+              Gruppe im Median richtig lag — bei Verkäufen heißt das: die Aktie blieb danach zurück.
+            </p>
+          </section>
 
-            <section className="space-y-2">
-              <div className="flex flex-wrap gap-1.5">
-                {FILTERS.map((f) => (
-                  <button
-                    key={f.key}
-                    onClick={() => setFilter(f.key)}
-                    className={`rounded-full border px-2 py-0.5 text-xs transition ${
-                      filter === f.key ? 'border-ink-600 bg-ink-700 text-ink-50' : 'border-ink-800 text-ink-400 hover:text-ink-200'
-                    }`}
-                  >
-                    {f.label} <span className="font-mono text-ink-500">{data.decisions.filter(f.test).length}</span>
-                  </button>
-                ))}
-              </div>
-              <ul className="space-y-2">
-                {shown.map((d) => (
-                  <DecisionCard key={d.key} d={d} checks={checks.get(d.key) ?? []} onChecked={() => void loadChecks()} />
-                ))}
-              </ul>
-            </section>
-          </>
-        )}
-      </div>
-    </div>
+          <section className="space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`rounded-full border px-2 py-0.5 text-xs transition ${
+                    filter === f.key ? 'border-ink-600 bg-ink-700 text-ink-50' : 'border-ink-800 text-ink-400 hover:text-ink-200'
+                  }`}
+                >
+                  {f.label} <span className="font-mono text-ink-500">{data.decisions.filter(f.test).length}</span>
+                </button>
+              ))}
+            </div>
+            <ul className="space-y-2">
+              {shown.map((d) => (
+                <DecisionCard key={d.key} d={d} checks={checks.get(d.key) ?? []} onChecked={() => void loadChecks()} />
+              ))}
+            </ul>
+          </section>
+        </>
+      )}
+    </Page>
   );
 }
 

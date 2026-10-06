@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { CloseIcon } from '../components/icons';
+import Page, { HeaderButton } from '../components/Page';
 import RecommendationBadge from '../components/RecommendationBadge';
 import StockLogo, { initialsFromName } from '../components/StockLogo';
 import { HEADER_HEIGHT, HEADER_RULE, ROW_HEIGHT, ROW_RULE } from '../components/StockRowCells';
@@ -36,7 +36,7 @@ const openStock = (symbol: string) => { window.location.hash = `#/stock/${encode
  * out — concentrations, sell verdicts, missing reasons. Things to look at,
  * not orders: see `analysis/depot.ts` for why there are no target weights.
  */
-export default function DepotPage({ onClose }: { onClose: () => void }) {
+export default function DepotPage() {
   const [data, setData] = useState<DepotResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -53,112 +53,97 @@ export default function DepotPage({ onClose }: { onClose: () => void }) {
 
   const view = data?.view ?? null;
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-6xl space-y-4 p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-base font-semibold text-ink-100">Depot</h2>
-          <span className="text-xs text-ink-500">gegen das Modell</span>
-          {view && <span className="font-mono text-sm text-ink-200">{eur(view.totalEur)}</span>}
-          <div className="ml-auto flex items-center gap-3">
-            <a href="#/review" className="text-xs text-accent hover:underline">Rückblick →</a>
-            {data?.configured && (
-              <button
-                onClick={async () => { setSyncing(true); await load(true); setSyncing(false); }}
-                disabled={syncing}
-                title={data.syncedAt ? `Zuletzt abgeglichen ${new Date(data.syncedAt).toLocaleString('de-DE')}` : undefined}
-                className="text-xs text-ink-400 hover:text-ink-200 disabled:opacity-40"
-              >
-                {syncing ? '⟳ gleiche ab …' : '↻ Mit umsatz abgleichen'}
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              title="Schließen (Esc)"
-              className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
-            >
-              <CloseIcon />
-            </button>
+    <Page
+      title="Depot"
+      subtitle={<>gegen das Modell{view && <> · <span className="font-mono text-ink-200">{eur(view.totalEur)}</span></>}</>}
+      width="max-w-6xl"
+      actions={data?.configured && (
+        <HeaderButton
+          onClick={async () => { setSyncing(true); await load(true); setSyncing(false); }}
+          disabled={syncing}
+          title={data.syncedAt ? `Zuletzt abgeglichen ${new Date(data.syncedAt).toLocaleString('de-DE')}` : undefined}
+        >
+          {syncing ? '⟳ gleiche ab …' : '↻ Mit umsatz abgleichen'}
+        </HeaderButton>
+      )}
+    >
+      {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
+      {!data && !error && <p className="p-8 text-center text-sm text-ink-500">Lese das Depot …</p>}
+      {data && !data.configured && (
+        <p className="text-sm text-ink-400">
+          umsatz ist nicht verbunden. Mit <span className="font-mono">UMSATZ_API_KEY</span> (und in Produktion{' '}
+          <span className="font-mono">UMSATZ_API_URL</span>) liest diese Seite die Trades und Kurse von dort.
+        </p>
+      )}
+      {data?.syncError && <p className="text-xs text-amber-300">⚠ {data.syncError}</p>}
+      {data?.configured && !view && !data.syncError && <p className="text-sm text-ink-500">Noch keine Trades aus umsatz.</p>}
+
+      {view && (
+        <>
+          <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
+            <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Was auffällt</h3>
+            <ul className="space-y-0.5 text-sm text-ink-200">
+              {view.findings.map((f) => <li key={f}>{f}</li>)}
+            </ul>
+            <p className="mt-2 text-2xs text-ink-500">
+              Keine Zielgewichte: Der Score hat als Portfolio-Regel den vorab festgelegten Test nicht bestanden. Die
+              Hinweise sind Prüfpunkte — ▼ spricht dafür, weniger zu halten, ▲ für mehr, ? fehlt etwas —, keine Aufträge.
+            </p>
+          </section>
+
+          <section className="overflow-x-auto rounded-lg border border-ink-800">
+            <table className="w-full min-w-[56rem] border-collapse text-sm">
+              <thead className="whitespace-nowrap bg-ink-900 text-2xs uppercase tracking-wider text-ink-500">
+                <tr className={`${HEADER_HEIGHT} ${HEADER_RULE}`}>
+                  <th className="px-3 py-0 text-left font-semibold">Position</th>
+                  <th className="px-2 py-0 text-left font-semibold">Gewicht</th>
+                  <th className="px-2 py-0 text-right font-semibold">Wert</th>
+                  <th className="px-2 py-0 text-right font-semibold">seit Kauf</th>
+                  <th className="px-2 py-0 text-right font-semibold">Score</th>
+                  <th className="px-2 py-0 text-left font-semibold">Verdict</th>
+                  <th className="px-2 py-0 text-left font-semibold">Begründung</th>
+                  <th className="px-3 py-0 text-left font-semibold">Hinweise</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.positions.map((p) => <PositionRow key={p.isin} p={p} limit={view.limits.maxPosition} />)}
+              </tbody>
+            </table>
+          </section>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Shares title="Aktien nach Sektor" rows={view.sectors.map((s) => ({ label: s.sector, weight: s.weight }))} limit={view.limits.maxSector} />
+            <Shares title="Depot nach Anlageart" rows={view.byType.map((t) => ({ label: TYPE_LABEL[t.assetType] ?? t.assetType, weight: t.weight }))} />
           </div>
-        </div>
 
-        {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
-        {!data && !error && <p className="p-8 text-center text-sm text-ink-500">Lese das Depot …</p>}
-        {data && !data.configured && (
-          <p className="text-sm text-ink-400">
-            umsatz ist nicht verbunden. Mit <span className="font-mono">UMSATZ_API_KEY</span> (und in Produktion{' '}
-            <span className="font-mono">UMSATZ_API_URL</span>) liest diese Seite die Trades und Kurse von dort.
-          </p>
-        )}
-        {data?.syncError && <p className="text-xs text-amber-300">⚠ {data.syncError}</p>}
-        {data?.configured && !view && !data.syncError && <p className="text-sm text-ink-500">Noch keine Trades aus umsatz.</p>}
-
-        {view && (
-          <>
-            <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
-              <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Was auffällt</h3>
-              <ul className="space-y-0.5 text-sm text-ink-200">
-                {view.findings.map((f) => <li key={f}>{f}</li>)}
-              </ul>
-              <p className="mt-2 text-2xs text-ink-500">
-                Keine Zielgewichte: Der Score hat als Portfolio-Regel den vorab festgelegten Test nicht bestanden. Die
-                Hinweise sind Prüfpunkte — ▼ spricht dafür, weniger zu halten, ▲ für mehr, ? fehlt etwas —, keine Aufträge.
-              </p>
-            </section>
-
-            <section className="overflow-x-auto rounded-lg border border-ink-800">
-              <table className="w-full min-w-[56rem] border-collapse text-sm">
-                <thead className="whitespace-nowrap bg-ink-900 text-2xs uppercase tracking-wider text-ink-500">
-                  <tr className={`${HEADER_HEIGHT} ${HEADER_RULE}`}>
-                    <th className="px-3 py-0 text-left font-semibold">Position</th>
-                    <th className="px-2 py-0 text-left font-semibold">Gewicht</th>
-                    <th className="px-2 py-0 text-right font-semibold">Wert</th>
-                    <th className="px-2 py-0 text-right font-semibold">seit Kauf</th>
-                    <th className="px-2 py-0 text-right font-semibold">Score</th>
-                    <th className="px-2 py-0 text-left font-semibold">Verdict</th>
-                    <th className="px-2 py-0 text-left font-semibold">Begründung</th>
-                    <th className="px-3 py-0 text-left font-semibold">Hinweise</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.positions.map((p) => <PositionRow key={p.isin} p={p} limit={view.limits.maxPosition} />)}
-                </tbody>
-              </table>
-            </section>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <Shares title="Aktien nach Sektor" rows={view.sectors.map((s) => ({ label: s.sector, weight: s.weight }))} limit={view.limits.maxSector} />
-              <Shares title="Depot nach Anlageart" rows={view.byType.map((t) => ({ label: TYPE_LABEL[t.assetType] ?? t.assetType, weight: t.weight }))} />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {view.candidates.length > 0 && (
-                <section className="rounded-lg border border-ink-800 px-4 py-3">
-                  <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Laut Modell BUY, nicht im Depot</h3>
-                  <ul className="-mx-2">
-                    {view.candidates.slice(0, 10).map((c) => (
-                      <li key={c.symbol}>
-                        <button
-                          onClick={() => openStock(c.symbol)}
-                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-left transition hover:bg-ink-800"
-                        >
-                          <StockLogo symbol={c.symbol} domain={null} fallbackInitials={initialsFromName(c.name ?? c.symbol)} size={18} />
-                          <span className="min-w-0 flex-1 truncate text-sm text-ink-100">
-                            {c.name ?? c.symbol} <span className="font-mono text-2xs text-ink-500">{c.symbol}</span>
-                          </span>
-                          <RecommendationBadge rec={c.verdict} size="sm" />
-                          <span className={`w-8 text-right font-mono text-sm font-semibold tabular ${scoreColor(c.score)}`}>{c.score.toFixed(1)}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-              {data?.evidence && <Evidence records={data.evidence} />}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {view.candidates.length > 0 && (
+              <section className="rounded-lg border border-ink-800 px-4 py-3">
+                <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Laut Modell BUY, nicht im Depot</h3>
+                <ul className="-mx-2">
+                  {view.candidates.slice(0, 10).map((c) => (
+                    <li key={c.symbol}>
+                      <button
+                        onClick={() => openStock(c.symbol)}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1 text-left transition hover:bg-ink-800"
+                      >
+                        <StockLogo symbol={c.symbol} domain={null} fallbackInitials={initialsFromName(c.name ?? c.symbol)} size={18} />
+                        <span className="min-w-0 flex-1 truncate text-sm text-ink-100">
+                          {c.name ?? c.symbol} <span className="font-mono text-2xs text-ink-500">{c.symbol}</span>
+                        </span>
+                        <RecommendationBadge rec={c.verdict} size="sm" />
+                        <span className={`w-8 text-right font-mono text-sm font-semibold tabular ${scoreColor(c.score)}`}>{c.score.toFixed(1)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {data?.evidence && <Evidence records={data.evidence} />}
+          </div>
+        </>
+      )}
+    </Page>
   );
 }
 
