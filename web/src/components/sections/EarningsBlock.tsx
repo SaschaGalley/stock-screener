@@ -20,7 +20,7 @@ export default function EarningsBlock({ financials: f }: Props) {
       )}
       {f.earningsSurprises?.length > 0 && (
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-2 text-xs font-semibold text-ink-300">
             <Term k="concept.surprises">Past Surprises (last 4 qtrs)</Term>
           </h3>
           <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 200 }}>
@@ -53,7 +53,7 @@ export default function EarningsBlock({ financials: f }: Props) {
 
       {f.earningsEstimates?.length > 0 && (
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-2 text-xs font-semibold text-ink-300">
             <Term k="concept.forwardEstimates">Forward Estimates (analyst consensus)</Term>
           </h3>
           <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 200 }}>

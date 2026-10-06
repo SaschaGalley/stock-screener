@@ -24,9 +24,9 @@ export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
   const [details, setDetails] = useState(false);
 
   return (
-    <div className="rounded-lg border border-ink-800 bg-ink-900 p-4">
+    <div className="rounded-lg border border-ink-700 bg-ink-900 p-4">
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">Wie der Score entsteht</h3>
+        <h3 className="text-[15px] font-semibold text-ink-50">Wie der Score entsteht</h3>
         <button
           onClick={() => setDetails((x) => !x)}
           aria-expanded={details}

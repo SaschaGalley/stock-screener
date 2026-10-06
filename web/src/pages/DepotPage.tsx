@@ -95,7 +95,7 @@ export default function DepotPage({ onClose }: { onClose: () => void }) {
         {view && (
           <>
             <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">Was auffällt</h3>
+              <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Was auffällt</h3>
               <ul className="space-y-0.5 text-sm text-ink-200">
                 {view.findings.map((f) => <li key={f}>{f}</li>)}
               </ul>
@@ -133,7 +133,7 @@ export default function DepotPage({ onClose }: { onClose: () => void }) {
             <div className="grid gap-4 md:grid-cols-2">
               {view.candidates.length > 0 && (
                 <section className="rounded-lg border border-ink-800 px-4 py-3">
-                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">Laut Modell BUY, nicht im Depot</h3>
+                  <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Laut Modell BUY, nicht im Depot</h3>
                   <ul className="-mx-2">
                     {view.candidates.slice(0, 10).map((c) => (
                       <li key={c.symbol}>
@@ -236,7 +236,7 @@ function Shares({ title, rows, limit }: { title: string; rows: { label: string; 
   if (rows.length === 0) return null;
   return (
     <section className="rounded-lg border border-ink-800 px-4 py-3">
-      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">{title}</h3>
+      <h3 className="mb-1.5 text-xs font-semibold text-ink-300">{title}</h3>
       <ul className="space-y-1 text-xs">
         {rows.map((r) => (
           <li key={r.label} className="flex items-center gap-2">
@@ -263,7 +263,7 @@ function Evidence({ records }: { records: VerdictRecord[] }) {
   const horizon = records[0]?.horizon ?? 0;
   return (
     <section className="rounded-lg border border-ink-800 px-4 py-3">
-      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">Was ein Urteil im Backtest wert war</h3>
+      <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Was ein Urteil im Backtest wert war</h3>
       <ul className="space-y-1 text-xs">
         {sorted.map((r) => (
           <li key={r.verdict} className="flex items-center gap-2">

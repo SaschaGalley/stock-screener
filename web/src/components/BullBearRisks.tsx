@@ -48,7 +48,7 @@ export default function BullBearRisks({ llm, scenarios }: Props) {
       </div>
       {cases.undirected.length > 0 && (
         <article className="rounded-lg border border-ink-700 border-l-4 border-l-amber-500 bg-ink-900 px-4 py-3">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-300">Was das Urteil ändern würde</h3>
+          <h3 className="mb-2 text-xs font-semibold text-ink-300">Was das Urteil ändern würde</h3>
           <ul className="grid gap-x-6 gap-y-1.5 md:grid-cols-2">
             {cases.undirected.map((w, i) => (
               <li key={i} className="text-xs leading-relaxed text-ink-300">{w}</li>
@@ -76,7 +76,7 @@ function CaseCard({ direction, side, price, scenarios }: {
     <article className={`flex flex-col rounded-lg border border-ink-700 ${a.border} border-l-4 bg-ink-900 p-4`}>
       <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className={`text-base font-bold ${a.text}`}>{a.icon}</span>
-        <h3 className="text-[15px] font-semibold text-ink-100">{CASE_TITLE[direction]}</h3>
+        <h3 className="text-[15px] font-semibold text-ink-50">{CASE_TITLE[direction]}</h3>
         {price !== undefined && shown.length > 0 && (
           <div className="ml-auto flex flex-wrap justify-end gap-1.5">
             {shown.map((s) => (
@@ -129,7 +129,7 @@ function CaseCard({ direction, side, price, scenarios }: {
 
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">{children}</h4>
+    <h4 className="mb-1.5 text-xs font-semibold text-ink-300">{children}</h4>
   );
 }
 

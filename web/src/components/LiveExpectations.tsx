@@ -38,7 +38,7 @@ export default function LiveExpectations({ monthly, bt }: { monthly: Monthly; bt
   return (
     <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">
+        <h3 className="text-xs font-semibold text-ink-300">
           Live gegen Backtest
           <span className="font-normal normal-case text-ink-500"> · {monthly.months.length} {monthly.months.length === 1 ? 'Monatsende' : 'Monatsenden'} mit dem Universum</span>
         </h3>

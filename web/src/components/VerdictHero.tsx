@@ -115,7 +115,7 @@ export default function VerdictHero({
                 <span className="ml-1 font-mono text-sm font-semibold text-ink-100">{deNumber(llm.score, 1)}/10</span>
               </div>
             </div>
-            <p className="mt-3 text-sm leading-relaxed text-ink-300">
+            <p className="mt-3 text-[15px] leading-relaxed text-ink-200">
               {llm.thesis}
             </p>
             <VerdictEvidence verdict={llm.recommendation} />
@@ -252,10 +252,10 @@ export default function VerdictHero({
 /** `meta` sits right-aligned in the header — provenance, not content. */
 function Card({ title, info, meta, children }: { title: string; info?: GlossaryKey; meta?: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex flex-col rounded-lg border border-ink-800 bg-ink-900 p-4">
+    <div className="flex flex-col rounded-lg border border-ink-700 bg-ink-900 p-4">
       {/* Wraps, so a long analysis label moves under the title on a phone instead of widening every card. */}
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500"><Term k={info}>{title}</Term></h3>
+        <h3 className="text-[15px] font-semibold text-ink-50"><Term k={info}>{title}</Term></h3>
         {meta && <span className="min-w-0 text-2xs text-ink-500">{meta}</span>}
       </div>
       <div className="flex-1">{children}</div>

@@ -32,7 +32,7 @@ export default function BacktestPortfolios({ bt }: { bt: Backtest }) {
   return (
     <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Portfolios gegen den Index · {pf.from.slice(0, 7)} bis {pf.to.slice(0, 7)}</h3>
+        <h3 className="text-xs font-semibold text-ink-300">Portfolios gegen den Index · {pf.from.slice(0, 7)} bis {pf.to.slice(0, 7)}</h3>
         <p className="mt-0.5 text-xs text-ink-500">
           An jedem Umschichtungstermin die besten N Aktien nach dem Signal kaufen, zu gleichen Teilen, und bis zum nächsten Termin halten.
           Dividendenbereinigte Kurse, {plain(pf.costPerSide, 2)} Kosten je gekaufter oder verkaufter Position, ohne Steuern. Der MSCI World

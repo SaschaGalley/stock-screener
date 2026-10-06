@@ -96,7 +96,7 @@ export default function ReviewPage({ onClose }: { onClose: () => void }) {
         {data && data.decisions.length > 0 && (
           <>
             <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">Was sich zeigt</h3>
+              <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Was sich zeigt</h3>
               <ul className="space-y-0.5 text-sm text-ink-200">
                 {data.notes.map((n) => <li key={n}>{n}</li>)}
                 {causes.size > 0 && (

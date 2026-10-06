@@ -13,7 +13,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
     <div className="grid gap-4 lg:grid-cols-3">
       {/* Short interest */}
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Short Interest</h3>
+        <h3 className="mb-2 text-xs font-semibold text-ink-300">Short Interest</h3>
         {f.shortPercentOfFloat != null && Number.isFinite(f.shortPercentOfFloat) ? (
           <table className="w-full text-xs tabular">
             <tbody>
@@ -33,7 +33,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
 
       {/* Ownership */}
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Ownership</h3>
+        <h3 className="mb-2 text-xs font-semibold text-ink-300">Ownership</h3>
         {(f.institutionsPercentHeld != null || f.insidersPercentHeld != null) ? (
           <table className="w-full text-xs tabular">
             <tbody>
@@ -52,7 +52,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
 
       {/* Insider activity */}
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="mb-2 text-xs font-semibold text-ink-300">
           <Term k="concept.insiderActivity">Insider Activity</Term> <span className="text-ink-500">(6mo)</span>
         </h3>
         {(f.insiderBuyCount > 0 || f.insiderSellCount > 0) ? (

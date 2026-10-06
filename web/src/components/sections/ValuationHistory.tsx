@@ -358,7 +358,7 @@ function MultiplesTable({ history, sector, fair }: { history: History; sector: S
 
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-2 text-xs font-semibold text-ink-300">
         <Term k="concept.vh.multiplesTable">Multiples gegen Historie und Branche</Term>
       </h3>
       <table className="w-full text-xs tabular">

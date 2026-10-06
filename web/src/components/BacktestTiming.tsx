@@ -26,7 +26,7 @@ export default function BacktestTiming({ bt, horizon, monthName }: { bt: Backtes
   return (
     <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">
+        <h3 className="text-xs font-semibold text-ink-300">
           Timing: lohnt es, auf den Chart zu warten? · {monthName(h)}
         </h3>
         <p className="mt-0.5 text-xs text-ink-500">

@@ -249,7 +249,7 @@ export function ResearchReports({ symbol, kinds, tick, title }: {
   if (!reports || reports.length === 0) return null;
   return (
     <div className="space-y-2">
-      <h4 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">{title}</h4>
+      <h4 className="text-xs font-semibold text-ink-300">{title}</h4>
       {reports.map((r, i) => <ReportCard key={r.id} report={r} open={i === 0} onDelete={() => void remove(r)} />)}
     </div>
   );

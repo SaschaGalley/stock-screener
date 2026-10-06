@@ -272,7 +272,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
           </Section>
 
           <div className="border-t border-ink-800 pt-4">
-            <h3 className="mb-3 text-2xs font-semibold uppercase tracking-wider text-ink-400">
+            <h3 className="mb-3 text-xs font-semibold text-ink-300">
               Neu rechnen
             </h3>
 
@@ -390,7 +390,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      <h3 className="text-xs font-semibold text-ink-300">{title}</h3>
       {hint && <p className="mb-1.5 mt-0.5 text-xs text-ink-500">{hint}</p>}
       <div className={hint ? '' : 'mt-1.5'}>{children}</div>
     </div>

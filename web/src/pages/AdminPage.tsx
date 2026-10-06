@@ -54,7 +54,7 @@ function Card({ title, hint, children }: { title: string; hint?: string; childre
   return (
     <section className="rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">{title}</h3>
+        <h3 className="text-xs font-semibold text-ink-300">{title}</h3>
         {hint && <p className="mt-0.5 text-xs text-ink-500">{hint}</p>}
       </header>
       <div className="space-y-3 p-4">{children}</div>

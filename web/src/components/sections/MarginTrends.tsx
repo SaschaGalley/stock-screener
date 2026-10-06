@@ -24,7 +24,7 @@ export default function MarginTrends({ history }: { history: AnnualHistory }) {
 
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-2 text-xs font-semibold text-ink-300">
         <Term k="concept.marginTrends">Margen &amp; Renditen im Verlauf</Term>
       </h3>
       <table className="w-full text-xs tabular">

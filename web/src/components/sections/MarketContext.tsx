@@ -24,7 +24,7 @@ export default function MarketContext({ marketSignals: ms }: Props) {
 function Block({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      <h3 className="mb-2 text-xs font-semibold text-ink-300">{title}</h3>
       {children}
     </div>
   );

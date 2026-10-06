@@ -55,7 +55,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
     <div className="grid gap-4 lg:grid-cols-2">
       {/* Single-equation models */}
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="mb-2 text-xs font-semibold text-ink-300">
           <Term k="concept.singleEquation">Single-Equation Models</Term>
         </h3>
         <table className="w-full text-xs tabular">
@@ -96,7 +96,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
       {/* Peer multiples + reverse DCF */}
       <div className="space-y-4">
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-2 text-xs font-semibold text-ink-300">
             <Term k="metrics.peerMultiples.medianFairPrice">Peer-Multiples Fair Value</Term> <span className="text-ink-500">({peerMultiples.count} multiples)</span>
           </h3>
           {peerMultiples.byMultiple.length > 0 ? (
@@ -147,7 +147,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
         </div>
 
         <div>
-          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
             <Term k="metrics.reverseDCF.impliedGrowthRate">Reverse DCF</Term>
           </h3>
           {reverseDCF.isPossible && reverseDCF.impliedGrowthRate !== null ? (
@@ -166,7 +166,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
         </div>
 
         <div>
-          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
             <Term k="metrics.reverseDCF.impliedMargin.requiredMargin">Margin the price requires</Term>
           </h3>
           {impliedMargin ? (

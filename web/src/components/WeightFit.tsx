@@ -83,7 +83,7 @@ export default function WeightFit({ v, inForce }: { v: Validation; inForce: InFo
   return (
     <section className="rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Gewichte: angepasst und auf ungesehenen Jahren geprüft</h3>
+        <h3 className="text-xs font-semibold text-ink-300">Gewichte: angepasst und auf ungesehenen Jahren geprüft</h3>
         <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
           Jedes Gewicht wird um den IC seines Kriteriums über {months(v.horizon)} gekippt, zur Null geschrumpft um seinen
           Standardfehler — erst die Kriterien in ihrer Säule, dann die Säulen. Wie weit, liest die Regel aus der Streuung der

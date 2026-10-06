@@ -38,7 +38,7 @@ export default function IncomeFlowChart({ symbol }: { symbol: string }) {
   return (
     <div>
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="text-xs font-semibold text-ink-300">
           <Term k="concept.incomeFlow">Vom Umsatz zum Gewinn</Term>
         </h3>
         <div className="flex flex-wrap gap-1">

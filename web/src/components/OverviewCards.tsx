@@ -59,13 +59,12 @@ function TopicCard({ tab, label, headline, tone, children, onTab, className = ''
       onClick={() => onTab(tab)}
       className={`group flex flex-col rounded-lg border border-ink-700 bg-ink-900 p-3 text-left transition hover:border-ink-600 hover:bg-ink-800 ${className}`}
     >
-      <div className="text-2xs font-semibold uppercase tracking-wider text-ink-500">{label}</div>
-      <div className="mt-1 flex gap-2 text-sm font-semibold leading-snug text-ink-100">
+      <div className="flex items-center justify-between text-xs font-semibold text-ink-400">{label}<span className="font-normal text-accent opacity-0 transition group-hover:opacity-100">Details →</span></div>
+      <div className="mt-1.5 flex gap-2 text-base font-semibold leading-snug text-ink-50">
         <span className={`mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full ${TONE_DOT[tone]}`} />
         <span>{headline}</span>
       </div>
-      <div className="mt-2 flex-1 text-xs text-ink-400">{children}</div>
-      <div className="mt-2 text-xs text-accent opacity-70 transition group-hover:opacity-100">Details →</div>
+      <div className="mt-3 flex-1 text-sm text-ink-400">{children}</div>
     </button>
   );
 }

@@ -218,7 +218,7 @@ function Group({ title, hint, empty, children }: {
 }) {
   return (
     <section>
-      <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-400">{title}</h3>
+      <h3 className="text-xs font-semibold text-ink-300">{title}</h3>
       <p className="mb-2 mt-0.5 text-xs leading-snug text-ink-500">{hint}</p>
       {children.length === 0
         ? <p className="text-xs text-ink-500">{empty}</p>

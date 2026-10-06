@@ -93,7 +93,7 @@ export default function FeedPage({ onClose, onSelect }: { onClose: () => void; o
 
         {feed && feed.upcoming.length > 0 && (
           <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
-            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">Quartalszahlen in den nächsten zwei Wochen</h3>
+            <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Quartalszahlen in den nächsten zwei Wochen</h3>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
               {feed.upcoming.map((e) => (
                 <button key={`${e.symbol}-${e.day}`} onClick={() => onSelect(e.symbol)} className="text-ink-300 hover:text-ink-100" title={e.name ?? e.symbol}>
@@ -128,7 +128,7 @@ export default function FeedPage({ onClose, onSelect }: { onClose: () => void; o
         <div className="space-y-4">
           {byDay.map((g) => (
             <section key={g.day}>
-              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-500">{fmtDay(g.day)}{g.day.slice(0, 4) !== new Date().toISOString().slice(0, 4) ? g.day.slice(0, 4) : ''}</h3>
+              <h3 className="mb-1.5 text-xs font-semibold text-ink-300">{fmtDay(g.day)}{g.day.slice(0, 4) !== new Date().toISOString().slice(0, 4) ? g.day.slice(0, 4) : ''}</h3>
               <ul className="space-y-1 border-l border-ink-800 pl-3">
                 {g.events.map((e, i) => (
                   <li key={i} className="relative flex gap-2 text-xs leading-snug">

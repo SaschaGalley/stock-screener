@@ -158,11 +158,11 @@ export default function Section({ title, subtitle, defaultOpen = true, children,
       {fixed ? (
         <div className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ink-700 bg-ink-900 px-4 py-2.5">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-            <h2 className="text-sm font-semibold text-ink-100">
+            <h2 className="text-[15px] font-semibold text-ink-50">
               {info ? <Term k={info}>{title}</Term> : title}
             </h2>
             {found
-              ? <span className="text-xs text-ink-300">{found}</span>
+              ? <span className="text-sm text-ink-300">{found}</span>
               : subtitle && <span className="text-xs text-ink-500">{subtitle}</span>}
           </div>
           {rightHeader && <div className="flex items-center gap-2">{rightHeader}</div>}
@@ -175,11 +175,11 @@ export default function Section({ title, subtitle, defaultOpen = true, children,
         >
           <div className="flex items-baseline gap-3">
             <span className={`text-ink-500 transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
-            <h2 className="text-sm font-semibold text-ink-100">
+            <h2 className="text-[15px] font-semibold text-ink-50">
               {info ? <Term k={info} focusable={false}>{title}</Term> : title}
             </h2>
             {found
-              ? <span className="text-xs text-ink-300">{found}</span>
+              ? <span className="text-sm text-ink-300">{found}</span>
               : subtitle && <span className="text-xs text-ink-500">{subtitle}</span>}
           </div>
           {rightHeader && <div className="flex items-center gap-2">{rightHeader}</div>}

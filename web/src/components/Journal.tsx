@@ -203,7 +203,7 @@ function ByMonth({ entries, children }: { entries: JournalEntry[]; children: (e:
     <div className="space-y-4">
       {groups.map((g) => (
         <section key={g.month}>
-          <h3 className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
             {MONTHS[Number(g.month.slice(5, 7)) - 1]} {g.month.slice(0, 4)}
           </h3>
           <div className="space-y-2 border-l border-ink-800 pl-3">
@@ -624,7 +624,7 @@ function OpenTradesPanel({ symbol, tick, onExplain }: {
   return (
     <section className="rounded border border-ink-700 bg-ink-900 px-3 py-2">
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-400">
+        <h3 className="text-xs font-semibold text-ink-300">
           Ohne Begründung <span className="font-mono text-ink-500">{groups.length}</span>
         </h3>
         <span className="text-2xs text-ink-600">Käufe und Verkäufe aus umsatz</span>

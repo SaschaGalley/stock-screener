@@ -96,7 +96,7 @@ export default function ForecastChart(input: ForecastInput) {
 
   return (
     <div>
-      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-1 text-xs font-semibold text-ink-300">
         <Term k="concept.forecast">Vergangenheit &amp; Prognose</Term>
       </h3>
       <p className="mb-2 text-xs text-ink-400">

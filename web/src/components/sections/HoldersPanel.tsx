@@ -65,7 +65,7 @@ function HolderTable({ title, rows }: { title: string; rows: Holder[] }) {
   if (rows.length === 0) return null;
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      <h3 className="mb-2 text-xs font-semibold text-ink-300">{title}</h3>
       <table className="w-full text-xs tabular">
         <thead>
           <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
@@ -102,7 +102,7 @@ function Trades({ trades, insiders }: { trades: InsiderTrade[]; insiders: Holder
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500"><Term k="concept.insiderTrades">Insider-Transaktionen</Term></h3>
+        <h3 className="text-xs font-semibold text-ink-300"><Term k="concept.insiderTrades">Insider-Transaktionen</Term></h3>
         {hidden > 0 && (
           <button onClick={() => setAll((x) => !x)} className="text-xs text-ink-400 hover:text-ink-100">
             {all ? 'Nur Käufe und Verkäufe' : `+ ${hidden} Zuteilungen, Schenkungen, Ausübungen`}

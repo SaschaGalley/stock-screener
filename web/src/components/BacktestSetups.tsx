@@ -18,7 +18,7 @@ export default function BacktestSetups({ bt }: { bt: Backtest }) {
   return (
     <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
       <header className="border-b border-ink-800 px-4 py-2.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Setups gegen den Zufallseinstieg</h3>
+        <h3 className="text-xs font-semibold text-ink-300">Setups gegen den Zufallseinstieg</h3>
         <p className="mt-0.5 text-xs text-ink-500">
           An jedem Monatsende ist jede Aktie ein Trade: Einstieg zum Schlusskurs, Stop und Ziel in typischen Tagesbewegungen (ATR aus
           Schlusskursen), sonst Ausstieg nach Ablauf; {pct(st.costPerSide, 1).replace('+', '')} Kosten je Seite. Das ist der Zufallseinstieg — Stop und Ziel

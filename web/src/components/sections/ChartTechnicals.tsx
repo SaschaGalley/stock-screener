@@ -252,7 +252,7 @@ function Summary({ a, t, row }: { a: ChartAnalysis; t: TimingReadings | null; ro
 function Block({ title, term, children }: { title: string; term?: GlossaryKey; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-2 text-xs font-semibold text-ink-300">
         {term ? <Term k={term}>{title}</Term> : title}
       </h3>
       <div className="overflow-x-auto">{children}</div>
@@ -263,7 +263,7 @@ function Block({ title, term, children }: { title: string; term?: GlossaryKey; c
 function Findings({ findings }: { findings: ChartFinding[] }) {
   return (
     <Block title="Was der Chart zeigt">
-      <ul className="space-y-1 text-xs leading-relaxed text-ink-200">
+      <ul className="space-y-1.5 text-sm leading-relaxed text-ink-200">
         {findings.map((f) => (
           <li key={f.key} className="flex gap-2">
             <span className={`w-3 shrink-0 text-center ${TONE_MARK[f.tone].cls}`}>{TONE_MARK[f.tone].mark}</span>
@@ -348,7 +348,7 @@ function Channels({ a, fmtPrice }: { a: ChartAnalysis; fmtPrice: (n: number) => 
       </table>
       {a.trendlines.length > 0 && (
         <div className="mt-3">
-          <h4 className="mb-1 text-2xs uppercase tracking-wider text-ink-500"><Term k="tech.trendlines">Trendlinien</Term></h4>
+          <h4 className="mb-1 text-xs font-semibold text-ink-300"><Term k="tech.trendlines">Trendlinien</Term></h4>
           <ul className="space-y-0.5 text-xs text-ink-300">
             {a.trendlines.map((t) => (
               <li key={t.kind}>
@@ -461,7 +461,7 @@ function ChartReadPanel({ symbol, model, read, asOf, onRead }: {
   return (
     <div className="rounded border border-ink-700 bg-ink-950 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300"><Term k="tech.chartRead">KI-Chartlesung</Term></h3>
+        <h3 className="text-[15px] font-semibold text-ink-50"><Term k="tech.chartRead">KI-Chartlesung</Term></h3>
         {read && (
           <span className="text-2xs text-ink-500">
             {label(read.model)} · {new Date(read.producedAt).toLocaleDateString('de-DE')} · Kurse bis {dayDe(read.read.asOf)}
@@ -507,7 +507,7 @@ function ChartReadPanel({ symbol, model, read, asOf, onRead }: {
 
           {r.patterns.length > 0 && (
             <div>
-              <h4 className="mb-1 text-2xs uppercase tracking-wider text-ink-500">Muster</h4>
+              <h4 className="mb-1 text-xs font-semibold text-ink-300">Muster</h4>
               <ul className="space-y-1.5 text-xs">
                 {r.patterns.map((p, k) => (
                   <li key={k}>
@@ -542,7 +542,7 @@ function ChartReadPanel({ symbol, model, read, asOf, onRead }: {
 
           {r.levels.length > 0 && (
             <div>
-              <h4 className="mb-1 text-2xs uppercase tracking-wider text-ink-500">Marken laut Modell</h4>
+              <h4 className="mb-1 text-xs font-semibold text-ink-300">Marken laut Modell</h4>
               <table className="w-full text-xs">
                 <tbody>
                   {[...r.levels].sort((x, y) => y.price - x.price).map((l, k) => (
@@ -562,13 +562,13 @@ function ChartReadPanel({ symbol, model, read, asOf, onRead }: {
             <div className="grid gap-3 md:grid-cols-2 text-xs">
               {r.invalidation && (
                 <div>
-                  <h4 className="mb-1 text-2xs uppercase tracking-wider text-ink-500">Widerlegt, wenn</h4>
+                  <h4 className="mb-1 text-xs font-semibold text-ink-300">Widerlegt, wenn</h4>
                   <p className="text-ink-300">{r.invalidation}</p>
                 </div>
               )}
               {r.watch.length > 0 && (
                 <div>
-                  <h4 className="mb-1 text-2xs uppercase tracking-wider text-ink-500">Beobachten</h4>
+                  <h4 className="mb-1 text-xs font-semibold text-ink-300">Beobachten</h4>
                   <ul className="list-disc space-y-0.5 pl-4 text-ink-300">{r.watch.map((w, k) => <li key={k}>{w}</li>)}</ul>
                 </div>
               )}

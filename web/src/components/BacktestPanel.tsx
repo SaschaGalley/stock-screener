@@ -98,7 +98,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
 
       <section className="rounded-lg border border-ink-700 bg-ink-900">
         <header className="border-b border-ink-800 px-4 py-2.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Signale im Backtest</h3>
+          <h3 className="text-xs font-semibold text-ink-300">Signale im Backtest</h3>
         </header>
         <IcTable signals={data.signals} rows={rows} periodLabel="Monate" />
       </section>
@@ -114,7 +114,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       {candidateSignals.length > 0 && (
         <section className="rounded-lg border border-ink-700 bg-ink-900">
           <header className="border-b border-ink-800 px-4 py-2.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Kandidaten — noch nicht im Score</h3>
+            <h3 className="text-xs font-semibold text-ink-300">Kandidaten — noch nicht im Score</h3>
             <p className="mt-0.5 text-xs text-ink-500">
               Signale, die keine Säule liest, auf dieselbe Probe gestellt, bevor jemand ein Gewicht für sie vorschlägt: die
               Käufe und Verkäufe der Insider am offenen Markt aus ihren Form-4-Meldungen, ab dem Tag der Meldung. Die
@@ -129,7 +129,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       {(bt.segments?.length ?? 0) > 0 && (
         <section className="overflow-x-auto rounded-lg border border-ink-700 bg-ink-900">
           <header className="border-b border-ink-800 px-4 py-2.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Nach Indexgröße</h3>
+            <h3 className="text-xs font-semibold text-ink-300">Nach Indexgröße</h3>
             <p className="mt-0.5 text-xs text-ink-500">
               Dieselben Signale nur unter Large, Mid oder Small Caps gerankt — was die großen Werte einpreisen, kann weiter
               unten noch wirken. Rang-IC über {monthName(horizon)}, in Klammern t.
@@ -167,7 +167,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       {criterionSignals.length > 0 && (
         <section className="rounded-lg border border-ink-700 bg-ink-900">
           <header className="border-b border-ink-800 px-4 py-2.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Einzelkriterien</h3>
+            <h3 className="text-xs font-semibold text-ink-300">Einzelkriterien</h3>
             <p className="mt-0.5 text-xs text-ink-500">
               Jede Kennzahl für sich, so gedreht, dass mehr besser ist — ein positiver IC heißt: das Kriterium wirkt in die
               Richtung, in der der Score es liest. Nur Kriterien mit mindestens 30 Aktien je Stichtag.
@@ -180,7 +180,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-lg border border-ink-700 bg-ink-900">
           <header className="border-b border-ink-800 px-4 py-2.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Faktor-Score je Jahr (1 Monat)</h3>
+            <h3 className="text-xs font-semibold text-ink-300">Faktor-Score je Jahr (1 Monat)</h3>
           </header>
           <table className="w-full text-sm">
             <thead className="text-xs text-ink-400">
@@ -217,7 +217,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         {labels.length > 0 && (
           <section className="rounded-lg border border-ink-700 bg-ink-900">
             <header className="border-b border-ink-800 px-4 py-2.5">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Mehrrendite nach Faktor-Urteil</h3>
+              <h3 className="text-xs font-semibold text-ink-300">Mehrrendite nach Faktor-Urteil</h3>
             </header>
             <div className="space-y-2 p-4">
               {labels.map((l) => (

@@ -182,7 +182,7 @@ export default function EvaluationPage({ onClose }: Props) {
 
             <section className="rounded-lg border border-ink-700 bg-ink-900">
               <header className="border-b border-ink-800 px-4 py-2.5">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Signale</h3>
+                <h3 className="text-xs font-semibold text-ink-300">Signale</h3>
                 <p className="mt-0.5 text-xs text-ink-500">
                   IC gemittelt über alle Tage · t nur aus nicht überlappenden Fenstern · Im Sektor = IC gegen den eigenen Sektor ·
                   Treffer = Anteil der Tage mit positivem IC · Oben−Unten = Mehrrendite oberes minus unteres Drittel
@@ -240,7 +240,7 @@ export default function EvaluationPage({ onClose }: Props) {
             {labels.length > 0 && (
               <section className="rounded-lg border border-ink-700 bg-ink-900">
                 <header className="border-b border-ink-800 px-4 py-2.5">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Mehrrendite nach Urteil</h3>
+                  <h3 className="text-xs font-semibold text-ink-300">Mehrrendite nach Urteil</h3>
                   <p className="mt-0.5 text-xs text-ink-500">
                     Durchschnittliche Rendite gegenüber dem S&amp;P 500 über {horizon} Handelstage, nur nicht überlappende Fenster ·
                     in Klammern die Zahl der Aktien-Fenster
@@ -263,7 +263,7 @@ export default function EvaluationPage({ onClose }: Props) {
             {data && data.weights.length > 0 && (
               <section className="rounded-lg border border-ink-700 bg-ink-900">
                 <header className="border-b border-ink-800 px-4 py-2.5">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-300">Säulengewichte: was die Daten nahelegen</h3>
+                  <h3 className="text-xs font-semibold text-ink-300">Säulengewichte: was die Daten nahelegen</h3>
                   <p className="mt-0.5 text-xs text-ink-500">
                     IC jeder Säule über {data.weightHorizon} Handelstage{data.universe ? ' im Universum' : ''}, um seinen Standardfehler
                     zur Null geschrumpft; ein Gewicht kippt um den geschrumpften IC geteilt durch 0,05. Nur ein Vorschlag —

@@ -21,7 +21,7 @@ export default function PriceAction({ marketSignals: ms }: Props) {
     <div className="space-y-4">
       {t.returns && (
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+          <h3 className="mb-2 text-xs font-semibold text-ink-300">
             <Term k="concept.trailingReturns">Trailing Returns</Term>
           </h3>
           <div className="rounded border border-ink-700 bg-ink-950 p-2" style={{ height: 180 }}>
@@ -61,7 +61,7 @@ export default function PriceAction({ marketSignals: ms }: Props) {
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">{title}</h3>
+      <h3 className="mb-2 text-xs font-semibold text-ink-300">{title}</h3>
       <table className="w-full text-xs tabular">
         <tbody>{children}</tbody>
       </table>

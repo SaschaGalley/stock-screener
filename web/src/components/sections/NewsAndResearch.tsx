@@ -66,7 +66,7 @@ export default function NewsAndResearch({ symbol, news, perplexity, deepResearch
       {searches && searches.providers.length > 0 && (
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
+            <h3 className="text-xs font-semibold text-ink-300">
               Search Traces
             </h3>
             <span className="text-2xs text-ink-500">
@@ -83,7 +83,7 @@ export default function NewsAndResearch({ symbol, news, perplexity, deepResearch
 
       {news.length > 0 && (
         <div>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Recent News</h3>
+          <h3 className="mb-2 text-xs font-semibold text-ink-300">Recent News</h3>
           <ul className="space-y-2">
             {firstNews.map((n, i) => (
               <li key={i} className="rounded border border-ink-800 bg-ink-950 p-2.5 text-xs">
@@ -181,7 +181,7 @@ function DistillSection({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="text-xs font-semibold text-ink-300">
           Distill Briefing
         </h3>
         <div className="flex items-center gap-2">
@@ -255,7 +255,7 @@ function PerplexitySection({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="text-xs font-semibold text-ink-300">
           Perplexity Research
         </h3>
         <div className="flex items-center gap-2">
@@ -322,7 +322,7 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-500">
+        <h3 className="text-xs font-semibold text-ink-300">
           Deep Research
         </h3>
         <div className="flex flex-wrap items-center gap-2">

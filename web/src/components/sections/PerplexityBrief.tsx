@@ -163,7 +163,7 @@ function FindingList({ items }: { items: Finding[] }) {
 function Block({ title, empty, children }: { title: string; empty?: string | false; children: React.ReactNode }) {
   return (
     <section>
-      <h4 className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-400">{title}</h4>
+      <h4 className="mb-1.5 text-xs font-semibold text-ink-300">{title}</h4>
       {empty ? <p className="italic text-ink-500">{empty}</p> : children}
     </section>
   );

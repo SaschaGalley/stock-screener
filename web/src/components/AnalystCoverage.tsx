@@ -178,7 +178,7 @@ export function CoverageTable({ coverage, price, analystCount }: { coverage: Cov
   return (
     <div className="rounded-lg border border-ink-800 bg-ink-900 p-4">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 className="text-2xs font-semibold uppercase tracking-wider text-ink-500">Die Häuser einzeln</h3>
+        <h3 className="text-xs font-semibold text-ink-300">Die Häuser einzeln</h3>
         <span className="text-xs text-ink-500">
           {coverage.firms.length} Häuser mit einem Wort in den letzten {Math.round(coverage.windowDays / 30)} Monaten
           {mean !== null && <> · Mittel ihrer Ziele <span className="font-mono text-ink-300">{fmtPrice(mean)}</span></>}

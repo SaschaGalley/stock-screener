@@ -27,7 +27,7 @@ export default function TechnicalSignalsPanel({ signals }: Props) {
 function IndicatorTable({ title, group }: { title: string; group: SignalGroup }) {
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">
+      <h3 className="mb-2 text-xs font-semibold text-ink-300">
         {title}
       </h3>
       <table className="w-full text-xs tabular">

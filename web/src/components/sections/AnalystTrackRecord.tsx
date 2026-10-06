@@ -132,7 +132,7 @@ function FirmTable({ firms }: { firms: FirmRecord[] }) {
   const pct = (v: number | null) => (v === null ? '—' : `${Math.round(v * 100)} %`);
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Die Häuser einzeln</h3>
+      <h3 className="mb-2 text-xs font-semibold text-ink-300">Die Häuser einzeln</h3>
       <table className="w-full text-xs tabular">
         <thead>
           <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
