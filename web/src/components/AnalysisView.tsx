@@ -42,7 +42,7 @@ import StockTabs, { type StockTab } from "./StockTabs";
 import OverviewCards from "./OverviewCards";
 import More from "./More";
 import {
-  companyFinding, earningsFinding, fairValueFinding, fundamentalsFinding, marketContextFinding, modelsFinding,
+  earningsFinding, fairValueFinding, fundamentalsFinding, marketContextFinding, modelsFinding,
   ownershipFinding, peersFinding, priceActionFinding, qualityFinding, researchFinding,
 } from "./sectionFindings";
 // Markdown and the editor are only wanted once the section is opened.
@@ -315,6 +315,9 @@ function AnalysisView({
                 verdictChanges={<VerdictChanges symbol={symbol} refreshKey={refreshKey} />}
                 coverage={coverage}
               />
+              {/* What the company is, before what each topic says about it */}
+              {(f.description || f.employees || f.website || f.isin || f.industry) && <CompanyInfo financials={f} />}
+
               {/* ONE CARD PER TOPIC — what each tab says, and a click to it */}
               <OverviewCards
                 symbol={symbol}
@@ -452,16 +455,6 @@ function AnalysisView({
             </TabPane>
 
             <TabPane on={tab === 'business'} seen={shown.has('business')}>
-              {/* TIER 0: Company info — restored after refactor */}
-              {(f.description ||
-                f.employees ||
-                f.website ||
-                f.isin ||
-                f.industry) && (
-                <Section fixed title="Über das Unternehmen" finding={companyFinding(f)}>
-                  <CompanyInfo financials={f} />
-                </Section>
-              )}
               {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}
               <Section fixed title="Geschäftszahlen" finding={fundamentalsFinding(f, m)} info="section.fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
                 <div className="space-y-5">

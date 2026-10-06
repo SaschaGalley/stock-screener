@@ -62,14 +62,6 @@ export function peersFinding(m: ComputedMetrics, sector: SectorMedians | null): 
   return s && `${s} bei den Peers`;
 }
 
-export function companyFinding(f: StockFinancials): string | null {
-  return join([
-    f.industry,
-    ok(f.employees) && `${f.employees.toLocaleString('de-DE')} Mitarbeiter`,
-    f.country,
-  ]);
-}
-
 export function fundamentalsFinding(f: StockFinancials, m: ComputedMetrics): string | null {
   return join([
     ok(f.revenueGrowth) && `Umsatz ${pct(f.revenueGrowth)}`,
