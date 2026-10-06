@@ -111,14 +111,14 @@ describe('cost of debt', () => {
     );
     assert.equal(dcf.syntheticRating, 'BBB');
     close(dcf.costOfDebt, 0.0475 + FALLBACK_RATES.creditSpreads.BBB, 1e-12);
-    assert.match(dcf.assumptions, /kd 5\.9% BBB/);
+    assert.match(dcf.assumptions, /Fremdkapital 5,9 % BBB/);
   });
 
   it('prices debt without reported interest as BBB, and says it did', () => {
     const dcf = calculateDCF(financials({ totalDebt: 500_000_000 }), rates(0.0475, 0.0409));
     assert.equal(dcf.syntheticRating, null);
     close(dcf.costOfDebt, 0.0475 + FALLBACK_RATES.creditSpreads.BBB, 1e-12);
-    assert.match(dcf.assumptions, /unrated → BBB/);
+    assert.match(dcf.assumptions, /ohne Rating → BBB/);
   });
 
   it('charges a borrower in a riskier country its government\'s default spread', () => {
@@ -210,7 +210,7 @@ describe('the revenue-driven DCF', () => {
   it('abstains for a lender, whose debt is its inventory', () => {
     const dcf = calculateDCF(financials({ industry: 'Banks - Regional' }), rates(0.0475));
     assert.equal(dcf.fairValue, null);
-    assert.match(dcf.assumptions, /lenders borrow as their business/);
+    assert.match(dcf.assumptions, /Kreditgeber leihen sich Geld als Geschäft/);
   });
 });
 

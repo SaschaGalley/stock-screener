@@ -34,6 +34,7 @@
  */
 
 import { MarketRates } from '../data/fred.js';
+import { deNumber } from '../format.js';
 import { Rating } from '../data/ratings.js';
 import { DCFResult, ImpliedMargin, ReverseDCFResult, SectorMedians, StockFinancials } from '../types.js';
 import { toFiniteNumber } from '../utils/num.js';
@@ -367,7 +368,7 @@ export function borrowsToLend(f: StockFinancials): boolean {
 }
 
 export const LENDER_NOTE =
-  'banks, insurers, brokers and lenders borrow as their business, so free cash flow to the firm and WACC do not describe them';
+  'Banken, Versicherer, Broker und Kreditgeber leihen sich Geld als Geschäft, deshalb beschreiben Free Cashflow und WACC sie nicht';
 
 export type GrowthSource = 'analyst consensus' | 'trailing twelve months' | 'steady state';
 
@@ -486,13 +487,13 @@ const CONSENSUS_MARGIN_CAP = 0.6;
 export function dcfInputs(
   f: StockFinancials, rates: MarketRates, peers: SectorMedians | null,
 ): { inputs: DcfInputs } | { skip: string } {
-  if (borrowsToLend(f)) return { skip: `DCF not applicable — ${LENDER_NOTE}.` };
+  if (borrowsToLend(f)) return { skip: `DCF nicht anwendbar — ${LENDER_NOTE}.` };
   const b = valuationBasis(f);
-  if (b.revenue === null || b.revenue <= 0) return { skip: 'DCF not applicable — no revenue to build the forecast on.' };
+  if (b.revenue === null || b.revenue <= 0) return { skip: 'DCF nicht anwendbar — kein Umsatz, auf dem die Prognose aufbauen könnte.' };
   if (b.dilutedShares === null || b.dilutedShares <= 0 || !(b.price > 0)) {
-    return { skip: 'DCF not applicable — no share count to divide the equity between.' };
+    return { skip: 'DCF nicht anwendbar — keine Aktienzahl, auf die sich der Wert verteilen ließe.' };
   }
-  if (b.operatingIncome === null) return { skip: 'DCF not applicable — no operating income.' };
+  if (b.operatingIncome === null) return { skip: 'DCF nicht anwendbar — kein operatives Ergebnis.' };
 
   const rf = terminalGrowth(rates);
   const c0 = consensusRevenueGrowth(f, '0y');
@@ -529,7 +530,7 @@ export function dcfInputs(
   }
 
   const forwardSkip = marginTarget > 0 ? null
-    : `DCF not applicable — operating margin ${(marginNow * 100).toFixed(1)} % with no profitable record or peer group to converge to.`;
+    : `DCF nicht anwendbar — operative Marge ${deNumber(marginNow * 100, 1)} % ohne profitable Jahre oder Peers, auf die sie zulaufen könnte.`;
 
   const beta = adjustedBeta(f.beta, betaPrior(peers));
   const r = wacc(f, b, rates, beta);
@@ -582,7 +583,21 @@ export function isPlausibleFairValue(fv: number | null | undefined, price: numbe
   return r >= 0.02 && r <= 30;
 }
 
-const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+// The texts below are German sentences, and their numbers German too.
+const pct = (x: number) => `${deNumber(x * 100, 1)} %`;
+
+const GROWTH_SOURCE_DE: Record<GrowthSource, string> = {
+  'analyst consensus': 'Konsens', 'trailing twelve months': 'letzte zwölf Monate', 'steady state': 'eingeschwungen',
+};
+const MARGIN_SOURCE_DE: Record<DcfInputs['targetMarginSource'], string> = {
+  current: 'heutige', 'own history': 'eigene Jahre', consensus: 'Konsens', 'halfway to peers': 'halb zu den Peers',
+};
+const S2C_SOURCE_DE: Record<DcfInputs['salesToCapitalSource'], string> = {
+  history: 'Historie', 'balance sheet': 'Bilanz', default: 'Standardwert',
+};
+const BASIS_DE: Record<NonNullable<DcfInputs['achievableMargin']>['basis'], string> = {
+  current: 'heute', history: 'eigene Jahre', peers: 'Peers',
+};
 
 type DcfBase = Pick<DCFResult,
   'fairValue' | 'fairValueBear' | 'fairValueBull' | 'distribution' | 'riskFreeRate' | 'equityRiskPremium' | 'premiumAdjustment'
@@ -645,18 +660,18 @@ export function calculateDCF(
   const plausible = fair !== null && fair > 0 && fair <= b.price * 30;
 
   const debtNote = inputs.costOfDebt
-    ? `, kd ${pct(inputs.costOfDebt.rate)} ${inputs.costOfDebt.rating ?? 'unrated → BBB'}` : '';
+    ? `, Fremdkapital ${pct(inputs.costOfDebt.rate)} ${inputs.costOfDebt.rating ?? 'ohne Rating → BBB'}` : '';
   const assumptions = plausible
-    ? `Revenue ${pct(a.growth1)} / ${pct(a.growth2)} (${inputs.growthSource}) fading to ${pct(a.terminalGrowth)} by year ${FORECAST_YEARS} · `
-      + `operating margin ${pct(a.marginNow)} → ${pct(a.marginTarget)} (${inputs.targetMarginSource}) · `
-      + `sales/capital ${a.salesToCapital.toFixed(2)} (${inputs.salesToCapitalSource}) · tax ${pct(a.taxNow)} → ${pct(a.taxTerminal)} · `
-      + `WACC ${pct(a.discountRate)} → ${pct(a.terminalDiscountRate)} (β ${inputs.beta.toFixed(2)} adj., rf ${pct(rates.riskFreeRate)}, `
-      + `ERP ${pct(rates.equityRiskPremium)}${rates.premiumAdjustment ? ` (market ${pct(rates.equityRiskPremium - rates.premiumAdjustment)}, model ${rates.premiumAdjustment > 0 ? '+' : '−'}${pct(Math.abs(rates.premiumAdjustment))})` : ''}`
-      + `${f.countryRiskPremium ? ` + country ${pct(f.countryRiskPremium)}` : ''}${debtNote}) · `
-      + `terminal ROIC ${pct(value!.terminalRoic)}`
+    ? `Umsatz ${pct(a.growth1)} / ${pct(a.growth2)} (${GROWTH_SOURCE_DE[inputs.growthSource]}), auslaufend auf ${pct(a.terminalGrowth)} bis Jahr ${FORECAST_YEARS} · `
+      + `operative Marge ${pct(a.marginNow)} → ${pct(a.marginTarget)} (${MARGIN_SOURCE_DE[inputs.targetMarginSource]}) · `
+      + `Umsatz/Kapital ${deNumber(a.salesToCapital, 2)} (${S2C_SOURCE_DE[inputs.salesToCapitalSource]}) · Steuer ${pct(a.taxNow)} → ${pct(a.taxTerminal)} · `
+      + `WACC ${pct(a.discountRate)} → ${pct(a.terminalDiscountRate)} (β ${deNumber(inputs.beta, 2)} bereinigt, risikolos ${pct(rates.riskFreeRate)}, `
+      + `Risikoprämie ${pct(rates.equityRiskPremium)}${rates.premiumAdjustment ? ` (Markt ${pct(rates.equityRiskPremium - rates.premiumAdjustment)}, Modell ${rates.premiumAdjustment > 0 ? '+' : '−'}${pct(Math.abs(rates.premiumAdjustment))})` : ''}`
+      + `${f.countryRiskPremium ? ` + Länderrisiko ${pct(f.countryRiskPremium)}` : ''}${debtNote}) · `
+      + `ROIC am Ende ${pct(value!.terminalRoic)}`
     : fair !== null && fair <= 0
-      ? 'No equity value at these inputs — the forecast cash flows do not cover the debt and the reinvestment growth requires.'
-      : 'DCF value implausible against the price — likely a per-share data anomaly.';
+      ? 'Kein Eigenkapitalwert bei diesen Annahmen — die prognostizierten Cashflows decken die Schulden und die fürs Wachstum nötigen Investitionen nicht.'
+      : 'DCF-Wert unplausibel gegenüber dem Kurs — vermutlich ein Datenfehler je Aktie.';
 
   return {
     ...base,
@@ -715,7 +730,7 @@ export function calculateReverseDCF(
   if ('skip' in built) {
     return {
       impliedGrowthRate: null, consensusGrowth: null, discountRate: null, terminalGrowthRate: terminalGrowth(rates),
-      isPossible: false, interpretation: `Not calculable — ${built.skip.replace(/^DCF not (applicable|stable) — /, '')}`, impliedMargin: null,
+      isPossible: false, interpretation: `Nicht berechenbar — ${built.skip.replace(/^DCF nicht anwendbar — /, '')}`, impliedMargin: null,
     };
   }
   const { inputs } = built;
@@ -726,7 +741,7 @@ export function calculateReverseDCF(
   if (inputs.forwardSkip) {
     return {
       impliedGrowthRate: null, consensusGrowth: null, discountRate: a.discountRate, terminalGrowthRate: gT,
-      isPossible: false, interpretation: 'No growth rate to solve for without a margin to earn it at — see the margin the price requires.',
+      isPossible: false, interpretation: 'Ohne eine Marge, mit der es verdient würde, lässt sich kein Wachstum auflösen — siehe die Marge, die der Kurs verlangt.',
       impliedMargin,
     };
   }
@@ -735,11 +750,11 @@ export function calculateReverseDCF(
   const g = growth?.value ?? null;
   const consensus = inputs.growthSource === 'analyst consensus' ? a.growth2 : null;
   const interpretation = g === null
-    ? 'No growth rate reproduces the price — at this margin and reinvestment, growth does not change the value.'
-    : growth!.edge === 'low' ? `Market prices in revenue shrinking faster than ${pct(-GROWTH_BOUNDS.min)} a year — distress pricing.`
-    : growth!.edge === 'high' ? 'Market prices in revenue growth above 150 % a year — beyond anything the model can map.'
-    : `Market prices in ${pct(g)} revenue growth for two years, fading to ${pct(gT)}`
-      + (consensus !== null ? ` — against ${pct(consensus)} consensus.` : '.');
+    ? 'Kein Wachstum erklärt den Kurs — bei dieser Marge und diesen Investitionen ändert Wachstum den Wert nicht.'
+    : growth!.edge === 'low' ? `Der Markt preist einen Umsatzrückgang von mehr als ${pct(-GROWTH_BOUNDS.min)} im Jahr ein — ein Krisenpreis.`
+    : growth!.edge === 'high' ? 'Der Markt preist mehr als 150 % Umsatzwachstum im Jahr ein — jenseits dessen, was das Modell abbilden kann.'
+    : `Der Markt preist ${pct(g)} Umsatzwachstum für zwei Jahre ein, auslaufend auf ${pct(gT)}`
+      + (consensus !== null ? ` — der Konsens erwartet ${pct(consensus)}.` : '.');
 
   return {
     impliedGrowthRate: g,
@@ -763,15 +778,15 @@ function impliedMarginFor(inputs: DcfInputs): ImpliedMargin | null {
   const required = solved.value;
   const yardstick = inputs.achievableMargin;
   const ratio = yardstick && required > 0 ? required / yardstick.value : null;
-  const times = ratio !== null ? `${ratio.toFixed(1)}× the best margin shown (${pct(yardstick!.value)}, ${yardstick!.basis})` : '';
+  const times = ratio !== null ? `Das ${deNumber(ratio, 1)}-fache der besten gezeigten Marge (${pct(yardstick!.value)}, ${BASIS_DE[yardstick!.basis]})` : '';
   const interpretation =
-    required <= 0         ? 'The price holds even at no operating profit — the market assigns little value to the business itself.'
-    : solved.edge === 'high' ? 'The price requires an operating margin above 95 % — no business earns that.'
-    : ratio === null      ? `The price requires a ${pct(required)} operating margin, and the business has not shown a profit to hold it against.`
-    : ratio <= DEMANDING.holds   ? `${times} — the price holds even if margins slip.`
-    : ratio <= DEMANDING.keeps   ? `${times} — the price needs the business to keep what it earns.`
-    : ratio <= DEMANDING.expands ? `${times} — the price needs clear margin expansion.`
-    :                              `${times} — the price needs a step change in profitability.`;
+    required <= 0         ? 'Der Kurs hält selbst ohne operativen Gewinn — der Markt gibt dem Geschäft selbst wenig Wert.'
+    : solved.edge === 'high' ? 'Der Kurs verlangt eine operative Marge über 95 % — die verdient kein Geschäft.'
+    : ratio === null      ? `Der Kurs verlangt ${pct(required)} operative Marge, und das Geschäft hat noch keinen Gewinn gezeigt, an dem sie sich messen ließe.`
+    : ratio <= DEMANDING.holds   ? `${times} — der Kurs hält auch, wenn die Margen nachgeben.`
+    : ratio <= DEMANDING.keeps   ? `${times} — der Kurs braucht, dass das Geschäft hält, was es verdient.`
+    : ratio <= DEMANDING.expands ? `${times} — der Kurs braucht deutlich steigende Margen.`
+    :                              `${times} — der Kurs braucht einen Sprung in der Profitabilität.`;
   return {
     requiredMargin: required,
     achievableMargin: yardstick?.value ?? null,

@@ -51,9 +51,9 @@ describe('margin cross-check', () => {
     // of those two rather than which.
     const w = margins(financials({ operatingMargin: 0.01 }));
     assert.equal(w.length, 1);
-    assert.match(w[0].message, /Trailing/);
-    assert.match(w[0].message, /newest full fiscal year/);
-    assert.match(w[0].message, /different periods/);
+    assert.match(w[0].message, /nachlaufende/);
+    assert.match(w[0].message, /jüngsten vollen Geschäftsjahr/);
+    assert.match(w[0].message, /verschiedene Zeiträume/);
   });
 
   it('refuses to measure a ratio against a margin of nearly zero', () => {
@@ -85,7 +85,7 @@ describe('margin cross-check', () => {
     } as Partial<StockFinancials>));
 
     assert.equal(w.length, 1);
-    assert.match(w[0].message, /opposite signs/);
+    assert.match(w[0].message, /entgegengesetzte Vorzeichen/);
   });
 });
 

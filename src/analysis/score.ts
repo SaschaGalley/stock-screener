@@ -53,7 +53,10 @@ import { adjustedCurrentRatio } from './health.js';
 import { calibrated } from './calibration.js';
 import { valuationBasis } from './basis.js';
 import { worstSeverity } from './data-quality.js';
-import { fmt, fmtBig, fmtPct, fmtPrice, fmtSignedPct } from '../format.js';
+// The notes are German sentences, so their numbers are German too: "0,1x", "12,5 %".
+import {
+  deNumber, fmtDe as fmt, fmtBigDe as fmtBig, fmtPctDe as fmtPct, fmtPriceDe as fmtPrice, fmtSignedPctDe as fmtSignedPct,
+} from '../format.js';
 import { toFiniteNumber } from '../utils/num.js';
 import { SCORE_BANDS, verdictForScore } from '../verdict.js';
 
@@ -394,7 +397,7 @@ export function intrinsicValue(
 export function fairValueRange(f: StockFinancials, comp: CompositeFairValueResult): string {
   const iv = intrinsicValue(f, comp);
   const values = iv.models.map((m) => m.fairValue).sort((a, b) => a - b);
-  if (values.length === 0) return 'N/A';
+  if (values.length === 0) return '—';
   const P = (n: number) => fmtPrice(n, f.tradingCurrency);
   if (values.length === 1) return P(values[0]);
 
@@ -464,7 +467,7 @@ export function readAltman(
 ): { reading: AltmanReading; note: string } {
   const z = m.altmanZ;
   const base = z.score !== null
-    ? `Altman Z ${z.score.toFixed(2)} (${z.model}-Modell, Grenzen ${z.thresholds.distress}/${z.thresholds.safe})`
+    ? `Altman Z ${deNumber(z.score, 2)} (${z.model}-Modell, Grenzen ${z.thresholds.distress}/${z.thresholds.safe})`
     : 'Altman Z nicht berechenbar';
 
   if (f.sector && ALTMAN_EXCLUDED_SECTORS.includes(f.sector) && z.score !== null) {
@@ -499,7 +502,7 @@ export function readAltman(
   if (m.interestCoverage.interpretation === 'excellent') {
     return {
       reading: 'serviced',
-      note: `${base} — aber das EBIT deckt die Zinsen ${m.interestCoverage.ratio?.toFixed(1)}x. `
+      note: `${base} — aber das EBIT deckt die Zinsen ${fmt(m.interestCoverage.ratio, 'x', 1)}. `
         + 'Die vorhandenen Schulden werden bequem bedient.',
     };
   }
@@ -535,21 +538,21 @@ export function readBeneish(
     case 'extrapolated':
       return {
         reading,
-        note: `Beneish M ${fmt(b.score)}, aber der Umsatzindex SGI steht bei ${sgi?.toFixed(1)} — `
+        note: `Beneish M ${fmt(b.score)}, aber der Umsatzindex SGI steht bei ${fmt(sgi, '', 1)} — `
           + 'weit außerhalb des Bereichs, auf dem das Modell geschätzt wurde. Das Ergebnis ist '
           + 'Extrapolation eines linearen Modells, kein Befund.',
       };
     case 'growth-explained':
       return {
         reading,
-        note: `Beneish M ${fmt(b.score)}, getragen vom Umsatzwachstum (SGI ${sgi?.toFixed(2)}). `
-          + `Die Accruals widersprechen: TATA ${tata?.toFixed(2)} — der operative Cashflow deckt den Gewinn.`,
+        note: `Beneish M ${fmt(b.score)}, getragen vom Umsatzwachstum (SGI ${fmt(sgi)}). `
+          + `Die Accruals widersprechen: TATA ${fmt(tata)} — der operative Cashflow deckt den Gewinn.`,
       };
     case 'flagged':
       return {
         reading,
         note: `Beneish M ${fmt(b.score)} — ${b.probability}`
-          + (tata !== null ? `, Accruals TATA ${tata.toFixed(2)} stützen das` : ''),
+          + (tata !== null ? `, Accruals TATA ${deNumber(tata, 2)} stützen das` : ''),
       };
   }
 }
@@ -713,7 +716,7 @@ function valuationPillar(
     intrinsic = {
       points: calibrated('valuation.intrinsic', dist.probabilityAbovePrice, 1, (v) => v),
       value:  dist.probabilityAbovePrice,
-      note:   `DCF: ${(dist.probabilityAbovePrice * 100).toFixed(0)} % der ${dist.draws} Szenarien über dem Kurs — `
+      note:   `DCF: ${deNumber(dist.probabilityAbovePrice * 100, 0)} % der ${dist.draws} Szenarien über dem Kurs — `
         + `Median ${P(dist.p50)}, 80 %-Spanne ${P(dist.p10)}–${P(dist.p90)} gegen ${P(f.price)}`,
     };
   } else {
@@ -778,7 +781,7 @@ function valuationPillar(
       implied
         ? `Der Kurs ist fair bei einer operativen Zielmarge von ${fmtPct(implied.required)} auf dem Umsatzpfad `
           + `(${fmtPct(impliedGrowth ?? null)} Wachstum, auslaufend) — gezeigt wurden ${fmtPct(implied.benchmark)} `
-          + `(${IMPLIED_BASIS_LABEL[implied.basis]}), verlangt also das ${implied.ratio.toFixed(1)}-fache`
+          + `(${IMPLIED_BASIS_LABEL[implied.basis]}), verlangt also das ${deNumber(implied.ratio, 1)}-fache`
         : 'Keine positive Marge, an der sich die vom Kurs verlangte messen ließe',
       implied ? Math.log(Math.max(implied.ratio, 1e-6)) : null),
 
@@ -918,7 +921,7 @@ function qualityPillar(
     criterion('rule-of-40', 'Rule of 40',
       calibrated('quality.rule-of-40', m.ruleOf40.score, 1, (v) => ramp(v, 20, 60), inSector),
       m.ruleOf40.score !== null
-        ? `Rule of 40: ${m.ruleOf40.score.toFixed(1)} (${m.ruleOf40.passes ? 'bestanden' : 'verfehlt'})`
+        ? `Rule of 40: ${deNumber(m.ruleOf40.score, 1)} (${m.ruleOf40.passes ? 'bestanden' : 'verfehlt'})`
         : 'Rule of 40 nicht berechenbar',
       m.ruleOf40.score),
   ];
@@ -980,7 +983,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): Draft[] {
     criterion('interest-cover', 'Zinsdeckung',
       calibrated('health.interest-cover', coverage, 1, (v) => ramp(v, 1, 8), inSector),
       ic.ratio !== null
-        ? `Operatives Ergebnis deckt Zinsen ${ic.ratio.toFixed(1)}x (${ic.interpretation})`
+        ? `Operatives Ergebnis deckt Zinsen ${deNumber(ic.ratio, 1)}x (${ic.interpretation})`
         : ic.interpretation === 'unknown' && (debt ?? 0) > 0
           ? 'Schulden vorhanden, aber kein Zinsaufwand ausgewiesen — Zinsdeckung nicht lesbar'
           : `Zinsdeckung: ${ic.interpretation}`,
@@ -1041,7 +1044,7 @@ function momentumPillar(signals: MarketSignals | null): Draft[] {
     criterion('52w-high', 'Nähe zum 52-Wochen-Hoch',
       calibrated('momentum.52w-high', nearHigh, 1, (v) => ramp(v, 0.60, 1.0)),
       nearHigh !== null
-        ? `Kurs bei ${(nearHigh * 100).toFixed(0)} % des 52-Wochen-Hochs`
+        ? `Kurs bei ${deNumber(nearHigh * 100, 0)} % des 52-Wochen-Hochs`
         : 'Keine 52-Wochen-Spanne',
       nearHigh),
 
@@ -1139,7 +1142,7 @@ function consensusPillar(
     criterion('rating', 'Gewichtetes Analystenrating',
       calibrated('consensus.rating', cons.score, 1, (v) => (v + 1) / 2),
       cons.score !== null
-        ? `${cons.label} — ${cons.total} Analysten, ${cons.buySharePct?.toFixed(0)} % Kauf, gewichteter Score ${cons.score >= 0 ? '+' : ''}${cons.score.toFixed(2)}`
+        ? `${cons.label} — ${cons.total} Analysten, ${fmt(cons.buySharePct, '', 0)} % Kauf, gewichteter Score ${cons.score >= 0 ? '+' : ''}${deNumber(cons.score, 2)}`
         : 'Keine Analystenabdeckung für dieses Listing',
       cons.score),
 
@@ -1433,7 +1436,7 @@ export function computeFactorScore(input: FactorScoreInput): FactorScore {
     caps.push({ limit: 'no-strong', reason: 'Keine Analystenabdeckung — den Modellen fehlt die unabhängige Gegenprobe' });
   }
   if (confidence < STRONG_MIN_CONFIDENCE) {
-    caps.push({ limit: 'no-strong', reason: `Konfidenz ${(confidence * 100).toFixed(0)} % unter ${(STRONG_MIN_CONFIDENCE * 100).toFixed(0)} %` });
+    caps.push({ limit: 'no-strong', reason: `Konfidenz ${deNumber(confidence * 100, 0)} % unter ${deNumber(STRONG_MIN_CONFIDENCE * 100, 0)} %` });
   }
   const beneish = readBeneish(f, m.beneish);
   if (beneish.reading === 'flagged') {
@@ -1513,7 +1516,7 @@ function collectFindings(
   for (const { high, low } of pairs.sort((x, y) => y.gap - x.gap).slice(0, DIVERGENCES_KEPT)) {
     findings.push({
       kind: 'divergence', pillar: null, impact: 0,
-      note: `${high.label} ${(high.score as number).toFixed(1)}/10 gegen ${low.label} ${(low.score as number).toFixed(1)}/10 — die beiden Linsen widersprechen sich`,
+      note: `${high.label} ${deNumber(high.score as number, 1)}/10 gegen ${low.label} ${deNumber(low.score as number, 1)}/10 — die beiden Linsen widersprechen sich`,
     });
   }
 

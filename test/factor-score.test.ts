@@ -18,6 +18,7 @@ import { recommendationTone, SCORE_BANDS, verdictForScore } from '../src/verdict
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
 import { PILLAR_KEYS } from '../src/types.js';
+import { deNumber } from '../src/format.js';
 import type {
   DataQualityWarning, MarketSignals, SectorMedians, ScorePillar, StockFinancials, TechnicalSignals,
 } from '../src/types.js';
@@ -411,7 +412,7 @@ describe('reading the M-Score', () => {
     // Nvidia's shape: fast growth, but net income above operating cash flow.
     const r = b({ sgi: 1.94, tata: 0.08 });
     assert.equal(r.reading, 'flagged');
-    assert.match(r.note, /TATA 0\.08/);
+    assert.match(r.note, /TATA 0,08/);
   });
 
   it('needs growth as well as cash — a slow grower keeps its flag', () => {
@@ -522,16 +523,16 @@ describe('fair value range', () => {
     const own = intrinsicValue(f, comp).models.map((m) => m.fairValue).sort((a, b) => a - b);
 
     assert.ok(own.length >= 1, 'fixture should produce at least one model');
-    assert.ok(range.includes(own[0].toFixed(2)), `${range} should include its low end ${own[0]}`);
-    assert.ok(range.includes(own[own.length - 1].toFixed(2)));
+    assert.ok(range.includes(deNumber(own[0], 2)), `${range} should include its low end ${own[0]}`);
+    assert.ok(range.includes(deNumber(own[own.length - 1], 2)));
     if (own.length >= 2) {
       // The median leads, so an outlier cannot define the headline figure.
       const iv = intrinsicValue(f, comp);
-      assert.ok(range.startsWith(`$${(iv.fair as number).toFixed(2)}`), `${range} should lead with the median`);
+      assert.ok(range.startsWith(deNumber(iv.fair as number, 2)), `${range} should lead with the median`);
       assert.match(range, new RegExp(`${own.length} Modelle`));
     }
     if (comp.conservative.median !== null) {
-      assert.ok(!range.includes(comp.conservative.median.toFixed(2)),
+      assert.ok(!range.includes(deNumber(comp.conservative.median, 2)),
         'the value-lens floor is not one end of the headline range');
     }
   });
@@ -543,12 +544,12 @@ describe('fair value range', () => {
     assert.ok(!fairValueRange(f, one).includes('–'));
   });
 
-  it('says N/A rather than inventing one when nothing of ours applies', () => {
+  it('says — rather than inventing one when nothing of ours applies', () => {
     const blank = financials({
       freeCashFlow: null, ebit: null, ebitda: null, eps: null, bookValue: null,
       earningsGrowth: null, revenueGrowth: null,
     });
-    assert.equal(fairValueRange(blank, computeAllMetrics(blank, FALLBACK_RATES, null).composite), 'N/A');
+    assert.equal(fairValueRange(blank, computeAllMetrics(blank, FALLBACK_RATES, null).composite), '—');
   });
 });
 
@@ -843,7 +844,7 @@ describe('conservative models outside their population', () => {
   it('does not value a token dividend as the business', () => {
     const r = names({ dividendYield: 0.01, payoutRatio: 0.1 });
     assert.ok(!r.used.includes('DDM (Two-Stage)'));
-    assert.ok(r.excluded.some((e) => /DDM \(Two-Stage\): Payout 10/.test(e)));
+    assert.ok(r.excluded.some((e) => /DDM \(Two-Stage\): Ausschüttung 10/.test(e)));
   });
 
   it('reads an ordinary balance sheet with every model', () => {

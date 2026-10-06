@@ -201,7 +201,7 @@ describe('banks, insurers and brokers', () => {
     const reverse = calculateReverseDCF(bank, rates);
 
     assert.equal(dcf.fairValue, null);
-    assert.match(dcf.assumptions, /borrow as their business/);
+    assert.match(dcf.assumptions, /Geld als Geschäft/);
     assert.equal(calculateEPV(bank, rates).fairValue, null);
     assert.equal(reverse.isPossible, false);
     assert.equal(reverse.impliedMargin, null);
@@ -229,7 +229,7 @@ describe('banks, insurers and brokers', () => {
     const reasons = new Map(composite.excludedModels.map((e) => [e.name, e.reason]));
 
     assert.ok(composite.primary.models.some((m) => m.name === 'Excess Return (RIM)'));
-    assert.match(reasons.get('EPV (Greenwald)') ?? '', /borrow as their business/);
+    assert.match(reasons.get('EPV (Greenwald)') ?? '', /Geld als Geschäft/);
   });
 
   it('do not take payment networks with them', () => {

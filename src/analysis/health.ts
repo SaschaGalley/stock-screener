@@ -20,7 +20,7 @@
  */
 
 import type { InterestCoverageResult, StockFinancials } from '../types.js';
-import { fmtBig } from '../format.js';
+import { deNumber, fmtBigDe as fmtBig } from '../format.js';
 import { toFiniteNumber } from '../utils/num.js';
 import { borrowsToLend } from './dcf.js';
 
@@ -75,7 +75,7 @@ export function adjustedCurrentRatio(f: StockFinancials): { ratio: number | null
 const RUNWAY_COMFORTABLE_MONTHS = 36;
 const RUNWAY_SHORT_MONTHS = 12;
 
-const pct = (x: number) => `${x >= 0 ? '+' : '−'}${(Math.abs(x) * 100).toFixed(1)} %`;
+const pct = (x: number) => `${x >= 0 ? '+' : '−'}${deNumber(Math.abs(x) * 100, 1)} %`;
 
 export function calculateHealthChecks(f: StockFinancials, coverage: InterestCoverageResult): HealthResult {
   const lender = borrowsToLend(f);
@@ -97,7 +97,7 @@ export function calculateHealthChecks(f: StockFinancials, coverage: InterestCove
     const r = quarter.ratio ?? annual;
     if (r !== null) {
       const atYearEnd = annual !== null && ca !== null && cl !== null
-        ? `${big(ca)} gegen ${big(cl)}, ${annual.toFixed(2)}x` : null;
+        ? `${big(ca)} gegen ${big(cl)}, ${deNumber(annual, 2)}x` : null;
       const prepaid = quarter.deferredShare !== null
         ? `, ohne vorausbezahlte Umsätze (${Math.round(quarter.deferredShare * 100)} % der kurzfristigen Verbindlichkeiten), die mit Leistung statt Geld beglichen werden`
         : '';
@@ -105,8 +105,8 @@ export function calculateHealthChecks(f: StockFinancials, coverage: InterestCove
         key: 'short-term', label: 'Kurzfristige Verbindlichkeiten gedeckt',
         mark: r >= 1 ? 'pass' : r >= 0.8 ? 'mixed' : 'fail',
         note: quarter.ratio === null
-          ? `Umlaufvermögen ${big(ca!)} gegen ${big(cl!)} fällig binnen eines Jahres (${r.toFixed(2)}x)`
-          : `Umlaufvermögen deckt die binnen eines Jahres fälligen Verbindlichkeiten ${r.toFixed(2)}-fach im letzten Quartal${prepaid}`
+          ? `Umlaufvermögen ${big(ca!)} gegen ${big(cl!)} fällig binnen eines Jahres (${deNumber(r, 2)}x)`
+          : `Umlaufvermögen deckt die binnen eines Jahres fälligen Verbindlichkeiten ${deNumber(r, 2)}-fach im letzten Quartal${prepaid}`
             + (atYearEnd && !prepaid && Math.abs(annual! - quarter.ratio) >= 0.05 ? ` (zum Geschäftsjahresende ${atYearEnd})` : ''),
       });
     }
@@ -116,7 +116,7 @@ export function calculateHealthChecks(f: StockFinancials, coverage: InterestCove
       checks.push({
         key: 'long-term', label: 'Langfristige Verbindlichkeiten gedeckt',
         mark: r >= 1 ? 'pass' : r >= 0.5 ? 'mixed' : 'fail',
-        note: `Umlaufvermögen ${big(ca)} gegen ${big(lt)} langfristige Verbindlichkeiten (${r.toFixed(2)}x)`,
+        note: `Umlaufvermögen ${big(ca)} gegen ${big(lt)} langfristige Verbindlichkeiten (${deNumber(r, 2)}x)`,
       });
     }
     if (cash !== null && debt !== null) {
@@ -133,7 +133,7 @@ export function calculateHealthChecks(f: StockFinancials, coverage: InterestCove
         mark: netDebt <= 0 ? 'pass' : lev !== null && lev <= 2 ? 'mixed' : 'fail',
         note: netDebt <= 0
           ? `${held} ${invested > 0 ? 'übersteigen' : 'übersteigt'} die Schulden von ${big(debt)}`
-          : `Nettoverschuldung ${big(netDebt)}${invested > 0 ? ' nach Abzug der Finanzanlagen' : ''}${lev !== null ? `, ${lev.toFixed(1)}x EBITDA` : ', ohne positives EBITDA'}`,
+          : `Nettoverschuldung ${big(netDebt)}${invested > 0 ? ' nach Abzug der Finanzanlagen' : ''}${lev !== null ? `, ${deNumber(lev, 1)}x EBITDA` : ', ohne positives EBITDA'}`,
       });
     }
   }
@@ -160,7 +160,7 @@ export function calculateHealthChecks(f: StockFinancials, coverage: InterestCove
       key: 'interest', label: 'Zinsen gedeckt',
       mark: i === 'excellent' || i === 'good' ? 'pass' : i === 'fair' ? 'mixed' : 'fail',
       note: coverage.ratio !== null && coverage.ratio > 0
-        ? `Operatives Ergebnis deckt die Zinsen ${coverage.ratio.toFixed(1)}-fach`
+        ? `Operatives Ergebnis deckt die Zinsen ${deNumber(coverage.ratio, 1)}-fach`
         : coverage.ratio !== null
           ? 'Operativer Verlust — die Zinsen werden aus der Substanz bezahlt'
           : i === 'excellent' ? 'Keine Schulden, die Zinsen kosten' : 'Operativer Verlust bei bestehenden Schulden',

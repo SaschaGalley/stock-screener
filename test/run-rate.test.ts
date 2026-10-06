@@ -126,15 +126,15 @@ describe('the margin the price requires', () => {
     const im = calculateReverseDCF(grower({ ebit: -18_000_000 }), rates).impliedMargin!;
     assert.ok(im.requiredMargin > 0);
     assert.equal(im.achievableMargin, null);
-    assert.match(im.interpretation, /has not shown a profit/);
+    assert.match(im.interpretation, /noch keinen Gewinn gezeigt/);
   });
 
   it('reads the requirement against the best margin shown', () => {
     const f = grower();
     const dcf = calculateDCF(f, rates);
     const at = (price: number) => calculateReverseDCF({ ...f, price, marketCap: price * 10_000_000 }, rates).impliedMargin!;
-    assert.match(at(dcf.fairValue! * 0.5).interpretation, /holds even if margins slip/);
-    assert.match(at(dcf.fairValue! * 3).interpretation, /step change/);
+    assert.match(at(dcf.fairValue! * 0.5).interpretation, /hält auch, wenn die Margen nachgeben/);
+    assert.match(at(dcf.fairValue! * 3).interpretation, /Sprung in der Profitabilität/);
   });
 
   it('prefers consensus revenue growth, capped like the DCF', () => {

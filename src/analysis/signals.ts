@@ -1,3 +1,4 @@
+import { deNumber } from '../format.js';
 import {
   SignalDirection, SignalGroup, SignalItem, TechnicalIndicators, TechnicalSignals,
 } from '../types.js';
@@ -92,8 +93,8 @@ function maItem(name: string, price: number, ma: number | null | undefined): Sig
   const sig = classifyMA(price, ma);
   const usable = ma != null && Number.isFinite(ma);
   const hint = !usable
-    ? 'insufficient history'
-    : `price ${price.toFixed(2)} ${sig === 'buy' ? '>' : sig === 'sell' ? '<' : '≈'} ${name} ${ma!.toFixed(2)}`;
+    ? 'zu wenig Historie'
+    : `Kurs ${deNumber(price, 2)} ${sig === 'buy' ? '>' : sig === 'sell' ? '<' : '≈'} ${name} ${deNumber(ma!, 2)}`;
   return { name, value: usable ? (ma as number) : null, signal: sig, hint };
 }
 
@@ -123,39 +124,39 @@ export function deriveTechnicalSignals(t: TechnicalIndicators, price: number): T
   const oscItems: SignalItem[] = [
     {
       name: 'RSI (14)', value: safe(t.rsi14), signal: classifyRSI(t.rsi14),
-      hint: !isUsable(t.rsi14) ? 'n/a'
-        : t.rsi14 >= 70 ? `${t.rsi14.toFixed(1)} ≥ 70 → overbought`
-        : t.rsi14 <= 30 ? `${t.rsi14.toFixed(1)} ≤ 30 → oversold`
-        : `${t.rsi14.toFixed(1)} in 30–70 → neutral`,
+      hint: !isUsable(t.rsi14) ? '—'
+        : t.rsi14 >= 70 ? `${deNumber(t.rsi14, 1)} ≥ 70 → überkauft`
+        : t.rsi14 <= 30 ? `${deNumber(t.rsi14, 1)} ≤ 30 → überverkauft`
+        : `${deNumber(t.rsi14, 1)} zwischen 30 und 70 → neutral`,
     },
     {
       name: 'Stochastic %K (14)', value: safe(t.stochK14), signal: classifyStochastic(t.stochK14, t.stochD14),
-      hint: !isUsable(t.stochK14) || !isUsable(t.stochD14) ? 'n/a'
-        : `%K ${t.stochK14.toFixed(1)} vs %D ${t.stochD14.toFixed(1)} (oversold <20, overbought >80)`,
+      hint: !isUsable(t.stochK14) || !isUsable(t.stochD14) ? '—'
+        : `%K ${deNumber(t.stochK14, 1)} gegen %D ${deNumber(t.stochD14, 1)} (überverkauft < 20, überkauft > 80)`,
     },
     {
       name: 'MACD (12,26,9)', value: safe(t.macdHistogram), signal: classifyMACD(t.macdLine, t.macdSignal),
-      hint: !isUsable(t.macdLine) || !isUsable(t.macdSignal) ? 'n/a'
-        : `line ${t.macdLine.toFixed(2)} ${t.macdLine > t.macdSignal ? '>' : t.macdLine < t.macdSignal ? '<' : '='} signal ${t.macdSignal.toFixed(2)}`,
+      hint: !isUsable(t.macdLine) || !isUsable(t.macdSignal) ? '—'
+        : `Linie ${deNumber(t.macdLine, 2)} ${t.macdLine > t.macdSignal ? '>' : t.macdLine < t.macdSignal ? '<' : '='} Signal ${deNumber(t.macdSignal, 2)}`,
     },
     {
       name: 'CCI (20)', value: safe(t.cci20), signal: classifyCCI(t.cci20),
-      hint: !isUsable(t.cci20) ? 'n/a'
-        : t.cci20 > 100 ? `${t.cci20.toFixed(1)} > 100 → overbought`
-        : t.cci20 < -100 ? `${t.cci20.toFixed(1)} < −100 → oversold`
-        : `${t.cci20.toFixed(1)} in ±100 → neutral`,
+      hint: !isUsable(t.cci20) ? '—'
+        : t.cci20 > 100 ? `${deNumber(t.cci20, 1)} > 100 → überkauft`
+        : t.cci20 < -100 ? `${deNumber(t.cci20, 1)} < −100 → überverkauft`
+        : `${deNumber(t.cci20, 1)} innerhalb ±100 → neutral`,
     },
     {
       name: 'Williams %R (14)', value: safe(t.williamsR14), signal: classifyWilliamsR(t.williamsR14),
-      hint: !isUsable(t.williamsR14) ? 'n/a'
-        : t.williamsR14 <= -80 ? `${t.williamsR14.toFixed(1)} ≤ −80 → oversold`
-        : t.williamsR14 >= -20 ? `${t.williamsR14.toFixed(1)} ≥ −20 → overbought`
-        : `${t.williamsR14.toFixed(1)} in −80…−20 → neutral`,
+      hint: !isUsable(t.williamsR14) ? '—'
+        : t.williamsR14 <= -80 ? `${deNumber(t.williamsR14, 1)} ≤ −80 → überverkauft`
+        : t.williamsR14 >= -20 ? `${deNumber(t.williamsR14, 1)} ≥ −20 → überkauft`
+        : `${deNumber(t.williamsR14, 1)} zwischen −80 und −20 → neutral`,
     },
     {
       name: 'Momentum (10)', value: safe(t.momentum10), signal: classifyMomentum(t.momentum10),
-      hint: !isUsable(t.momentum10) ? 'n/a'
-        : `${t.momentum10 > 0 ? 'positive' : t.momentum10 < 0 ? 'negative' : 'flat'} (${t.momentum10.toFixed(2)})`,
+      hint: !isUsable(t.momentum10) ? '—'
+        : `${t.momentum10 > 0 ? 'positiv' : t.momentum10 < 0 ? 'negativ' : 'flach'} (${deNumber(t.momentum10, 2)})`,
     },
     {
       name: 'Bollinger %B', value: safe(t.bollingerPercentB),
@@ -163,10 +164,10 @@ export function deriveTechnicalSignals(t: TechnicalIndicators, price: number): T
         : t.bollingerPercentB < 0 ? 'buy'
         : t.bollingerPercentB > 1 ? 'sell'
         : 'neutral',
-      hint: !isUsable(t.bollingerPercentB) ? 'n/a'
-        : t.bollingerPercentB < 0 ? `${t.bollingerPercentB.toFixed(2)} < 0 → below lower band`
-        : t.bollingerPercentB > 1 ? `${t.bollingerPercentB.toFixed(2)} > 1 → above upper band`
-        : `${t.bollingerPercentB.toFixed(2)} in band`,
+      hint: !isUsable(t.bollingerPercentB) ? '—'
+        : t.bollingerPercentB < 0 ? `${deNumber(t.bollingerPercentB, 2)} < 0 → unter dem unteren Band`
+        : t.bollingerPercentB > 1 ? `${deNumber(t.bollingerPercentB, 2)} > 1 → über dem oberen Band`
+        : `${deNumber(t.bollingerPercentB, 2)} im Band`,
     },
   ];
 

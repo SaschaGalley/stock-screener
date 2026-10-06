@@ -30,6 +30,7 @@ import { seasonallyAdjustedRunRate } from './run-rate.js';
 import { consecutiveQuarters, latestValue, YearPoint } from './trailing.js';
 import { ValuationBasis, equityPerShare, valuationBasis } from './basis.js';
 import { adjustedBeta, betaPrior, costOfEquity, terminalGrowth, wacc } from './cost-of-capital.js';
+import { deNumber } from '../format.js';
 import { borrowsToLend, isPlausibleFairValue, LENDER_NOTE } from './dcf.js';
 import { quantileSorted } from './sampling.js';
 import { toFiniteNumber } from '../utils/num.js';
@@ -1134,14 +1135,14 @@ export function calculateCompositeFairValue(financials: StockFinancials, inputs:
   const lender = borrowsToLend(financials);
   const roe = financials.roe;
   const bookNotAnchor = !lender && roe !== null && Number.isFinite(roe) && roe > BOOK_ANCHOR_MAX_ROE
-    ? `ROE ${(roe * 100).toFixed(0)} % — book value is not the capital base (buybacks or a capital-light model), so a book-anchored value measures the balance sheet, not the business`
+    ? `ROE ${deNumber(roe * 100, 0)} % — der Buchwert ist nicht die Kapitalbasis (Rückkäufe oder ein kapitalarmes Geschäft), ein Wert aus dem Buchwert misst also die Bilanz, nicht das Geschäft`
     : undefined;
   const payout = financials.payoutRatio;
   const tokenDividend = inputs.ddm.isApplicable && payout !== null && Number.isFinite(payout) && payout < DDM_MIN_PAYOUT
-    ? `Payout ${(payout * 100).toFixed(0)} % — the dividend is not how this firm distributes value, so a dividend-only value understates it`
+    ? `Ausschüttung ${deNumber(payout * 100, 0)} % — die Dividende ist nicht der Weg, auf dem diese Firma Wert verteilt, ein Wert nur aus ihr unterschätzt sie`
     : undefined;
   const rimExcessTooNegative = !lender && inputs.rim.excessReturn !== null && inputs.rim.excessReturn < -0.03;
-  const fcffInapplicable = lender ? `Not applicable — ${LENDER_NOTE}` : undefined;
+  const fcffInapplicable = lender ? `Nicht anwendbar — ${LENDER_NOTE}` : undefined;
 
   const primary: CompositeContributor[]      = [];
   const conservative: CompositeContributor[] = [];
@@ -1166,35 +1167,35 @@ export function calculateCompositeFairValue(financials: StockFinancials, inputs:
 
   // ── PRIMARY tier ──
   if (lender) {
-    add('primary', 'Excess Return (RIM)', inputs.rim.fairValue, 'Requires positive book value and a return on equity');
+    add('primary', 'Excess Return (RIM)', inputs.rim.fairValue, 'Braucht positiven Buchwert und eine Eigenkapitalrendite');
   } else {
     add('primary', 'DCF (Revenue-Driven)', inputs.dcf.fairValue, inputs.dcf.assumptions, undefined, dcfWeight(inputs.dcf));
   }
-  add('primary', PEER_MULTIPLES_MODEL, inputs.peerMultiples.medianFairPrice, 'No peer-group data', undefined,
+  add('primary', PEER_MULTIPLES_MODEL, inputs.peerMultiples.medianFairPrice, 'Keine Peer-Daten', undefined,
     (inputs.peerMultiples.peerCount ?? 0) >= 5 ? MODEL_WEIGHT.full : MODEL_WEIGHT.discounted);
   add('primary', 'Peter Lynch', inputs.peterLynch.fairValue,
-    'Requires positive earnings and 5–25 % consensus or three-year growth', undefined, MODEL_WEIGHT.discounted);
+    'Braucht positiven Gewinn und 5–25 % Wachstum (Konsens oder drei Jahre)', undefined, MODEL_WEIGHT.discounted);
   // Analyst target = market consensus, treated as one more "model" for triangulation.
   primaryModels++;
   if (financials.targetMeanPrice !== null && Number.isFinite(financials.targetMeanPrice) && financials.targetMeanPrice > 0) {
     primary.push({ name: ANALYST_CONSENSUS_MODEL, fairValue: financials.targetMeanPrice, weight: MODEL_WEIGHT.full });
   } else {
-    excluded.push({ name: ANALYST_CONSENSUS_MODEL, reason: 'No analyst coverage' });
+    excluded.push({ name: ANALYST_CONSENSUS_MODEL, reason: 'Keine Analysten' });
   }
 
   // ── CONSERVATIVE tier ──
-  add('conservative', 'Graham Number',     inputs.graham.grahamNumber,     'Requires positive EPS and book value', bookNotAnchor);
-  add('conservative', 'Graham Revised V*', inputs.grahamRevised.fairValue, 'Requires positive EPS and growth');
-  add('conservative', 'EPV (Greenwald)',   inputs.epv.fairValue,           'Requires a positive normalised operating margin', fcffInapplicable);
+  add('conservative', 'Graham Number',     inputs.graham.grahamNumber,     'Braucht positiven Gewinn je Aktie und Buchwert', bookNotAnchor);
+  add('conservative', 'Graham Revised V*', inputs.grahamRevised.fairValue, 'Braucht positiven Gewinn je Aktie und Wachstum');
+  add('conservative', 'EPV (Greenwald)',   inputs.epv.fairValue,           'Braucht eine positive normalisierte operative Marge', fcffInapplicable);
   if (!lender) {
-    add('conservative', 'Excess Return (RIM)', inputs.rim.fairValue, 'Requires positive book value and a return on equity',
+    add('conservative', 'Excess Return (RIM)', inputs.rim.fairValue, 'Braucht positiven Buchwert und eine Eigenkapitalrendite',
       bookNotAnchor ?? (rimExcessTooNegative
-        ? `Sustainable ROE far below cost of equity (excess ${(inputs.rim.excessReturn! * 100).toFixed(1)}pp) — a book-anchored value understates a firm in a heavy investment phase`
+        ? `Nachhaltige Eigenkapitalrendite weit unter den Eigenkapitalkosten (${deNumber(inputs.rim.excessReturn! * 100, 1)} Pp.) — ein Wert aus dem Buchwert unterschätzt eine Firma in starker Investitionsphase`
         : undefined));
   }
   add('conservative', 'DDM (Two-Stage)',
     inputs.ddm.isApplicable ? inputs.ddm.fairValue : null,
-    inputs.ddm.isApplicable ? 'Cost of equity barely above stable growth — model unstable' : 'No dividend',
+    inputs.ddm.isApplicable ? 'Eigenkapitalkosten kaum über dem stabilen Wachstum — Modell instabil' : 'Keine Dividende',
     tokenDividend);
 
   const primaryTier      = tierStats(price, primary);

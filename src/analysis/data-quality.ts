@@ -24,6 +24,11 @@
  */
 
 import { DataQualityWarning, StockFinancials } from '../types.js';
+import { deNumber } from '../format.js';
+
+/** A whole amount as the warnings write it: "1.234.567". */
+const int = (n: number) => deNumber(n, 0);
+const MARGIN_DE: Record<string, string> = { netMargin: 'Nettomarge', operatingMargin: 'operative Marge' };
 import { toFiniteNumber } from '../utils/num.js';
 import { majorCurrency } from '../currencies.js';
 import { RATE_CURRENCIES } from '../data/fred.js';
@@ -129,9 +134,9 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
       code: 'stale-fundamentals',
       severity: 'error',
       fields: ['mostRecentQuarter'],
-      message: `Yahoo's newest reported quarter for this listing is ${f.mostRecentQuarter} — ${age.toFixed(0)} months old. `
-        + `TTM figures (P/E, margins, ROE, FCF, EV) sourced from the market-side modules are unreliable; `
-        + `prefer the annual statement series and treat every trailing ratio as indicative only.`,
+      message: `Das jüngste Quartal, das Yahoo für dieses Listing meldet, ist ${f.mostRecentQuarter} — ${deNumber(age, 0)} Monate alt. `
+        + `Die Zwölfmonatswerte (KGV, Margen, ROE, FCF, EV) aus den Marktmodulen sind unzuverlässig; `
+        + `besser die Jahresabschlüsse nehmen und jede nachlaufende Kennzahl nur als Anhaltspunkt lesen.`,
     });
   }
 
@@ -147,9 +152,9 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
       code: 'ebitda-below-ebit',
       severity: 'error',
       fields: ['ebitda', 'ebit'],
-      message: `EBITDA (${ebitda.toLocaleString()}) is below EBIT (${ebit.toLocaleString()}), which cannot be true`
-        + `${da !== null ? ` — with D&A of ${da.toLocaleString()}, EBITDA should be ≈ ${(ebit + da).toLocaleString()}` : ''}. `
-        + `The two figures come from different Yahoo modules; at least one is stale. EV/EBITDA is not usable.`,
+      message: `EBITDA (${int(ebitda)}) liegt unter dem EBIT (${int(ebit)}), was nicht sein kann`
+        + `${da !== null ? ` — mit Abschreibungen von ${int(da)} müsste das EBITDA ≈ ${int(ebit + da)} sein` : ''}. `
+        + `Die beiden Zahlen kommen aus verschiedenen Yahoo-Modulen; mindestens eine ist veraltet. EV/EBITDA ist nicht verwendbar.`,
     });
   }
 
@@ -169,8 +174,8 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
         code: 'enterprise-value-mismatch',
         severity: 'error',
         fields: ['enterpriseValue'],
-        message: `Enterprise value (${ev.toLocaleString()}) contradicts market cap + net debt (${expected.toLocaleString()}, `
-          + `off by ${(diff * 100).toFixed(0)}%). Every EV multiple below is affected.`,
+        message: `Der Unternehmenswert (${int(ev)}) widerspricht Börsenwert plus Nettoschulden (${int(expected)}, `
+          + `${deNumber(diff * 100, 0)} % daneben). Jedes EV-Multiple ist davon betroffen.`,
       });
     }
   }
@@ -197,9 +202,9 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
       code: 'revenue-below-annual',
       severity: 'warn',
       fields: ['revenue', 'revenueGrowth'],
-      message: `Headline revenue (${revenue.toLocaleString()}) is `
-        + `${((1 - revenue / statementRevenue) * 100).toFixed(0)}% below the newest annual statement `
-        + `(${statementRevenue.toLocaleString()}). Prefer the statement series for growth and margins.`,
+      message: `Der ausgewiesene Umsatz (${int(revenue)}) liegt `
+        + `${deNumber((1 - revenue / statementRevenue) * 100, 0)} % unter dem jüngsten Jahresabschluss `
+        + `(${int(statementRevenue)}). Für Wachstum und Margen besser die Abschlüsse nehmen.`,
     });
   }
 
@@ -222,8 +227,8 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
   const annualRevenue = statementRevenue;
   if (annualRevenue !== null && annualRevenue > 0) {
     const checks: { field: 'netMargin' | 'operatingMargin'; reported: number | null; numerator: number | null; label: string }[] = [
-      { field: 'netMargin', reported: toFiniteNumber(f.netMargin), numerator: latest(f.fundamentalsHistory?.netIncome), label: 'net income' },
-      { field: 'operatingMargin', reported: toFiniteNumber(f.operatingMargin), numerator: latest(f.fundamentalsHistory?.operatingIncome), label: 'operating income' },
+      { field: 'netMargin', reported: toFiniteNumber(f.netMargin), numerator: latest(f.fundamentalsHistory?.netIncome), label: 'Nettogewinn' },
+      { field: 'operatingMargin', reported: toFiniteNumber(f.operatingMargin), numerator: latest(f.fundamentalsHistory?.operatingIncome), label: 'operatives Ergebnis' },
     ];
     for (const c of checks) {
       if (c.reported === null || c.numerator === null) continue;
@@ -237,12 +242,12 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
           code: 'margin-mismatch',
           severity: 'warn',
           fields: [c.field],
-          message: `Trailing ${c.field} of ${(c.reported * 100).toFixed(2)}% disagrees with ${c.label} / revenue `
-            + `on the newest full fiscal year (${(derived * 100).toFixed(2)}%)`
-            + `${signFlip ? ' — and the two have opposite signs' : ''}. `
-            + `The two cover different periods, so a fast-moving business can differ legitimately; `
-            + `a gap this size is either that trajectory or a trailing figure that stopped moving. `
-            + `Treat the margin level as unsettled either way.`,
+          message: `Die nachlaufende ${MARGIN_DE[c.field]} von ${deNumber(c.reported * 100, 2)} % passt nicht zu ${c.label} / Umsatz `
+            + `im jüngsten vollen Geschäftsjahr (${deNumber(derived * 100, 2)} %)`
+            + `${signFlip ? ' — und beide haben entgegengesetzte Vorzeichen' : ''}. `
+            + `Beide decken verschiedene Zeiträume ab, ein schnell wachsendes Geschäft kann also zu Recht abweichen; `
+            + `eine Lücke dieser Größe ist entweder dieser Verlauf oder ein nachlaufender Wert, der nicht mehr aktualisiert wird. `
+            + `Das Margenniveau gilt so oder so als ungeklärt.`,
         });
       }
     }
@@ -260,9 +265,9 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
       code: 'fcf-sign-conflict',
       severity: 'warn',
       fields: ['freeCashFlow'],
-      message: `Trailing free cash flow is negative (${fcf.toLocaleString()}) while the newest annual statement shows `
-        + `${statementFcf.toLocaleString()}. This suppresses the DCF and turns every P/FCF multiple negative, so the `
-        + `absence of those models is a data artefact, not a verdict on the business.`,
+      message: `Der nachlaufende Free Cashflow ist negativ (${int(fcf)}), der jüngste Jahresabschluss zeigt aber `
+        + `${int(statementFcf)}. Das unterdrückt den DCF und macht jedes Kurs-FCF-Verhältnis negativ — fehlen diese Modelle, `
+        + `ist das ein Datenfehler, kein Urteil über das Geschäft.`,
     });
   }
 
@@ -281,8 +286,8 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
         code: 'capex-missing',
         severity: 'warn',
         fields: ['capex', 'freeCashFlow'],
-        message: `No capex reported for this listing, and the free-cash-flow series is identical to operating cash flow — `
-          + `it is OCF, not FCF, and overstates cash generation by the full capex line.`,
+        message: `Für dieses Listing sind keine Investitionen gemeldet, und die Free-Cashflow-Reihe gleicht dem operativen Cashflow — `
+          + `sie ist der operative Cashflow, nicht der freie, und überzeichnet den Mittelzufluss um die gesamten Investitionen.`,
       });
     }
   }
@@ -313,8 +318,8 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
       code: 'no-analyst-coverage',
       severity: 'warn',
       fields: ['analystCount', 'targetMeanPrice', 'earningsEstimates'],
-      message: `No valuation-relevant sell-side coverage on this listing: no ratings, no price target, no EPS estimates. `
-        + `Often an artefact of a secondary listing rather than a genuinely uncovered company — the primary line may be covered.`,
+      message: `Für dieses Listing gibt es keine bewertungsrelevante Analystenabdeckung: keine Ratings, kein Kursziel, keine Gewinnschätzungen. `
+        + `Oft eine Folge eines Zweitlistings statt einer wirklich unbeachteten Firma — das Hauptlisting ist womöglich abgedeckt.`,
     });
   }
 
@@ -329,9 +334,9 @@ export function auditFinancials(f: StockFinancials, now: number = Date.now()): D
       code: 'no-local-rate',
       severity: 'warn',
       fields: ['tradingCurrency'],
-      message: `The cash flows are in ${major}, for which no ten-year government yield is fetched — the models discount `
-        + `with the US Treasury yield instead, so every rate-based value (DCF, EPV, DDM, RIM) is off by the difference `
-        + `between the two currencies' rates.`,
+      message: `Die Cashflows sind in ${major}, für die keine zehnjährige Staatsanleihenrendite geholt wird — die Modelle diskontieren `
+        + `stattdessen mit der US-Rendite, so dass jeder zinsbasierte Wert (DCF, EPV, DDM, RIM) um den Zinsabstand `
+        + `der beiden Währungen daneben liegt.`,
     });
   }
 
