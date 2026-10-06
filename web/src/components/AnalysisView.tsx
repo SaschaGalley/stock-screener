@@ -311,6 +311,22 @@ function AnalysisView({
               </Suspense>
             </Section>
 
+            {/* TIER 2c: THE CHART — the verdict says whether, this says when: levels, channels, lines, a model's reading */}
+            <Section
+              title="Chart & Technical Signals"
+              info="section.technicals"
+              subtitle="Trend, Unterstützungen, Widerstände, Kanäle, Timing und KI-Chartlesung"
+              storageKey="technicals"
+            >
+              <ChartTechnicals
+                symbol={symbol}
+                row={row ?? null}
+                timing={bundle.marketSignals?.technicals?.timing ?? null}
+                signals={bundle.technicalSignals}
+                model={flags.model}
+              />
+            </Section>
+
             {/* TIER 3: COMPOSITE BAR CHART (Primary + Conservative tiers) */}
             {(m.composite.primary.models.length > 0 ||
               m.composite.conservative.models.length > 0) && (
@@ -430,22 +446,6 @@ function AnalysisView({
                 />
               </Section>
             )}
-
-            {/* TIER 8b: THE CHART — levels, channels, lines, a model's reading, and the old indicator vote */}
-            <Section
-              title="Chart & Technical Signals"
-              info="section.technicals"
-              subtitle="Trend, Unterstützungen, Widerstände, Kanäle, Timing und KI-Chartlesung"
-              storageKey="technicals"
-            >
-              <ChartTechnicals
-                symbol={symbol}
-                row={row ?? null}
-                timing={bundle.marketSignals?.technicals?.timing ?? null}
-                signals={bundle.technicalSignals}
-                model={flags.model}
-              />
-            </Section>
 
             {/* TIER 9a: PRICE ACTION — what HAS the stock done (returns, vol, RS) */}
             {bundle.marketSignals && (
