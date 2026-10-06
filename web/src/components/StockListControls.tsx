@@ -55,7 +55,7 @@ export default function StockListControls({ view, onChange, layout, badge }: Pro
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {search}
       <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-400">
         <input
@@ -64,10 +64,10 @@ export default function StockListControls({ view, onChange, layout, badge }: Pro
           onChange={(e) => onChange({ ...view, onlyWatched: e.target.checked })}
           className="accent-[var(--color-accent)]"
         />
-        nur Watchlist
+        <span><span className="hidden sm:inline">nur </span>Watchlist</span>
       </label>
       <label className="flex min-w-0 shrink items-center gap-1.5 text-xs text-ink-400">
-        <span className="shrink-0">Sortierung</span>
+        <span className="hidden shrink-0 sm:inline">Sortierung</span>
         <select
           value={view.sort}
           onChange={(e) => onChange({ ...view, sort: e.target.value as ListView['sort'] })}
@@ -77,7 +77,7 @@ export default function StockListControls({ view, onChange, layout, badge }: Pro
         </select>
       </label>
       <label className="flex min-w-0 shrink items-center gap-1.5 text-xs text-ink-400">
-        <span className="shrink-0">Gruppierung</span>
+        <span className="hidden shrink-0 sm:inline">Gruppierung</span>
         <select
           value={view.group}
           // Folded groups belong to the grouping they were folded in; under

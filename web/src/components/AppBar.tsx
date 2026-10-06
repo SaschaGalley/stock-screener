@@ -33,9 +33,9 @@ export default function AppBar({ view, onViewChange, rows, total, nav, onNavigat
       <span className="text-xs text-ink-500">
         <span className="text-ink-300">{rows.length}</span>{filtered ? ` von ${total}` : ''} Aktien
         {avg && (
-          <>
+          <span className="hidden sm:inline">
             {' '}· Ø Score <span className={`font-mono ${scoreColor(avg.avg)}`}>{deNumber(avg.avg, 1)}</span>
-          </>
+          </span>
         )}
       </span>
       <div className="ml-auto">
