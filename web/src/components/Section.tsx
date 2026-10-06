@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useLayoutEffect, useRef, ReactNode } from 'react';
 import type { GlossaryKey } from '../glossary';
 import Term from './Term';
 
@@ -13,6 +13,13 @@ interface Props {
   /** What the section is for, behind an ⓘ beside its title. */
   info?: GlossaryKey;
   /**
+   * What the section finds, in a line — "Fairer Wert 328 $, 2 % unter dem
+   * Kurs" rather than "DCF, peer multiples, reverse DCF". Takes the place of
+   * the subtitle, which says what the section holds; a body that loads its
+   * own data can say it instead through `useSectionFinding`.
+   */
+  finding?: string | null;
+  /**
    * Always open, no toggle. Inside a stock page's tab everything is shown: a
    * remembered fold meant two clicks to look and then a section that stayed
    * open for good, so the tab does the choosing instead.
@@ -21,6 +28,21 @@ interface Props {
 }
 
 const STORAGE_PREFIX = 'stockcli:section:';
+
+const FindingContext = createContext<((finding: string | null) => void) | null>(null);
+
+/**
+ * Report the section's finding from inside its body, once the body has the
+ * data — the analysts' record, the five-year history and the chart load
+ * their own. Null while loading leaves the subtitle in place.
+ */
+export function useSectionFinding(finding: string | null): void {
+  const set = useContext(FindingContext);
+  useEffect(() => {
+    set?.(finding);
+    return () => set?.(null);
+  }, [set, finding]);
+}
 
 function readStoredOpen(key: string, fallback: boolean): boolean {
   try {
@@ -115,8 +137,10 @@ function useBuilt(ref: React.RefObject<HTMLElement | null>, wanted: boolean): bo
   return built;
 }
 
-export default function Section({ title, subtitle, defaultOpen = true, children, rightHeader, storageKey, info, fixed = false }: Props) {
+export default function Section({ title, subtitle, defaultOpen = true, children, rightHeader, storageKey, info, fixed = false, finding = null }: Props) {
   const key = storageKey ?? title;
+  const [reported, setReported] = useState<string | null>(null);
+  const found = reported ?? finding;
   const [stored, setOpen] = useStoredOpen(key, defaultOpen);
   const open = fixed || stored;
   const ref = useRef<HTMLElement>(null);
@@ -137,7 +161,9 @@ export default function Section({ title, subtitle, defaultOpen = true, children,
             <h2 className="text-sm font-semibold text-ink-100">
               {info ? <Term k={info}>{title}</Term> : title}
             </h2>
-            {subtitle && <span className="text-xs text-ink-500">{subtitle}</span>}
+            {found
+              ? <span className="text-xs text-ink-300">{found}</span>
+              : subtitle && <span className="text-xs text-ink-500">{subtitle}</span>}
           </div>
           {rightHeader && <div className="flex items-center gap-2">{rightHeader}</div>}
         </div>
@@ -152,13 +178,15 @@ export default function Section({ title, subtitle, defaultOpen = true, children,
             <h2 className="text-sm font-semibold text-ink-100">
               {info ? <Term k={info} focusable={false}>{title}</Term> : title}
             </h2>
-            {subtitle && <span className="text-xs text-ink-500">{subtitle}</span>}
+            {found
+              ? <span className="text-xs text-ink-300">{found}</span>
+              : subtitle && <span className="text-xs text-ink-500">{subtitle}</span>}
           </div>
           {rightHeader && <div className="flex items-center gap-2">{rightHeader}</div>}
         </button>
       )}
       {open && (built
-        ? <div ref={body} className="overflow-x-auto p-3 sm:p-4">{children}</div>
+        ? <FindingContext.Provider value={setReported}><div ref={body} className="overflow-x-auto p-3 sm:p-4">{children}</div></FindingContext.Provider>
         : <div aria-busy="true" style={{ height: lastHeight.get(key) ?? PLACEHOLDER_HEIGHT }} />)}
     </section>
   );

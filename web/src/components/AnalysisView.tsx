@@ -40,10 +40,14 @@ import { CloseIcon } from "./icons";
 import StockTabs, { type StockTab } from "./StockTabs";
 import OverviewCards from "./OverviewCards";
 import More from "./More";
+import {
+  companyFinding, earningsFinding, fairValueFinding, fundamentalsFinding, marketContextFinding, modelsFinding,
+  ownershipFinding, peersFinding, priceActionFinding, qualityFinding, researchFinding,
+} from "./sectionFindings";
 // Markdown and the editor are only wanted once the section is opened.
 const Journal = lazy(() => import("./Journal"));
 import { CurrencyProvider } from "../currency";
-import { currencyPrefix } from "../format";
+import { currencyPrefix, fmtBig, fmtPrice } from "../format";
 
 interface Props {
   symbol: string;
@@ -226,6 +230,9 @@ function AnalysisView({
   // layer FX-converts the statements into it), so one provider covers the view.
   const cur = f.tradingCurrency ?? null;
   const sym = currencyPrefix(cur);
+  // For the section headers' findings, which are built outside the currency provider below.
+  const money = (n: number | null | undefined) => fmtPrice(n, cur);
+  const big = (n: number | null | undefined) => fmtBig(n, cur);
   const llm = analysis?.llmAnalysis ?? null;
   const cs  = bundle.cacheStatus;
   const dataStale = cs && (cs.financials === 'stale' || cs.marketSignals === 'stale');
@@ -369,6 +376,7 @@ function AnalysisView({
                 <More label="Renditen, Volatilität, relative Stärke, Optionen, Revisionen und Makro">
                   <Section fixed
                     title="Price Action"
+                    finding={priceActionFinding(bundle.marketSignals)}
                     info="section.priceAction"
                     subtitle="returns, volatility, position, relative strength"
                   >
@@ -376,6 +384,7 @@ function AnalysisView({
                   </Section>
                   <Section fixed
                     title="Market Context"
+                    finding={marketContextFinding(bundle.marketSignals)}
                     info="section.marketContext"
                     subtitle="options, analyst revisions, macro"
                   >
@@ -392,7 +401,7 @@ function AnalysisView({
                 <Section fixed
                   title="Fair Value Distribution"
                   info="section.fairValue"
-                  subtitle={`Primary ${sym}${m.composite.primary.median?.toFixed(0) ?? "—"} · Conservative ${sym}${m.composite.conservative.median?.toFixed(0) ?? "—"}`}
+                  finding={fairValueFinding(m, f.price, money)}
                 >
                   <div className="mb-2 text-xs text-ink-500">
                     <span className="mr-3">
@@ -431,6 +440,7 @@ function AnalysisView({
               {/* TIER 4: VALUATION DETAILS */}
               <Section fixed
                 title="Valuation Models"
+                finding={modelsFinding(m, f.price, money)}
                 info="section.valuationModels"
                 subtitle="DCF, peer multiples, reverse DCF"
               >
@@ -438,7 +448,7 @@ function AnalysisView({
               </Section>
               {/* TIER 7: PEER COMPARISON */}
               {bundle.sectorMedians && (
-                <Section fixed title="Peer Group Comparison" info="section.peers">
+                <Section fixed title="Peer Group Comparison" finding={peersFinding(m, bundle.sectorMedians ?? null)} info="section.peers">
                   <PeerCompare
                     ratios={m.ratios}
                     evMultiples={m.evMultiples}
@@ -456,12 +466,12 @@ function AnalysisView({
                 f.website ||
                 f.isin ||
                 f.industry) && (
-                <Section fixed title="About the Company">
+                <Section fixed title="About the Company" finding={companyFinding(f)}>
                   <CompanyInfo financials={f} />
                 </Section>
               )}
               {/* TIER 8: FUNDAMENTALS — the last ~5 fiscal years, then today's figures */}
-              <Section fixed title="Fundamentals" info="section.fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
+              <Section fixed title="Fundamentals" finding={fundamentalsFinding(f, m)} info="section.fundamentals" subtitle="Verlauf der letzten Geschäftsjahre und aktuelle Kennzahlen" storageKey="fundamentals-combined">
                 <div className="space-y-5">
                   {f.fundamentalsHistory &&
                     (f.fundamentalsHistory.revenue?.length > 0 ||
@@ -485,12 +495,12 @@ function AnalysisView({
               {/* TIER 6: EARNINGS (history + forward) */}
               {(f.earningsSurprises?.length > 0 ||
                 f.earningsEstimates?.length > 0) && (
-                <Section fixed title="Earnings" info="section.earnings">
+                <Section fixed title="Earnings" finding={earningsFinding(f)} info="section.earnings">
                   <EarningsBlock financials={f} />
                 </Section>
               )}
               {/* TIER 5: QUALITY & RISK */}
-              <Section fixed title="Quality & Risk Scores" info="section.quality">
+              <Section fixed title="Quality & Risk Scores" finding={qualityFinding(m)} info="section.quality">
                 <BalanceChecks health={m.health} />
                 <QualityScores metrics={m} />
               </Section>
@@ -516,7 +526,7 @@ function AnalysisView({
                 <VerdictTrackRecord symbol={symbol} />
               </Section>
               {/* TIER 10: OWNERSHIP & FLOW */}
-              <Section fixed title="Ownership & Insider Activity" info="section.ownership">
+              <Section fixed title="Ownership & Insider Activity" finding={ownershipFinding(f, big)} info="section.ownership">
                 <div className="space-y-5">
                   <OwnershipFlow financials={f} />
                   <HoldersPanel symbol={symbol} />
@@ -530,7 +540,7 @@ function AnalysisView({
                 <StockTimeline symbol={symbol} />
               </Section>
               {/* TIER 11: DISTILL + PERPLEXITY + NEWS + SEARCH TRACES */}
-              <Section fixed title="Research & News" info="section.research">
+              <Section fixed title="Research & News" finding={researchFinding(bundle.news, bundle.perplexity, bundle.deepResearch ?? null)} info="section.research">
                 <NewsAndResearch
                   symbol={symbol}
                   news={bundle.news}
@@ -546,7 +556,7 @@ function AnalysisView({
 
             <TabPane on={tab === 'journal'} seen={shown.has('journal')}>
               {/* TIER 2b: MY OWN VIEW — notes, purchases, sales and why, beside the case for and against */}
-              <Section fixed title="Mein Journal" info="section.journal" subtitle="Notizen, Käufe und Verkäufe zu dieser Aktie — und warum" storageKey="journal">
+              <Section fixed title="Mein Journal" finding={journalCount ? `${journalCount} ${journalCount === 1 ? 'Eintrag' : 'Einträge'}` : null} info="section.journal" subtitle="Notizen, Käufe und Verkäufe zu dieser Aktie — und warum" storageKey="journal">
                 <Suspense fallback={<p className="text-xs text-ink-500">Lade Journal …</p>}>
                   <Journal symbol={symbol} />
                 </Suspense>

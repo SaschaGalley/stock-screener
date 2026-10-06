@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReactECharts from '../charts/ECharts';
+import { useSectionFinding } from '../Section';
 import { api } from '../../api';
 import { useMoney } from '../../currency';
 import { fmtSignedPct } from '../../format';
@@ -50,6 +51,9 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
       .catch((e) => { if (live) setError((e as Error).message); });
     return () => { live = false; };
   }, [symbol]);
+
+  // The header's line: today's first multiple with a history, against its own five years.
+  useSectionFinding(history ? historyFinding(history) : null);
 
   // A series without a fair value opens on the earnings view instead of a
   // disabled tab.
@@ -487,4 +491,17 @@ function FairLede({ fair }: { fair: FairRatios }) {
       <span className="text-ink-500"> (R² {f.r2.toFixed(2)})</span>
     </p>
   );
+}
+
+const deNum = (x: number, d = 1) => x.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d }).replace('-', '−');
+
+/** "KGV 38,3 gegen 29,1 im Fünfjahresmedian, höher als in 85 % der Monate" — is today unusual for this stock? */
+function historyFinding(history: History): string | null {
+  for (const m of HISTORY_MULTIPLES) {
+    const st = multipleStats(history.points, m.key);
+    if (st.latest === null || st.median5 === null) continue;
+    const rank = st.rank === null ? '' : `, höher als in ${Math.round(st.rank * 100)} % der Monate`;
+    return `${m.label} ${deNum(st.latest)} gegen ${deNum(st.median5)} im Fünfjahresmedian${rank}`;
+  }
+  return null;
 }

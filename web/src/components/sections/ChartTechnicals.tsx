@@ -14,6 +14,7 @@ import { SetupPlan, firingSetups } from '../SetupBadge';
 import { useVerdictEvidence } from '../VerdictEvidence';
 import Term from '../Term';
 import More from '../More';
+import { useSectionFinding } from '../Section';
 import type { GlossaryKey } from '../../glossary';
 
 interface Props {
@@ -91,6 +92,7 @@ export default function ChartTechnicals({ symbol, row, timing, signals, model, c
 
   const a = data?.analysis ?? null;
   const t = row?.timing ?? timing;
+  useSectionFinding(a ? chartFinding(a) : null);
 
   if (data === undefined) return <p className="py-8 text-center text-sm text-ink-500">Lade Kursdaten …</p>;
   if (error) return <p className="text-sm text-red-400">⚠ {error}</p>;
@@ -194,6 +196,20 @@ function Segmented<T extends number>({ options, value, onChange }: { options: { 
       ))}
     </div>
   );
+}
+
+/** The section header's line: trend, place in the channel, the nearest levels. */
+function chartFinding(a: ChartAnalysis): string {
+  const trend = { up: 'Aufwärtstrend', down: 'Abwärtstrend', sideways: 'Seitwärts' }[a.structure.trend];
+  const q = a.channels.find((c) => c.sessions === 63);
+  const where = !q ? null : q.z <= -1 ? 'unten im 3-M-Kanal' : q.z >= 1 ? 'oben im 3-M-Kanal' : 'Mitte des 3-M-Kanals';
+  const sup = a.levels.filter((l) => l.kind === 'support')[0];
+  const res = a.levels.filter((l) => l.kind === 'resistance').at(-1);
+  return [
+    trend, where,
+    res && `Widerstand ${de(res.price)} (${pct(res.distance)})`,
+    sup && `Unterstützung ${de(sup.price)} (${pct(sup.distance)})`,
+  ].filter(Boolean).join(' · ');
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────

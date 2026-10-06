@@ -9,6 +9,7 @@ import { MIN_FIRM_TARGETS, type FirmRecord } from '../../../../src/analysis/anal
 import type { TrackRecordView } from '../../../../src/stock-history-service';
 import Term from '../Term';
 import { useFirst } from '../More';
+import { useSectionFinding } from '../Section';
 
 /**
  * How good the analysts' targets for this stock have been: every target with
@@ -18,6 +19,12 @@ import { useFirst } from '../More';
  */
 export default function AnalystTrackRecord({ symbol }: { symbol: string }) {
   const { data, error } = useArchive(() => api.getAnalystRecord(symbol), [symbol]);
+  const o = data?.overall;
+  useSectionFinding(o && o.n > 0 ? [
+    `${o.n} Kursziele mit abgeschlossenem Jahr`,
+    o.directionRate !== null && `Richtung in ${Math.round(o.directionRate * 100)} % richtig`,
+    o.reachedRate !== null && `${Math.round(o.reachedRate * 100)} % erreicht`,
+  ].filter(Boolean).join(' · ') : null);
   if (error) return <p className="text-xs text-red-400">Nicht verfügbar: {error}</p>;
   if (data === undefined) return <p className="text-xs text-ink-500">Lade Analysten-Historie …</p>;
   if (data === null || data.overall.n === 0) {

@@ -3,6 +3,7 @@ import { useMoney } from '../../currency';
 import { recommendationColor } from '../../format';
 import { pct } from '../evaluationParts';
 import { useArchive } from '../useArchive';
+import { useSectionFinding } from '../Section';
 import {
   RECORD_HORIZONS, callHit, type Leg,
 } from '../../../../src/analysis/verdict-record';
@@ -16,6 +17,12 @@ import type { FairAtCall, VerdictRecordView } from '../../../../src/stock-histor
  */
 export default function VerdictTrackRecord({ symbol }: { symbol: string }) {
   const { data, error } = useArchive(() => api.getVerdictRecord(symbol), [symbol]);
+  const current = data?.calls[0];
+  useSectionFinding(current
+    ? `Aktuell ${current.verdict} seit ${fmtDay(current.day)}${
+      current.held?.excess != null ? `, seither ${signedDe(current.held.excess)} gegen den S&P 500`
+        : current.held ? `, seither ${signedDe(current.held.stock)}` : ''}`
+    : null);
   if (error) return <p className="text-xs text-red-400">Nicht verfügbar: {error}</p>;
   if (data === undefined) return <p className="text-xs text-ink-500">Lade Urteils-Historie …</p>;
   if (data === null) {
@@ -51,6 +58,8 @@ export default function VerdictTrackRecord({ symbol }: { symbol: string }) {
   );
 }
 
+/** "+9,5 %" — the header's line is prose, and prose takes the comma. */
+const signedDe = (x: number) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(1).replace('.', ',')} %`;
 const fmtDay = (day: string) => `${Number(day.slice(8, 10))}.${Number(day.slice(5, 7))}.${day.slice(0, 4)}`;
 
 /** The excess return, green where the call was right and red where it was wrong. */

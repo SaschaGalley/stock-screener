@@ -1,8 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { NarrativeDimension, NarrativeDimensions, ScoreCard, ScoreCriterion, ScoreFinding, ScorePillar } from '../../types';
 import { scoreBarColor, scoreColor } from '../stockList';
 import { verdictForScore } from '../../format';
-import { useStoredOpen } from '../Section';
 import CheckMark, { type CheckMarkKind } from '../CheckMark';
 import Term from '../Term';
 import { DIMENSION_GLOSSARY, GLOSSARY, PILLAR_GLOSSARY } from '../../glossary';
@@ -17,11 +16,12 @@ import { DIMENSION_GLOSSARY, GLOSSARY, PILLAR_GLOSSARY } from '../../glossary';
  * summaries. What a reader wants at a glance is the arithmetic — how the two
  * halves met and what each pillar said — and that fits in one strip beside the
  * verdict it explains. The rest, findings and method and the two prose reads,
- * is one click away and remembers being opened.
+ * is one click away, and closed again the next time — a fold that remembered
+ * being open stayed open for good.
  */
 export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
   const { factor, narrative } = card;
-  const [details, setDetails] = useStoredOpen('score-breakdown-details', false);
+  const [details, setDetails] = useState(false);
 
   return (
     <div className="rounded-lg border border-ink-800 bg-ink-900 p-4">

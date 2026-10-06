@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { api } from '../../api';
 import { useArchive } from '../useArchive';
+import { useSectionFinding } from '../Section';
 import {
   TIMELINE_KINDS, TIMELINE_LABEL, type TimelineEvent, type TimelineKind,
 } from '../../../../src/analysis/timeline';
 import { KIND_DOT, TONE_MARK, TONE_TEXT } from '../timelineStyle';
 
 const RANGES = [{ days: 90, label: '3 M' }, { days: 365, label: '1 J' }, { days: 1095, label: '3 J' }] as const;
+const SPAN: Record<number, string> = { 90: 'drei Monaten', 365: 'einem Jahr', 1095: 'drei Jahren' };
 /** News outnumber everything else several times over; shown on request. */
 const DEFAULT_OFF: TimelineKind[] = ['news'];
 /** A screen's worth; the rest is a click away. */
@@ -33,6 +35,12 @@ export default function StockTimeline({ symbol }: { symbol: string }) {
     return c;
   }, [data]);
   const shown = (data?.events ?? []).filter((e) => !off.has(e.kind));
+  // Own notes are the journal tab's; the header names the newest of the rest.
+  const newest = shown.filter((e) => e.kind !== 'journal').reduce<TimelineEvent | null>((n, e) => (!n || e.day > n.day ? e : n), null);
+  useSectionFinding(data ? [
+    `${shown.length} Ereignisse in ${SPAN[days] ?? `${days} Tagen`}`,
+    newest && `zuletzt ${fmtDay(newest.day).slice(0, -4)} ${newest.title}`,
+  ].filter(Boolean).join(' · ') : null);
 
   const toggle = (k: TimelineKind) => setOff((prev) => {
     const next = new Set(prev);

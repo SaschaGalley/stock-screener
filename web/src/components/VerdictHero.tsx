@@ -1,8 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { CompositeFairValue } from '../types';
 import type { CoverageView } from '../../../src/stock-history-service';
 import { CoverageStrip, CoverageTable } from './AnalystCoverage';
-import { useStoredOpen } from './Section';
 import { fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
 import { useMoney } from '../currency';
 import RecommendationBadge from './RecommendationBadge';
@@ -56,7 +55,7 @@ export default function VerdictHero({
   coverage = null,
 }: Props) {
   const { fmtPrice } = useMoney();
-  const [showFirms, setShowFirms] = useStoredOpen('analyst-firms', false);
+  const [showFirms, setShowFirms] = useState(false);
 
   const compositeMoS = composite.primary.median !== null
     ? (composite.primary.median - price) / price
