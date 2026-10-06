@@ -17,7 +17,7 @@ export const TONE_MARK: Record<Tone, string> = { bull: '▲', bear: '▼', neutr
  * every reading on the chart page takes before its numbers.
  */
 export function AnswerCard({ question, answer, tone, why, children }: {
-  question: string; answer: ReactNode; tone: Tone; why?: string[]; children?: ReactNode;
+  question: ReactNode; answer: ReactNode; tone: Tone; why?: string[]; children?: ReactNode;
 }) {
   return (
     <div className={`rounded-lg border border-ink-700 border-l-4 bg-ink-950 px-3 py-2.5 ${TONE_BORDER[tone]}`}>

@@ -89,19 +89,19 @@ export default function ForecastChart(input: ForecastInput) {
   const line = (label: string, g: ReturnType<typeof growthPair>) => (
     <span>
       {label}{' '}
-      {g.past !== null && <>{fmtSignedPct(g.past, 0)}/Jahr über {g.pastYears} J</>}
-      {g.ahead !== null && <>{g.past !== null ? ', ' : ''}Konsens {fmtSignedPct(g.ahead, 0)}/Jahr für die nächsten {g.aheadYears} J</>}
+      {g.past !== null && <>{fmtSignedPct(g.past, 0)} im Jahr über {g.pastYears} Jahre</>}
+      {g.ahead !== null && <>{g.past !== null ? ', ' : ''}Konsens {fmtSignedPct(g.ahead, 0)} im Jahr für die nächsten {g.aheadYears} Jahre</>}
     </span>
   );
 
   return (
     <div>
-      <h3 className="mb-1 text-xs font-semibold text-ink-300">
-        <Term k="concept.forecast">Vergangenheit &amp; Prognose</Term>
+      <h3 className="text-sm font-semibold text-ink-100">
+        <Term k="concept.forecast">Wie es gewachsen ist — und wie es weitergehen soll</Term>
       </h3>
-      <p className="mb-2 text-xs text-ink-400">
+      <p className="mb-2 text-[13px] text-ink-400">
         {line('Umsatz', revG)}
-        {(epsG.past !== null || epsG.ahead !== null) && <> · {line('EPS', epsG)}</>}
+        {(epsG.past !== null || epsG.ahead !== null) && <> · {line('Gewinn je Aktie', epsG)}</>}
       </p>
       <div style={{ height: 240 }}>
         <ReactECharts style={{ height: '100%', width: '100%' }} notMerge option={option} />

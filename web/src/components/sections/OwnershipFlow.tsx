@@ -1,100 +1,66 @@
 import { useMoney } from '../../currency';
-import { deNumber, fmtPct, fmtPercentPoints } from '../../format';
+import { deNumber, fmtPct } from '../../format';
 import Term from '../Term';
-import type { GlossaryKey } from '../../glossary';
+import { AnswerCard } from '../chart/shared';
+import type { Tone } from '../../../../src/analysis/chart-reading';
 
 interface Props {
   financials: any;
 }
 
+const ok = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+
+/**
+ * Who owns the stock and who is moving: how much is sold short, how much the
+ * institutions hold, and whether the insiders bought or sold in the last six
+ * months — three questions answered in a word, the figures as reasons. They
+ * were three small tables of "Trans.", "Stk." and a share count.
+ */
 export default function OwnershipFlow({ financials: f }: Props) {
   const { fmtBig, fmtCount } = useMoney();
+
+  const short = ok(f.shortPercentOfFloat) ? f.shortPercentOfFloat : null;
+  const shortChange = ok(f.sharesShort) && ok(f.sharesShortPriorMonth) && f.sharesShortPriorMonth > 0
+    ? f.sharesShort / f.sharesShortPriorMonth - 1 : null;
+
+  const inst = ok(f.institutionsPercentHeld) ? f.institutionsPercentHeld : null;
+  const insiders = ok(f.insidersPercentHeld) ? f.insidersPercentHeld : null;
+
+  const buys = f.insiderBuyCount ?? 0, sells = f.insiderSellCount ?? 0;
+  const net = (f.insiderBuyValue ?? 0) - (f.insiderSellValue ?? 0);
+  const insiderTone: Tone = buys + sells === 0 ? 'neutral' : net > 0 ? 'bull' : net < 0 ? 'bear' : 'neutral';
+
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      {/* Short interest */}
-      <div>
-        <h3 className="mb-2 text-xs font-semibold text-ink-300">Leerverkäufe</h3>
-        {f.shortPercentOfFloat != null && Number.isFinite(f.shortPercentOfFloat) ? (
-          <table className="w-full text-xs tabular">
-            <tbody>
-              <Row label="Anteil am Streubesitz" term="financials.shortPercentOfFloat" value={fmtPct(f.shortPercentOfFloat, 1)}
-                accentColor={f.shortPercentOfFloat > 0.20 ? 'text-red-400' : f.shortPercentOfFloat > 0.08 ? 'text-amber-400' : 'text-emerald-400'} />
-              <Row label="Leerverkaufte Aktien"  term="financials.sharesShort" value={fmtCount(f.sharesShort)} />
-              <Row label="Tage zur Eindeckung" term="financials.shortRatio" value={f.shortRatio != null && Number.isFinite(f.shortRatio) ? deNumber(f.shortRatio, 1) + ' T' : '—'} />
-              {f.sharesShort != null && f.sharesShortPriorMonth != null && f.sharesShortPriorMonth > 0 && (() => {
-                const chg = (f.sharesShort - f.sharesShortPriorMonth) / f.sharesShortPriorMonth * 100;
-                return <Row label="ggü. Vormonat" term="concept.shortMoM" value={fmtPercentPoints(chg, 0)}
-                  accentColor={chg >= 0 ? 'text-red-400' : 'text-emerald-400'} />;
-              })()}
-            </tbody>
-          </table>
-        ) : <p className="text-xs text-ink-500">Keine Leerverkaufsdaten.</p>}
-      </div>
-
-      {/* Ownership */}
-      <div>
-        <h3 className="mb-2 text-xs font-semibold text-ink-300">Aktionärsstruktur</h3>
-        {(f.institutionsPercentHeld != null || f.insidersPercentHeld != null) ? (
-          <table className="w-full text-xs tabular">
-            <tbody>
-              {f.institutionsPercentHeld != null && Number.isFinite(f.institutionsPercentHeld) && (
-                <Row label="Institutionen" term="financials.institutionsPercentHeld"
-                  value={fmtPct(f.institutionsPercentHeld, 1)}
-                  accent={f.institutionsCount ? `${f.institutionsCount.toLocaleString('de-DE')} Halter` : ''} />
-              )}
-              {f.insidersPercentHeld != null && Number.isFinite(f.insidersPercentHeld) && (
-                <Row label="Insiders" term="financials.insidersPercentHeld" value={fmtPct(f.insidersPercentHeld, 1)} />
-              )}
-            </tbody>
-          </table>
-        ) : <p className="text-xs text-ink-500">Keine Daten zur Aktionärsstruktur.</p>}
-      </div>
-
-      {/* Insider activity */}
-      <div>
-        <h3 className="mb-2 text-xs font-semibold text-ink-300">
-          <Term k="concept.insiderActivity">Insider-Aktivität</Term> <span className="text-ink-500">(6 M)</span>
-        </h3>
-        {(f.insiderBuyCount > 0 || f.insiderSellCount > 0) ? (
-          <table className="w-full text-xs tabular">
-            <tbody>
-              {f.insiderBuyCount > 0 && (
-                <Row
-                  label="Käufe"
-                  value={`${f.insiderBuyCount} Trans.`}
-                  accent={`+${f.insiderBuyShares?.toLocaleString('de-DE') ?? 0} Stk. / ${fmtBig(f.insiderBuyValue)}`}
-                  accentColor="text-emerald-400"
-                />
-              )}
-              {f.insiderSellCount > 0 && (
-                <Row
-                  label="Verkäufe"
-                  value={`${f.insiderSellCount} Trans.`}
-                  accent={`−${f.insiderSellShares?.toLocaleString('de-DE') ?? 0} Stk. / ${fmtBig(f.insiderSellValue)}`}
-                  accentColor="text-red-400"
-                />
-              )}
-              {f.insiderBuyCount > 0 && f.insiderSellCount > 0 && (() => {
-                const netSh = (f.insiderBuyShares ?? 0) - (f.insiderSellShares ?? 0);
-                const netVal = (f.insiderBuyValue ?? 0) - (f.insiderSellValue ?? 0);
-                return <Row label="Saldo" value={`${netSh >= 0 ? '+' : ''}${deNumber(netSh, 0)} Stk.`}
-                  accent={fmtBig(netVal)}
-                  accentColor={netSh >= 0 ? 'text-emerald-400' : 'text-red-400'} />;
-              })()}
-            </tbody>
-          </table>
-        ) : <p className="text-xs text-ink-500">Keine Transaktionen in letzter Zeit.</p>}
-      </div>
+    <div className="grid gap-3 md:grid-cols-3">
+      <AnswerCard
+        question="Wetten viele auf fallende Kurse?"
+        answer={short === null ? 'Keine Daten' : short < 0.03 ? 'Kaum jemand' : short < 0.08 ? 'Wenige' : short < 0.2 ? 'Einige' : 'Viele'}
+        tone={short === null ? 'neutral' : short >= 0.2 ? 'bear' : short < 0.08 ? 'bull' : 'neutral'}
+        why={short === null ? [] : [
+          `${fmtPct(short, 1)} des Streubesitzes leerverkauft${ok(f.sharesShort) ? ` (${fmtCount(f.sharesShort)} Aktien)` : ''}`,
+          ...(ok(f.shortRatio) ? [`zurückzukaufen in etwa ${deNumber(f.shortRatio, 1)} Handelstagen`] : []),
+          ...(shortChange !== null ? [`${shortChange >= 0 ? '+' : '−'}${deNumber(Math.abs(shortChange * 100), 0)} % gegen den Vormonat`] : []),
+        ]}
+      />
+      <AnswerCard
+        question="Wem gehört die Aktie?"
+        answer={inst === null ? 'Keine Daten' : inst >= 0.7 ? 'Vor allem Fonds und Banken' : inst >= 0.4 ? 'Gemischt' : 'Vor allem Privatanleger'}
+        tone="neutral"
+        why={[
+          ...(inst !== null ? [`Institutionen ${fmtPct(inst, 1)}${f.institutionsCount ? `, ${Number(f.institutionsCount).toLocaleString('de-DE')} Halter` : ''}`] : []),
+          ...(insiders !== null ? [`Insider ${fmtPct(insiders, 1)}`] : []),
+        ]}
+      />
+      <AnswerCard
+        question={<Term k="concept.insiderActivity">Kaufen oder verkaufen die Insider?</Term>}
+        answer={buys + sells === 0 ? 'Keine Geschäfte' : net > 0 ? 'Sie kaufen' : net < 0 ? 'Sie verkaufen' : 'Ausgeglichen'}
+        tone={insiderTone}
+        why={[
+          ...(buys > 0 ? [`${buys} ${buys === 1 ? 'Kauf' : 'Käufe'} für ${fmtBig(f.insiderBuyValue)}`] : []),
+          ...(sells > 0 ? [`${sells} ${sells === 1 ? 'Verkauf' : 'Verkäufe'} für ${fmtBig(f.insiderSellValue)}`] : []),
+          'in den letzten sechs Monaten; Verkäufe sind oft geplant oder für Steuern',
+        ]}
+      />
     </div>
-  );
-}
-
-function Row({ label, term, value, accent, accentColor }: { label: string; term?: GlossaryKey; value: string; accent?: string; accentColor?: string }) {
-  return (
-    <tr className="border-b border-ink-800">
-      <td className="py-1 pr-2 text-ink-400"><Term k={term}>{label}</Term></td>
-      <td className={`py-1 text-right font-mono ${accentColor ?? 'text-ink-100'}`}>{value}</td>
-      {accent !== undefined && <td className="py-1 pl-2 text-right text-2xs text-ink-500">{accent}</td>}
-    </tr>
   );
 }

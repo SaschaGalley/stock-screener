@@ -25,112 +25,127 @@ export default function ScoreBreakdown({ card }: { card: ScoreCard }) {
 
   return (
     <div className="rounded-lg border border-ink-700 bg-ink-900 p-4">
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h3 className="text-[15px] font-semibold text-ink-50">Wie der Score entsteht</h3>
-        <button
-          onClick={() => setDetails((x) => !x)}
-          aria-expanded={details}
-          className="flex items-center gap-1 text-xs text-ink-400 transition hover:text-ink-100"
-        >
-          {details ? 'Weniger' : 'Befunde & Begründung'}
-          <span className={`text-ink-500 transition-transform ${details ? 'rotate-180' : ''}`}>▾</span>
-        </button>
-      </div>
+      <h3 className="mb-3 text-[15px] font-semibold text-ink-50">Wie der Score entsteht</h3>
 
       <Formula card={card} />
 
-      <div className="mt-3 grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <div className="mt-5 grid gap-6 lg:grid-cols-[2fr_1fr]">
         <div>
-          <GroupLabel dot="bg-sky-500">Zahlen · {factor.pillars.length} Säulen</GroupLabel>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+          <SubHeading dot="bg-sky-500" note="jede Säule 0–10, gewichtet">Was die Zahlen sagen</SubHeading>
+          <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
             {factor.pillars.map((p) => <PillarCell key={p.key} p={p} />)}
           </div>
         </div>
         {narrative?.dimensions && (
           <div>
-            <GroupLabel dot="bg-violet-500"><Term k="concept.dimension">Text · Geschäftslage laut Quellen</Term></GroupLabel>
+            <SubHeading dot="bg-violet-500" note="−2 bis +2 je Thema"><Term k="concept.dimension">Was die Quellen sagen</Term></SubHeading>
             <Dimensions dimensions={narrative.dimensions} />
           </div>
         )}
       </div>
 
       {factor.caps.length > 0 && (
-        <ul className="mt-3 space-y-0.5">
+        <ul className="mt-4 space-y-1">
           {factor.caps.map((c, i) => (
-            <li key={i} className="text-xs text-amber-400">⛔ {c.reason}</li>
+            <li key={i} className="text-sm text-amber-400">⛔ {c.reason}</li>
           ))}
         </ul>
       )}
 
+      <button
+        onClick={() => setDetails((x) => !x)}
+        aria-expanded={details}
+        className="mt-4 flex w-full items-center gap-2 rounded border border-dashed border-ink-700 px-3 py-1.5 text-left text-xs text-ink-400 transition hover:border-ink-600 hover:text-ink-200"
+      >
+        <span className={`inline-block w-2 transition-transform ${details ? 'rotate-90' : ''}`}>▸</span>
+        {details ? 'Weniger' : 'Mehr: jedes Kriterium, was den Score hebt und drückt, wie gerechnet wird'}
+      </button>
       {details && <Details card={card} />}
     </div>
   );
 }
 
+/** One term of the sum: a figure, what it is, what it counts. */
+function Term_({ label, value, note, cls, term, extra }: {
+  label: string; value: string; note?: string; cls: string; term?: Parameters<typeof Term>[0]['k']; extra?: ReactNode;
+}) {
+  return (
+    <div className="rounded border border-ink-700 bg-ink-950 px-3 py-1.5">
+      <div className="text-xs text-ink-400">{term ? <Term k={term} extra={extra}>{label}</Term> : label}</div>
+      <div className={`font-mono text-lg font-semibold leading-tight ${cls}`}>{value}</div>
+      {note && <div className="text-xs text-ink-500">{note}</div>}
+    </div>
+  );
+}
+
 /**
- * The blend as one line and the width it actually had. The two halves carry
- * their prose as a tooltip, so the reading is a hover away even when the
- * details are closed.
+ * The blend as a sum a reader can follow — the figures side by side with
+ * what each counts — and the same in a sentence under it. It was one line of
+ * mono type: "Zahlen 6,7 × 100 % → 6,7 = 6,7 BUY".
  */
 function Formula({ card }: { card: ScoreCard }) {
   const { factor, final, narrative, dataNote } = card;
   const fPct = Math.round(final.factorWeight * 100);
   const nPct = Math.round(final.narrativeWeight * 100);
+  const hasText = !!narrative && nPct > 0;
+  const capped = verdictForScore(final.score) !== final.verdict;
+  const sentence = [
+    `Die Zahlen ergeben ${deNumber(factor.score, 1)} und zählen ${fPct} %`,
+    hasText
+      ? `die Textquellen ${narrative!.score === null ? 'enthalten sich' : `ergeben ${deNumber(narrative!.score, 1)}`} und zählen ${nPct} %`
+      : 'die Textquellen zählen diesmal nicht mit',
+  ].join('; ')
+    + (final.adjustment !== 0 ? `; das Urteil korrigiert um ${final.adjustment > 0 ? '+' : '−'}${deNumber(Math.abs(final.adjustment), 1)}` : '')
+    + `. Zusammen ${deNumber(final.score, 1)} — ${final.verdict}${capped ? `, gedeckelt (der Score allein wäre ${verdictForScore(final.score)})` : ''}.`;
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 font-mono text-xs text-ink-400">
-        <Term k="score.factor.score" extra={dataNote} className="text-sky-400">Zahlen {deNumber(factor.score, 1)}</Term>
-        <Term k="score.final.factorWeight">× {fPct} %</Term>
+      <div className="flex flex-wrap items-center gap-2">
+        <Term_ label="Zahlen" value={deNumber(factor.score, 1)} note={`zählt ${fPct} %`} cls="text-sky-400" term="score.factor.score" extra={dataNote} />
         {narrative && (
           <>
-            <span>+</span>
-            <Term k="score.narrative.score" extra={narrative.summary} className="text-violet-400">
-              Text {narrative.score === null ? 'Enthaltung' : deNumber(narrative.score, 1)}
-            </Term>
-            <span>× {nPct} %</span>
+            <span className="text-lg text-ink-500">+</span>
+            <Term_ label="Text" value={narrative.score === null ? '—' : deNumber(narrative.score, 1)} note={`zählt ${nPct} %`} cls="text-violet-400" term="score.narrative.score" extra={narrative.summary} />
           </>
         )}
-        <span>→ {deNumber(final.blend, 1)}</span>
         {final.adjustment !== 0 && (
-          <Term k="score.final.adjustment" extra={final.adjustmentReason}>
-            {final.adjustment > 0 ? '+' : '−'} {deNumber(Math.abs(final.adjustment), 1)} Korrektur
-          </Term>
+          <>
+            <span className="text-lg text-ink-500">{final.adjustment > 0 ? '+' : '−'}</span>
+            <Term_ label="Korrektur" value={deNumber(Math.abs(final.adjustment), 1)} cls="text-ink-200" term="score.final.adjustment" extra={final.adjustmentReason} />
+          </>
         )}
-        <span>=</span>
-        <span className={`text-sm font-bold ${scoreColor(final.score)}`}>{deNumber(final.score, 1)}</span>
-        <span className="font-sans text-xs font-semibold text-ink-200">{final.verdict}</span>
-        {/* Against the band of the *final* score, not the factor's: those two
-            differ whenever the blend moved the number, which is not a cap. */}
-        {verdictForScore(final.score) !== final.verdict && (
-          <Term
-            k="concept.capped"
-            extra={`Der Score allein wäre ${verdictForScore(final.score)}.`}
-            className="rounded border border-amber-700 px-1 font-sans text-3xs uppercase text-amber-400"
-          >
-            gedeckelt
-          </Term>
-        )}
+        <span className="text-lg text-ink-500">=</span>
+        <div className="rounded border border-ink-600 bg-ink-950 px-3 py-1.5">
+          <div className="text-xs text-ink-400">Score</div>
+          <div className="flex items-baseline gap-2">
+            <span className={`font-mono text-lg font-bold leading-tight ${scoreColor(final.score)}`}>{deNumber(final.score, 1)}</span>
+            <span className="text-sm font-semibold text-ink-100">{final.verdict}</span>
+            {capped && (
+              <Term k="concept.capped" extra={`Der Score allein wäre ${verdictForScore(final.score)}.`} className="rounded border border-amber-700 px-1 text-2xs text-amber-400">
+                gedeckelt
+              </Term>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="mt-1.5 flex h-1 overflow-hidden rounded-full bg-ink-800">
-        <div className="bg-sky-500" style={{ width: `${fPct}%` }} title={`Zahlen ${fPct} %`} />
-        <div className="bg-violet-500" style={{ width: `${nPct}%` }} title={`Text ${nPct} %`} />
-      </div>
+      <p className="mt-2 text-sm text-ink-300">{sentence}</p>
     </div>
   );
 }
 
-function GroupLabel({ dot, children }: { dot: string; children: ReactNode }) {
+function SubHeading({ dot, note, children }: { dot: string; note?: string; children: ReactNode }) {
   return (
-    <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-500">
-      <span className={`inline-block h-1.5 w-1.5 rounded-full ${dot}`} />
-      {children}
+    <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+      <span className={`inline-block h-2 w-2 self-center rounded-full ${dot}`} />
+      <h4 className="text-sm font-semibold text-ink-100">{children}</h4>
+      {note && <span className="text-xs text-ink-500">{note}</span>}
     </div>
   );
 }
 
 function PillarCell({ p }: { p: ScorePillar }) {
   const width = p.score === null ? 0 : (p.score / 10) * 100;
+  const scored = p.criteria.filter((c) => c.points !== null).length;
   const criteria = (
     <>
       <ul className="space-y-0.5">
@@ -143,18 +158,18 @@ function PillarCell({ p }: { p: ScorePillar }) {
   );
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <Term text={PILLAR_GLOSSARY[p.key]} extra={criteria} className="truncate text-ink-300">{p.label}</Term>
-        <span className={`font-mono font-semibold ${scoreColor(p.score)}`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <Term text={PILLAR_GLOSSARY[p.key]} extra={criteria} className="truncate text-sm text-ink-200">{p.label}</Term>
+        <span className={`font-mono text-base font-semibold ${scoreColor(p.score)}`}>
           {p.score === null ? '—' : deNumber(p.score, 1)}
         </span>
       </div>
-      <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-ink-800">
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-800">
         <div className={scoreBarColor(p.score)} style={{ width: `${width}%`, height: '100%' }} />
       </div>
-      <div className="mt-0.5 font-mono text-2xs text-ink-500">
-        {Math.round(p.effectiveWeight * 100)} % Gewicht · {passed(p)}/{p.criteria.length} ✓
-        {p.coverage < 1 && <span className="text-amber-600"> · {Math.round(p.coverage * 100)} % Abdeckung</span>}
+      <div className="mt-1 text-xs text-ink-400">
+        zählt {Math.round(p.effectiveWeight * 100)} % · {passed(p)} von {scored} klar besser als üblich
+        {p.coverage < 1 && <span className="text-amber-500"> · Daten zu {Math.round(p.coverage * 100)} %</span>}
       </div>
     </div>
   );
@@ -221,25 +236,24 @@ const MARK_TITLE: Record<CheckMarkKind, string> = {
 function Checklist({ pillars }: { pillars: ScorePillar[] }) {
   return (
     <div>
-      <Heading>Prüfliste</Heading>
-      <div className="grid gap-x-6 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+      <Heading note="✓ klar besser als die typische Aktie, ✗ klar schlechter, ○ etwa gleich">Jedes Kriterium</Heading>
+      <div className="grid gap-x-8 gap-y-5 md:grid-cols-2 xl:grid-cols-3">
         {pillars.map((p) => (
           <div key={p.key}>
-            <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
-              <span className="font-semibold text-ink-200">{p.label}</span>
-              <span className="font-mono text-ink-500">
-                {passed(p)}/{p.criteria.length} ✓ · <span className={scoreColor(p.score)}>{p.score === null ? '—' : deNumber(p.score, 1)}</span>
-              </span>
+            <div className="mb-1.5 flex items-baseline justify-between gap-2 border-b border-ink-800 pb-1">
+              <span className="text-sm font-semibold text-ink-100">{p.label}</span>
+              <span className={`font-mono text-sm ${scoreColor(p.score)}`}>{p.score === null ? '—' : deNumber(p.score, 1)}</span>
             </div>
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {p.criteria.map((c) => {
                 const kind = markOf(c);
                 return (
-                  <li key={c.key} className="flex gap-1.5 text-xs leading-snug">
-                    <CheckMark kind={kind} title={MARK_TITLE[kind]} />
-                    <span className={kind === 'none' ? 'text-ink-600' : 'text-ink-300'}>
-                      <span className="text-ink-400">{c.label}:</span> {c.note}
-                    </span>
+                  <li key={c.key} className="flex gap-2 leading-snug">
+                    <span className="mt-0.5"><CheckMark kind={kind} title={MARK_TITLE[kind]} /></span>
+                    <div className="min-w-0">
+                      <div className={`text-sm ${kind === 'none' ? 'text-ink-500' : 'text-ink-200'}`}>{c.label}</div>
+                      <div className={`text-[13px] ${kind === 'none' ? 'text-ink-600' : 'text-ink-400'}`}>{c.note}</div>
+                    </div>
                   </li>
                 );
               })}
@@ -259,26 +273,22 @@ function Details({ card }: { card: ScoreCard }) {
       <Checklist pillars={factor.pillars} />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div>
-          <Heading>Befunde</Heading>
-          {factor.findings.length === 0
-            ? <p className="text-xs text-ink-500">Keine Zeile bewegte den Score nennenswert.</p>
-            : (
-              <ul className="space-y-1">
-                {factor.findings.map((f, i) => <FindingRow key={i} f={f} />)}
-              </ul>
-            )}
+        <div className="space-y-4">
+          <FindingList title="Was den Score hebt" items={factor.findings.filter((f) => f.kind === 'driver')} />
+          <FindingList title="Was ihn drückt" items={factor.findings.filter((f) => f.kind === 'drag')} />
+          <FindingList title="Was außerdem zählt" items={factor.findings.filter((f) => f.kind !== 'driver' && f.kind !== 'drag')} />
+          {factor.findings.length === 0 && <p className="text-sm text-ink-500">Keine Zeile bewegte den Score nennenswert.</p>}
         </div>
 
         <div className="space-y-3">
           {dataNote && (
-            <Note title="Zahlen" subtitle="fasst die Befunde zusammen, bewertet nicht">
+            <Note title="Die Zahlen in Worten" subtitle="fasst die Befunde zusammen, bewertet nicht">
               {dataNote}
             </Note>
           )}
           {narrative && (
             <Note
-              title="Text"
+              title="Was die Quellen sagen"
               subtitle={`${narrative.sources.join(', ') || 'keine Quellen'} · ohne Kenntnis der Bewertung gelesen`
                 + (narrative.spread != null ? ` · Median aus ${narrative.runs} Lesungen, Spanne ${deNumber(narrative.spread, 1)}` : '')}
             >
@@ -328,10 +338,21 @@ function Details({ card }: { card: ScoreCard }) {
   );
 }
 
-function Heading({ children }: { children: ReactNode }) {
+function Heading({ children, note }: { children: ReactNode; note?: string }) {
   return (
-    <div className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-500">
-      {children}
+    <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+      <h4 className="text-sm font-semibold text-ink-100">{children}</h4>
+      {note && <span className="text-xs text-ink-500">{note}</span>}
+    </div>
+  );
+}
+
+function FindingList({ title, items }: { title: string; items: ScoreFinding[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <Heading>{title}</Heading>
+      <ul className="space-y-1.5">{items.map((f, i) => <FindingRow key={i} f={f} />)}</ul>
     </div>
   );
 }
@@ -347,15 +368,15 @@ const FINDING_STYLE: Record<ScoreFinding['kind'], { mark: string; cls: string }>
 function FindingRow({ f }: { f: ScoreFinding }) {
   const style = FINDING_STYLE[f.kind];
   return (
-    <li className="flex gap-1.5 text-xs leading-snug">
-      <span className={`shrink-0 font-mono ${style.cls}`}>{style.mark}</span>
-      <span className="text-ink-300">
+    <li className="flex gap-2 text-sm leading-snug">
+      <span className={`shrink-0 ${style.cls}`}>{style.mark}</span>
+      <span className="min-w-0 text-ink-300">
+        {f.note}
         {(f.kind === 'driver' || f.kind === 'drag') && (
-          <span className="mr-1 font-mono text-2xs text-ink-500">
-            {f.impact >= 0 ? '+' : '−'}{deNumber(Math.abs(f.impact), 2)}
+          <span className="ml-1.5 whitespace-nowrap font-mono text-xs text-ink-500">
+            {f.impact >= 0 ? '+' : '−'}{deNumber(Math.abs(f.impact), 2)} Punkte
           </span>
         )}
-        {f.note}
       </span>
     </li>
   );
@@ -364,10 +385,10 @@ function FindingRow({ f }: { f: ScoreFinding }) {
 function Note({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
     <div className="rounded border border-ink-800 bg-ink-950 p-3">
-      <div className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
-        {title} <span className="font-normal normal-case tracking-normal text-ink-500">— {subtitle}</span>
+      <div className="text-sm font-semibold text-ink-100">
+        {title} <span className="text-xs font-normal text-ink-500">— {subtitle}</span>
       </div>
-      <div className="mt-1.5 text-xs leading-relaxed text-ink-300">{children}</div>
+      <div className="mt-1.5 text-[13px] leading-relaxed text-ink-300">{children}</div>
     </div>
   );
 }

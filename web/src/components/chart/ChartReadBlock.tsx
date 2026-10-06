@@ -14,8 +14,15 @@ const ORDER = ['bull', 'base', 'bear'] as const;
 const STRENGTH = { strong: { word: 'stark', n: 1 }, medium: { word: 'mittel', n: 0.55 }, weak: { word: 'schwach', n: 0.2 } } as const;
 const DIRECTION = { up: 'aufwärts', down: 'abwärts', sideways: 'seitwärts' } as const;
 
-/** The model writes dates as 2026-09-17; the page writes 17.9.26. */
-export const deDates = (s: string) => s.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_, y, m, d) => `${Number(d)}.${Number(m)}.${y.slice(2)}`);
+/**
+ * Readings stored before the prompt asked for German text wrote dates as
+ * 2026-09-17 and amounts as 345.34 USD; the page writes 17.9.26 and 345,34 USD.
+ * Only amounts with a currency are touched — a bare "3.10" may be a date.
+ */
+export const deDates = (s: string) => s
+  .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_, y, m, d) => `${Number(d)}.${Number(m)}.${y.slice(2)}`)
+  .replace(/\b(\d{1,3}(?:,\d{3})+|\d+)\.(\d{1,2})(\s?)(USD|EUR|CHF|GBP|\$|€)/g,
+    (_, int: string, dec: string, sp: string, cur: string) => `${int.replace(/,/g, '.')},${dec}${sp}${cur}`);
 
 export function readFinding(r: ChartRead): string {
   return [`Trend ${DIRECTION[r.trend.direction]}`, r.trend.phase, r.patterns[0] && `${r.patterns[0].name} ${CHART_PATTERN_STATUS_LABEL[r.patterns[0].status]}`]

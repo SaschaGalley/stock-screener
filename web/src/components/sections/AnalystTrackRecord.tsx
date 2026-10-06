@@ -10,6 +10,7 @@ import type { TrackRecordView } from '../../../../src/stock-history-service';
 import Term from '../Term';
 import { useFirst } from '../More';
 import { useSectionFinding } from '../Section';
+import { AnswerCard } from '../chart/shared';
 
 /**
  * How good the analysts' targets for this stock have been: every target with
@@ -49,23 +50,38 @@ export default function AnalystTrackRecord({ symbol }: { symbol: string }) {
   );
 }
 
+/** Three answers: were the targets too high or too low, how often were they reached, did the direction hold. */
 function Summary({ r }: { r: TrackRecordView }) {
   const o = r.overall;
   const err = o.medianError ?? 0;
   const first = r.consensus[0]?.day.slice(0, 4);
+  const rate = (v: number | null) => (v === null ? '—' : `${Math.round(v * 100)} %`);
   return (
-    <p className="text-xs leading-relaxed text-ink-300">
-      {o.n} Kursziele mit abgeschlossenem Jahr{first ? ` seit ${first}` : ''}: Der Kurs lag ein Jahr später im Median{' '}
-      <strong className="text-ink-100">{fmtSignedPct(err, 0)}</strong> {err >= 0 ? 'über' : 'unter'} dem Ziel —{' '}
-      {Math.abs(err) < 0.05
-        ? 'die Ziele lagen im Mittel nah an der Wirklichkeit.'
-        : err > 0
-          ? 'die Analysten waren hier zu vorsichtig.'
-          : 'die Analysten waren hier zu optimistisch.'}{' '}
-      {o.reachedRate !== null && <>Erreicht wurden <strong className="text-ink-100">{Math.round(o.reachedRate * 100)} %</strong> der Ziele, </>}
-      {o.directionRate !== null && <>die Richtung stimmte in <strong className="text-ink-100">{Math.round(o.directionRate * 100)} %</strong> der Fälle.</>}
-      {r.pending > 0 && <span className="text-ink-500"> {r.pending} Ziele laufen noch.</span>}
-    </p>
+    <div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <AnswerCard
+          question="Lagen die Ziele zu hoch oder zu tief?"
+          answer={Math.abs(err) < 0.05 ? 'Ziemlich genau' : err > 0 ? 'Zu vorsichtig' : 'Zu optimistisch'}
+          tone={Math.abs(err) < 0.05 ? 'bull' : err > 0 ? 'neutral' : 'bear'}
+          why={[`ein Jahr später stand der Kurs im Median ${fmtSignedPct(err, 0)} ${err >= 0 ? 'über' : 'unter'} dem Ziel`]}
+        />
+        <AnswerCard
+          question="Wie oft wurde das Ziel erreicht?"
+          answer={rate(o.reachedRate)}
+          tone={o.reachedRate === null ? 'neutral' : o.reachedRate >= 0.6 ? 'bull' : o.reachedRate < 0.4 ? 'bear' : 'neutral'}
+          why={['der Kurs berührte das Ziel binnen eines Jahres an einem Schlusskurs']}
+        />
+        <AnswerCard
+          question="Stimmte wenigstens die Richtung?"
+          answer={rate(o.directionRate)}
+          tone={o.directionRate === null ? 'neutral' : o.directionRate >= 0.65 ? 'bull' : o.directionRate < 0.5 ? 'bear' : 'neutral'}
+          why={['der Kurs ging dorthin, wohin das Ziel zeigte']}
+        />
+      </div>
+      <p className="mt-2 text-sm text-ink-400">
+        {o.n} Kursziele mit abgeschlossenem Jahr{first ? ` seit ${first}` : ''}{r.pending > 0 ? `; ${r.pending} laufen noch` : ''}.
+      </p>
+    </div>
   );
 }
 
@@ -122,6 +138,14 @@ function ConsensusChart({ r }: { r: TrackRecordView }) {
   );
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const monthDe = (d: string) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(2, 4)}`;
+
+/**
+ * The firms one by one, the best at calling the direction first: how often
+ * each was right, a bar to see it; how often its targets were reached; where
+ * the price stood a year after its targets; and what it says now.
+ */
 function FirmTable({ firms }: { firms: FirmRecord[] }) {
   const { fmtPrice } = useMoney();
   const [all, setAll] = useState(false);
@@ -132,32 +156,41 @@ function FirmTable({ firms }: { firms: FirmRecord[] }) {
   const pct = (v: number | null) => (v === null ? '—' : `${Math.round(v * 100)} %`);
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold text-ink-300">Die Häuser einzeln</h3>
-      <table className="w-full text-xs tabular">
+      <h3 className="mb-1 text-sm font-semibold text-ink-100">Welches Haus lag wie oft richtig?</h3>
+      <p className="mb-2 text-xs text-ink-500">Häuser mit mindestens {MIN_FIRM_TARGETS} abgeschlossenen Zielen, die meisten Ziele zuerst.</p>
+      <table className="w-full text-sm tabular">
         <thead>
-          <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
+          <tr className="border-b border-ink-700 text-xs text-ink-500">
             <th className="py-1 pr-2 text-left font-normal">Haus</th>
-            <th className="py-1 text-right font-normal"><Term k="concept.ar.targets">Ziele</Term></th>
-            <th className="py-1 text-right font-normal"><Term k="concept.ar.medianError">Kurs vs. Ziel</Term></th>
-            <th className="py-1 text-right font-normal"><Term k="concept.ar.reached">Erreicht</Term></th>
-            <th className="py-1 text-right font-normal"><Term k="concept.ar.direction">Richtung</Term></th>
-            <th className="hidden py-1 text-right font-normal sm:table-cell">Zuletzt</th>
+            <th className="py-1 px-2 text-right font-normal"><Term k="concept.ar.targets">Ziele</Term></th>
+            <th className="py-1 px-2 text-left font-normal"><Term k="concept.ar.direction">Richtung richtig</Term></th>
+            <th className="py-1 px-2 text-right font-normal"><Term k="concept.ar.reached">erreicht</Term></th>
+            <th className="py-1 px-2 text-right font-normal"><Term k="concept.ar.medianError">Kurs ein Jahr später</Term></th>
+            <th className="hidden py-1 pl-2 text-right font-normal md:table-cell">sagt heute</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-ink-800">
           {shown.map((f) => (
-            <tr key={f.firm} className="border-b border-ink-800">
-              <td className="py-1 pr-2 text-ink-300">{f.firm}</td>
-              <td className="py-1 text-right font-mono text-ink-400">{f.n}</td>
-              <td className={`py-1 text-right font-mono ${f.medianError === null ? 'text-ink-500' : Math.abs(f.medianError) < 0.1 ? 'text-emerald-400' : Math.abs(f.medianError) < 0.25 ? 'text-ink-300' : 'text-amber-400'}`}>
-                {f.medianError === null ? '—' : fmtSignedPct(f.medianError, 0)}
+            <tr key={f.firm}>
+              <td className="py-1.5 pr-2 text-ink-200">{f.firm}</td>
+              <td className="py-1.5 px-2 text-right font-mono text-ink-400">{f.n}</td>
+              <td className="py-1.5 px-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-ink-800">
+                    <div
+                      className={f.directionRate === null ? '' : f.directionRate >= 0.7 ? 'h-full bg-emerald-500' : f.directionRate < 0.5 ? 'h-full bg-red-500' : 'h-full bg-ink-400'}
+                      style={{ width: `${Math.round((f.directionRate ?? 0) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="font-mono text-ink-200">{pct(f.directionRate)}</span>
+                </div>
               </td>
-              <td className="py-1 text-right font-mono text-ink-300">{pct(f.reachedRate)}</td>
-              <td className={`py-1 text-right font-mono ${f.directionRate === null ? 'text-ink-500' : f.directionRate >= 0.7 ? 'text-emerald-400' : f.directionRate < 0.5 ? 'text-red-400' : 'text-ink-300'}`}>
-                {pct(f.directionRate)}
+              <td className="py-1.5 px-2 text-right font-mono text-ink-300">{pct(f.reachedRate)}</td>
+              <td className={`whitespace-nowrap py-1.5 px-2 text-right ${f.medianError === null ? 'text-ink-500' : Math.abs(f.medianError) < 0.1 ? 'text-emerald-400' : 'text-ink-300'}`}>
+                {f.medianError === null ? '—' : Math.abs(f.medianError) < 0.02 ? 'auf dem Ziel' : `${fmtSignedPct(f.medianError, 0)} ${f.medianError > 0 ? 'darüber' : 'darunter'}`}
               </td>
-              <td className="hidden py-1 text-right text-ink-400 sm:table-cell">
-                {f.last.grade ?? '—'}{f.last.target !== null ? ` · ${fmtPrice(f.last.target)}` : ''} · {f.last.day.slice(0, 7)}
+              <td className="hidden whitespace-nowrap py-1.5 pl-2 text-right text-ink-400 md:table-cell">
+                {f.last.grade ?? '—'}{f.last.target !== null ? <> · <span className="font-mono text-ink-200">{fmtPrice(f.last.target)}</span></> : ''} · {monthDe(f.last.day)}
               </td>
             </tr>
           ))}
@@ -166,7 +199,7 @@ function FirmTable({ firms }: { firms: FirmRecord[] }) {
       {more}
       {rest > 0 && (
         <button onClick={() => setAll((x) => !x)} className="mt-1 block text-xs text-ink-400 hover:text-ink-100">
-          {all ? 'Nur Häuser mit mindestens fünf Zielen' : `+ ${rest} Häuser mit weniger als fünf abgeschlossenen Zielen`}
+          {all ? `Nur Häuser mit mindestens ${MIN_FIRM_TARGETS} Zielen` : `+ ${rest} Häuser mit weniger als ${MIN_FIRM_TARGETS} abgeschlossenen Zielen`}
         </button>
       )}
     </div>

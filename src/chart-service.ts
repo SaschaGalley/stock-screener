@@ -130,7 +130,7 @@ Grundsätze:
 - Jeder Preis, den du nennst, muss sich aus den Daten begründen lassen. Ein Kursziel nur, wenn das Muster eine Messregel hat (z. B. Höhe der Formation ab Ausbruchspunkt).
 - Prüfe die vorberechneten Marken kritisch: Welche haben wirklich gehalten, welche sind nur Rauschen? Fehlt eine wichtige Marke (z. B. eine runde Zahl, an der der Kurs mehrfach drehte)?
 - Sag, wo die Lage mehrdeutig ist. Technische Analyse ist keine geprüfte Vorhersage; formuliere Szenarien mit Auslösern, keine Empfehlungen.
-- Kurz und konkret. Datumsangaben als YYYY-MM-DD.
+- Kurz und konkret. In den Feldern "from" und "to" Daten als YYYY-MM-DD; im Text (summary, comment, trigger, invalidation, watch) schreibst du deutsch: Daten als 17.9.2026, Zahlen mit Dezimalkomma und Tausenderpunkt, Beträge mit dem Währungszeichen dahinter (1.042,40 $, 109,40 €). Preise in "price", "trigger" und "target" bleiben JSON-Zahlen.
 
 JSON-Schema:
 {
