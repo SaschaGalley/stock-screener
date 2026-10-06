@@ -16,8 +16,11 @@ export default function BalanceChecks({ health }: { health: ComputedMetrics['hea
   return (
     <div className="mb-4 rounded border border-ink-800 bg-ink-950 p-3">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-2xs font-semibold uppercase tracking-wider text-ink-500">
-          <Term k="concept.balanceChecks">Bilanz-Check · {passed}/{health.checks.length} ✓</Term>
+        <div>
+          <h3 className="text-sm font-semibold text-ink-100"><Term k="concept.balanceChecks">Ist die Bilanz solide?</Term></h3>
+          <p className={`text-sm ${passed === health.checks.length ? 'text-emerald-400' : passed >= health.checks.length / 2 ? 'text-ink-200' : 'text-red-400'}`}>
+            {passed} von {health.checks.length} Prüfungen bestanden
+          </p>
         </div>
         {runway !== null && (
           <Term
@@ -28,13 +31,14 @@ export default function BalanceChecks({ health }: { health: ComputedMetrics['hea
           </Term>
         )}
       </div>
-      <ul className="grid gap-x-6 gap-y-1 md:grid-cols-2">
+      <ul className="grid gap-x-8 gap-y-3 md:grid-cols-2">
         {health.checks.map((c) => (
-          <li key={c.key} className="flex gap-1.5 text-xs leading-snug">
-            <CheckMark kind={c.mark} />
-            <span className="text-ink-300">
-              <span className="text-ink-200">{c.label}</span> — {c.note}
-            </span>
+          <li key={c.key} className="flex gap-2 leading-snug">
+            <span className="mt-0.5"><CheckMark kind={c.mark} /></span>
+            <div className="min-w-0">
+              <div className="text-sm text-ink-100">{c.label}</div>
+              <div className="text-[13px] text-ink-400">{c.note}</div>
+            </div>
           </li>
         ))}
       </ul>

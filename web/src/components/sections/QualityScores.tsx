@@ -28,7 +28,7 @@ function ScoreCard({
 }: { title: string; term: GlossaryKey; value: string; subtitle?: string; color: string; body?: React.ReactNode }) {
   return (
     <div className="rounded border border-ink-800 bg-ink-950 p-3">
-      <div className="text-2xs font-semibold uppercase tracking-wider text-ink-500"><Term k={term}>{title}</Term></div>
+      <div className="text-xs font-semibold text-ink-300"><Term k={term}>{title}</Term></div>
       <div className="mt-1 flex items-baseline gap-2">
         <span className={`font-mono text-xl font-bold tabular ${color}`}>{value}</span>
         {subtitle && <span className="text-xs text-ink-400">{subtitle}</span>}

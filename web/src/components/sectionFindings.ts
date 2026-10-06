@@ -43,10 +43,9 @@ export function fairValueFinding(m: ComputedMetrics, price: number, fmt: Fmt): s
 }
 
 export function modelsFinding(m: ComputedMetrics, price: number, fmt: Fmt): string | null {
-  const r = m.reverseDCF;
   return join([
     ok(m.dcf.fairValue) && price > 0 && `DCF ${fmt(m.dcf.fairValue)}, ${againstPrice(m.dcf.fairValue, price)}`,
-    r.isPossible && ok(r.impliedGrowthRate) && `der Kurs verlangt ${pct(r.impliedGrowthRate)} Umsatzwachstum${ok(r.consensusGrowth) ? `, Konsens ${pct(r.consensusGrowth)}` : ''}`,
+    ok(m.peerMultiples.medianFairPrice) && price > 0 && `Peers ${fmt(m.peerMultiples.medianFairPrice)}, ${againstPrice(m.peerMultiples.medianFairPrice, price)}`,
   ]);
 }
 

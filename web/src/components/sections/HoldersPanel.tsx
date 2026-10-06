@@ -22,7 +22,7 @@ export default function HoldersPanel({ symbol }: { symbol: string }) {
   return (
     <div className="space-y-4">
       <Breakdown h={data} />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-x-8 gap-y-4 xl:grid-cols-2">
         <HolderTable title="Größte Institutionen" rows={data.institutions} />
         <HolderTable title="Größte Fonds" rows={data.funds} />
       </div>
@@ -66,22 +66,23 @@ function HolderTable({ title, rows }: { title: string; rows: Holder[] }) {
   return (
     <div>
       <h3 className="mb-2 text-xs font-semibold text-ink-300">{title}</h3>
-      <table className="w-full text-xs tabular">
+      {/* Fixed columns: an auto table lets a long fund name push the figures out of their cells. */}
+      <table className="w-full table-fixed text-xs tabular">
         <thead>
           <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
             <th className="py-1 pr-2 text-left font-normal" />
-            <th className="py-1 text-right font-normal"><Term k="concept.holders.share">Anteil</Term></th>
-            <th className="py-1 text-right font-normal">Wert</th>
-            <th className="py-1 text-right font-normal"><Term k="concept.holders.change">Veränderung</Term></th>
+            <th className="w-20 py-1 pl-3 text-right font-normal"><Term k="concept.holders.share">Anteil</Term></th>
+            <th className="w-28 py-1 pl-3 text-right font-normal">Wert</th>
+            <th className="w-28 py-1 pl-3 text-right font-normal"><Term k="concept.holders.change">Veränderung</Term></th>
           </tr>
         </thead>
         <tbody>
           {shown.map((r) => (
             <tr key={r.organization} className="border-b border-ink-800" title={r.reportDate ? `Gemeldet zum ${r.reportDate}` : undefined}>
-              <td className="max-w-[16rem] truncate py-1 pr-2 text-ink-300">{r.organization}</td>
-              <td className="py-1 text-right font-mono text-ink-200">{pct(r.pctHeld, 2)}</td>
-              <td className="py-1 text-right font-mono text-ink-400">{r.value === null ? '—' : fmtBig(r.value)}</td>
-              <td className={`py-1 text-right font-mono ${r.pctChange === null ? 'text-ink-500' : r.pctChange > 0.005 ? 'text-emerald-400' : r.pctChange < -0.005 ? 'text-red-400' : 'text-ink-400'}`}>
+              <td className="truncate py-1 pr-2 text-ink-300">{r.organization}</td>
+              <td className="py-1 pl-3 text-right font-mono text-ink-200">{pct(r.pctHeld, 2)}</td>
+              <td className="whitespace-nowrap py-1 pl-3 text-right font-mono text-ink-400">{r.value === null ? '—' : fmtBig(r.value)}</td>
+              <td className={`py-1 pl-3 text-right font-mono ${r.pctChange === null ? 'text-ink-500' : r.pctChange > 0.005 ? 'text-emerald-400' : r.pctChange < -0.005 ? 'text-red-400' : 'text-ink-400'}`}>
                 {fmtSignedPct(r.pctChange, 1)}
               </td>
             </tr>

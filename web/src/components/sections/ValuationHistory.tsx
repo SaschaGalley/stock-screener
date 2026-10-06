@@ -12,11 +12,12 @@ import {
 import type { FairRatio } from '../../../../src/analysis/fair-ratio';
 import Tip from '../Tip';
 import Term from '../Term';
+import More from '../More';
+import { RangeMarker } from '../chart/shared';
 import { HISTORY_MULTIPLE_TERMS, type GlossaryKey } from '../../glossary';
 
 type FairRatios = Partial<Record<HistoryMultiple, FairRatio>>;
 
-type View = 'fair' | 'earnings' | 'multiples';
 
 interface Props {
   symbol: string;
@@ -40,7 +41,6 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
   const [sector, setSector] = useState<SectorMultiples | null>(null);
   const [fair, setFair] = useState<FairRatios>({});
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<View>('fair');
 
   useEffect(() => {
     let live = true;
@@ -55,12 +55,6 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
   // The header's line: today's first multiple with a history, against its own five years.
   useSectionFinding(history ? historyFinding(history) : null);
 
-  // A series without a fair value opens on the earnings view instead of a
-  // disabled tab.
-  useEffect(() => {
-    if (history && history.source !== 'sec' && view === 'fair') setView('earnings');
-  }, [history, view]);
-
   if (error) return <p className="text-xs text-red-400">Historie nicht verfügbar: {error}</p>;
   if (history === undefined) {
     return (
@@ -73,40 +67,29 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
     return <p className="text-xs text-ink-500">Für diesen Wert lässt sich keine Kurshistorie rekonstruieren.</p>;
   }
 
-  const views: { key: View; label: string; term: GlossaryKey; disabled?: string }[] = [
-    { key: 'fair', label: 'Fairer Wert vs. Kurs', term: 'concept.vh.fair', disabled: history.source !== 'sec' ? 'Nur für Werte mit SEC-Filings' : undefined },
-    { key: 'earnings', label: 'Kurs vs. Gewinn', term: 'concept.vh.earnings' },
-    { key: 'multiples', label: 'Multiples', term: 'concept.vh.multiples' },
-  ];
-
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-1">
-        {views.map((v) => (
-          <button
-            key={v.key}
-            disabled={!!v.disabled}
-            title={v.disabled}
-            onClick={() => setView(v.key)}
-            className={`rounded border px-2.5 py-1 text-xs transition ${
-              view === v.key
-                ? 'border-accent bg-accent-soft text-ink-100'
-                : v.disabled
-                  ? 'cursor-not-allowed border-ink-800 bg-ink-950 text-ink-600'
-                  : 'border-ink-700 bg-ink-950 text-ink-400 hover:bg-ink-800'
-            }`}
-          >
-            <Term k={v.term} extra={v.disabled} focusable={false}>{v.label}</Term>
-          </button>
-        ))}
+    <div className="space-y-6">
+      <div className={`grid gap-x-8 gap-y-6 ${history.source === 'sec' ? 'xl:grid-cols-2' : ''}`}>
+        {history.source === 'sec' && (
+          <div>
+            <h3 className="mb-1 text-sm font-semibold text-ink-100"><Term k="concept.vh.fair">Lag der Kurs unter oder über dem fairen Wert?</Term></h3>
+            <FairValueView history={history} liveFairValue={liveFairValue} />
+          </div>
+        )}
+        <div>
+          <h3 className="mb-1 text-sm font-semibold text-ink-100"><Term k="concept.vh.earnings">Ist der Kurs dem Gewinn gefolgt?</Term></h3>
+          <EarningsView history={history} />
+        </div>
       </div>
 
-      {view === 'fair' && <FairValueView history={history} liveFairValue={liveFairValue} />}
-      {view === 'earnings' && <EarningsView history={history} />}
-      {view === 'multiples' && <MultiplesView history={history} />}
-
-      <FairLede fair={fair} />
-      <MultiplesTable history={history} sector={sector} fair={fair} />
+      <div>
+        <h3 className="mb-1 text-sm font-semibold text-ink-100"><Term k="concept.vh.multiplesTable">Ist sie teurer als sonst — und als die Branche?</Term></h3>
+        <FairLede fair={fair} />
+        <MultiplesTable history={history} sector={sector} fair={fair} />
+      </div>
+      <More label="den Verlauf jedes Multiples">
+        <MultiplesView history={history} />
+      </More>
 
       <p className="text-xs leading-relaxed text-ink-500">
         {history.source === 'sec'
@@ -293,56 +276,56 @@ function EarningsView({ history }: { history: History }) {
   );
 }
 
+/** Every multiple over the years, each its own small chart with its medians — side by side, not one at a time. */
 function MultiplesView({ history }: { history: History }) {
   const pts = history.points;
   const available = HISTORY_MULTIPLES.filter((m) => pts.some((p) => p[m.key] !== null && p[m.key]! > 0));
-  const [key, setKey] = useState<HistoryMultiple>(available[0]?.key ?? 'pe');
-  const stats = useMemo(() => multipleStats(pts, key), [pts, key]);
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {available.map((m) => <MultipleChart key={m.key} history={history} k={m.key} label={m.label} />)}
+    </div>
+  );
+}
+
+function MultipleChart({ history, k, label }: { history: History; k: HistoryMultiple; label: string }) {
+  const pts = history.points;
+  const stats = useMemo(() => multipleStats(pts, k), [pts, k]);
   const dates = pts.map((p) => p.date);
   const fmtX = (v: number) => fmt(v, 'x', 1);
-
   const flat = (v: number | null) => dates.map(() => v);
-  // Capped near the top of the range rather than at its peak: ServiceNow's P/E
-  // of 640 on near-zero 2021 earnings would otherwise flatten five years of
-  // readings between 50 and 150 into the floor.
-  const values = pts.flatMap((p) => (p[key] !== null && p[key]! > 0 ? [p[key]!] : [])).sort((a, b) => a - b);
+  // Capped near the top of the range rather than at its peak: a P/E of 640 on
+  // near-zero earnings would otherwise flatten five years into the floor.
+  const values = pts.flatMap((p) => (p[k] !== null && p[k]! > 0 ? [p[k]!] : [])).sort((a, b) => a - b);
   const p95 = values.length ? values[Math.floor((values.length - 1) * 0.95)] : null;
   const base = baseOption(dates, fmtX);
   const option = {
     ...base,
+    legend: { show: false },
+    grid: { ...(base as { grid?: object }).grid, top: 10 },
     yAxis: { ...base.yAxis, max: p95 !== null && values[values.length - 1] > p95 * 1.2 ? Math.ceil(p95 * 1.2) : undefined },
     series: [
-      line(HISTORY_MULTIPLES.find((m) => m.key === key)!.label, pts.map((p) => (p[key] !== null && p[key]! > 0 ? p[key] : null)), CHART_COLORS.blue),
-      line('Median 3J', flat(stats.median3), CHART_COLORS.amber, { lineStyle: { color: CHART_COLORS.amber, width: 1, type: 'dashed' } }),
-      line(`Median ${Math.min(5, Math.max(1, Math.round(stats.months / 12)))}J`, flat(stats.median5), CHART_COLORS.purple, { lineStyle: { color: CHART_COLORS.purple, width: 1, type: 'dashed' } }),
+      line(label, pts.map((p) => (p[k] !== null && p[k]! > 0 ? p[k] : null)), CHART_COLORS.blue),
+      line('Median 5J', flat(stats.median5), CHART_COLORS.purple, { lineStyle: { color: CHART_COLORS.purple, width: 1, type: 'dashed' } }),
     ],
   };
-
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1">
-        {available.map((m) => (
-          <button
-            key={m.key}
-            onClick={() => setKey(m.key)}
-            className={`rounded px-2 py-0.5 font-mono text-xs transition ${
-              key === m.key ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:bg-ink-800'
-            }`}
-          >
-            <Term k={HISTORY_MULTIPLE_TERMS[m.key]} focusable={false}>{m.label}</Term>
-          </button>
-        ))}
+    <div>
+      <div className="mb-1 flex items-baseline justify-between text-sm">
+        <Term k={HISTORY_MULTIPLE_TERMS[k]}><span className="text-ink-100">{label}</span></Term>
+        <span className="text-xs text-ink-500">heute {stats.latest !== null ? fmtX(stats.latest) : '—'} · Median {stats.median5 !== null ? fmtX(stats.median5) : '—'}</span>
       </div>
-      <Chart option={option} />
+      <div style={{ height: 170 }}>
+        <ReactECharts style={{ height: '100%', width: '100%' }} notMerge option={option} />
+      </div>
     </div>
   );
 }
 
 /**
- * Every multiple against its own past and against its industry, in one table
- * — the part of the view that should not need a click. The two comparisons
- * answer different questions: a quality company is always dearer than its
- * industry, and only its own history says whether it is dearer than usual.
+ * Every multiple against its own past and against its industry, a row each:
+ * today's figure, then two bars that say where it stands — among the stock's
+ * own months, among its industry's companies — in words under them. It was
+ * a table of nine columns and two header rows.
  */
 function MultiplesTable({ history, sector, fair }: { history: History; sector: SectorMultiples | null; fair: FairRatios }) {
   const { fmtPrice } = useMoney();
@@ -351,99 +334,47 @@ function MultiplesTable({ history, sector, fair }: { history: History; sector: S
     .filter((r) => r.s.median5 !== null);
   if (rows.length === 0) return null;
   const x = (v: number | null) => fmt(v, 'x', 1);
-  // Five years where the filings reach that far; an annual series starts a
-  // quarter after its first fiscal year and says so.
-  const span = `${Math.min(5, Math.max(1, Math.round(Math.max(...rows.map((r) => r.s.months)) / 12)))}J`;
-  const hasFair = Object.keys(fair).length > 0;
+  const years = Math.min(5, Math.max(1, Math.round(Math.max(...rows.map((r) => r.s.months)) / 12)));
+  const group = sector ? (sector.level === 'industry' ? 'Branche' : 'Sektor') : null;
+  const zones = [{ from: 0, to: 0.25, cls: 'bg-emerald-500/15' }, { from: 0.75, to: 1, cls: 'bg-red-500/15' }];
 
   return (
-    <div>
-      <h3 className="mb-2 text-xs font-semibold text-ink-300">
-        <Term k="concept.vh.multiplesTable">Multiples gegen Historie und Branche</Term>
-      </h3>
-      <table className="w-full text-xs tabular">
-        <thead>
-          <tr className="text-2xs uppercase tracking-wider text-ink-500">
-            <th />
-            <th />
-            <th colSpan={5} className="border-b border-ink-800 pb-0.5 text-center font-normal">Gegen die eigene Historie</th>
-            {sector && (
-              <th colSpan={2} className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell">
-                <Term k="concept.vh.sector">{sector.level === 'industry' ? 'Branche' : 'Sektor'} · {sector.group}</Term>
-              </th>
-            )}
-            {hasFair && <th className="hidden border-b border-ink-800 pb-0.5 text-center font-normal md:table-cell"><Term k="concept.vh.fairRatio">Modell</Term></th>}
-          </tr>
-          <tr className="border-b border-ink-700 text-2xs uppercase tracking-wider text-ink-500">
-            <th className="py-1 pr-2 text-left font-normal" />
-            <th className="py-1 text-right font-normal">Heute</th>
-            <th className="py-1 text-right font-normal"><Term k="concept.vh.median">Median 3J</Term></th>
-            <th className="py-1 text-right font-normal"><Term k="concept.vh.median">Median {span}</Term></th>
-            <th className="py-1 text-right font-normal"><Term k="concept.vh.vs">vs. {span}</Term></th>
-            <th className="hidden py-1 text-right font-normal sm:table-cell"><Term k="concept.vh.rank">Teurer als</Term></th>
-            <th className="py-1 text-right font-normal"><Term k="concept.vh.impliedPrice">Kurs beim {span}-Median</Term></th>
-            {sector && (
-              <>
-                <th className="hidden py-1 text-right font-normal md:table-cell">Median</th>
-                <th className="hidden py-1 text-right font-normal md:table-cell">Teurer als</th>
-              </>
-            )}
-            {hasFair && <th className="hidden py-1 text-right font-normal md:table-cell">Fair</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ key, label, s }) => {
-            const vs = s.latest !== null && s.median5 !== null ? s.latest / s.median5 - 1 : null;
-            return (
-              <tr key={key} className="border-b border-ink-800">
-                <td className="py-1 pr-2 text-ink-400"><Term k={HISTORY_MULTIPLE_TERMS[key]}>{label}</Term></td>
-                <td className="py-1 text-right font-mono text-ink-100">{x(s.latest)}</td>
-                <td className="py-1 text-right font-mono text-ink-300">{x(s.median3)}</td>
-                <td className="py-1 text-right font-mono text-ink-300">{x(s.median5)}</td>
-                {/* Dearer than usual is the bad direction for a multiple. */}
-                <td className={`py-1 text-right font-mono ${vs === null ? 'text-ink-500' : vs > 0.05 ? 'text-red-400' : vs < -0.05 ? 'text-emerald-400' : 'text-ink-300'}`}>
-                  {vs === null ? '—' : fmtSignedPct(vs, 0)}
-                </td>
-                <td className="hidden py-1 text-right font-mono text-ink-400 sm:table-cell">
-                  {s.rank === null ? '—' : `${Math.round(s.rank * 100)} % der Monate`}
-                </td>
-                <td className="py-1 text-right font-mono text-ink-300">{s.impliedPrice === null ? '—' : fmtPrice(s.impliedPrice)}</td>
-                {sector && <SectorCells d={sector.multiples[key]} />}
-                {hasFair && <FairCell f={fair[key]} />}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** The industry's median and the stock's rank in it, from today's recorded multiples. */
-function SectorCells({ d }: { d: SectorMultiples['multiples'][HistoryMultiple] }) {
-  if (!d) {
-    return (
-      <>
-        <td className="hidden py-1 text-right font-mono text-ink-600 md:table-cell">—</td>
-        <td className="hidden py-1 text-right font-mono text-ink-600 md:table-cell">—</td>
-      </>
-    );
-  }
-  return (
-    <>
-      <td
-        className="hidden py-1 text-right font-mono text-ink-300 md:table-cell"
-        title={`Mittlere Hälfte ${fmt(d.p25, 'x', 1)} – ${fmt(d.p75, 'x', 1)}, ${deNumber(d.n, 0)} Werte`}
-      >
-        {fmt(d.median, 'x', 1)}
-      </td>
-      <td
-        className={`hidden py-1 text-right font-mono md:table-cell ${d.rank === null ? 'text-ink-500' : d.rank > 0.75 ? 'text-red-400' : d.rank < 0.25 ? 'text-emerald-400' : 'text-ink-300'}`}
-        title={d.own !== null ? `Heute ${fmt(d.own, 'x', 1)}, verglichen mit ${deNumber(d.n, 0)} Werten` : 'Kein positiver Wert heute'}
-      >
-        {d.rank === null ? '—' : `${Math.round(d.rank * 100)} % von ${deNumber(d.n, 0)}`}
-      </td>
-    </>
+    <ul className="mt-3 divide-y divide-ink-800">
+      {rows.map(({ key, label, s }) => {
+        const peer = sector?.multiples[key] ?? null;
+        const f = fair[key];
+        return (
+          <li key={key} className="grid gap-x-6 gap-y-2 py-3 md:grid-cols-[7rem_minmax(0,1fr)_minmax(0,1fr)]">
+            <div>
+              <div className="text-sm text-ink-300"><Term k={HISTORY_MULTIPLE_TERMS[key]}>{label}</Term></div>
+              <div className="font-mono text-lg font-semibold text-ink-50">{x(s.latest)}</div>
+              {f && <Tip content={fairHint(f)}><div className="text-xs text-ink-500">angemessen {x(f.fair)}</div></Tip>}
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-ink-500">gegen die eigenen {years} Jahre</div>
+              {s.rank !== null ? (
+                <RangeMarker at={s.rank} left="so günstig wie nie" right="so teuer wie nie" zones={zones} />
+              ) : <div className="text-xs text-ink-600">—</div>}
+              <div className="mt-1 text-[13px] text-ink-300">
+                {s.rank !== null && <>teurer als in {Math.round(s.rank * 100)} % der Monate · </>}Median {x(s.median5)}
+                {s.impliedPrice !== null && <span className="text-ink-500"> · dazu passt ein Kurs von {fmtPrice(s.impliedPrice)}</span>}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-xs text-ink-500">{group ? <Term k="concept.vh.sector">gegen die {group} · {sector!.group}</Term> : 'gegen die Branche'}</div>
+              {peer && peer.rank !== null ? (
+                <RangeMarker at={peer.rank} left="günstigste" right="teuerste" zones={zones} />
+              ) : <div className="text-xs text-ink-600">keine Vergleichswerte</div>}
+              {peer && (
+                <div className="mt-1 text-[13px] text-ink-300">
+                  {peer.rank !== null && <>teurer als {Math.round(peer.rank * 100)} % von {deNumber(peer.n, 0)} · </>}Median {x(peer.median)}
+                </div>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -455,19 +386,6 @@ function fairHint(f: FairRatio): string {
   return `Erwartet aus Umsatzwachstum ${pctOf(i.revenueGrowth)}, operativer Marge ${pctOf(i.operatingMargin)}, `
     + `Bruttomarge ${pctOf(i.grossMargin)}, Beta ${fmt(i.beta, '', 2)} und Sektor ${i.sector ?? '—'} — `
     + `Regression über ${deNumber(f.n, 0)} Werte des Universums, R² ${deNumber(f.r2, 2)}.`;
-}
-
-/** The multiple the stock's growth, margins and risk would normally earn. */
-function FairCell({ f }: { f: FairRatio | undefined }) {
-  if (!f) return <td className="hidden py-1 text-right font-mono text-ink-600 md:table-cell">—</td>;
-  const gap = f.actual !== null ? f.actual / f.fair - 1 : null;
-  return (
-    <td
-      className={`hidden py-1 text-right font-mono md:table-cell ${gap === null ? 'text-ink-300' : gap > 0.15 ? 'text-red-400' : gap < -0.15 ? 'text-emerald-400' : 'text-ink-300'}`}
-    >
-      <Tip content={fairHint(f)}>{fmt(f.fair, 'x', 1)}</Tip>
-    </td>
-  );
 }
 
 /**

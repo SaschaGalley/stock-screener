@@ -25,6 +25,7 @@ import IncomeFlowChart from "./charts/IncomeFlowChart";
 import ValuationHistory from "./sections/ValuationHistory";
 import CompositeChart from "./charts/CompositeChart";
 import ValuationDetail from "./sections/ValuationDetail";
+import { FairValueAnswers, PriceImplies, impliesFinding } from "./valuation/ValuationAnswers";
 import QualityScores from "./sections/QualityScores";
 import FundamentalsGrid from "./sections/FundamentalsGrid";
 import PeerCompare from "./sections/PeerCompare";
@@ -369,6 +370,7 @@ function AnalysisView({
                   info="section.fairValue"
                   finding={fairValueFinding(m, f.price, money)}
                 >
+                  <FairValueAnswers m={m} price={f.price} />
                   <div className="mb-2 text-xs text-ink-500">
                     <span className="mr-3">
                       <span className="inline-block h-2 w-3 rounded-sm bg-emerald-500 align-middle"></span>{" "}
@@ -394,6 +396,10 @@ function AnalysisView({
                   </div>
                 </Section>
               )}
+              {/* TIER 3a: THE MODELS RUN BACKWARDS — what the price takes for granted */}
+              <Section fixed title="Was der Kurs einpreist" info="metrics.reverseDCF.impliedGrowthRate" finding={impliesFinding(m)}>
+                <PriceImplies m={m} />
+              </Section>
               {/* TIER 3b: THE SAME QUESTION OVER FIVE YEARS — is today unusual for this stock? */}
               <Section fixed
                 title="Bewertung im Zeitverlauf"
@@ -405,10 +411,10 @@ function AnalysisView({
               </Section>
               {/* TIER 4: VALUATION DETAILS */}
               <Section fixed
-                title="Bewertungsmodelle"
+                title="Die Modelle einzeln"
                 finding={modelsFinding(m, f.price, money)}
                 info="section.valuationModels"
-                subtitle="DCF, Peer-Multiples, Reverse-DCF"
+                subtitle="Formeln aus den Zahlen der Firma und Bewertungen der Peers"
               >
                 <ValuationDetail metrics={m} price={f.price} />
               </Section>
@@ -433,10 +439,10 @@ function AnalysisView({
                     (f.fundamentalsHistory.revenue?.length > 0 ||
                       f.fundamentalsHistory.netIncome?.length > 0 ||
                       f.fundamentalsHistory.eps?.length > 0) && (
-                      <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
+                      <>
                         <FundamentalsHistoryChart history={f.fundamentalsHistory} />
                         <MarginTrends history={f.fundamentalsHistory} />
-                      </div>
+                      </>
                     )}
                   <IncomeFlowChart symbol={symbol} />
                   <More label="alle Kennzahlen zu Rentabilität, Bilanz und Bewertung">

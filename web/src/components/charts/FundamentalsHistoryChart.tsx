@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import ReactECharts from './ECharts';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useMoney } from '../../currency';
@@ -23,7 +23,6 @@ type Mode = 'income' | 'cashflow' | 'balance' | 'eps' | 'margins';
 
 interface Props {
   history: History;
-  initialMode?: Mode;
 }
 
 interface SeriesDef {
@@ -98,96 +97,96 @@ function fmtChartValue(n: number, unit: Unit, cur: string): string {
   return `${deNumber(n, 0)} ${cur}`;
 }
 
-export default function FundamentalsHistoryChart({ history, initialMode = 'income' }: Props) {
+/** "+16 % im Jahr" over the years shown — what a line chart makes a reader estimate. */
+function growthLine(points: Series): string | null {
+  const xs = points.filter((p) => p.value > 0).sort((a, b) => a.year - b.year);
+  if (xs.length < 2) return null;
+  const years = xs[xs.length - 1].year - xs[0].year;
+  if (years <= 0) return null;
+  const cagr = (xs[xs.length - 1].value / xs[0].value) ** (1 / years) - 1;
+  return `${cagr >= 0 ? '+' : '−'}${deNumber(Math.abs(cagr * 100), 0)} % im Jahr seit ${xs[0].year}`;
+}
+
+/**
+ * The fiscal years as five small charts side by side — profits, cash flow,
+ * balance sheet, earnings per share, margins — each headed by what its main
+ * line did. It was one chart with five buttons, and only one of them on show.
+ */
+export default function FundamentalsHistoryChart({ history }: Props) {
+  const modes = (Object.keys(MODE_PRESETS) as Mode[]).filter((k) => MODE_PRESETS[k].series.some((s) => s.points(history).length > 0));
+  if (modes.length === 0) return <p className="text-xs text-ink-500">Keine historischen Daten verfügbar.</p>;
+  return (
+    <div className="grid gap-x-6 gap-y-5 md:grid-cols-2 2xl:grid-cols-3">
+      {modes.map((k) => <MiniChart key={k} history={history} mode={k} />)}
+    </div>
+  );
+}
+
+function MiniChart({ history, mode }: { history: History; mode: Mode }) {
   const { symbol: cur } = useMoney();
-  const [mode, setMode] = useState<Mode>(initialMode);
   const preset = MODE_PRESETS[mode];
   const unit: Unit = preset.unit ?? 'money';
 
   const resolved = useMemo(
-    () => preset.series.map((def) => ({ def, points: def.points(history) })),
+    () => preset.series.map((def) => ({ def, points: def.points(history) })).filter((r) => r.points.length > 0),
     [history, preset],
   );
-
-  // Union of all years across selected series, sorted ascending.
   const years = useMemo(() => {
     const set = new Set<number>();
     for (const r of resolved) for (const p of r.points) set.add(p.year);
     return [...set].sort((a, b) => a - b);
   }, [resolved]);
-
-  if (years.length === 0) {
-    return <p className="text-xs text-ink-500">Keine historischen Daten verfügbar.</p>;
-  }
+  const lead = resolved[0];
+  const growth = unit === 'pct' || !lead ? null : growthLine(lead.points);
+  const last = lead?.points.length ? [...lead.points].sort((a, b) => a.year - b.year).at(-1)! : null;
 
   const series = resolved.map(({ def, points }) => {
     const lookup = new Map(points.map((p) => [p.year, p.value]));
     return {
       name: def.label,
       type: 'line' as const,
-      smooth: false,
       data: years.map((y) => lookup.get(y) ?? null),
       itemStyle: { color: def.color },
       lineStyle: { color: def.color, width: 2 },
       symbol: 'circle',
-      symbolSize: 6,
+      symbolSize: 5,
     };
   });
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-1">
-        {(Object.keys(MODE_PRESETS) as (keyof typeof MODE_PRESETS)[]).map((k) => {
-          const active = k === mode;
-          const has = MODE_PRESETS[k].series.some((s) => s.points(history).length > 0);
-          return (
-            <button
-              key={k}
-              disabled={!has}
-              onClick={() => setMode(k)}
-              className={`rounded border px-2.5 py-1 text-xs transition ${
-                active
-                  ? 'border-accent bg-accent-soft text-ink-100'
-                  : has
-                    ? 'border-ink-700 bg-ink-950 text-ink-400 hover:bg-ink-800'
-                    : 'border-ink-800 bg-ink-950 text-ink-600 cursor-not-allowed'
-              }`}
-            >
-              {MODE_PRESETS[k].label}
-            </button>
-          );
-        })}
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="text-sm font-semibold text-ink-100">{preset.label}</span>
+        {lead && (
+          <span className="text-xs text-ink-400">
+            {lead.def.label}{last && unit !== 'pct' ? ` ${fmtChartValue(last.value, unit, cur)}` : ''}{growth ? `, ${growth}` : ''}
+          </span>
+        )}
       </div>
-      <div style={{ height: 260 }}>
+      <div style={{ height: resolved.length > 2 ? 214 : 190 }}>
         <ReactECharts
           style={{ height: '100%', width: '100%' }}
           notMerge
           option={{
-            grid: { top: 32, left: 60, right: 24, bottom: 28 },
+            // Four series wrap the legend onto a second line at this width.
+            grid: { top: resolved.length > 2 ? 46 : resolved.length > 1 ? 26 : 10, left: 56, right: 12, bottom: 22 },
             tooltip: {
               trigger: 'axis',
               backgroundColor: CHART_COLORS.bg,
               borderColor: CHART_COLORS.grid,
-              textStyle: { color: CHART_COLORS.text, fontSize: 13 },
+              textStyle: { color: CHART_COLORS.text, fontSize: 12 },
               valueFormatter: (v: any) => v == null ? '—' : fmtChartValue(v, unit, cur),
             },
-            legend: {
-              textStyle: { color: CHART_COLORS.text, fontSize: 12 },
-              top: 0,
-              right: 8,
-            },
+            legend: { show: resolved.length > 1, textStyle: { color: CHART_COLORS.text, fontSize: 11 }, top: 0, left: 0, itemWidth: 12, itemHeight: 8 },
             xAxis: {
               type: 'category',
               data: years.map((y) => String(y)),
-              axisLabel: { color: CHART_COLORS.ink, fontSize: 12 },
+              axisLabel: { color: CHART_COLORS.ink, fontSize: 11 },
               axisLine:  { lineStyle: { color: CHART_COLORS.grid } },
             },
             yAxis: {
               type: 'value',
-              axisLabel: {
-                color: CHART_COLORS.ink, fontSize: 11,
-                formatter: (v: number) => fmtChartValue(v, unit, cur),
-              },
+              axisLabel: { color: CHART_COLORS.ink, fontSize: 10, formatter: (v: number) => fmtChartValue(v, unit, cur) },
               splitLine: { lineStyle: { color: CHART_COLORS.grid } },
             },
             series,

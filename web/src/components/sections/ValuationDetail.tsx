@@ -1,5 +1,5 @@
 import type { ComputedMetrics, PeerMultiplesEntry } from '../../types';
-import { deNumber, fmtSignedPct, mosColor, fmt, fmtPct } from '../../format';
+import { fmtSignedPct, mosColor, fmt, fmtPct } from '../../format';
 import { useMoney } from '../../currency';
 import Term from '../Term';
 import type { GlossaryKey } from '../../glossary';
@@ -28,179 +28,98 @@ const METRIC_TERM: Record<string, GlossaryKey> = {
   priceFCF: 'metrics.evMultiples.priceToFCF', priceSales: 'metrics.evMultiples.priceToSales', pb: 'metrics.ratios.pb',
 };
 
-export default function ValuationDetail({ metrics, price }: Props) {
-  const { fmtPrice, fmtBig } = useMoney();
-  const { dcf, grahamNumber, grahamRevised, peterLynch, epv, ddm, rim, ncav, peerMultiples, reverseDCF } = metrics;
-  const impliedMargin = reverseDCF.impliedMargin;
+/** A fair value against the price: a bar from the middle, longer the further off, and the gap in words. */
+function VsPrice({ value, price, span }: { value: number | null; price: number; span: number }) {
+  if (value === null) return <span className="text-ink-600">—</span>;
+  const d = value / price - 1;
+  const w = Math.min(50, (Math.abs(Math.log(1 + d)) / span) * 50);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative h-1.5 w-24 shrink-0 rounded-full bg-ink-800">
+        <div className="absolute inset-y-0 left-1/2 w-px bg-ink-600" />
+        <div className={`absolute inset-y-0 rounded-full ${d >= 0 ? 'bg-emerald-500/70' : 'bg-red-500/70'}`}
+          style={d >= 0 ? { left: '50%', width: `${w}%` } : { right: '50%', width: `${w}%` }} />
+      </div>
+      <span className={`w-16 text-right font-mono text-xs ${mosColor(d)}`}>{fmtSignedPct(d, 0)}</span>
+    </div>
+  );
+}
 
-  // Build inline notes defensively — every property might be null/undefined
-  // depending on whether a stock has the input data the model needs.
-  const pctOf = (x: number | null | undefined) => fmtPct(x, 1);
+/**
+ * Every model on its own, in two lists: those that work from the company's
+ * own figures, and those that price it like its peers. Each says what it
+ * rests on in words — "Wachstum 19,7 % (Konsens)" where it said "g=19,7 %",
+ * the DCF's scenarios as a range where it said "p10 · p90 · 501 Ziehungen" —
+ * and stands against the price as a bar.
+ */
+export default function ValuationDetail({ metrics, price }: Props) {
+  const { fmtPrice } = useMoney();
+  const { dcf, grahamNumber, grahamRevised, peterLynch, epv, ddm, rim, ncav, peerMultiples } = metrics;
+  const p = (x: number | null | undefined) => fmtPct(x, 1);
   const dist = dcf.distribution;
-  const dcfNote = dcf.fairValue !== null && dist
-    ? `p10 ${fmtPrice(dist.p10)} · p90 ${fmtPrice(dist.p90)} · ${fmtPct(dist.probabilityAbovePrice, 0)} von ${deNumber(dist.draws, 0)} Ziehungen über dem Kurs`
-    : dcf.assumptions;
-  const grNote     = grahamRevised.bondYield ? `AAA-Rendite ${fmtPct(grahamRevised.bondYield, 1)}` : null;
-  const lynchNote  = peterLynch.growthRate !== null ? `g=${pctOf(peterLynch.growthRate)}${peterLynch.growthSource ? ` (${sourceLabel(peterLynch.growthSource)})` : ''}` : null;
-  const epvNote    = epv.normalizedMargin !== null ? `Marge ${pctOf(epv.normalizedMargin)} · r=${pctOf(epv.wacc)}` : null;
-  const rimNote    = rim.isApplicable
-    ? `ROE ${pctOf(rim.sustainableRoe)} → ${pctOf(rim.terminalRoe)} gegen ke ${pctOf(rim.costOfEquity)}`
-    : 'kein positiver Buchwert/ROE';
-  const ddmNote    = ddm.isApplicable ? `g=${pctOf(ddm.dividendGrowthRate)} → ${pctOf(ddm.terminalGrowthRate)}` : 'keine Dividende';
 
   const rows: { label: string; term: GlossaryKey; value: number | null; note: string | null }[] = [
-    { label: `DCF (umsatzgetrieben, g=${pctOf(dcf.growthYear2)})`, term: 'metrics.dcf.fairValue', value: dcf.fairValue, note: dcfNote },
-    { label: 'Graham Number',       term: 'metrics.grahamNumber.grahamNumber', value: grahamNumber.grahamNumber, note: grahamNumber.grahamNumber === null ? 'braucht positiven Gewinn und Buchwert' : null },
-    { label: 'Graham V* (revidiert)', term: 'metrics.grahamRevised.fairValue', value: grahamRevised.fairValue,   note: grNote },
-    { label: 'Peter Lynch',         term: 'metrics.peterLynch.fairValue', value: peterLynch.fairValue,      note: lynchNote },
-    { label: 'EPV (Greenwald)',     term: 'metrics.epv.fairValue', value: epv.fairValue,             note: epvNote },
-    { label: 'DDM (zweistufig)',     term: 'metrics.ddm.fairValue', value: ddm.isApplicable ? ddm.fairValue : null, note: ddmNote },
-    { label: 'Excess Return (RIM)', term: 'metrics.rim.fairValue', value: rim.isApplicable ? rim.fairValue : null, note: rimNote },
-    { label: 'NCAV (Graham-Boden)',  term: 'metrics.ncav.ncavPerShare', value: ncav.isApplicable ? ncav.ncavPerShare : null, note: ncav.isApplicable ? null : 'Umlaufvermögen ≤ Verbindlichkeiten' },
+    {
+      label: 'DCF, umsatzgetrieben', term: 'metrics.dcf.fairValue', value: dcf.fairValue,
+      note: dcf.fairValue !== null && dist
+        ? `Wachstum ${p(dcf.growthYear2)}; 80 % der Szenarien zwischen ${fmtPrice(dist.p10)} und ${fmtPrice(dist.p90)}, ${fmtPct(dist.probabilityAbovePrice, 0)} über dem Kurs`
+        : dcf.assumptions,
+    },
+    { label: 'Peter Lynch', term: 'metrics.peterLynch.fairValue', value: peterLynch.fairValue,
+      note: peterLynch.growthRate !== null ? `Gewinn mal Wachstum: ${p(peterLynch.growthRate)}${peterLynch.growthSource ? ` (${sourceLabel(peterLynch.growthSource)})` : ''}` : 'braucht Gewinn und 5–25 % Wachstum' },
+    { label: 'Graham V* (revidiert)', term: 'metrics.grahamRevised.fairValue', value: grahamRevised.fairValue,
+      note: grahamRevised.bondYield ? `Gewinn und Wachstum, gegen ${p(grahamRevised.bondYield)} Rendite erstklassiger Anleihen` : null },
+    { label: 'EPV (Greenwald)', term: 'metrics.epv.fairValue', value: epv.fairValue,
+      note: epv.normalizedMargin !== null ? `heutige Ertragskraft ohne Wachstum: Marge ${p(epv.normalizedMargin)}, Kapitalkosten ${p(epv.wacc)}` : null },
+    { label: 'Excess Return (RIM)', term: 'metrics.rim.fairValue', value: rim.isApplicable ? rim.fairValue : null,
+      note: rim.isApplicable ? `Eigenkapitalrendite ${p(rim.sustainableRoe)} → ${p(rim.terminalRoe)}, Kosten des Eigenkapitals ${p(rim.costOfEquity)}` : 'braucht positiven Buchwert und Eigenkapitalrendite' },
+    { label: 'Dividendenmodell (DDM)', term: 'metrics.ddm.fairValue', value: ddm.isApplicable ? ddm.fairValue : null,
+      note: ddm.isApplicable ? `Dividende wächst ${p(ddm.dividendGrowthRate)}, später ${p(ddm.terminalGrowthRate)}` : 'zahlt keine Dividende' },
+    { label: 'Graham Number', term: 'metrics.grahamNumber.grahamNumber', value: grahamNumber.grahamNumber,
+      note: grahamNumber.grahamNumber === null ? 'braucht positiven Gewinn und Buchwert' : 'aus Gewinn und Buchwert, ohne Wachstum' },
+    { label: 'NCAV (Graham-Boden)', term: 'metrics.ncav.ncavPerShare', value: ncav.isApplicable ? ncav.ncavPerShare : null,
+      note: ncav.isApplicable ? 'Umlaufvermögen abzüglich aller Schulden' : 'Umlaufvermögen deckt die Schulden nicht' },
   ];
+  const values = [...rows.map((r) => r.value), ...peerMultiples.byMultiple.map((e: PeerMultiplesEntry) => e.fairPrice)]
+    .filter((v): v is number => v !== null && v > 0);
+  const span = Math.max(Math.log(2), ...values.map((v) => Math.abs(Math.log(v / price))));
+
+  const Row = ({ label, term, note, value }: { label: React.ReactNode; term?: GlossaryKey; note: string | null; value: number | null }) => (
+    <li className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-4 py-2">
+      <div className="min-w-0">
+        <div className={`text-sm ${value === null ? 'text-ink-500' : 'text-ink-100'}`}>{term ? <Term k={term}>{label}</Term> : label}</div>
+        {note && <div className="text-xs text-ink-500">{note}</div>}
+      </div>
+      <span className={`whitespace-nowrap text-right font-mono text-sm ${value === null ? 'text-ink-600' : 'text-ink-100'}`}>{value !== null ? fmtPrice(value) : '—'}</span>
+      <VsPrice value={value} price={price} span={span} />
+    </li>
+  );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      {/* Single-equation models */}
+    <div className="grid gap-x-8 gap-y-6 xl:grid-cols-2">
       <div>
-        <h3 className="mb-2 text-xs font-semibold text-ink-300">
-          <Term k="concept.singleEquation">Formelmodelle</Term>
-        </h3>
-        <table className="w-full text-xs tabular">
-          <thead>
-            <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
-              <th className="py-1.5 pr-2 text-left font-medium">Modell</th>
-              <th className="py-1.5 px-2 text-right font-medium">Fairer Wert</th>
-              <th className="py-1.5 pl-2 text-right font-medium"><Term k="concept.vsPrice">zum Kurs</Term></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const mos = r.value !== null ? (r.value - price) / price : null;
-              return (
-                <tr key={r.label} className="border-b border-ink-800">
-                  <td className="py-1.5 pr-2 text-ink-200">
-                    <div><Term k={r.term}>{r.label}</Term></div>
-                    {r.note && <div className="text-2xs text-ink-500">{r.note}</div>}
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-mono text-ink-100">
-                    {r.value !== null ? fmtPrice(r.value) : <span className="text-ink-600">—</span>}
-                  </td>
-                  <td className={`py-1.5 pl-2 text-right font-mono ${mosColor(mos)}`}>
-                    {fmtSignedPct(mos)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {dcf.fairValue !== null && (
-          <p className="mt-2 text-xs text-ink-500">
-            DCF-Annahmen: {dcf.assumptions}
-          </p>
-        )}
+        <h3 className="mb-1 text-sm font-semibold text-ink-100"><Term k="concept.singleEquation">Aus den Zahlen der Firma</Term></h3>
+        <p className="mb-1 text-xs text-ink-500">Jedes Modell eine Formel aus Gewinn, Umsatz, Buchwert oder Dividende.</p>
+        <ul className="divide-y divide-ink-800">
+          {rows.map((r) => <Row key={r.label} {...r} />)}
+        </ul>
       </div>
-
-      {/* Peer multiples + reverse DCF */}
-      <div className="space-y-4">
-        <div>
-          <h3 className="mb-2 text-xs font-semibold text-ink-300">
-            <Term k="metrics.peerMultiples.medianFairPrice">Fairer Wert nach Peer-Multiples</Term> <span className="text-ink-500">({peerMultiples.count} Multiples)</span>
-          </h3>
-          {peerMultiples.byMultiple.length > 0 ? (
-            <table className="w-full text-xs tabular">
-              <thead>
-                <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
-                  <th className="py-1.5 pr-2 text-left font-medium">Multiple</th>
-                  <th className="py-1.5 px-2 text-right font-medium"><Term k="concept.sectorMedian">Sektormedian</Term></th>
-                  <th className="py-1.5 px-2 text-right font-medium"><Term k="concept.impliedFair">Fairer Kurs</Term></th>
-                  <th className="py-1.5 pl-2 text-right font-medium"><Term k="concept.vsPrice">zum Kurs</Term></th>
-                </tr>
-              </thead>
-              <tbody>
-                {peerMultiples.byMultiple.map((e: PeerMultiplesEntry) => {
-                  const mos = e.fairPrice !== null ? (e.fairPrice - price) / price : null;
-                  return (
-                    <tr key={e.metric} className="border-b border-ink-800">
-                      <td className="py-1.5 pr-2 text-ink-200">
-                        <Term k={METRIC_TERM[e.metric]}>{METRIC_LABEL[e.metric] ?? e.metric}</Term>
-                      </td>
-                      <td className="py-1.5 px-2 text-right font-mono text-ink-300">
-                        {fmt(e.sectorMedian, 'x', 2)}
-                      </td>
-                      <td className="py-1.5 px-2 text-right font-mono text-ink-100">
-                        {fmtPrice(e.fairPrice)}
-                      </td>
-                      <td className={`py-1.5 pl-2 text-right font-mono ${mosColor(mos)}`}>
-                        {fmtSignedPct(mos)}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr className="border-t border-ink-700">
-                  <td className="py-1.5 pr-2 text-xs font-medium text-ink-300">Median</td>
-                  <td />
-                  <td className="py-1.5 px-2 text-right font-mono font-semibold text-ink-50">
-                    {fmtPrice(peerMultiples.medianFairPrice)}
-                  </td>
-                  <td className={`py-1.5 pl-2 text-right font-mono font-semibold ${mosColor(peerMultiples.marginOfSafety)}`}>
-                    {fmtSignedPct(peerMultiples.marginOfSafety)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-xs text-ink-500">Keine Peer-Daten verfügbar.</p>
-          )}
-        </div>
-
-        <div>
-          <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
-            <Term k="metrics.reverseDCF.impliedGrowthRate">Reverse DCF</Term>
-          </h3>
-          {reverseDCF.isPossible && reverseDCF.impliedGrowthRate !== null ? (
-            <div className="rounded border border-ink-800 bg-ink-950 p-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-xs text-ink-400">Der Kurs unterstellt ein Umsatzwachstum (Jahr 1–2) von</span>
-                <span className="font-mono text-lg font-semibold text-ink-50 tabular">
-                  {fmtPct(reverseDCF.impliedGrowthRate, 1)}/Jahr
-                </span>
-              </div>
-              <p className="mt-1.5 text-xs text-ink-400">{reverseDCF.interpretation}</p>
-            </div>
-          ) : (
-            <p className="text-xs text-ink-500">{reverseDCF.interpretation}</p>
-          )}
-        </div>
-
-        <div>
-          <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
-            <Term k="metrics.reverseDCF.impliedMargin.requiredMargin">Marge, die der Kurs verlangt</Term>
-          </h3>
-          {impliedMargin ? (
-            <div className="rounded border border-ink-800 bg-ink-950 p-3">
-              <div className="flex items-baseline justify-between">
-                <span className="text-xs text-ink-400">Der Kurs unterstellt eine operative Zielmarge von</span>
-                <span className="font-mono text-lg font-semibold text-ink-50 tabular">
-                  {fmtPct(impliedMargin.requiredMargin)}
-                </span>
-              </div>
-              <p className="mt-1.5 text-xs text-ink-400">
-                {impliedMargin.interpretation}
-                {impliedMargin.achievableMargin !== null && (
-                  <> Beste bisher gezeigte Marge: {fmtPct(impliedMargin.achievableMargin)} ({sourceLabel(impliedMargin.achievableBasis)}).</>
-                )}
-              </p>
-              <p className="mt-1 text-xs text-ink-500">
-                Ausgehend von {fmtBig(impliedMargin.revenueBase)} Umsatz der letzten zwölf Monate, der um {fmtPct(impliedMargin.revenueGrowth)}/Jahr
-                wächst ({sourceLabel(impliedMargin.growthSource)}) und dann zum langfristigen Wachstum ausläuft, bei WACC {fmtPct(impliedMargin.discountRate)} —
-                mit Pfad, Reinvestitionen und Steuern des DCF, gelöst nach der Marge, bei der er bis Jahr fünf ankommt.
-              </p>
-            </div>
-          ) : (
-            <p className="text-xs text-ink-500">Nicht berechenbar — braucht Umsatz und Aktienzahl.</p>
-          )}
-        </div>
+      <div>
+        <h3 className="mb-1 text-sm font-semibold text-ink-100">
+          <Term k="metrics.peerMultiples.medianFairPrice">Wie die Peers bewertet</Term>
+        </h3>
+        <p className="mb-1 text-xs text-ink-500">Der Kurs, wenn die Börse die Firma so bewertete wie ihre {metrics.peerMultiples.peerCount ?? ''} Peers.</p>
+        {peerMultiples.byMultiple.length > 0 ? (
+          <ul className="divide-y divide-ink-800">
+            {peerMultiples.byMultiple.map((e: PeerMultiplesEntry) => (
+              <Row key={e.metric} label={<>nach {METRIC_LABEL[e.metric] ?? e.metric}</>} term={METRIC_TERM[e.metric]}
+                note={e.sectorMedian !== null ? `die Peers zahlen das ${fmt(e.sectorMedian, '', 1)}-Fache` : null} value={e.fairPrice} />
+            ))}
+            <Row label={<span className="font-semibold">Mitte der Peer-Bewertungen</span>} note={null} value={peerMultiples.medianFairPrice} />
+          </ul>
+        ) : (
+          <p className="text-sm text-ink-500">Keine Peer-Daten verfügbar.</p>
+        )}
       </div>
     </div>
   );

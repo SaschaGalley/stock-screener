@@ -57,38 +57,78 @@ export default function PeerCompare({ ratios, evMultiples: ev, financials: f, se
     { label: 'Umsatzwachstum', term: 'financials.revenueGrowth', value: f.revenueGrowth,              median: sm.revenueGrowthYoY,    lowerIsBetter: false, isPercent: true },
   ];
 
+  const multiples = rows.filter((r) => r.lowerIsBetter);
+  const quality = rows.filter((r) => !r.lowerIsBetter);
+  const cheaper = multiples.filter((r) => verdictOf(r)?.good === true).length;
+  const dearer = multiples.filter((r) => verdictOf(r)?.good === false).length;
+  const better = quality.filter((r) => verdictOf(r)?.good === true).length;
+  const worse = quality.filter((r) => verdictOf(r)?.good === false).length;
+
+  return (
+    <div className="space-y-5">
+      <p className="text-xs text-ink-500">{sm.peerCount} Peers: {peerNames}</p>
+      <div className="grid gap-x-8 gap-y-6 xl:grid-cols-2">
+        <Group
+          title="Teurer oder günstiger bewertet?"
+          answer={cheaper > dearer ? `Günstiger bei ${cheaper} von ${multiples.length} Kennzahlen` : dearer > cheaper ? `Teurer bei ${dearer} von ${multiples.length} Kennzahlen` : 'Etwa gleich bewertet'}
+          tone={cheaper > dearer ? 'text-emerald-400' : dearer > cheaper ? 'text-red-400' : 'text-ink-200'}
+          rows={multiples}
+        />
+        <Group
+          title="Besser oder schlechter im Geschäft?"
+          answer={better > worse ? `Besser bei ${better} von ${quality.length} Kennzahlen` : worse > better ? `Schlechter bei ${worse} von ${quality.length} Kennzahlen` : 'Etwa gleichauf'}
+          tone={better > worse ? 'text-emerald-400' : worse > better ? 'text-red-400' : 'text-ink-200'}
+          rows={quality}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Within this share of the peers' median a figure is level with them. */
+const LEVEL = 0.1;
+
+/** How a figure stands against the peers, in words: "45 % günstiger", "+33,7 Pp. höher". */
+function verdictOf(r: RowSpec): { text: string; good: boolean | null } | null {
+  if (r.value === null || r.median === null || r.median === 0) return null;
+  if (r.isPercent) {
+    const d = r.value - r.median;
+    if (Math.abs(d) < 0.01) return { text: 'gleichauf', good: null };
+    return { text: `${fmtPercentPoints(d * 100, 1).replace('%', 'Pp.')} ${d > 0 ? 'höher' : 'niedriger'}`, good: d > 0 };
+  }
+  if (r.value <= 0 || r.median <= 0) return null;
+  const ratio = r.value / r.median;
+  if (Math.abs(ratio - 1) < LEVEL) return { text: 'gleichauf', good: null };
+  return ratio < 1
+    ? { text: `${Math.round((1 - ratio) * 100)} % günstiger`, good: true }
+    : { text: ratio >= 2 ? `${fmt(ratio, '', 1)}-mal so teuer` : `${Math.round((ratio - 1) * 100)} % teurer`, good: false };
+}
+
+function Group({ title, answer, tone, rows }: { title: string; answer: string; tone: string; rows: RowSpec[] }) {
+  const fmtVal = (r: RowSpec, v: number | null) => (v === null ? '—' : r.isPercent ? fmtPct(v) : fmt(v, 'x', 1));
   return (
     <div>
-      <p className="mb-2 text-xs text-ink-500">
-        {sm.peerCount} Peers: {peerNames}
-      </p>
-      <table className="w-full text-xs tabular">
+      <h3 className="text-sm font-semibold text-ink-100">{title}</h3>
+      <p className={`mb-2 text-sm ${tone}`}>{answer}</p>
+      <table className="w-full text-sm tabular">
         <thead>
-          <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
-            <th className="py-1.5 pr-2 text-left font-medium">Kennzahl</th>
-            <th className="py-1.5 px-2 text-right font-medium">Aktie</th>
-            <th className="py-1.5 px-2 text-right font-medium">Peer-Median</th>
-            <th className="py-1.5 pl-2 text-right font-medium"><Term k="concept.peerDelta">Δ zu Peers</Term></th>
+          <tr className="border-b border-ink-800 text-xs text-ink-500">
+            <th className="py-1 pr-2 text-left font-normal" />
+            <th className="py-1 px-2 text-right font-normal">Aktie</th>
+            <th className="py-1 px-2 text-right font-normal">Peers</th>
+            <th className="py-1 pl-2 text-right font-normal" />
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-ink-800">
           {rows.map((r) => {
-            const pct = r.value !== null && r.median !== null && r.median !== 0
-              ? ((r.value - r.median) / Math.abs(r.median)) * 100
-              : null;
-            const isGood = pct !== null && (r.lowerIsBetter ? pct < -10 : pct > 10);
-            const isBad  = pct !== null && (r.lowerIsBetter ? pct > 30  : pct < -20);
-            const color = pct === null ? 'text-ink-500' : isGood ? 'text-emerald-400' : isBad ? 'text-red-400' : 'text-amber-400';
-            const fmtVal = (v: number | null) => v === null ? '—' : r.isPercent ? fmtPct(v) : fmt(v, 'x', 1);
+            const v = verdictOf(r);
             return (
-              <tr key={r.label} className="border-b border-ink-800">
-                <td className="py-1.5 pr-2 text-ink-300">
-                  <Term k={r.term} extra={r.hint}>{r.label}</Term>
-                </td>
-                <td className="py-1.5 px-2 text-right font-mono text-ink-100">{fmtVal(r.value)}</td>
-                <td className="py-1.5 px-2 text-right font-mono text-ink-400">{fmtVal(r.median)}</td>
-                <td className={`py-1.5 pl-2 text-right font-mono ${color}`}>
-                  {fmtPercentPoints(pct, 0)}
+              <tr key={r.label}>
+                <td className="py-1.5 pr-2 text-ink-300"><Term k={r.term} extra={r.hint}>{r.label}</Term></td>
+                <td className="py-1.5 px-2 text-right font-mono text-ink-100">{fmtVal(r, r.value)}</td>
+                <td className="py-1.5 px-2 text-right font-mono text-ink-400">{fmtVal(r, r.median)}</td>
+                <td className={`whitespace-nowrap py-1.5 pl-2 text-right ${v?.good === true ? 'text-emerald-400' : v?.good === false ? 'text-red-400' : 'text-ink-500'}`}>
+                  {v?.text ?? '—'}
                 </td>
               </tr>
             );
