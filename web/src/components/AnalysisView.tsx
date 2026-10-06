@@ -39,6 +39,7 @@ import FundamentalsHistoryChart from "./charts/FundamentalsHistoryChart";
 import { CloseIcon } from "./icons";
 import StockTabs, { type StockTab } from "./StockTabs";
 import OverviewCards from "./OverviewCards";
+import More from "./More";
 // Markdown and the editor are only wanted once the section is opened.
 const Journal = lazy(() => import("./Journal"));
 import { CurrencyProvider } from "../currency";
@@ -363,25 +364,24 @@ function AnalysisView({
                   chartHeight="clamp(420px, 62vh, 760px)"
                 />
               </Section>
-              {/* TIER 9a: PRICE ACTION — what HAS the stock done (returns, vol, RS) */}
+              {/* What the stock has done and what surrounds it — returns, volatility, options, revisions, macro */}
               {bundle.marketSignals && (
-                <Section fixed
-                  title="Price Action"
-                  info="section.priceAction"
-                  subtitle="returns, volatility, position, relative strength"
-                >
-                  <PriceAction marketSignals={bundle.marketSignals} />
-                </Section>
-              )}
-              {/* TIER 9b: MARKET CONTEXT — what's around the stock (options, revisions, macro) */}
-              {bundle.marketSignals && (
-                <Section fixed
-                  title="Market Context"
-                  info="section.marketContext"
-                  subtitle="options, analyst revisions, macro"
-                >
-                  <MarketContext marketSignals={bundle.marketSignals} />
-                </Section>
+                <More label="Renditen, Volatilität, relative Stärke, Optionen, Revisionen und Makro">
+                  <Section fixed
+                    title="Price Action"
+                    info="section.priceAction"
+                    subtitle="returns, volatility, position, relative strength"
+                  >
+                    <PriceAction marketSignals={bundle.marketSignals} />
+                  </Section>
+                  <Section fixed
+                    title="Market Context"
+                    info="section.marketContext"
+                    subtitle="options, analyst revisions, macro"
+                  >
+                    <MarketContext marketSignals={bundle.marketSignals} />
+                  </Section>
+                </More>
               )}
             </TabPane>
 
@@ -473,11 +473,13 @@ function AnalysisView({
                       </div>
                     )}
                   <IncomeFlowChart symbol={symbol} />
-                  <FundamentalsGrid
-                    financials={f}
-                    ratios={m.ratios}
-                    evMultiples={m.evMultiples}
-                  />
+                  <More label="alle Kennzahlen zu Profitabilität, Bilanz und Bewertung">
+                    <FundamentalsGrid
+                      financials={f}
+                      ratios={m.ratios}
+                      evMultiples={m.evMultiples}
+                    />
+                  </More>
                 </div>
               </Section>
               {/* TIER 6: EARNINGS (history + forward) */}

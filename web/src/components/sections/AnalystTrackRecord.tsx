@@ -8,6 +8,7 @@ import { useArchive } from '../useArchive';
 import { MIN_FIRM_TARGETS, type FirmRecord } from '../../../../src/analysis/analyst-accuracy';
 import type { TrackRecordView } from '../../../../src/stock-history-service';
 import Term from '../Term';
+import { useFirst } from '../More';
 
 /**
  * How good the analysts' targets for this stock have been: every target with
@@ -119,7 +120,7 @@ function FirmTable({ firms }: { firms: FirmRecord[] }) {
   const [all, setAll] = useState(false);
   const ranked = firms.filter((f) => f.n >= MIN_FIRM_TARGETS);
   const rest = firms.length - ranked.length;
-  const shown = all ? firms : ranked;
+  const [shown, more] = useFirst(all ? firms : ranked, 8, 'Häuser');
   if (shown.length === 0) return null;
   const pct = (v: number | null) => (v === null ? '—' : `${Math.round(v * 100)} %`);
   return (
@@ -155,8 +156,9 @@ function FirmTable({ firms }: { firms: FirmRecord[] }) {
           ))}
         </tbody>
       </table>
+      {more}
       {rest > 0 && (
-        <button onClick={() => setAll((x) => !x)} className="mt-1 text-xs text-ink-400 hover:text-ink-100">
+        <button onClick={() => setAll((x) => !x)} className="mt-1 block text-xs text-ink-400 hover:text-ink-100">
           {all ? 'Nur Häuser mit mindestens fünf Zielen' : `+ ${rest} Häuser mit weniger als fünf abgeschlossenen Zielen`}
         </button>
       )}

@@ -9,7 +9,8 @@ import { KIND_DOT, TONE_MARK, TONE_TEXT } from '../timelineStyle';
 const RANGES = [{ days: 90, label: '3 M' }, { days: 365, label: '1 J' }, { days: 1095, label: '3 J' }] as const;
 /** News outnumber everything else several times over; shown on request. */
 const DEFAULT_OFF: TimelineKind[] = ['news'];
-const PAGE = 60;
+/** A screen's worth; the rest is a click away. */
+const PAGE = 20;
 
 
 const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];

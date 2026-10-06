@@ -9,6 +9,8 @@
  * (`#/stock/AAPL/chart`), so the back button and a link work.
  */
 
+import { useEffect, useRef } from 'react';
+
 export const STOCK_TABS = [
   { key: 'overview',  label: 'Überblick' },
   { key: 'chart',     label: 'Chart' },
@@ -30,10 +32,13 @@ export default function StockTabs({ tab, onTab, counts = {} }: {
   /** A number beside a tab's label — how many journal entries, say. */
   counts?: Partial<Record<StockTab, number>>;
 }) {
+  // On a phone the bar scrolls sideways; a tab opened from a card is scrolled into it.
+  const active = useRef<HTMLButtonElement>(null);
+  useEffect(() => { active.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [tab]);
   return (
     <nav
       aria-label="Themen"
-      className="flex shrink-0 gap-1 overflow-x-auto border-b border-ink-700 bg-ink-900 px-3 sm:px-6"
+      className="flex shrink-0 gap-1 overflow-x-auto border-b border-ink-700 bg-ink-900 px-3 [scrollbar-width:none] sm:px-6"
     >
       {STOCK_TABS.map((t) => {
         const on = t.key === tab;
@@ -41,6 +46,7 @@ export default function StockTabs({ tab, onTab, counts = {} }: {
         return (
           <button
             key={t.key}
+            ref={on ? active : undefined}
             onClick={() => onTab(t.key)}
             aria-current={on ? 'page' : undefined}
             className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition ${

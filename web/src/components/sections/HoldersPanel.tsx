@@ -4,6 +4,7 @@ import { useMoney } from '../../currency';
 import { useArchive } from '../useArchive';
 import type { Holder, Holders, InsiderTrade } from '../../../../src/analysis/holders';
 import Term from '../Term';
+import { useFirst } from '../More';
 
 const pct = (v: number | null, d = 1) => (v === null ? '—' : `${(v * 100).toFixed(d)} %`);
 
@@ -59,6 +60,7 @@ function Breakdown({ h }: { h: Holders }) {
 
 function HolderTable({ title, rows }: { title: string; rows: Holder[] }) {
   const { fmtBig } = useMoney();
+  const [shown, more] = useFirst(rows, 8, 'Halter');
   if (rows.length === 0) return null;
   return (
     <div>
@@ -73,7 +75,7 @@ function HolderTable({ title, rows }: { title: string; rows: Holder[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {shown.map((r) => (
             <tr key={r.organization} className="border-b border-ink-800" title={r.reportDate ? `Gemeldet zum ${r.reportDate}` : undefined}>
               <td className="max-w-[16rem] truncate py-1 pr-2 text-ink-300">{r.organization}</td>
               <td className="py-1 text-right font-mono text-ink-200">{pct(r.pctHeld, 2)}</td>
@@ -85,6 +87,7 @@ function HolderTable({ title, rows }: { title: string; rows: Holder[] }) {
           ))}
         </tbody>
       </table>
+      {more}
     </div>
   );
 }

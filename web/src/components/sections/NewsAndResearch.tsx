@@ -5,6 +5,7 @@ import {
 import { ManualResearch, ResearchReports } from '../ManualResearch';
 import { api } from '../../api';
 import PerplexityBrief from './PerplexityBrief';
+import { useFirst } from '../More';
 import type {
   SearchTrace,
   SearchProviderTrace,
@@ -41,6 +42,7 @@ const PROVIDER_META: Record<SearchProviderTrace['provider'], { label: string; ti
 };
 
 export default function NewsAndResearch({ symbol, news, perplexity, deepResearch, pplx, distill, searches, onRefreshed }: Props) {
+  const [firstNews, moreNews] = useFirst(news, 4, 'Meldungen');
   return (
     <div className="space-y-6">
       {/* Distill — top of the section because it's the most-weighted qualitative
@@ -83,7 +85,7 @@ export default function NewsAndResearch({ symbol, news, perplexity, deepResearch
         <div>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-500">Recent News</h3>
           <ul className="space-y-2">
-            {news.slice(0, 8).map((n, i) => (
+            {firstNews.map((n, i) => (
               <li key={i} className="rounded border border-ink-800 bg-ink-950 p-2.5 text-xs">
                 <a href={n.url} target="_blank" rel="noopener noreferrer" className="font-medium text-ink-100 hover:underline">
                   {n.headline}
@@ -95,6 +97,7 @@ export default function NewsAndResearch({ symbol, news, perplexity, deepResearch
               </li>
             ))}
           </ul>
+          {moreNews}
         </div>
       )}
     </div>

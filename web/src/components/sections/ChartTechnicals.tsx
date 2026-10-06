@@ -12,8 +12,8 @@ import TechnicalSignalsPanel from './TechnicalSignalsPanel';
 import { TimingEvidence, channelDirection, channelPlace } from '../TimingCell';
 import { SetupPlan, firingSetups } from '../SetupBadge';
 import { useVerdictEvidence } from '../VerdictEvidence';
-import { useStoredOpen } from '../Section';
 import Term from '../Term';
+import More from '../More';
 import type { GlossaryKey } from '../../glossary';
 
 interface Props {
@@ -143,27 +143,33 @@ export default function ChartTechnicals({ symbol, row, timing, signals, model, c
         </div>
       )}
 
-      {a && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Channels a={a} fmtPrice={money.fmtPrice} />
-          <Structure a={a} fmtPrice={money.fmtPrice} />
-        </div>
-      )}
-
-      {t && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Block title="Timing-Lesung mit Backtest">
-            <div className="text-xs"><TimingEvidence t={t} verdict={row?.recommendation ?? null} evidence={evidence} /></div>
-          </Block>
-          <Setups row={row} evidence={evidence} />
-        </div>
-      )}
-
       {data && data.bars.length > 0 && (
         <ChartReadPanel symbol={symbol} model={model} read={read} asOf={a?.asOf ?? null} onRead={setRead} />
       )}
 
-      {signals && <Vote signals={signals} />}
+      {(a || t || signals) && (
+        <More label="Trendkanäle, Durchschnitte, Volumen, Timing-Lesung, Setups und Indikator-Abstimmung">
+          {a && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Channels a={a} fmtPrice={money.fmtPrice} />
+              <Structure a={a} fmtPrice={money.fmtPrice} />
+            </div>
+          )}
+          {t && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Block title="Timing-Lesung mit Backtest">
+                <div className="text-xs"><TimingEvidence t={t} verdict={row?.recommendation ?? null} evidence={evidence} /></div>
+              </Block>
+              <Setups row={row} evidence={evidence} />
+            </div>
+          )}
+          {signals && (
+            <Block title="Indikator-Abstimmung" term="tech.vote">
+              <TechnicalSignalsPanel signals={signals} />
+            </Block>
+          )}
+        </More>
+      )}
 
       <p className="text-2xs leading-relaxed text-ink-500">
         Marken, Kanäle, Linien und Muster beschreiben den Chart; geprüft hat der Backtest davon nur die Timing-Lesungen. Nichts in
@@ -558,25 +564,6 @@ function ChartReadPanel({ symbol, model, read, asOf, onRead }: {
           </p>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── The old vote ─────────────────────────────────────────────────────────────
-
-function Vote({ signals }: { signals: TechnicalSignals }) {
-  const [open, setOpen] = useStoredOpen('tech-vote', false);
-  const v = signals.overall;
-  return (
-    <div>
-      <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 text-xs text-ink-400 hover:text-ink-200">
-        <span className={`inline-block w-2 transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
-        <Term k="tech.vote">Indikator-Abstimmung</Term>
-        <span className="text-ink-500">
-          {v.verdict.toLowerCase()} · {v.buy} Kauf, {v.neutral} neutral, {v.sell} Verkauf
-        </span>
-      </button>
-      {open && <div className="mt-3"><TechnicalSignalsPanel signals={signals} /></div>}
     </div>
   );
 }
