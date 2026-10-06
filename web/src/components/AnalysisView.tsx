@@ -405,7 +405,7 @@ function AnalysisView({
               <Section fixed
                 title="Bewertung im Zeitverlauf"
                 info="section.valuationHistory"
-                subtitle="Fair Value, Gewinn und Multiples der letzten fünf Jahre"
+                subtitle="Fairer Wert, Gewinn und Multiples der letzten fünf Jahre"
                 storageKey="valuation-history"
               >
                 <ValuationHistory symbol={symbol} liveFairValue={m.composite.primary.median} />
@@ -446,7 +446,7 @@ function AnalysisView({
                       </div>
                     )}
                   <IncomeFlowChart symbol={symbol} />
-                  <More label="alle Kennzahlen zu Profitabilität, Bilanz und Bewertung">
+                  <More label="alle Kennzahlen zu Rentabilität, Bilanz und Bewertung">
                     <FundamentalsGrid
                       financials={f}
                       ratios={m.ratios}

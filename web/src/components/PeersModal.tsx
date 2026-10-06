@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import type { PeerRow, PeersResponse } from '../types';
-import { fmtBig } from '../format';
+import { deNumber, fmtBig } from '../format';
 import { scoreColor } from './stockList';
 import StockLogo, { initialsFromName } from './StockLogo';
 import { CloseIcon } from './icons';
@@ -245,7 +245,7 @@ function PeerLine({ row, self = false, add, onAdd, onOpen }: {
   const note = self ? 'diese Aktie' : STATUS_NOTE[row.status];
   const scoreTitle = row.score === null
     ? 'Noch nicht bewertet'
-    : `${row.verdict ?? ''} ${row.score.toFixed(1)}${row.status === 'reference' ? ' — nur aus den Zahlen' : ''}`.trim();
+    : `${row.verdict ?? ''} ${deNumber(row.score, 1)}${row.status === 'reference' ? ' — nur aus den Zahlen' : ''}`.trim();
 
   return (
     <li className="flex items-center gap-3 px-3 py-2">
@@ -268,7 +268,7 @@ function PeerLine({ row, self = false, add, onAdd, onOpen }: {
         className={`w-9 shrink-0 text-right font-mono text-sm font-semibold tabular ${scoreColor(row.score)}`}
         title={scoreTitle}
       >
-        {row.score === null ? '—' : row.score.toFixed(1)}
+        {row.score === null ? '—' : deNumber(row.score, 1)}
       </span>
       <div className="flex w-28 shrink-0 justify-end">
         {self ? null : row.status === 'list' ? (

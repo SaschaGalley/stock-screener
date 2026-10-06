@@ -86,7 +86,7 @@ export default function VerdictHero({
               <time
                 className="shrink-0"
                 dateTime={llmGeneratedAt}
-                title={`Generiert am ${new Date(llmGeneratedAt).toLocaleString()}${llmModel ? ` · ${llmModel}` : ''}`}
+                title={`Generiert am ${new Date(llmGeneratedAt).toLocaleString('de-DE')}${llmModel ? ` · ${llmModel}` : ''}`}
               >
                 {relativeTime(llmGeneratedAt)}
               </time>
@@ -339,7 +339,7 @@ function RatingBar({ a }: { a: Props['analyst'] }) {
       <div className="flex justify-between text-2xs text-ink-500">
         <Term k="concept.ratingCounts">SB {sb} · B {b} · H {h} · S {s} · SS {ss}</Term>
         <span className={buyPct >= 60 ? 'text-emerald-400' : buyPct >= 40 ? 'text-amber-400' : 'text-red-400'}>
-          {Math.round(buyPct)}% bullish
+          {Math.round(buyPct)} % bullish
         </span>
       </div>
     </div>

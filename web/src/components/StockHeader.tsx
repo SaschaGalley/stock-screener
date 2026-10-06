@@ -357,7 +357,7 @@ function RefreshMenu({
           )}
           <MenuItem
             title="Nur Daten"
-            detail="Kurse, Fundamentaldaten, Technicals, Distill — kein LLM-Aufruf"
+            detail="Kurse, Fundamentaldaten, Charttechnik, Distill — kein LLM-Aufruf"
             flagged={staleFix === 'data'}
             onClick={pick(onData)}
           />

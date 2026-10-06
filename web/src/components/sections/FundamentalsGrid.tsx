@@ -18,61 +18,61 @@ export default function FundamentalsGrid({ financials: f, ratios, evMultiples: e
     : '';
   return (
     <div className="grid gap-4 lg:grid-cols-3">
-      <Block title="Profitability">
-        <Row label="Revenue" term="financials.revenue"          value={fmtBig(f.revenue)} />
-        <Row label="Revenue Growth" term="financials.revenueGrowth"   value={fmtPct(f.revenueGrowth)} accentByPct={f.revenueGrowth} />
-        <Row label="Earnings Growth" term="financials.earningsGrowth"  value={fmtPct(f.earningsGrowth)} accentByPct={f.earningsGrowth} />
-        <Row label="EPS Growth 3Y" term="financials.epsGrowth3Y"    value={fmtPct(f.epsGrowth3Y)} accentByPct={f.epsGrowth3Y} />
-        <Row label="Gross Profit" term="financials.grossProfit"     value={fmtBig(f.grossProfit)} />
+      <Block title="Rentabilität">
+        <Row label="Umsatz" term="financials.revenue"          value={fmtBig(f.revenue)} />
+        <Row label="Umsatzwachstum" term="financials.revenueGrowth"   value={fmtPct(f.revenueGrowth)} accentByPct={f.revenueGrowth} />
+        <Row label="Gewinnwachstum" term="financials.earningsGrowth"  value={fmtPct(f.earningsGrowth)} accentByPct={f.earningsGrowth} />
+        <Row label="EPS-Wachstum 3 J." term="financials.epsGrowth3Y"    value={fmtPct(f.epsGrowth3Y)} accentByPct={f.epsGrowth3Y} />
+        <Row label="Bruttogewinn" term="financials.grossProfit"     value={fmtBig(f.grossProfit)} />
         <Row label="EBITDA" term="financials.ebitda"           value={fmtBig(f.ebitda)} />
-        <Row label="Free Cash Flow" term="financials.freeCashFlow"   value={fmtBig(f.freeCashFlow)} />
-        <Row label="Operating Margin" term="financials.operatingMargin" value={fmtPct(f.operatingMargin)} />
-        <Row label="Net Margin" term="financials.netMargin"       value={fmtPct(f.netMargin)} />
+        <Row label="Free Cashflow" term="financials.freeCashFlow"   value={fmtBig(f.freeCashFlow)} />
+        <Row label="Operative Marge" term="financials.operatingMargin" value={fmtPct(f.operatingMargin)} />
+        <Row label="Nettomarge" term="financials.netMargin"       value={fmtPct(f.netMargin)} />
         <Row label="ROE" term="metrics.ratios.roe"              value={fmtPct(ratios.roe)} />
         <Row label="ROA" term="metrics.ratios.roa"              value={fmtPct(ratios.roa)} />
         <Row label="ROIC" term="financials.roic"             value={fmtPct(f.roic)} />
         {ratios.ownerEarningsYield !== null && (
-          <Row label="Owner Earnings Yield" term="metrics.ratios.ownerEarningsYield" value={fmtPct(ratios.ownerEarningsYield)} accentByPct={ratios.ownerEarningsYield} />
+          <Row label="Owner-Earnings-Rendite" term="metrics.ratios.ownerEarningsYield" value={fmtPct(ratios.ownerEarningsYield)} accentByPct={ratios.ownerEarningsYield} />
         )}
       </Block>
 
-      <Block title="Balance Sheet & Liquidity">
-        <Row label="Total Cash" term="financials.totalCash"      value={fmtBig(f.totalCash)} />
-        <Row label="Total Debt" term="financials.totalDebt"      value={fmtBig(f.totalDebt)} />
-        <Row label="Long-term Debt" term="financials.longTermDebt"  value={fmtBig(f.longTermDebt)} />
+      <Block title="Bilanz & Liquidität">
+        <Row label="Liquide Mittel" term="financials.totalCash"      value={fmtBig(f.totalCash)} />
+        <Row label="Schulden gesamt" term="financials.totalDebt"      value={fmtBig(f.totalDebt)} />
+        <Row label="Langfristige Schulden" term="financials.longTermDebt"  value={fmtBig(f.longTermDebt)} />
         <Row label="Working Capital" term="financials.workingCapital" value={fmtBig(f.workingCapital)} />
         <Row label="Current Ratio" term="financials.currentRatio"   value={fmt(f.currentRatio, 'x')} />
         <Row label="Quick Ratio" term="financials.quickRatio"     value={fmt(f.quickRatio, 'x')} />
-        <Row label="Debt / Equity" term="financials.debtToEquity"   value={fmt(f.debtToEquity, 'x')} />
-        <Row label="Total Assets" term="financials.totalAssets"    value={fmtBig(f.totalAssets)} />
-        <Row label="Total Liabilities" term="financials.totalLiabilities" value={fmtBig(f.totalLiabilities)} />
-        <Row label="Retained Earnings" term="financials.retainedEarnings" value={fmtBig(f.retainedEarnings)} />
+        <Row label="Schulden / Eigenkapital" term="financials.debtToEquity"   value={fmt(f.debtToEquity, 'x')} />
+        <Row label="Bilanzsumme" term="financials.totalAssets"    value={fmtBig(f.totalAssets)} />
+        <Row label="Verbindlichkeiten gesamt" term="financials.totalLiabilities" value={fmtBig(f.totalLiabilities)} />
+        <Row label="Gewinnrücklagen" term="financials.retainedEarnings" value={fmtBig(f.retainedEarnings)} />
       </Block>
 
-      <Block title="Valuation Multiples">
-        <Row label="P/E TTM" term="metrics.ratios.pe"       value={fmt(ratios.pe, 'x')} />
-        <Row label="Forward P/E" term="metrics.ratios.forwardPE"   value={fmt(ratios.forwardPE, 'x')} />
-        <Row label="Avg P/E (5Y)" term="financials.avgPE5Y"  value={fmt(f.avgPE5Y, 'x')} />
+      <Block title="Bewertungsmultiples">
+        <Row label="KGV TTM" term="metrics.ratios.pe"       value={fmt(ratios.pe, 'x')} />
+        <Row label="Forward-KGV" term="metrics.ratios.forwardPE"   value={fmt(ratios.forwardPE, 'x')} />
+        <Row label="Ø-KGV (5 J.)" term="financials.avgPE5Y"  value={fmt(f.avgPE5Y, 'x')} />
         <Row label="PEG" term="metrics.ratios.peg"           value={fmt(ratios.peg)} />
-        <Row label="P/B" term="metrics.ratios.pb"           value={fmt(ratios.pb, 'x')} />
-        <Row label="P/S TTM" term="metrics.evMultiples.priceToSales"       value={fmt(ev.priceToSales, 'x')} />
-        <Row label="Forward P/S" term="metrics.evMultiples.forwardPriceToSales"   value={fmt(ev.forwardPriceToSales, 'x')} />
+        <Row label="KBV" term="metrics.ratios.pb"           value={fmt(ratios.pb, 'x')} />
+        <Row label="KUV TTM" term="metrics.evMultiples.priceToSales"       value={fmt(ev.priceToSales, 'x')} />
+        <Row label="Forward-KUV" term="metrics.evMultiples.forwardPriceToSales"   value={fmt(ev.forwardPriceToSales, 'x')} />
         <Row
-          label="P/S Run-Rate" term="metrics.evMultiples.simpleValuationRatio"
+          label="Run-Rate-KUV" term="metrics.evMultiples.simpleValuationRatio"
           value={fmt(ev.simpleValuationRatio, 'x')}
           hint={ev.latestQuarterEndDate ? `Hier mit dem Umsatz aus ${formatQEnd(ev.latestQuarterEndDate)}.` : undefined}
         />
         <Row
-          label="P/S Run-Rate (seas. adj.)" term="metrics.evMultiples.seasonallyAdjustedValuationRatio"
+          label="Run-Rate-KUV (saisonbereinigt)" term="metrics.evMultiples.seasonallyAdjustedValuationRatio"
           value={fmt(ev.seasonallyAdjustedValuationRatio, 'x')}
           warn={seasonalWarning !== ''}
           hint={`Wachstumsrate des jüngsten Quartals: ${fmtSignedPct(ev.latestQuarterYoYGrowth)}.${seasonalWarning}`}
         />
         <Row label="EV/EBITDA" term="metrics.evMultiples.evToEbitda"     value={fmt(ev.evToEbitda, 'x')} />
-        <Row label="EV/Revenue" term="metrics.evMultiples.evToRevenue"    value={fmt(ev.evToRevenue, 'x')} />
+        <Row label="EV/Umsatz" term="metrics.evMultiples.evToRevenue"    value={fmt(ev.evToRevenue, 'x')} />
         <Row label="EV/FCF" term="metrics.evMultiples.evToFCF"        value={fmt(ev.evToFCF, 'x')} />
         <Row label="P/FCF" term="metrics.evMultiples.priceToFCF"         value={fmt(ev.priceToFCF, 'x')} />
-        <Row label="Dividend Yield" term="metrics.ratios.dividendYield" value={fmtPct(f.dividendYield)} />
+        <Row label="Dividendenrendite" term="metrics.ratios.dividendYield" value={fmtPct(f.dividendYield)} />
       </Block>
     </div>
   );

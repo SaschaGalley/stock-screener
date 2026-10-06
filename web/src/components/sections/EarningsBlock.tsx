@@ -21,7 +21,7 @@ export default function EarningsBlock({ financials: f }: Props) {
       {f.earningsSurprises?.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-semibold text-ink-300">
-            <Term k="concept.surprises">Past Surprises (last 4 qtrs)</Term>
+            <Term k="concept.surprises">Überraschungen (letzte 4 Quartale)</Term>
           </h3>
           <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 200 }}>
             <EarningsSurpriseChart surprises={f.earningsSurprises} />
@@ -29,10 +29,10 @@ export default function EarningsBlock({ financials: f }: Props) {
           <table className="mt-2 w-full text-xs tabular">
             <thead>
               <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
-                <th className="py-1 pr-2 text-left font-medium">Qtr</th>
-                <th className="py-1 px-2 text-right font-medium">Estimate</th>
-                <th className="py-1 px-2 text-right font-medium">Actual</th>
-                <th className="py-1 pl-2 text-right font-medium"><Term k="concept.surprisePct">Surprise</Term></th>
+                <th className="py-1 pr-2 text-left font-medium">Quartal</th>
+                <th className="py-1 px-2 text-right font-medium">Schätzung</th>
+                <th className="py-1 px-2 text-right font-medium">Ist</th>
+                <th className="py-1 pl-2 text-right font-medium"><Term k="concept.surprisePct">Überraschung</Term></th>
               </tr>
             </thead>
             <tbody>
@@ -54,7 +54,7 @@ export default function EarningsBlock({ financials: f }: Props) {
       {f.earningsEstimates?.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-semibold text-ink-300">
-            <Term k="concept.forwardEstimates">Forward Estimates (analyst consensus)</Term>
+            <Term k="concept.forwardEstimates">Prognosen (Analystenkonsens)</Term>
           </h3>
           <div className="rounded border border-ink-800 bg-ink-950 p-2" style={{ height: 200 }}>
             <ForwardGrowthChart estimates={f.earningsEstimates} />
@@ -62,16 +62,16 @@ export default function EarningsBlock({ financials: f }: Props) {
           <table className="mt-2 w-full text-xs tabular">
             <thead>
               <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
-                <th className="py-1 pr-2 text-left font-medium">Period</th>
+                <th className="py-1 pr-2 text-left font-medium">Zeitraum</th>
                 <th className="py-1 px-2 text-right font-medium">EPS</th>
-                <th className="py-1 px-2 text-right font-medium">YoY</th>
-                <th className="py-1 px-2 text-right font-medium">Revenue</th>
-                <th className="py-1 pl-2 text-right font-medium">YoY</th>
+                <th className="py-1 px-2 text-right font-medium">Wachstum</th>
+                <th className="py-1 px-2 text-right font-medium">Umsatz</th>
+                <th className="py-1 pl-2 text-right font-medium">Wachstum</th>
               </tr>
             </thead>
             <tbody>
               {f.earningsEstimates.map((e: any, i: number) => {
-                const map: Record<string, string> = { '0q': 'Cur Q', '+1q': 'Nxt Q', '0y': 'Cur Y', '+1y': 'Nxt Y' };
+                const map: Record<string, string> = { '0q': 'lfd. Q', '+1q': 'nächstes Q', '0y': 'lfd. GJ', '+1y': 'nächstes GJ' };
                 return (
                   <tr key={i} className="border-b border-ink-800">
                     <td className="py-1 pr-2 text-ink-300">{map[e.period] ?? e.period}</td>

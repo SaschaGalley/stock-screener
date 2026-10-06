@@ -11,7 +11,7 @@ export default function ForwardGrowthChart({ estimates }: Props) {
     .map((p) => estimates.find((e: any) => e.period === p))
     .filter(Boolean);
 
-  const map: Record<string, string> = { '0q': 'Cur Qtr', '+1q': 'Nxt Qtr', '0y': 'Cur Year', '+1y': 'Nxt Year' };
+  const map: Record<string, string> = { '0q': 'lfd. Quartal', '+1q': 'nächstes Quartal', '0y': 'lfd. GJ', '+1y': 'nächstes GJ' };
   const labels = ordered.map((e: any) => map[e.period] ?? e.period);
   const epsGrowth = ordered.map((e: any) => e.epsGrowth !== null ? e.epsGrowth * 100 : null);
   const revGrowth = ordered.map((e: any) => e.revenueGrowth !== null ? e.revenueGrowth * 100 : null);
@@ -45,13 +45,13 @@ export default function ForwardGrowthChart({ estimates }: Props) {
         },
         series: [
           {
-            name: 'EPS Growth YoY',
+            name: 'EPS-Wachstum ggü. Vj.',
             type: 'bar',
             data: epsGrowth,
             itemStyle: { color: CHART_COLORS.blue, borderRadius: [3, 3, 0, 0] },
           },
           {
-            name: 'Revenue Growth YoY',
+            name: 'Umsatzwachstum ggü. Vj.',
             type: 'bar',
             data: revGrowth,
             itemStyle: { color: CHART_COLORS.green, borderRadius: [3, 3, 0, 0] },

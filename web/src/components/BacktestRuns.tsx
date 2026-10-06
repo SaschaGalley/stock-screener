@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import type { BacktestOverview } from '../../../src/backtest-service';
+import { deNumber, fmt } from '../format';
 
 const TRIGGER: Record<string, string> = { cron: 'monatlich', manual: 'von Hand', cli: 'Terminal' };
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
@@ -27,7 +28,7 @@ export function BacktestStatusLine({ o }: { o: BacktestOverview }) {
   if (!s) return <span className="text-ink-500">Noch kein Lauf aus der App.</span>;
   const when = s.finishedAt ? fmtTime(s.finishedAt) : fmtTime(s.updatedAt);
   if (s.state === 'done') {
-    return <span className="text-ink-300">Zuletzt fertig {when} ({TRIGGER[s.trigger] ?? s.trigger}){s.peakMb ? `, Speicher bis ${(s.peakMb / 1024).toFixed(1)} GB` : ''}</span>;
+    return <span className="text-ink-300">Zuletzt fertig {when} ({TRIGGER[s.trigger] ?? s.trigger}){s.peakMb ? `, Speicher bis ${deNumber(s.peakMb / 1024, 1)} GB` : ''}</span>;
   }
   return (
     <span className="text-red-400">
@@ -68,9 +69,9 @@ export default function BacktestRuns({ o }: { o: BacktestOverview }) {
               <td className="px-2 py-1 text-right font-mono text-ink-400">{r.months ?? '—'}</td>
               <td className="px-2 py-1 text-right font-mono text-ink-400">{r.companies ?? '—'}</td>
               <td className="px-2 py-1 text-right font-mono text-ink-200">
-                {r.ic?.toFixed(3) ?? '—'} <span className="text-ink-500">({r.tStat?.toFixed(1) ?? '—'})</span>
+                {fmt(r.ic, '', 3)} <span className="text-ink-500">({fmt(r.tStat, '', 1)})</span>
               </td>
-              <td className="px-2 py-1 text-right font-mono text-ink-300">{r.neutralIc?.toFixed(3) ?? '—'}</td>
+              <td className="px-2 py-1 text-right font-mono text-ink-300">{fmt(r.neutralIc, '', 3)}</td>
               <td className={`px-4 py-1 text-right text-xs ${r.held ? 'text-emerald-400' : 'text-ink-500'}`}>{r.held ? 'hält' : 'hält nicht'}</td>
             </tr>
           ))}

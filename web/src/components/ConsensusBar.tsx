@@ -30,8 +30,8 @@ export default function ConsensusBar({ consensus, height = 44 }: Props) {
     <div
       className="flex w-[3px] shrink-0 flex-col overflow-hidden rounded-sm"
       style={{ height }}
-      title={`Consensus: ${deNumber(buyPct, 0)} % buy · ${deNumber(holdPct, 0)} % hold · ${deNumber(sellPct, 0)} % sell`}
-      aria-label={`Buy ${deNumber(buyPct, 0)} %, hold ${deNumber(holdPct, 0)} %, sell ${deNumber(sellPct, 0)} %`}
+      title={`Konsens: ${deNumber(buyPct, 0)} % Kauf · ${deNumber(holdPct, 0)} % Halten · ${deNumber(sellPct, 0)} % Verkauf`}
+      aria-label={`Kauf ${deNumber(buyPct, 0)} %, Halten ${deNumber(holdPct, 0)} %, Verkauf ${deNumber(sellPct, 0)} %`}
     >
       {/* Colors are CSS vars — edit the hex values in styles.css under
           --color-consensus-buy / -hold / -sell to retheme the bar. */}

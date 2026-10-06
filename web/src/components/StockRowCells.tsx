@@ -102,7 +102,7 @@ export function StockIdentity({ row, active, stages = [] }: IdentityProps) {
           // something is running that is the more useful of the two.
           <div
             className="flex items-center gap-1 font-mono text-2xs leading-4 text-accent"
-            title={`Running: ${stages.join(', ')}`}
+            title={`Läuft: ${stages.join(', ')}`}
           >
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             {stages[0]}

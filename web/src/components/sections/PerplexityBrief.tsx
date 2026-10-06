@@ -1,4 +1,7 @@
+import { lazy, Suspense } from 'react';
 import type { PerplexityContext } from '../../types';
+
+const Markdown = lazy(() => import('../Markdown'));
 
 type Findings = NonNullable<PerplexityContext['findings']>;
 type Claim = Findings['bullClaims'][number];
@@ -174,14 +177,11 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 
 /** The old free-text rows: bold lines as headings, the rest as paragraphs. */
+/** A brief from before the structured fields: its markdown, rendered. */
 function Markdownish({ text }: { text: string }) {
   return (
-    <div className="prose-stock text-xs">
-      {text.split('\n').map((line, i) => (
-        <p key={i} className={line.startsWith('**') ? 'mt-3 font-semibold text-ink-100' : 'mt-1'}>
-          {line.replace(/\*\*/g, '')}
-        </p>
-      ))}
-    </div>
+    <Suspense fallback={<p className="text-xs text-ink-500">Lade …</p>}>
+      <Markdown text={text} className="text-sm leading-relaxed" />
+    </Suspense>
   );
 }

@@ -8,13 +8,13 @@ interface Props {
 
 export default function ReturnsChart({ returns }: Props) {
   const periods = [
-    { key: 'd1',  label: '1D' },
-    { key: 'w1',  label: '1W' },
-    { key: 'm1',  label: '1M' },
-    { key: 'm3',  label: '3M' },
-    { key: 'm6',  label: '6M' },
-    { key: 'ytd', label: 'YTD' },
-    { key: 'y1',  label: '1Y' },
+    { key: 'd1',  label: '1 T' },
+    { key: 'w1',  label: '1 W' },
+    { key: 'm1',  label: '1 M' },
+    { key: 'm3',  label: '3 M' },
+    { key: 'm6',  label: '6 M' },
+    { key: 'ytd', label: 'lfd. J.' },
+    { key: 'y1',  label: '1 J' },
   ];
 
   const labels = periods.map((p) => p.label);

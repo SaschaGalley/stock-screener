@@ -44,6 +44,18 @@ function signalText(key: string): string | null {
   return k in GLOSSARY ? GLOSSARY[k as GlossaryKey] : null;
 }
 
+// The interpretations arrive as the metrics' English enum values.
+const PIOTROSKI_LABEL: Record<string, string> = { strong: 'stark', neutral: 'mittel', weak: 'schwach' };
+const ALTMAN_ZONE: Record<string, string> = { safe: 'sicher', grey: 'Grauzone', distress: 'gefährdet', unknown: 'unbekannt' };
+const BENEISH_LABEL: Record<string, string> = {
+  'likely manipulator': 'auffällig', 'grey zone': 'Grauzone', 'unlikely manipulator': 'unauffällig', unknown: 'unbekannt',
+};
+const RATING_LABEL: Record<string, string> = {
+  excellent: 'exzellent', good: 'gut', acceptable: 'akzeptabel', fair: 'ausreichend',
+  poor: 'schwach', 'very poor': 'sehr schwach', critical: 'kritisch', unknown: 'unbekannt',
+};
+const label = (map: Record<string, string>, v: string | undefined) => (v ? map[v] ?? v : undefined);
+
 function PiotroskiCard({ p }: { p: any }) {
   const score = p.score ?? 0;
   const max = p.maxScore ?? 8;
@@ -54,7 +66,7 @@ function PiotroskiCard({ p }: { p: any }) {
     <ScoreCard
       title="Piotroski F-Score" term="metrics.piotroski.score"
       value={`${score}/${max}`}
-      subtitle={p.interpretation?.toUpperCase()}
+      subtitle={label(PIOTROSKI_LABEL, p.interpretation)}
       color={color}
       body={
         <div className="flex gap-0.5">
@@ -88,15 +100,15 @@ function AltmanCard({ a }: { a: any }) {
     <ScoreCard
       title="Altman Z-Score" term="metrics.altmanZ.score"
       value={deNumber(a.score, 2)}
-      subtitle={`${a.zone} zone`}
+      subtitle={label(ALTMAN_ZONE, a.zone)}
       color={color}
-      body={`${a.model} model · safe >${a.thresholds.safe.toLocaleString('de-DE')}, distress <${a.thresholds.distress.toLocaleString('de-DE')}`}
+      body={`${a.model === 'modified' ? 'Modifiziertes Modell' : 'Originalmodell'} · sicher > ${a.thresholds.safe.toLocaleString('de-DE')}, gefährdet < ${a.thresholds.distress.toLocaleString('de-DE')}`}
     />
   );
 }
 
 function BeneishCard({ b }: { b: any }) {
-  if (b.score === null) return <ScoreCard title="Beneish M-Score" term="metrics.beneish.score" value="—" color="text-ink-500" body={`${b.variablesComputed}/8 indices`} />;
+  if (b.score === null) return <ScoreCard title="Beneish M-Score" term="metrics.beneish.score" value="—" color="text-ink-500" body={`${b.variablesComputed}/8 Kennzahlen`} />;
   const color = b.probability === 'unlikely manipulator' ? 'text-emerald-400'
               : b.probability === 'likely manipulator'   ? 'text-red-400'
               : 'text-amber-400';
@@ -104,24 +116,24 @@ function BeneishCard({ b }: { b: any }) {
     <ScoreCard
       title="Beneish M-Score" term="metrics.beneish.score"
       value={deNumber(b.score, 2)}
-      subtitle={b.probability}
+      subtitle={label(BENEISH_LABEL, b.probability)}
       color={color}
-      body={`${b.variablesComputed}/8 indices computed`}
+      body={`${b.variablesComputed}/8 Kennzahlen berechnet`}
     />
   );
 }
 
 function SortinoCard({ s }: { s: any }) {
-  if (s.ratio === null) return <ScoreCard title="Sortino Ratio" term="metrics.sortino.ratio" value="—" color="text-ink-500" body="needs ≥6 months of data" />;
+  if (s.ratio === null) return <ScoreCard title="Sortino-Ratio" term="metrics.sortino.ratio" value="—" color="text-ink-500" body="braucht mindestens 6 Monate Kursdaten" />;
   const color = s.ratio >= 2 ? 'text-emerald-400' : s.ratio >= 1 ? 'text-emerald-500'
               : s.ratio >= 0.5 ? 'text-amber-400' : 'text-red-400';
   return (
     <ScoreCard
-      title="Sortino Ratio" term="metrics.sortino.ratio"
+      title="Sortino-Ratio" term="metrics.sortino.ratio"
       value={deNumber(s.ratio, 2)}
-      subtitle={s.interpretation}
+      subtitle={label(RATING_LABEL, s.interpretation)}
       color={color}
-      body={`Annual ${fmtPct(s.annualReturn)} · downside dev ${fmtPct(s.downsideDeviation)}`}
+      body={`Rendite p. a. ${fmtPct(s.annualReturn)} · Abwärtsvolatilität ${fmtPct(s.downsideDeviation)}`}
     />
   );
 }
@@ -133,19 +145,19 @@ function RuleOf40Card({ r }: { r: any }) {
     <ScoreCard
       title="Rule of 40" term="metrics.ruleOf40.score"
       value={deNumber(r.score, 1)}
-      subtitle={r.passes ? 'PASSES' : 'fails'}
+      subtitle={r.passes ? 'erfüllt' : 'verfehlt'}
       color={color}
-      body={`Rev growth ${fmt(r.revenueGrowthPct, ' %', 1)} + margin ${fmt(r.profitMarginPct, ' %', 1)}`}
+      body={`Umsatzwachstum ${fmt(r.revenueGrowthPct, ' %', 1)} + Marge ${fmt(r.profitMarginPct, ' %', 1)}`}
     />
   );
 }
 
 function InterestCard({ ic }: { ic: any }) {
   if (ic.ratio === null && ic.interpretation === 'unknown') {
-    return <ScoreCard title="Interest Coverage" term="metrics.interestCoverage.ratio" value="—" color="text-ink-500" />;
+    return <ScoreCard title="Zinsdeckung" term="metrics.interestCoverage.ratio" value="—" color="text-ink-500" />;
   }
   if (ic.ratio === null && ic.interpretation === 'excellent') {
-    return <ScoreCard title="Interest Coverage" term="metrics.interestCoverage.ratio" value="∞" subtitle="debt-free" color="text-emerald-400" />;
+    return <ScoreCard title="Zinsdeckung" term="metrics.interestCoverage.ratio" value="∞" subtitle="schuldenfrei" color="text-emerald-400" />;
   }
   const color = ic.interpretation === 'excellent' ? 'text-emerald-400'
               : ic.interpretation === 'good' ? 'text-emerald-500'
@@ -154,9 +166,9 @@ function InterestCard({ ic }: { ic: any }) {
               : 'text-red-400';
   return (
     <ScoreCard
-      title="Interest Coverage" term="metrics.interestCoverage.ratio"
+      title="Zinsdeckung" term="metrics.interestCoverage.ratio"
       value={`${fmt(ic.ratio, 'x', 1)}`}
-      subtitle={ic.interpretation}
+      subtitle={label(RATING_LABEL, ic.interpretation)}
       color={color}
     />
   );

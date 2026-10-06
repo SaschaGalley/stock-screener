@@ -5,6 +5,7 @@ import { MODELS, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel } fr
 import Page from '../components/Page';
 import { BacktestStatusLine, useBacktestOverview } from '../components/BacktestRuns';
 import CalibrationPanel from '../components/CalibrationPanel';
+import { deNumber } from '../format';
 
 /** Poll interval while a run is in flight — fast enough to feel live, slow
  *  enough that a two-hour run doesn't hammer the API. */
@@ -43,9 +44,9 @@ function fmtDateTime(iso: string | null): string {
 function fmtDuration(from: string, to: string | null): string {
   const end = to ? new Date(to).getTime() : Date.now();
   const secs = Math.max(0, (end - new Date(from).getTime()) / 1000);
-  if (secs < 90) return `${secs.toFixed(0)}s`;
-  if (secs < 5400) return `${(secs / 60).toFixed(1)} min`;
-  return `${(secs / 3600).toFixed(1)} h`;
+  if (secs < 90) return `${Math.round(secs)} s`;
+  if (secs < 5400) return `${deNumber(secs / 60, 1)} min`;
+  return `${deNumber(secs / 3600, 1)} h`;
 }
 
 // ── Small layout primitives ──────────────────────────────────────────────────
@@ -313,12 +314,12 @@ export default function AdminPage() {
 
       {/* ── Schritte ───────────────────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="1 · Marktdaten" hint="Yahoo, Finnhub, FRED, Makro + Technicals">
+        <Card title="1 · Marktdaten" hint="Yahoo, Finnhub, FRED, Makro + Charttechnik">
           <Toggle
             checked={config.steps.data.enabled}
             onChange={(v) => patch((d) => { d.steps.data.enabled = v; })}
             label="Daten aktualisieren"
-            hint="Schreibt zusätzlich einen Verlaufspunkt (Kurs, Ziel, Fair Value)."
+            hint="Schreibt zusätzlich einen Verlaufspunkt (Kurs, Ziel, fairer Wert)."
           />
         </Card>
 
@@ -336,7 +337,7 @@ export default function AdminPage() {
           </p>
         </Card>
 
-        <Card title="3 · Analyse" hint="Nur wenn das Verdict zu alt ist">
+        <Card title="3 · Analyse" hint="Nur wenn das Urteil zu alt ist">
           <Toggle
             checked={analysis.enabled}
             onChange={(v) => patch((d) => { d.steps.analysis.enabled = v; })}
@@ -419,8 +420,8 @@ export default function AdminPage() {
             />
           </div>
           <p className="text-xs leading-relaxed text-ink-500">
-            Der Recherche-Cache gilt für jede Analyse, auch für manuelle Re-runs —
-            jeder Aufruf kostet; ↻ Refresh unter Research &amp; News fragt sofort neu.
+            Der Recherche-Cache gilt für jede Analyse, auch für von Hand gestartete —
+            jeder Aufruf kostet; „↻ Neu holen“ im Research-Tab fragt sofort neu.
             Deep Research wird nur dort von Hand angefordert und geht so lange
             zusätzlich in jede Analyse ein.
           </p>
@@ -699,6 +700,22 @@ const RUN_STATUS_STYLE: Record<JobRun['status'], string> = {
   stopped: 'text-ink-400',
 };
 
+const RUN_STATUS_LABEL: Record<JobRun['status'], string> = {
+  running: 'läuft',
+  ok:      'ok',
+  partial: 'teilweise',
+  failed:  'Fehler',
+  stopped: 'gestoppt',
+};
+
+const TRIGGER_LABEL: Record<string, string> = {
+  cron: 'Zeitplan', manual: 'von Hand', api: 'API', cli: 'Terminal', backfill: 'Nachholen',
+};
+
+const STEP_LABEL: Record<string, string> = {
+  data: 'Daten', distill: 'Distill', analysis: 'Analyse', reference: 'Referenz',
+};
+
 const STEP_STATUS_STYLE = {
   ok:      'text-emerald-400',
   skipped: 'text-ink-500',
@@ -711,10 +728,10 @@ function RunRow({ run, expanded, onToggle }: { run: JobRun; expanded: boolean; o
       <button onClick={onToggle} className="flex w-full items-center gap-2 text-left">
         <span className="text-2xs text-ink-600">{expanded ? '▾' : '▸'}</span>
         <span className={`w-16 shrink-0 text-xs font-semibold ${RUN_STATUS_STYLE[run.status]}`}>
-          {run.status}
+          {RUN_STATUS_LABEL[run.status] ?? run.status}
         </span>
         <span className="w-32 shrink-0 font-mono text-xs text-ink-400">{fmtDateTime(run.startedAt)}</span>
-        <span className="shrink-0 rounded border border-ink-700 px-1 text-2xs text-ink-500">{run.trigger}</span>
+        <span className="shrink-0 rounded border border-ink-700 px-1 text-2xs text-ink-500">{TRIGGER_LABEL[run.trigger] ?? run.trigger}</span>
         <span className="truncate text-xs text-ink-500">
           {run.symbols.length}/{run.totals.symbols} Aktien · Daten {run.totals.data} · Distill {run.totals.distill} · Analyse {run.totals.analysis}
           {run.totals.reference > 0 && ` · Referenz ${run.totals.reference}`}
@@ -732,9 +749,9 @@ function RunRow({ run, expanded, onToggle }: { run: JobRun; expanded: boolean; o
               <span className="w-16 shrink-0 font-mono text-ink-300">{s.symbol}</span>
               {s.steps.map((step) => (
                 <span key={step.step} className="text-ink-500">
-                  <span className={STEP_STATUS_STYLE[step.status]}>{step.step}</span>
+                  <span className={STEP_STATUS_STYLE[step.status]}>{STEP_LABEL[step.step] ?? step.step}</span>
                   {': '}{step.detail}
-                  {step.ms > 0 && <span className="text-ink-500"> ({(step.ms / 1000).toFixed(1)}s)</span>}
+                  {step.ms > 0 && <span className="text-ink-500"> ({deNumber(step.ms / 1000, 1)} s)</span>}
                   <span className="mx-1 text-ink-700">|</span>
                 </span>
               ))}

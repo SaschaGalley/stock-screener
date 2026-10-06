@@ -66,7 +66,7 @@ function SignalBadge({ signal }: { signal: 'buy' | 'sell' | 'neutral' }) {
     : signal === 'sell'
       ? 'bg-red-900 text-red-400'
       : 'bg-ink-800 text-ink-500';
-  const label = signal.toUpperCase();
+  const label = signal === 'buy' ? 'KAUF' : signal === 'sell' ? 'VERKAUF' : 'NEUTRAL';
   return (
     <span className={`inline-block rounded px-1.5 py-0.5 font-mono text-2xs font-semibold ${cls}`}>
       {label}

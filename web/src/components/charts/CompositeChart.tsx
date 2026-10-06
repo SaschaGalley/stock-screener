@@ -5,6 +5,19 @@ import { useMoney } from '../../currency';
 import { deNumber, fmtPct } from '../../format';
 import { GLOSSARY, MODEL_TERMS } from '../../glossary';
 
+/**
+ * The models' names as the page shows them. The server's English names stay the
+ * keys — the glossary and the tier lookup below match on them.
+ */
+const MODEL_LABEL: Record<string, string> = {
+  'DCF (Revenue-Driven)': 'DCF (umsatzgetrieben)',
+  'Peer Multiples':       'Peer-Multiples',
+  'Analyst Consensus':    'Analystenkonsens',
+  'Graham Revised V*':    'Graham V* (revidiert)',
+  'DDM (Two-Stage)':      'DDM (zweistufig)',
+};
+const modelLabel = (name: string) => MODEL_LABEL[name] ?? name;
+
 interface Props {
   composite: CompositeFairValue;
   price: number;
@@ -56,9 +69,9 @@ export default function CompositeChart({ composite, price }: Props) {
           extraCssText: 'max-width: 340px; white-space: normal;',
           formatter: (p: any) => {
             const row = rows[p.dataIndex];
-            const tierLabel = row.tier === 'primary' ? 'Primary' : 'Conservative';
+            const tierLabel = row.tier === 'primary' ? 'Primär' : 'Konservativ';
             const term = MODEL_TERMS[row.name];
-            return `${p.name} (${tierLabel}): <b>${fmtPrice(p.value)}</b><br/>vs price ${fmtPrice(price)}: ` +
+            return `${modelLabel(p.name)} (${tierLabel}): <b>${fmtPrice(p.value)}</b><br/>zum Kurs ${fmtPrice(price)}: ` +
               `${fmtPct((p.value - price) / price, 1)}` +
               (term ? `<div style="margin-top:6px;font-size:12px;line-height:1.45;opacity:.85">${GLOSSARY[term]}</div>` : '');
           },
@@ -77,7 +90,7 @@ export default function CompositeChart({ composite, price }: Props) {
             color: CHART_COLORS.ink, fontSize: 12,
             formatter: (label: string) => {
               const isPrimary = composite.primary.models.some((m) => m.name === label);
-              return isPrimary ? `{primary|${label}}` : `{cons|${label}}`;
+              return isPrimary ? `{primary|${modelLabel(label)}}` : `{cons|${modelLabel(label)}}`;
             },
             rich: {
               primary: { color: CHART_COLORS.text, fontWeight: 'bold' as any },
@@ -107,7 +120,7 @@ export default function CompositeChart({ composite, price }: Props) {
                 color: CHART_COLORS.text,
                 fontSize: 11,
                 fontFamily: 'monospace',
-                formatter: () => `Price ${fmtPrice(price)}`,
+                formatter: () => `Kurs ${fmtPrice(price)}`,
                 position: 'end',
               },
               data: [{ xAxis: price }],

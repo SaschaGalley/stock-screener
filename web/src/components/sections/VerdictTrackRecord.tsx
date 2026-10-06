@@ -1,6 +1,6 @@
 import { api } from '../../api';
 import { useMoney } from '../../currency';
-import { recommendationColor } from '../../format';
+import { deNumber, recommendationColor } from '../../format';
 import { pct } from '../evaluationParts';
 import { useArchive } from '../useArchive';
 import { useSectionFinding } from '../Section';
@@ -84,7 +84,7 @@ function GapClosed({ price, fair, latest }: { price: number; fair: FairAtCall | 
   const share = (latest.price - price) / gap;
   const cls = share >= 0 ? 'text-emerald-400' : 'text-red-400';
   return (
-    <span className={`font-mono ${cls}`} title={`Kurs damals ${price.toFixed(2)}, fairer Wert ${fair.value.toFixed(2)}, zuletzt ${latest.price.toFixed(2)} (${fmtDay(latest.day)})`}>
+    <span className={`font-mono ${cls}`} title={`Kurs damals ${deNumber(price, 2)}, fairer Wert ${deNumber(fair.value, 2)}, zuletzt ${deNumber(latest.price, 2)} (${fmtDay(latest.day)})`}>
       {`${share >= 0 ? '' : '−'}${Math.abs(Math.round(share * 100))} %`}
     </span>
   );
@@ -117,7 +117,7 @@ function CallTable({ calls, latest }: { calls: VerdictRecordView['calls']; lates
                 {c.from && <span className="mr-1 text-2xs text-ink-500">{c.from} →</span>}
                 <span className={`rounded px-1.5 py-0.5 text-2xs font-bold ${recommendationColor(c.verdict)}`}>{c.verdict}</span>
               </td>
-              <td className="py-1 text-right font-mono text-ink-400">{c.score?.toFixed(1) ?? '—'}</td>
+              <td className="py-1 text-right font-mono text-ink-400">{c.score != null ? deNumber(c.score, 1) : '—'}</td>
               <td className="py-1 text-right font-mono text-ink-400">{fmtPrice(c.price)}</td>
               <td
                 className="py-1 text-right font-mono text-ink-400"

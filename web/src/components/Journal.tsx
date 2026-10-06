@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../api';
-import { fmtSignedPct } from '../format';
+import { deNumber, fmtSignedPct } from '../format';
 import {
   JOURNAL_KINDS, JOURNAL_LABEL, JOURNAL_SINCE, linkMentions, mentionedSymbols, normalizeSymbols,
   type JournalEntry, type JournalInput, type JournalKind, type JournalMove, type OpenTrades, type Trade,
@@ -260,7 +260,7 @@ function SymbolMove({ symbol, move, kind }: { symbol: string; move?: JournalMove
       {move && (
         <span
           className={`font-mono text-2xs ${move.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
-          title={`${JOURNAL_SINCE[kind]}: ${move.fromClose.toFixed(2)} am ${fmtDay(move.fromDay)} → ${move.toClose.toFixed(2)} am ${fmtDay(move.toDay)}, Dividenden eingerechnet, wo vorhanden`}
+          title={`${JOURNAL_SINCE[kind]}: ${deNumber(move.fromClose, 2)} am ${fmtDay(move.fromDay)} → ${deNumber(move.toClose, 2)} am ${fmtDay(move.toDay)}, Dividenden eingerechnet, wo vorhanden`}
         >
           {fmtSignedPct(move.change)}
         </span>

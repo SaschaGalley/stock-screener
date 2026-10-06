@@ -18,7 +18,7 @@ export default function HoldersPanel({ symbol }: { symbol: string }) {
   const { data, error } = useArchive(() => api.getHolders(symbol), [symbol]);
   if (error) return <p className="text-xs text-red-400">Nicht verfügbar: {error}</p>;
   if (data === undefined) return <p className="text-xs text-ink-500">Lade Aktionäre …</p>;
-  if (data === null) return <p className="text-xs text-ink-500">Noch keine Halterdaten archiviert — sie kommen mit dem nächsten Refresh.</p>;
+  if (data === null) return <p className="text-xs text-ink-500">Noch keine Halterdaten archiviert — sie kommen mit der nächsten Aktualisierung.</p>;
   return (
     <div className="space-y-4">
       <Breakdown h={data} />

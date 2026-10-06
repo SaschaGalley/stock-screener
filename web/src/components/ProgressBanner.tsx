@@ -32,8 +32,8 @@ export default function ProgressBanner({ events, active }: Props) {
         <summary className="cursor-pointer list-none text-sm text-ink-200">
           <span className="mr-2">{STAGE_ICON[last?.stage ?? 'init'] ?? '·'}</span>
           {active && <span className="mr-1 inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />}
-          <span className="font-medium">{last?.message ?? 'Starting…'}</span>
-          <span className="ml-2 text-xs text-ink-400">▾ {events.length} steps</span>
+          <span className="font-medium">{last?.message ?? 'Starte …'}</span>
+          <span className="ml-2 text-xs text-ink-400">▾ {events.length} {events.length === 1 ? 'Schritt' : 'Schritte'}</span>
         </summary>
         <ul className="mt-2 space-y-0.5 text-xs">
           {events.map((e, i) => (
@@ -41,7 +41,7 @@ export default function ProgressBanner({ events, active }: Props) {
               <span className="w-4 shrink-0 text-accent">{STAGE_ICON[e.stage] ?? '·'}</span>
               <span className="font-mono text-ink-400">[{e.stage}]</span>
               <span className="text-ink-200">{e.message}</span>
-              {e.cached && <span className="rounded bg-emerald-900 px-1 text-2xs text-emerald-400">cached</span>}
+              {e.cached && <span className="rounded bg-emerald-900 px-1 text-2xs text-emerald-400">aus dem Cache</span>}
             </li>
           ))}
         </ul>

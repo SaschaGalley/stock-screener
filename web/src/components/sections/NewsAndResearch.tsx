@@ -5,7 +5,7 @@ import {
 import { ManualResearch, ResearchReports } from '../ManualResearch';
 import { api } from '../../api';
 import PerplexityBrief from './PerplexityBrief';
-import { useFirst } from '../More';
+import { Clamp, useFirst } from '../More';
 import Section from '../Section';
 import type {
   SearchTrace,
@@ -298,9 +298,9 @@ function PerplexitySection({
 
       {perplexity ? (
         <div className="rounded border border-ink-800 bg-ink-950 px-3 py-2">
-          <div className="max-h-[48rem] overflow-y-auto">
+          <Clamp>
             <PerplexityBrief context={perplexity} />
-          </div>
+          </Clamp>
           <Citations urls={perplexity.citations} />
         </div>
       ) : (
@@ -379,8 +379,10 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
           <summary className="cursor-pointer text-2xs text-ink-500">
             Firmenbericht vom {dayDe(deep.fetchedAt)} — geht in jede Analyse ein, solange er im Zeitfenster liegt
           </summary>
-          <div className="mt-2 max-h-[48rem] overflow-y-auto">
-            <PerplexityBrief context={deep} />
+          <div className="mt-2">
+            <Clamp>
+              <PerplexityBrief context={deep} />
+            </Clamp>
           </div>
           <Citations urls={deep.citations} />
         </details>
@@ -547,9 +549,9 @@ function DossierBlock({ block, symbol }: { block: DistillDossierBlock; symbol: s
           </div>
         )}
       </summary>
-      <div className="border-t border-ink-800 px-3 py-2 text-xs leading-relaxed text-ink-200">
+      <div className="border-t border-ink-800 px-3 py-2 text-sm leading-relaxed text-ink-200">
         {block.content?.trim()
-          ? renderDistillBody(block.content, 'markdown')
+          ? <Clamp>{renderDistillBody(block.content, 'markdown')}</Clamp>
           : (
             <p className="text-xs italic text-ink-500">
               Noch kein Dossier gebaut — der Sweep zieht es heute Nacht nach. Unten steht
@@ -620,8 +622,8 @@ function DistillBriefingBlock({ briefing }: { briefing: DistillBriefing }) {
         </div>
         <div className="mt-0.5 truncate text-2xs text-ink-500">{briefing.title}</div>
       </summary>
-      <div className="border-t border-ink-800 px-3 py-2 text-xs leading-relaxed text-ink-200">
-        {renderDistillBody(briefing.body, briefing.format)}
+      <div className="border-t border-ink-800 px-3 py-2 text-sm leading-relaxed text-ink-200">
+        <Clamp>{renderDistillBody(briefing.body, briefing.format)}</Clamp>
       </div>
     </details>
   );

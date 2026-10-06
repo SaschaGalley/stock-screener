@@ -21,18 +21,18 @@ interface RowSpec {
 
 export default function PeerCompare({ ratios, evMultiples: ev, financials: f, sectorMedians: sm }: Props) {
   if (!sm) {
-    return <p className="text-xs text-ink-500">No peer data available — Finnhub couldn't return a peer set.</p>;
+    return <p className="text-xs text-ink-500">Keine Peer-Daten verfügbar — Finnhub hat keine Vergleichsgruppe geliefert.</p>;
   }
 
   const peerNames = (sm.peers ?? []).slice(0, 6).join(', ') + (sm.peers && sm.peers.length > 6 ? '…' : '');
 
   const rows: RowSpec[] = [
-    { label: 'P/E', term: 'metrics.ratios.pe',            value: ratios.pe,                    median: sm.pe,                  lowerIsBetter: true  },
+    { label: 'KGV', term: 'metrics.ratios.pe',            value: ratios.pe,                    median: sm.pe,                  lowerIsBetter: true  },
     { label: 'EV/EBITDA', term: 'metrics.evMultiples.evToEbitda',      value: ev.evToEbitda,                median: sm.evToEbitda,          lowerIsBetter: true  },
-    { label: 'EV/Revenue', term: 'metrics.evMultiples.evToRevenue',     value: ev.evToRevenue,               median: sm.evToRevenue,         lowerIsBetter: true  },
-    { label: 'P/S (TTM)', term: 'metrics.evMultiples.priceToSales',      value: ev.priceToSales,              median: sm.priceToSales,        lowerIsBetter: true  },
+    { label: 'EV/Umsatz', term: 'metrics.evMultiples.evToRevenue',     value: ev.evToRevenue,               median: sm.evToRevenue,         lowerIsBetter: true  },
+    { label: 'KUV (TTM)', term: 'metrics.evMultiples.priceToSales',      value: ev.priceToSales,              median: sm.priceToSales,        lowerIsBetter: true  },
     {
-      label: 'P/S Run-Rate',
+      label: 'Run-Rate-KUV',
       term: 'metrics.evMultiples.simpleValuationRatio',
       value: ev.simpleValuationRatio,
       median: sm.runRatePriceToSales ?? null,  // absent from analyses cached before the field existed
@@ -40,35 +40,35 @@ export default function PeerCompare({ ratios, evMultiples: ev, financials: f, se
       hint: GLOSSARY['peers.runRatePriceToSales'],
     },
     {
-      label: 'P/S Run-Rate (seas. adj.)',
+      label: 'Run-Rate-KUV (saisonbereinigt)',
       term: 'metrics.evMultiples.seasonallyAdjustedValuationRatio',
       value: ev.seasonallyAdjustedValuationRatio ?? null,
       median: sm.runRatePriceToSales ?? null,
       lowerIsBetter: true,
       hint: GLOSSARY['peers.runRatePriceToSales'],
     },
-    { label: 'Forward P/S', term: 'metrics.evMultiples.forwardPriceToSales',    value: ev.forwardPriceToSales,       median: sm.forwardPriceToSales, lowerIsBetter: true  },
+    { label: 'Forward-KUV', term: 'metrics.evMultiples.forwardPriceToSales',    value: ev.forwardPriceToSales,       median: sm.forwardPriceToSales, lowerIsBetter: true  },
     { label: 'P/FCF', term: 'metrics.evMultiples.priceToFCF',          value: ev.priceToFCF,                median: sm.priceToFCF,          lowerIsBetter: true  },
-    { label: 'P/B', term: 'metrics.ratios.pb',            value: ratios.pb,                    median: sm.pb,                  lowerIsBetter: true  },
-    { label: 'Operating Margin', term: 'financials.operatingMargin', value: f.operatingMargin,          median: sm.operatingMargin,     lowerIsBetter: false, isPercent: true },
-    { label: 'Net Margin', term: 'financials.netMargin',     value: f.netMargin,                  median: sm.netMargin,           lowerIsBetter: false, isPercent: true },
+    { label: 'KBV', term: 'metrics.ratios.pb',            value: ratios.pb,                    median: sm.pb,                  lowerIsBetter: true  },
+    { label: 'Operative Marge', term: 'financials.operatingMargin', value: f.operatingMargin,          median: sm.operatingMargin,     lowerIsBetter: false, isPercent: true },
+    { label: 'Nettomarge', term: 'financials.netMargin',     value: f.netMargin,                  median: sm.netMargin,           lowerIsBetter: false, isPercent: true },
     { label: 'ROE', term: 'metrics.ratios.roe',            value: f.roe,                        median: sm.roe,                 lowerIsBetter: false, isPercent: true },
     { label: 'ROIC', term: 'financials.roic',           value: f.roic,                       median: sm.roic,                lowerIsBetter: false, isPercent: true },
-    { label: 'Revenue Growth', term: 'financials.revenueGrowth', value: f.revenueGrowth,              median: sm.revenueGrowthYoY,    lowerIsBetter: false, isPercent: true },
+    { label: 'Umsatzwachstum', term: 'financials.revenueGrowth', value: f.revenueGrowth,              median: sm.revenueGrowthYoY,    lowerIsBetter: false, isPercent: true },
   ];
 
   return (
     <div>
       <p className="mb-2 text-xs text-ink-500">
-        {sm.peerCount} peers: {peerNames}
+        {sm.peerCount} Peers: {peerNames}
       </p>
       <table className="w-full text-xs tabular">
         <thead>
           <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
-            <th className="py-1.5 pr-2 text-left font-medium">Metric</th>
-            <th className="py-1.5 px-2 text-right font-medium">Own</th>
-            <th className="py-1.5 px-2 text-right font-medium">Peer Median</th>
-            <th className="py-1.5 pl-2 text-right font-medium"><Term k="concept.peerDelta">Δ vs Peer</Term></th>
+            <th className="py-1.5 pr-2 text-left font-medium">Kennzahl</th>
+            <th className="py-1.5 px-2 text-right font-medium">Aktie</th>
+            <th className="py-1.5 px-2 text-right font-medium">Peer-Median</th>
+            <th className="py-1.5 pl-2 text-right font-medium"><Term k="concept.peerDelta">Δ zu Peers</Term></th>
           </tr>
         </thead>
         <tbody>

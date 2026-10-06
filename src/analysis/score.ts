@@ -57,6 +57,16 @@ import { worstSeverity } from './data-quality.js';
 import {
   deNumber, fmtDe as fmt, fmtBigDe as fmtBig, fmtPctDe as fmtPct, fmtPriceDe as fmtPrice, fmtSignedPctDe as fmtSignedPct,
 } from '../format.js';
+
+// The metrics' readings are English enum values; a German note names them in German.
+const ALTMAN_ZONE_DE = { safe: 'sichere Zone', grey: 'Grauzone', distress: 'Gefahrenzone', unknown: 'Zone unbekannt' } as const;
+const BENEISH_DE = {
+  'likely manipulator': 'auffällig', 'grey zone': 'Grauzone', 'unlikely manipulator': 'unauffällig', unknown: 'nicht bestimmbar',
+} as const;
+const PIOTROSKI_DE = { strong: 'stark', neutral: 'mittel', weak: 'schwach' } as const;
+const COVERAGE_DE = {
+  excellent: 'exzellent', good: 'gut', fair: 'ausreichend', poor: 'schwach', critical: 'kritisch', unknown: 'unbekannt',
+} as const;
 import { toFiniteNumber } from '../utils/num.js';
 import { SCORE_BANDS, verdictForScore } from '../verdict.js';
 
@@ -482,7 +492,7 @@ export function readAltman(
   if (z.zone !== 'distress') {
     return {
       reading: z.zone === 'unknown' ? 'unknown' : z.zone,
-      note: z.score !== null ? `${base} — ${z.zone}-Zone` : base,
+      note: z.score !== null ? `${base} — ${ALTMAN_ZONE_DE[z.zone]}` : base,
     };
   }
 
@@ -507,7 +517,7 @@ export function readAltman(
     };
   }
 
-  return { reading: 'distress', note: `${base} — Distress-Zone` };
+  return { reading: 'distress', note: `${base} — Gefahrenzone` };
 }
 
 // ── Reading the M-Score ──────────────────────────────────────────────────────
@@ -534,7 +544,7 @@ export function readBeneish(
       return { reading, note: `Beneish nur aus ${b.variablesComputed}/8 Variablen — nicht belastbar` };
     case 'clean':
     case 'grey':
-      return { reading, note: `Beneish M ${fmt(b.score)} — ${b.probability}` };
+      return { reading, note: `Beneish M ${fmt(b.score)} — ${BENEISH_DE[b.probability]}` };
     case 'extrapolated':
       return {
         reading,
@@ -551,7 +561,7 @@ export function readBeneish(
     case 'flagged':
       return {
         reading,
-        note: `Beneish M ${fmt(b.score)} — ${b.probability}`
+        note: `Beneish M ${fmt(b.score)} — ${BENEISH_DE[b.probability]}`
           + (tata !== null ? `, Accruals TATA ${deNumber(tata, 2)} stützen das` : ''),
       };
   }
@@ -860,7 +870,7 @@ function qualityPillar(
     criterion('piotroski', 'Piotroski F-Score',
       calibrated('quality.piotroski', pioRatio, 1, (v) => ramp(v, 0.35, 0.90)),
       pio.maxScore >= PIOTROSKI_MIN_SIGNALS
-        ? `F-Score ${pio.score}/${pio.maxScore} (${pio.interpretation})`
+        ? `F-Score ${pio.score}/${pio.maxScore} (${PIOTROSKI_DE[pio.interpretation]})`
         : `F-Score nur aus ${pio.maxScore}/9 berechenbaren Signalen — nicht belastbar`,
       pioRatio),
 
@@ -983,7 +993,7 @@ function healthPillar(f: StockFinancials, m: ComputedMetrics): Draft[] {
     criterion('interest-cover', 'Zinsdeckung',
       calibrated('health.interest-cover', coverage, 1, (v) => ramp(v, 1, 8), inSector),
       ic.ratio !== null
-        ? `Operatives Ergebnis deckt Zinsen ${deNumber(ic.ratio, 1)}x (${ic.interpretation})`
+        ? `Operatives Ergebnis deckt Zinsen ${deNumber(ic.ratio, 1)}x (${COVERAGE_DE[ic.interpretation]})`
         : ic.interpretation === 'unknown' && (debt ?? 0) > 0
           ? 'Schulden vorhanden, aber kein Zinsaufwand ausgewiesen — Zinsdeckung nicht lesbar'
           : `Zinsdeckung: ${ic.interpretation}`,

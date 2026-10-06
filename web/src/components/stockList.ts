@@ -14,7 +14,7 @@ import { RECOMMENDATIONS, recommendationTone, verdictForScore } from '../format'
 export type SortKey = 'score' | 'target' | 'composite' | 'marketCap' | 'name' | 'symbol';
 
 export const SORTS: { key: SortKey; label: string }[] = [
-  { key: 'score',      label: 'AI-Score' },
+  { key: 'score',      label: 'Score' },
   { key: 'target',     label: 'Analysten-Potenzial' },
   { key: 'composite',  label: 'Modell-Potenzial' },
   { key: 'marketCap',  label: 'Marktkapitalisierung' },

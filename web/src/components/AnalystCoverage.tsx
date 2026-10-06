@@ -17,7 +17,7 @@ import Term from './Term';
  */
 
 const BUCKET_LABEL: Record<RatingBucket, string> = {
-  strongBuy: 'Strong Buy', buy: 'Buy', hold: 'Hold', sell: 'Sell', strongSell: 'Strong Sell',
+  strongBuy: 'Starker Kauf', buy: 'Kauf', hold: 'Halten', sell: 'Verkauf', strongSell: 'Starker Verkauf',
 };
 
 /** Filled for the strong steps, lighter for the plain ones — the rating bar's convention. */

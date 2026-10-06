@@ -16,6 +16,10 @@ interface Props {
  *   −1 STRONG SELL ←→ STRONG BUY +1
  * Needle position reflects (buy − sell) / total.
  */
+const VERDICT_LABEL: Record<string, string> = {
+  'STRONG BUY': 'STARKER KAUF', BUY: 'KAUF', NEUTRAL: 'NEUTRAL', SELL: 'VERKAUF', 'STRONG SELL': 'STARKER VERKAUF',
+};
+
 export default function TechnicalGauge({ group, title, term }: Props) {
   // Map score from [-1, 1] to ECharts gauge value [0, 1]
   const gaugeValue = (group.score + 1) / 2;
@@ -71,8 +75,8 @@ export default function TechnicalGauge({ group, title, term }: Props) {
                   fontSize: 10,
                   distance: -28,
                   formatter: (v: number) => {
-                    if (v < 0.05) return 'Sell';
-                    if (v > 0.95) return 'Buy';
+                    if (v < 0.05) return 'Verkauf';
+                    if (v > 0.95) return 'Kauf';
                     if (Math.abs(v - 0.5) < 0.05) return 'Neutral';
                     return '';
                   },
@@ -93,7 +97,7 @@ export default function TechnicalGauge({ group, title, term }: Props) {
                   fontFamily: 'var(--font-sans)',
                   color: verdictColor,
                   offsetCenter: [0, '40%'],
-                  formatter: () => group.verdict,
+                  formatter: () => VERDICT_LABEL[group.verdict] ?? group.verdict,
                 },
                 data: [{ value: gaugeValue }],
                 animationDuration: 600,
@@ -104,9 +108,9 @@ export default function TechnicalGauge({ group, title, term }: Props) {
         />
       </div>
       <div className="mt-1 flex items-center justify-around text-2xs">
-        <span className="text-emerald-400">{group.buy} buy</span>
+        <span className="text-emerald-400">{group.buy} Kauf</span>
         <span className="text-ink-500">{group.neutral} neutral</span>
-        <span className="text-red-400">{group.sell} sell</span>
+        <span className="text-red-400">{group.sell} Verkauf</span>
       </div>
     </div>
   );

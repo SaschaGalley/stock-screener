@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 /**
  * The second layer of a tab: what most visits do not need, one click away
@@ -39,4 +39,37 @@ export function useFirst<T>(rows: readonly T[], n: number, noun: string): [reado
     </button>
   );
   return [all ? rows : rows.slice(0, n), button];
+}
+
+/**
+ * A long text cut to about a screen, the rest on a click — a report read in
+ * place rather than in a scroll box inside the scrolling page. Not
+ * remembered; nothing is cut when the text is short.
+ */
+export function Clamp({ children, height = 420 }: { children: ReactNode; height?: number }) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const body = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = body.current;
+    if (el) setLong(el.scrollHeight > height + 80);
+  }, [children, height]);
+  const cut = long && !open;
+  return (
+    <div>
+      <div
+        ref={body}
+        className="relative overflow-hidden"
+        style={cut ? { maxHeight: height } : undefined}
+      >
+        {children}
+        {cut && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-ink-950 to-transparent" />}
+      </div>
+      {long && (
+        <button onClick={() => setOpen((o) => !o)} className="mt-1.5 text-xs text-ink-400 hover:text-ink-100">
+          {open ? 'kürzer' : 'ganz lesen'}
+        </button>
+      )}
+    </div>
+  );
 }

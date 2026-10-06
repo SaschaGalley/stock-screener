@@ -138,7 +138,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
     for (const c of customModels) {
       if (listed.has(c)) continue;
       listed.add(c);
-      allModelOptions.push({ value: c, label: c, sublabel: 'custom', deletable: true });
+      allModelOptions.push({ value: c, label: c, sublabel: 'eigenes', deletable: true });
     }
     // 3. The active model when it is neither — i.e. a retired model reached by
     //    opening one of its cached analyses. Listed so the picker still shows a
@@ -149,7 +149,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
       allModelOptions.push({
         value: activeModel,
         label: activeModel,
-        sublabel: cached ? `retired · ${cached.count} cached` : 'retired',
+        sublabel: cached ? `ausgemustert · ${cached.count} gespeichert` : 'ausgemustert',
         deletable: false,
       });
     }
@@ -242,7 +242,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
                           (a.olderThanData
                             ? '⚠ Vor der letzten Datenaktualisierung erzeugt — neu rechnen, um sie einzubeziehen.\n'
                             : '')
-                          + `${a.flags.model} · search=${a.flags.search} · pplx=${a.flags.pplx ?? 'none'}`
+                          + `${a.flags.model} · Suche: ${a.flags.search === 'none' ? 'keine' : a.flags.search} · Perplexity: ${a.flags.pplx ?? 'keine'}`
                         }
                       >
                         <div className="flex items-center gap-1 truncate font-mono">
@@ -250,7 +250,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
                             <span className="shrink-0 text-amber-400" aria-label="Älter als die Daten">⚠</span>
                           )}
                           <span className="truncate">
-                            {a.flags.model} · {a.flags.search} · {a.flags.pplx ?? 'no-pplx'}
+                            {a.flags.model} · {a.flags.search === 'none' ? 'ohne Suche' : a.flags.search} · {a.flags.pplx ?? 'ohne Perplexity'}
                           </span>
                         </div>
                         <div className="mt-0.5 text-2xs text-ink-500">

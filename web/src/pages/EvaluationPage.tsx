@@ -6,7 +6,7 @@ import BacktestPanel from '../components/BacktestPanel';
 import LiveExpectations from '../components/LiveExpectations';
 import VerdictRecordPanel from '../components/VerdictRecordPanel';
 import { SignedBar, WeightsTable, evidence, pct } from '../components/evaluationParts';
-import { recommendationColor } from '../format';
+import { deNumber, fmt, recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 
 /**
@@ -90,7 +90,7 @@ export default function EvaluationPage() {
         ihrer Rendite gegenüber dem S&amp;P 500 in den folgenden Handelstagen — in Dollar, damit eine
         Euro-Aktie nicht mit dem Wechselkurs punktet — und misst, wie gut die beiden Reihenfolgen
         übereinstimmen (Rang-IC: +1 perfekt, 0 kein Zusammenhang, −1 umgekehrt). Ein brauchbarer Faktor
-        liegt bei 0,03–0,08.{dailyNoise !== null && ` Mit ${perDay} Aktien je Tag schwankt ein einzelner Tag um etwa ±${dailyNoise.toFixed(2).replace('.', ',')}`}
+        liegt bei 0,03–0,08.{dailyNoise !== null && ` Mit ${perDay} Aktien je Tag schwankt ein einzelner Tag um etwa ±${deNumber(dailyNoise, 2)}`}
         {' '}— belastbar wird das erst nach vielen unabhängigen Zeitfenstern, also nach Monaten.
         „Im Sektor“ vergleicht jede Aktie nur mit ihrem eigenen Sektor: was dort bleibt, ist Aktienauswahl
         statt einer Wette auf die Branche.
@@ -151,8 +151,8 @@ export default function EvaluationPage() {
 
           {headline && headline.days > 0 && (
             <div className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3 text-sm text-ink-200">
-              {headlineTitle} über {horizon} Handelstage: Rang-IC <span className="font-mono">{headline.meanIc?.toFixed(2)}</span>
-              {headline.neutralIc !== null && <>, im Sektor <span className="font-mono">{headline.neutralIc.toFixed(2)}</span></>},
+              {headlineTitle} über {horizon} Handelstage: Rang-IC <span className="font-mono">{fmt(headline.meanIc, '', 2)}</span>
+              {headline.neutralIc !== null && <>, im Sektor <span className="font-mono">{deNumber(headline.neutralIc, 2)}</span></>},
               im oberen Drittel {pct(headline.spread)} gegenüber dem unteren ·{' '}
               <span className={evidence(headline.tStat, headline.independent).cls}>
                 {evidence(headline.tStat, headline.independent).label}
@@ -192,12 +192,12 @@ export default function EvaluationPage() {
                     return (
                       <tr key={s.key} className="border-b border-ink-800/60 last:border-0">
                         <td className={`px-4 py-1.5 ${s.pillar ? 'pl-8 text-ink-300' : 'font-medium text-ink-100'}`}>{s.title}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{r.meanIc?.toFixed(2) ?? '—'}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{fmt(r.meanIc, '', 2)}</td>
                         <td className="px-2 py-1.5"><SignedBar value={r.meanIc} scale={0.3} /></td>
-                        <td className="px-2 py-1.5 text-right font-mono text-ink-300">{r.tStat?.toFixed(1) ?? '—'}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-ink-300">{fmt(r.tStat, '', 1)}</td>
                         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
-                          {r.neutralIc === null ? '—' : r.neutralIc.toFixed(2)}
-                          {r.neutralTStat !== null && <span className="text-ink-500"> ({r.neutralTStat.toFixed(1)})</span>}
+                          {r.neutralIc === null ? '—' : deNumber(r.neutralIc, 2)}
+                          {r.neutralTStat !== null && <span className="text-ink-500"> ({deNumber(r.neutralTStat, 1)})</span>}
                         </td>
                         <td className="px-2 py-1.5 text-right font-mono text-ink-300">
                           {r.hitRate === null ? '—' : `${Math.round(r.hitRate * 100)} %`}

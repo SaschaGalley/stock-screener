@@ -74,7 +74,7 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
   }
 
   const views: { key: View; label: string; term: GlossaryKey; disabled?: string }[] = [
-    { key: 'fair', label: 'Fair Value vs. Kurs', term: 'concept.vh.fair', disabled: history.source !== 'sec' ? 'Nur für Werte mit SEC-Filings' : undefined },
+    { key: 'fair', label: 'Fairer Wert vs. Kurs', term: 'concept.vh.fair', disabled: history.source !== 'sec' ? 'Nur für Werte mit SEC-Filings' : undefined },
     { key: 'earnings', label: 'Kurs vs. Gewinn', term: 'concept.vh.earnings' },
     { key: 'multiples', label: 'Multiples', term: 'concept.vh.multiples' },
   ];
@@ -112,10 +112,10 @@ export default function ValuationHistory({ symbol, liveFairValue }: Props) {
         {history.source === 'sec'
           ? 'Jeder Monatsultimo aus den SEC-Filings rekonstruiert, die an dem Tag bekannt waren, und mit den heutigen Modellen gerechnet. '
             + 'Das Analysten-Kursziel ist aus der Rating-Historie rekonstruiert (je Haus das neueste der zwölf Monate davor). '
-            + 'Peer-Multiples lassen sich für einen Wert allein nicht nachrechnen und fehlen — der rekonstruierte Fair Value weicht '
+            + 'Peer-Multiples lassen sich für einen Wert allein nicht nachrechnen und fehlen — der rekonstruierte faire Wert weicht '
             + 'deshalb vom heutigen Headline-Wert ab, ist aber über alle Monate gleich gerechnet.'
           : 'Ohne SEC-Filings: aus den von Yahoo gemeldeten Geschäftsjahren, jedes ab einem Quartal nach Jahresende. '
-            + 'Für einen rekonstruierten Fair Value reicht das nicht.'}
+            + 'Für einen rekonstruierten fairen Wert reicht das nicht.'}
       </p>
     </div>
   );
@@ -194,7 +194,7 @@ function FairValueView({ history, liveFairValue }: { history: History; liveFairV
 
   const live = liveFairValue !== null
     ? [{
-      name: 'Fair Value heute (live)', type: 'scatter', symbol: 'diamond', symbolSize: 11,
+      name: 'Fairer Wert heute (live)', type: 'scatter', symbol: 'diamond', symbolSize: 11,
       data: dates.map((_, i) => (i === dates.length - 1 ? liveFairValue : null)),
       itemStyle: { color: CHART_COLORS.amber },
     }]
@@ -204,7 +204,7 @@ function FairValueView({ history, liveFairValue }: { history: History; liveFairV
     ...baseOption(dates, (v) => fmtPrice(v)),
     series: [
       line('Kurs', pts.map((p) => p.price), CHART_COLORS.text),
-      line('Fair Value (rekonstruiert)', pts.map((p) => p.fairValue), CHART_COLORS.green),
+      line('Fairer Wert (rekonstruiert)', pts.map((p) => p.fairValue), CHART_COLORS.green),
       line('Konservativ', pts.map((p) => p.conservative), CHART_COLORS.green, { lineStyle: { color: CHART_COLORS.green, width: 1, type: 'dashed' } }),
       ...live,
     ],
@@ -215,7 +215,7 @@ function FairValueView({ history, liveFairValue }: { history: History; liveFairV
       {range && (
         <Lede>
           In den letzten {Math.round(range.months / 12)} Jahren notierte die Aktie meist{' '}
-          <strong className="text-ink-100">{rangeWords(range.p25, range.p75)}</strong> rekonstruierten Fair Value;
+          <strong className="text-ink-100">{rangeWords(range.p25, range.p75)}</strong> rekonstruierten fairen Wert;
           heute <strong className="text-ink-100">{gapWords(range.latest)}</strong> — {range.rank >= 0.5
             ? `günstiger als in ${Math.round(range.rank * 100)} % der Monate`
             : `teurer als in ${Math.round((1 - range.rank) * 100)} % der Monate`}.

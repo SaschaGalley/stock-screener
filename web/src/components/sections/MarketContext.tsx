@@ -44,6 +44,10 @@ function Row({ label, term, value, accent, accentColor }: {
   );
 }
 
+/** "2026-10-17" → "17.10.2026"; anything else as it came. */
+const dayDe = (d: string | null | undefined) =>
+  !d ? '—' : /^\d{4}-\d{2}-\d{2}/.test(d) ? `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}.${d.slice(0, 4)}` : d;
+
 function OptionsBlock({ o }: { o: any }) {
   if (!o) return <Block title="Optionsmarkt"><p className="text-xs text-ink-500">Keine Optionskette.</p></Block>;
   return (
@@ -61,7 +65,7 @@ function OptionsBlock({ o }: { o: any }) {
           {o.nextEarningsImpliedMove?.pct != null && Number.isFinite(o.nextEarningsImpliedMove.pct) && (
             <Row label="Erwartete Bewegung zu den Zahlen" term="signals.options.nextEarningsImpliedMove.pct"
               value={`±${fmtPct(o.nextEarningsImpliedMove.pct, 1)}`}
-              accent={`Verfall ${o.nextEarningsImpliedMove.expirationDate ?? '—'}`} />
+              accent={`Verfall ${dayDe(o.nextEarningsImpliedMove.expirationDate)}`} />
           )}
         </tbody>
       </table>
@@ -106,24 +110,26 @@ function RevisionsBlock({ r }: { r: any }) {
   );
 }
 
+const VIX_REGIME: Record<string, string> = { low: 'niedrig', normal: 'normal', elevated: 'erhöht', high: 'hoch', unknown: '' };
+
 function MacroBlock({ m }: { m: any }) {
   if (!m) return <Block title="Makro"><p className="text-xs text-ink-500">Keine Makrodaten.</p></Block>;
   return (
     <Block title="Makro">
       <table className="w-full text-xs tabular">
         <tbody>
-          <Row label="VIX" term="macro.vix" value={fmt(m.vix, '', 1)} accent={m.vixRegime} accentColor={
+          <Row label="VIX" term="macro.vix" value={fmt(m.vix, '', 1)} accent={VIX_REGIME[m.vixRegime] ?? m.vixRegime} accentColor={
             m.vixRegime === 'high' ? 'text-red-400' :
             m.vixRegime === 'elevated' ? 'text-amber-400' :
             m.vixRegime === 'low' ? 'text-emerald-400' : 'text-ink-100'} />
           <Row label="S&P 500 3 M"           term="macro.spy3MReturn" value={fmtSignedPct(m.spy3MReturn)} />
-          <Row label="Zinskurve 10 J − 2 J" term="macro.yieldCurve2Y10Y" value={m.yieldCurve2Y10Y == null ? '—' : `${deNumber(m.yieldCurve2Y10Y, 0)} bps`}
+          <Row label="Zinskurve 10 J − 2 J" term="macro.yieldCurve2Y10Y" value={m.yieldCurve2Y10Y == null ? '—' : `${deNumber(m.yieldCurve2Y10Y, 0)} Bp.`}
             accentColor={m.yieldCurve2Y10Y < 0 ? 'text-red-400' : m.yieldCurve2Y10Y < 50 ? 'text-amber-400' : 'text-emerald-400'} />
-          <Row label="High-Yield-Spread" term="macro.hySpreadBps" value={m.hySpreadBps == null ? '—' : `${deNumber(m.hySpreadBps, 0)} bps`}
+          <Row label="High-Yield-Spread" term="macro.hySpreadBps" value={m.hySpreadBps == null ? '—' : `${deNumber(m.hySpreadBps, 0)} Bp.`}
             accentColor={m.hySpreadBps > 600 ? 'text-red-400' : m.hySpreadBps > 400 ? 'text-amber-400' : 'text-emerald-400'} />
           <Row label="DXY" term="macro.dxyLevel" value={fmt(m.dxyLevel, '', 1)} accent={fmtSignedPct(m.dxyChange3MPct)} />
           {m.sectorEtfSymbol && (
-            <Row label={`Sector ${m.sectorEtfSymbol} 3M`} term="macro.sectorEtfReturn3M" value={fmtSignedPct(m.sectorEtfReturn3M)} />
+            <Row label={`Sektor ${m.sectorEtfSymbol} 3 M`} term="macro.sectorEtfReturn3M" value={fmtSignedPct(m.sectorEtfReturn3M)} />
           )}
         </tbody>
       </table>

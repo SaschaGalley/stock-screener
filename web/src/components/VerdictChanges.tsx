@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import type { VerdictChangesResponse } from '../types';
-import { RECOMMENDATIONS, recommendationTone } from '../format';
+import { RECOMMENDATIONS, deNumber, recommendationTone } from '../format';
 import Tip from './Tip';
 
 /** The newest move is the sentence; this many before it go into the hover. */
@@ -39,7 +39,7 @@ export default function VerdictChanges({ symbol, refreshKey }: { symbol: string;
   const fresh = Date.now() - Date.parse(last.at) < FRESH_DAYS * DAY_MS;
 
   const scores = last.fromScore !== null && last.toScore !== null
-    ? `Score ${last.fromScore.toFixed(1)} → ${last.toScore.toFixed(1)}, `
+    ? `Score ${deNumber(last.fromScore, 1)} → ${deNumber(last.toScore, 1)}, `
     : '';
   const sentence = (
     <>
@@ -67,7 +67,7 @@ export default function VerdictChanges({ symbol, refreshKey }: { symbol: string;
                     <span className="font-mono text-ink-400">{new Date(c.at).toLocaleDateString('de-DE')}</span>{' '}
                     <Label rec={c.from} /> → <Label rec={c.to} />
                     {c.fromScore !== null && c.toScore !== null && (
-                      <span className="text-ink-400"> · {c.fromScore.toFixed(1)} → {c.toScore.toFixed(1)}</span>
+                      <span className="text-ink-400"> · {deNumber(c.fromScore, 1)} → {deNumber(c.toScore, 1)}</span>
                     )}
                     <span className="text-ink-500"> · {cause(c, false)}</span>
                   </li>

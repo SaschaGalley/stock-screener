@@ -40,37 +40,37 @@ const RATIO_COLORS = [CHART_COLORS.purple, CHART_COLORS.amber, CHART_COLORS.gree
 
 const MODE_PRESETS: Record<Mode, { label: string; series: SeriesDef[]; unit?: Unit }> = {
   income: {
-    label: 'Income',
+    label: 'Gewinn',
     series: [
-      { points: raw('revenue'),         label: 'Revenue',         color: CHART_COLORS.blue },
-      { points: raw('grossProfit'),     label: 'Gross Profit',    color: CHART_COLORS.purple },
-      { points: raw('operatingIncome'), label: 'Operating Income', color: CHART_COLORS.amber },
-      { points: raw('netIncome'),       label: 'Net Income',      color: CHART_COLORS.green },
+      { points: raw('revenue'),         label: 'Umsatz',          color: CHART_COLORS.blue },
+      { points: raw('grossProfit'),     label: 'Bruttogewinn',    color: CHART_COLORS.purple },
+      { points: raw('operatingIncome'), label: 'Operativer Gewinn', color: CHART_COLORS.amber },
+      { points: raw('netIncome'),       label: 'Nettogewinn',     color: CHART_COLORS.green },
     ],
   },
   cashflow: {
-    label: 'Cash Flow',
+    label: 'Cashflow',
     series: [
-      { points: raw('operatingCashFlow'), label: 'Operating CF', color: CHART_COLORS.blue },
-      { points: raw('freeCashFlow'),      label: 'Free CF',      color: CHART_COLORS.green },
+      { points: raw('operatingCashFlow'), label: 'Operativer Cashflow', color: CHART_COLORS.blue },
+      { points: raw('freeCashFlow'),      label: 'Free Cashflow', color: CHART_COLORS.green },
     ],
   },
   balance: {
-    label: 'Balance Sheet',
+    label: 'Bilanz',
     series: [
-      { points: raw('totalAssets'),        label: 'Total Assets',  color: CHART_COLORS.blue },
-      { points: raw('stockholdersEquity'), label: 'Equity',        color: CHART_COLORS.green },
+      { points: raw('totalAssets'),        label: 'Bilanzsumme',   color: CHART_COLORS.blue },
+      { points: raw('stockholdersEquity'), label: 'Eigenkapital',  color: CHART_COLORS.green },
     ],
   },
   eps: {
     label: 'EPS',
-    series: [{ points: raw('eps'), label: 'Diluted EPS', color: CHART_COLORS.amber }],
+    series: [{ points: raw('eps'), label: 'EPS (verwässert)', color: CHART_COLORS.amber }],
     unit: 'perShare',
   },
   // The absolute series above say how big; this says how good — whether this
   // year's margin is the company's normal or its best year in five.
   margins: {
-    label: 'Margins',
+    label: 'Margen',
     series: TREND_RATIOS.filter((r) => r.chart).map((r, i) => ({
       label: r.label,
       color: RATIO_COLORS[i % RATIO_COLORS.length],
@@ -117,7 +117,7 @@ export default function FundamentalsHistoryChart({ history, initialMode = 'incom
   }, [resolved]);
 
   if (years.length === 0) {
-    return <p className="text-xs text-ink-500">No historical data available.</p>;
+    return <p className="text-xs text-ink-500">Keine historischen Daten verfügbar.</p>;
   }
 
   const series = resolved.map(({ def, points }) => {

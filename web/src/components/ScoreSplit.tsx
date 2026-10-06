@@ -36,7 +36,7 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
     <Tip className="block whitespace-nowrap font-mono text-3xs font-normal leading-3 text-ink-500" content={title}>
       Z {deNumber(row.factorScore, 1)}
       {row.narrativeScore !== null && <> · T {deNumber(row.narrativeScore, 1)}</>}
-      {conf !== null && <> · {conf}%</>}
+      {conf !== null && <> · {conf} %</>}
     </Tip>
   );
 }

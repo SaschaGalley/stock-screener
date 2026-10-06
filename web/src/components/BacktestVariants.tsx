@@ -1,10 +1,10 @@
 import type { BacktestResponse } from '../types';
-import { recommendationColor } from '../format';
+import { deNumber, fmt, fmtSignedPct, recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
 
-const pct = (v: number | null | undefined, digits = 2) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(digits)} %`);
+const pct = (v: number | null | undefined, digits = 2) => fmtSignedPct(v, digits);
 
 /**
  * The score assembled again from the same rows under other rules — the
@@ -47,7 +47,7 @@ export default function BacktestVariants({ bt, horizon, monthName }: { bt: Backt
               <td className="px-4 py-1.5 text-ink-200">{v.label}</td>
               {horizons.map((h) => (
                 <td key={h} className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
-                  {ic(v, h)?.meanIc?.toFixed(3) ?? '—'} <span className="text-ink-500">({ic(v, h)?.tStat?.toFixed(1) ?? '—'})</span>
+                  {fmt(ic(v, h)?.meanIc, '', 3)} <span className="text-ink-500">({fmt(ic(v, h)?.tStat, '', 1)})</span>
                 </td>
               ))}
               <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
@@ -60,7 +60,7 @@ export default function BacktestVariants({ bt, horizon, monthName }: { bt: Backt
                   const halves = (v.halves ?? []).map((list) => list.find((r) => r.horizon === horizon && r.bucket === 'STRONG BUY')?.meanExcess ?? null);
                   return (
                     <span title={`${all.count} Fälle`}>
-                      {pct(all.meanExcess)} <span className="text-ink-500">({all.tStat?.toFixed(1) ?? '—'}; {halves.map((x) => pct(x, 1)).join(' / ')})</span>
+                      {pct(all.meanExcess)} <span className="text-ink-500">({fmt(all.tStat, '', 1)}; {halves.map((x) => pct(x, 1)).join(' / ')})</span>
                     </span>
                   );
                 })()}
@@ -76,7 +76,7 @@ export default function BacktestVariants({ bt, horizon, monthName }: { bt: Backt
                         className={`rounded px-1.5 py-0.5 text-2xs font-bold ${recommendationColor(r)}`}
                         title={b ? `${monthName(horizon)}: ${pct(b.meanExcess)} gegenüber Ø · ${b.count} Fälle` : 'keine Fälle'}
                       >
-                        {r} {(share * 100).toFixed(share < 0.01 ? 1 : 0)} %
+                        {r} {deNumber(share * 100, share < 0.01 ? 1 : 0)} %
                       </span>
                     );
                   })}

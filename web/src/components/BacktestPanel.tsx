@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { BacktestResponse } from '../types';
-import { recommendationColor } from '../format';
+import { deNumber, fmt, recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 import { IcTable, SignedBar, evidence, pct } from './evaluationParts';
 import WeightFit from './WeightFit';
@@ -61,7 +61,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       <p className="text-xs leading-relaxed text-ink-400">
         {bt.universe ?? 'S&P 500'}, Monatsenden {bt.from} bis {bt.to} · {bt.months} Stichtage · {bt.companies} Firmen
         {bt.departed && <> (davon {bt.departed.included} der {bt.departed.departed} seither ausgeschiedenen)</>} ·
-        Prämienkorrektur im Median {(bt.premium.median * 100).toFixed(2).replace('.', ',')} Pkt. ·
+        Prämienkorrektur im Median {deNumber(bt.premium.median * 100, 2)} Pkt. ·
         gerechnet {new Date(bt.generatedAt).toLocaleDateString('de-DE')}
         {overview.data?.schedule.next && <> · nächster Lauf {new Date(overview.data.schedule.next).toLocaleDateString('de-DE')}</>}
       </p>
@@ -84,13 +84,13 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
 
       {headline && headline.days > 0 && (
         <div className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3 text-sm text-ink-200">
-          Faktor-Score über {monthName(horizon)}: Rang-IC <span className="font-mono">{headline.meanIc?.toFixed(3)}</span>
-          {headline.neutralIc !== null && <>, im Sektor <span className="font-mono">{headline.neutralIc.toFixed(3)}</span></>},
+          Faktor-Score über {monthName(horizon)}: Rang-IC <span className="font-mono">{fmt(headline.meanIc, '', 3)}</span>
+          {headline.neutralIc !== null && <>, im Sektor <span className="font-mono">{deNumber(headline.neutralIc, 3)}</span></>},
           oberes Drittel {pct(headline.spread)} gegenüber dem unteren je Monat ·{' '}
           <span className={evidence(headline.tStat, headline.independent).cls}>
             {evidence(headline.tStat, headline.independent).label}
           </span>{' '}
-          <span className="text-ink-500">(t {headline.tStat?.toFixed(1) ?? '—'}, {headline.independent} unabhängige Fenster)</span>
+          <span className="text-ink-500">(t {fmt(headline.tStat, '', 1)}, {headline.independent} unabhängige Fenster)</span>
         </div>
       )}
 
@@ -153,7 +153,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
                     if (!r || r.days === 0) return <td key={s.key} className="px-2 py-1 text-right text-ink-600">—</td>;
                     return (
                       <td key={s.key} className={`whitespace-nowrap px-2 py-1 text-right font-mono ${evidence(r.tStat, r.independent).cls}`}>
-                        {r.meanIc?.toFixed(3) ?? '—'} <span className="text-ink-500">({r.tStat?.toFixed(1) ?? '—'})</span>
+                        {fmt(r.meanIc, '', 3)} <span className="text-ink-500">({fmt(r.tStat, '', 1)})</span>
                       </td>
                     );
                   })}
@@ -200,9 +200,9 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
               {bt.byYear.map((y) => (
                 <tr key={y.year} className="border-b border-ink-800/60 last:border-0">
                   <td className="px-4 py-1 font-mono text-ink-300">{y.year}</td>
-                  <td className="px-2 py-1 text-right font-mono">{y.ic?.toFixed(3) ?? '—'}</td>
+                  <td className="px-2 py-1 text-right font-mono">{fmt(y.ic, '', 3)}</td>
                   <td className="px-2 py-1"><SignedBar value={y.ic} scale={0.1} /></td>
-                  <td className="px-4 py-1 text-right font-mono text-ink-300">{y.neutralIc?.toFixed(3) ?? '—'}</td>
+                  <td className="px-4 py-1 text-right font-mono text-ink-300">{fmt(y.neutralIc, '', 3)}</td>
                   {withConsensus && (
                     <td className="px-4 py-1 text-right font-mono text-ink-400">
                       {y.analysts != null ? `${Math.round(y.analysts * 100)} %` : '—'}
