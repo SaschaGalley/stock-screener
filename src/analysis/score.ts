@@ -49,6 +49,7 @@ import {
   reliableMargin,
 } from './metrics.js';
 import { borrowsToLend, isBalanceSheetFinancial } from './dcf.js';
+import { adjustedCurrentRatio } from './health.js';
 import { calibrated } from './calibration.js';
 import { valuationBasis } from './basis.js';
 import { worstSeverity } from './data-quality.js';
@@ -923,36 +924,9 @@ function qualityPillar(
   ];
 }
 
-/**
- * Share of current liabilities that must be prepaid revenue before the current
- * ratio is read without it.
- *
- * A subscription business collects a year in advance and books it as a current
- * liability it will settle by delivering software, not by paying cash. At
- * ServiceNow that is 80 % of current liabilities: a reported ratio of 0.70 is
- * 3.4 once the prepayments are set aside, and scoring the 0.70 gave one of the
- * most liquid balance sheets on the list 0/10. Below a quarter the adjustment
- * is noise, so an ordinary company's ratio is read as reported.
- */
-export const DEFERRED_REVENUE_MIN_SHARE = 0.25;
-
-/** Beyond this the denominator is too small to divide by with any meaning. */
-const DEFERRED_REVENUE_MAX_SHARE = 0.9;
-
-/**
- * The current ratio with prepaid revenue taken out of the liabilities.
- *
- * The share comes from the annual balance sheet and the ratio from the latest
- * quarter; the share moves slowly, so scaling the fresh ratio by it is closer
- * to the truth than either the stale annual ratio or the unadjusted fresh one.
- */
-export function adjustedCurrentRatio(f: StockFinancials): { ratio: number | null; deferredShare: number | null } {
-  const ratio = toFiniteNumber(f.currentRatio);
-  const share = toFiniteNumber(f.deferredRevenueShare);
-  if (ratio === null || share === null || share < DEFERRED_REVENUE_MIN_SHARE) return { ratio, deferredShare: null };
-  const s = Math.min(share, DEFERRED_REVENUE_MAX_SHARE);
-  return { ratio: ratio / (1 - s), deferredShare: share };
-}
+// `adjustedCurrentRatio` lives with the balance-sheet checklist in `health.ts`,
+// which asks the same question of the same figure; re-exported for the tests.
+export { adjustedCurrentRatio, DEFERRED_REVENUE_MIN_SHARE } from './health.js';
 
 /**
  * Interest coverage a debt-free, profitable firm is read at: nothing to cover

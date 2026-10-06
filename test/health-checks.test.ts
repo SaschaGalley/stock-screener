@@ -53,6 +53,34 @@ describe('the balance-sheet checklist', () => {
     assert.equal(r.runwayMonths, null);
   });
 
+  it('reads the latest quarter\'s current ratio over a year-old annual sheet', () => {
+    // 0.89x at the fiscal year's end, 1.00x in the quarter since.
+    const r = calculateHealthChecks(company({ totalCurrentAssets: 890, totalCurrentLiabilities: 1_000, currentRatio: 1.003 }), cover('excellent', 40));
+    assert.equal(mark(r, 'short-term'), 'pass');
+    assert.match(r.checks.find((c) => c.key === 'short-term')!.note, /Geschäftsjahresende/);
+  });
+
+  it('sets prepaid subscriptions aside, as the score does', () => {
+    // 0.70 reported, 80 % of it prepaid revenue: 3.5 once that is taken out.
+    const r = calculateHealthChecks(company({ currentRatio: 0.7, deferredRevenueShare: 0.8 }), cover('excellent', 40));
+    assert.equal(mark(r, 'short-term'), 'pass');
+  });
+
+  it('counts long-term securities toward the cash, as the DCF does', () => {
+    // 50 cash and 400 in bonds against 350 debt: net cash, not net debt.
+    const r = calculateHealthChecks(company({ totalCash: 50, totalDebt: 350, nonOperatingAssets: 400 }), cover('good', 6));
+    assert.equal(mark(r, 'net-cash'), 'pass');
+  });
+
+  it('asks the cash flow when no interest is reported, but not of a cash burner', () => {
+    const quiet = company({ interestExpense: null, operatingCashFlow: 150, totalDebt: 100 });
+    assert.equal(mark(calculateHealthChecks(quiet, cover('unknown')), 'debt-cover'), 'pass');
+    assert.equal(mark(calculateHealthChecks({ ...quiet, operatingCashFlow: 15 } as StockFinancials, cover('unknown')), 'debt-cover'), 'mixed');
+    const burner = company({ interestExpense: null, operatingCashFlow: -120, freeCashFlow: -150, totalDebt: 4 });
+    assert.equal(mark(calculateHealthChecks(burner, cover('unknown')), 'debt-cover'), undefined);
+    assert.equal(mark(calculateHealthChecks(quiet, cover('good', 6)), 'debt-cover'), undefined, 'only when the coverage cannot be read');
+  });
+
   it('leaves a bank out of the liquidity checks', () => {
     const r = calculateHealthChecks(company({ industry: 'Banks - Regional', sector: 'Financial Services' }), cover('unknown'));
     assert.equal(r.lender, true);
