@@ -1018,12 +1018,12 @@ export const CaseSideSchema = z.object(
  * A side as stored: sections today, a flat list until 2 October 2026, a single
  * paragraph in schema v3. Read through `readCases`, never by shape.
  */
-const StoredCaseSchema = z.union([CaseSideSchema, z.array(z.string()), z.string()]);
+const StoredCaseSchema = z.union([CaseSideSchema, z.array(CasePointSchema), z.string()]);
 
 export const LLMAnalysisSchema = z.object({
   bullCase:          StoredCaseSchema.describe('The bull case: theses, figures and the triggers that would raise the verdict'),
   bearCase:          StoredCaseSchema.describe('The bear case, risks included: theses, figures and the triggers that would lower the verdict'),
-  keyRisks:          z.array(z.string()).optional().describe('Legacy: separate risk bullets from before 27 September. Risks now live in the bear case'),
+  keyRisks:          z.array(CasePointSchema).optional().describe('Legacy: separate risk bullets from before 27 September. Risks now live in the bear case'),
   watch:             z.array(z.string()).optional().describe('Legacy: one list of triggers marked ↑/↓, from before 2 October. Triggers now live in their side of the case'),
   thesis:            z.string().describe('Single 1–2 sentence investment thesis summarising the overall view'),
   score:             z.number().min(0).max(10).describe('Overall investment attractiveness score from 0 (avoid) to 10 (strong conviction buy)'),

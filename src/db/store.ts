@@ -1023,6 +1023,32 @@ export async function writeAnalysis(
   }
 }
 
+/** Every stored verdict of the current schema, newest first — for a pass over all of them. */
+export async function listVerdictDocuments(symbol?: string): Promise<{ id: number; symbol: string; data: CachedAnalysisEntry }[]> {
+  const res = await query<{ id: string; symbol: string; data: CachedAnalysisEntry }>(
+    `SELECT d.id, s.symbol, d.data
+       FROM documents d
+       JOIN symbols s ON s.id = d.symbol_id
+      WHERE d.kind = 'verdict' AND d.schema_ver = $1 AND ($2::text IS NULL OR s.symbol = $2)
+      ORDER BY d.produced_at DESC`,
+    [ANALYSIS_VERSION, symbol ?? null],
+  );
+  return res.rows.filter((r) => r.data?.llmAnalysis).map((r) => ({ id: Number(r.id), symbol: r.symbol, data: r.data }));
+}
+
+/**
+ * Put a stored verdict's analysis back with an addition that changes nothing
+ * it says — the headlines of `case-titles.ts`. Same row, same date; the text
+ * and its hash follow the data so the row reads as if written that way.
+ */
+export async function rewriteVerdictDocument(id: number, entry: CachedAnalysisEntry): Promise<void> {
+  const content = verdictText(entry.llmAnalysis);
+  await query(
+    `UPDATE documents SET data = $2, content = $3, content_hash = $4 WHERE id = $1 AND kind = 'verdict'`,
+    [id, entry, content, hashOf({ content, data: entry })],
+  );
+}
+
 /** One entry per flag combination, newest verdict for each. */
 export async function listAnalyses(symbol: string): Promise<AnalysisManifestEntry[]> {
   const id = await symbolId(symbol);

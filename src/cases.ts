@@ -55,15 +55,16 @@ export const CASE_SECTION_LABEL: Record<CaseSection, Record<CaseDirection, strin
 /**
  * One side as stored. Sections from 2 October 2026; a flat list before that;
  * a single paragraph in analysis schema v3. All three are history worth
- * showing, so every reader goes through `readCases`.
+ * showing, so every reader goes through `readCases`. A flat list's points
+ * may carry a headline written afterwards (`src/case-titles.ts`).
  */
-export type StoredCase = CaseSide | string[] | string;
+export type StoredCase = CaseSide | CasePoint[] | string;
 
 export interface StoredCases {
   bullCase:  StoredCase;
   bearCase:  StoredCase;
   /** Before 27 September risks were a third list; they read as bear points. */
-  keyRisks?: string[];
+  keyRisks?: CasePoint[];
   /** Before 2 October the triggers were one list, each marked ↑ or ↓. */
   watch?:    string[];
 }
@@ -103,7 +104,7 @@ function readSide(v: StoredCase | undefined): CaseView {
   if (v === undefined || v === null) return empty;
   const text = (t: string): CasePointView => ({ title: null, text: t });
   if (typeof v === 'string') return { ...empty, unsorted: sentences(v).map(text) };
-  if (Array.isArray(v)) return { ...empty, unsorted: v.map((p) => text(String(p))) };
+  if (Array.isArray(v)) return { ...empty, unsorted: v.map((p) => (typeof p === 'object' && p ? readPoint(p) : text(String(p)))) };
   return {
     theses:   (v.theses ?? []).map(readPoint),
     figures:  (v.figures ?? []).map(readPoint),
@@ -118,7 +119,7 @@ const LEGACY_TRIGGER = /^\s*([↑↓])\s*(?:wenn\b\s*)?/i;
 export function readCases(a: StoredCases): CasesView {
   const bull = readSide(a.bullCase);
   const bear = readSide(a.bearCase);
-  bear.unsorted.push(...(a.keyRisks ?? []).map((t) => ({ title: null, text: t })));
+  bear.unsorted.push(...(a.keyRisks ?? []).map(readPoint));
 
   const undirected: string[] = [];
   for (const w of a.watch ?? []) {
