@@ -4,7 +4,7 @@ import { fmt, relativeTime } from "../format";
 import { useMoney } from "../currency";
 import { api } from "../api"; // refresh endpoint (PDF/MD endpoints unused since report generation is skipped)
 import StockLogo, { initialsFromName } from "./StockLogo";
-import { CloseIcon, GearIcon, PeersIcon } from "./icons";
+import { CloseIcon, PeersIcon } from "./icons";
 import Term from "./Term";
 import type { GlossaryKey } from "../glossary";
 
@@ -18,7 +18,6 @@ interface Props {
   onActivityChanged?: () => void;
   /** Close the analysis and spread the list back out to the full table. */
   onClose: () => void;
-  onOpenAdmin: () => void;
   /** Below `lg` the stock list is a drawer; this opens it. */
   onToggleStocks: () => void;
   /**
@@ -50,7 +49,6 @@ export default function StockHeader({
   activity = [],
   onActivityChanged,
   onClose,
-  onOpenAdmin,
   onToggleStocks,
   staleNote,
   staleFix,
@@ -185,17 +183,6 @@ export default function StockHeader({
             onEverything={() => { void refreshEverything(); }}
             onOther={onOpenAnalysis}
           />
-
-          {/* Hidden on a phone, where four controls squeeze the company name
-              down to a stub. Administration is a rare destination and the
-              table's own header still has it. */}
-          <button
-            onClick={onOpenAdmin}
-            className="hidden rounded p-1.5 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200 sm:block"
-            title="Administration — Cronjobs, Watchlist, Modelle"
-          >
-            <GearIcon />
-          </button>
 
           {/* The way back to the table. Bordered and a heavier stroke than the
               icons beside it: leaving is the one action on this header someone

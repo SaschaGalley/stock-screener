@@ -8,6 +8,8 @@ import AnalysisModal, { flagsLabel } from './components/AnalysisModal';
 import PeersModal from './components/PeersModal';
 import AnalysisView from './components/AnalysisView';
 import { isStockTab, type StockTab } from './components/StockTabs';
+import AppNav, { NavIcons, type NavKey } from './components/AppNav';
+import AppBar from './components/AppBar';
 import ProgressBanner from './components/ProgressBanner';
 // The pages behind the gear, the chart icon and the pulse: loaded when opened,
 // not with the list everyone opens first.
@@ -221,6 +223,11 @@ export default function App() {
   const openDepot = useCallback(() => {
     setStocksDrawer(false);
     navigate('depot');
+  }, [navigate]);
+
+  const openReview = useCallback(() => {
+    setStocksDrawer(false);
+    navigate('review');
   }, [navigate]);
 
   // React to back/forward navigation
@@ -480,9 +487,20 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isTable, closeOverlay, analysisOpen, peersOpen]);
 
+  // The left column's highlight: an open stock is still the list.
+  const nav: NavKey | null = isTable || isAnalysis ? 'overview'
+    : isAdmin ? 'admin' : isEvaluation ? 'evaluation' : isFeed ? 'feed'
+    : isJournal ? 'journal' : isDepot ? 'depot' : isReview ? 'review' : null;
+  const navTo = (k: NavKey) => {
+    if (k === 'overview') { if (!isTable) closeOverlay(); return; }
+    ({ admin: openAdmin, evaluation: openEvaluation, feed: openFeed, journal: openJournal, depot: openDepot, review: openReview })[k]();
+  };
+
   startAnalyzeRef.current = startAnalyze;
   return (
-    <div className="flex h-full flex-col bg-ink-950 text-ink-100">
+    <div className="flex h-full bg-ink-950 text-ink-100">
+    <AppNav active={nav} onNavigate={navTo} />
+    <div className="flex min-w-0 flex-1 flex-col">
       {/* Backdrop while the mobile drawer is open. Clicking it closes it. */}
       {stocksDrawer && (
         <div
@@ -504,6 +522,26 @@ export default function App() {
         </div>
       )}
 
+      {/* The search and the filters, in the same place for the table and an open stock. */}
+      {(isTable || isAnalysis) && (
+        <AppBar
+          view={listView}
+          onViewChange={setListView}
+          rows={visibleRows}
+          total={rows.length}
+          nav={nav}
+          onNavigate={navTo}
+          detail={isAnalysis}
+        />
+      )}
+      {/* The other pages keep their own headers; below `lg`, where the left
+          column is not shown, the way to the rest of the app is this row. */}
+      {!isTable && !isAnalysis && (
+        <div className="flex shrink-0 justify-end border-b border-ink-800 bg-ink-900 px-3 py-1.5 lg:hidden">
+          <NavIcons active={nav} onNavigate={navTo} />
+        </div>
+      )}
+
       <Suspense fallback={<div className="flex-1 p-4 text-sm text-ink-500">Lade …</div>}>
         {isAdmin && <AdminPage onClose={closeOverlay} />}
         {isEvaluation && <EvaluationPage onClose={closeOverlay} />}
@@ -522,11 +560,6 @@ export default function App() {
           view={listView}
           onViewChange={setListView}
           onSelect={handleSelectSymbol}
-          onOpenAdmin={openAdmin}
-          onOpenEvaluation={openEvaluation}
-          onOpenFeed={openFeed}
-          onOpenJournal={openJournal}
-          onOpenDepot={openDepot}
           activity={activity}
           scrollAnchor={listScrollRef}
         />
@@ -576,7 +609,6 @@ export default function App() {
               activity={activity[selected] ?? NO_STAGES}
               onActivityChanged={onActivityChanged}
               onClose={closeOverlay}
-              onOpenAdmin={openAdmin}
               onToggleStocks={toggleStocks}
               onOpenAnalysis={openAnalysisDialog}
               onOpenPeers={openPeers}
@@ -629,6 +661,7 @@ export default function App() {
             : 'holt nur die Daten — Analyse startest du nach dem Klick auf die Aktie'}
         />
       )}
+    </div>
     </div>
   );
 }

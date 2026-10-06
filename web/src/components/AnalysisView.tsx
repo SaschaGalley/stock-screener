@@ -47,7 +47,7 @@ import {
 // Markdown and the editor are only wanted once the section is opened.
 const Journal = lazy(() => import("./Journal"));
 import { CurrencyProvider } from "../currency";
-import { currencyPrefix, fmtBig, fmtPrice } from "../format";
+import { fmtBig, fmtPrice } from "../format";
 
 interface Props {
   symbol: string;
@@ -63,7 +63,6 @@ interface Props {
   onActivityChanged?: () => void;
   /** Chrome this pane owns now that there is no toolbar above it. */
   onClose: () => void;
-  onOpenAdmin: () => void;
   onToggleStocks: () => void;
   /** Open the picker: stored analyses, and the settings for a new run. */
   onOpenAnalysis: () => void;
@@ -99,7 +98,6 @@ function AnalysisView({
   activity = [],
   onActivityChanged,
   onClose,
-  onOpenAdmin,
   onToggleStocks,
   onOpenAnalysis,
   onOpenPeers,
@@ -229,7 +227,6 @@ function AnalysisView({
   // Every figure below is denominated in the stock's trading currency (the data
   // layer FX-converts the statements into it), so one provider covers the view.
   const cur = f.tradingCurrency ?? null;
-  const sym = currencyPrefix(cur);
   // For the section headers' findings, which are built outside the currency provider below.
   const money = (n: number | null | undefined) => fmtPrice(n, cur);
   const big = (n: number | null | undefined) => fmtBig(n, cur);
@@ -270,7 +267,6 @@ function AnalysisView({
           activity={activity}
           onActivityChanged={onActivityChanged}
           onClose={onClose}
-          onOpenAdmin={onOpenAdmin}
           onToggleStocks={onToggleStocks}
           staleNote={staleNote}
           staleFix={staleFix}

@@ -1,18 +1,15 @@
 import { Fragment, type MutableRefObject } from 'react';
 import type { OverviewRow } from '../types';
-import ScoreSparkline from './charts/ScoreSparkline';
 import TimingCell from './TimingCell';
 import RecommendationBadge from './RecommendationBadge';
 import { evidenceLine, useVerdictEvidence } from './VerdictEvidence';
-import StockListControls from './StockListControls';
 import Tip from './Tip';
 import {
   StockIdentity, StockScore, GroupName, GroupAverage, rowTitle, ROW_HEIGHT, HEADER_HEIGHT, GROUP_HEIGHT,
   ROW_RULE, HEADER_RULE, CELL_RULE,
 } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
-import { ChartIcon, DepotIcon, GearIcon, JournalIcon, PulseIcon } from './icons';
-import { averageScore, groupRows, scoreColor, toggleGroup, type ListView } from './stockList';
+import { groupRows, toggleGroup, type ListView } from './stockList';
 import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
 import Term from './Term';
 
@@ -25,11 +22,6 @@ interface Props {
   view:     ListView;
   onViewChange: (next: ListView) => void;
   onSelect: (symbol: string) => void;
-  onOpenAdmin: () => void;
-  onOpenEvaluation: () => void;
-  onOpenFeed: () => void;
-  onOpenJournal: () => void;
-  onOpenDepot: () => void;
   /** Symbol → stages the queue currently has in flight for it. */
   activity?: Record<string, string[]>;
   /** Shared with the rail, so collapsing the columns doesn't move the list. */
@@ -50,7 +42,6 @@ const COL = {
   timing:  'hidden md:table-cell',
   price:   'hidden sm:table-cell',
   target:  'hidden md:table-cell',
-  trend:   'hidden lg:table-cell',
   model:   'hidden lg:table-cell',
   mcap:    'hidden lg:table-cell',
   age:     'hidden xl:table-cell',
@@ -74,7 +65,7 @@ const NAME_CELL = 'w-full max-w-0 xl:w-auto xl:max-w-none';
 const GROUP_CELL = `sticky top-8 z-[5] ${CELL_RULE} bg-ink-900 py-0 transition group-hover:bg-ink-800`;
 
 /** Every column after name and score — what the heading's last cell spans. */
-const TRAILING_COLUMNS = 8;
+const TRAILING_COLUMNS = 7;
 
 /**
  * The stock list at full width: every column the overview has room for.
@@ -85,7 +76,7 @@ const TRAILING_COLUMNS = 8;
  * one fact, and reads better as one cell than as two columns.
  */
 export default function StockTable({
-  rows, total, loading, view, onViewChange, onSelect, onOpenAdmin, onOpenEvaluation, onOpenFeed, onOpenJournal, onOpenDepot,
+  rows, total, loading, view, onViewChange, onSelect,
   activity = {}, scrollAnchor,
 }: Props) {
   // The table only exists while it is on screen, so it is always the visible
@@ -98,8 +89,6 @@ export default function StockTable({
 
   // What each verdict did in the backtest, on hover over the chip.
   const evidence = useVerdictEvidence();
-  const avg = averageScore(rows);
-  const filtered = rows.length !== total;
   const groups = groupRows(rows, view.group);
 
   // One stock's row — the same under a group heading as in the plain list.
@@ -116,12 +105,12 @@ export default function StockTable({
         <StockIdentity row={r} active={false} stages={activity[r.symbol]} />
       </td>
 
+      {/* One line per cell. The list is for finding the stock to open; the
+          split of the score, the rank in the universe, the model, the month and
+          the RSI, the trend of the score — each is on the hover or on the
+          stock's page, where there is room to read it. */}
       <td className="px-2 py-1 text-right">
-        <StockScore row={r} split />
-      </td>
-
-      <td className={`${COL.trend} px-2 py-1`}>
-        <ScoreSparkline points={r.scoreHistory} />
+        <StockScore row={r} />
       </td>
 
       <td className={`${COL.verdict} whitespace-nowrap px-2 py-1`}>
@@ -131,31 +120,21 @@ export default function StockTable({
             score={r.score}
             heldBack={r.verdictCapped ? r.capReasons : []}
             size="sm"
-            note={evidence ? evidenceLine(evidence, r.recommendation) : null}
+            note={[
+              evidence ? evidenceLine(evidence, r.recommendation) : null,
+              r.universeRank
+                ? `Faktor-Score über ${Math.round(r.universeRank.percentile * 100)} % der ${r.universeRank.of} gespeicherten Aktien.`
+                : null,
+              r.verdictModel ? `Text von ${r.verdictModel}.` : null,
+            ].filter(Boolean).join('\n') || null}
           />
         ) : (
           <span className="text-xs text-ink-500">nicht analysiert</span>
         )}
-        {(r.universeRank || r.verdictModel) && (
-          <div className="flex items-center gap-1.5 font-mono text-3xs leading-3 text-ink-500">
-            {r.universeRank && (
-              <Tip
-                focusable={false}
-                className="text-ink-300"
-                content={`Der Faktor-Score${r.factorScore === null ? '' : ` ${r.factorScore.toFixed(1)}`} liegt über ${Math.round(r.universeRank.percentile * 100)} % `
-                  + `der ${r.universeRank.of} gespeicherten Aktien — Watchlist und Referenzuniversum, jeweils die letzte Bewertung. `
-                  + 'So unterscheidet sich eine HOLD am oberen Rand von einer am unteren. Wie viel die Rangfolge über die spätere Rendite sagt, steht unter Auswertung: wenig.'}
-              >
-                {`über ${Math.round(r.universeRank.percentile * 100)} %`}
-              </Tip>
-            )}
-            {r.verdictModel && <span className="truncate">{r.verdictModel}</span>}
-          </div>
-        )}
       </td>
 
       <td className={`${COL.timing} px-2 py-1`}>
-        <TimingCell row={r} evidence={evidence} />
+        <TimingCell row={r} evidence={evidence} compact />
       </td>
 
       <td className={`${COL.price} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-200`}>
@@ -163,30 +142,27 @@ export default function StockTable({
       </td>
 
       <td className={`${COL.target} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular`}>
-        <div className="text-ink-300">{r.targetMean === null ? '—' : fmtPrice(r.targetMean, r.currency)}</div>
-        <div className={`text-2xs ${upsideColor(r.targetUpsidePct)}`}>{fmtPercentPoints(r.targetUpsidePct)}</div>
+        <Tip focusable={false} content={r.targetMean === null ? 'Kein Kursziel' : `Ø Kursziel ${fmtPrice(r.targetMean, r.currency)}`}>
+          <span className={upsideColor(r.targetUpsidePct)}>{fmtPercentPoints(r.targetUpsidePct)}</span>
+        </Tip>
       </td>
 
       <td className={`${COL.model} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular`}>
-        <div className="text-ink-300">
-          {r.compositeFairValue === null ? '—' : fmtPrice(r.compositeFairValue, r.currency)}
-        </div>
-        <div className={`text-2xs ${upsideColor(r.compositeUpsidePct)}`}>{fmtPercentPoints(r.compositeUpsidePct)}</div>
+        <Tip focusable={false} content={r.compositeFairValue === null ? 'Kein fairer Wert' : `Fairer Wert der Modelle ${fmtPrice(r.compositeFairValue, r.currency)}`}>
+          <span className={upsideColor(r.compositeUpsidePct)}>{fmtPercentPoints(r.compositeUpsidePct)}</span>
+        </Tip>
       </td>
 
       <td className={`${COL.mcap} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-400`}>
         {fmtBig(r.marketCap, r.currency)}
       </td>
 
-      <td className={`${COL.age} whitespace-nowrap px-3 py-1 text-right text-2xs text-ink-500`}>
-        <Tip className="block leading-4" content="Alter der Marktdaten">
-          {r.dataAgeHours === null
-            ? '—'
-            : r.dataAgeHours < 48
-              ? `${r.dataAgeHours.toFixed(0)} Std.`
-              : `${(r.dataAgeHours / 24).toFixed(0)} T.`}
-        </Tip>
-        <Tip className="block leading-4 text-ink-500" content="Letztes AI-Verdict">
+      <td className={`${COL.age} whitespace-nowrap px-3 py-1 text-right text-xs text-ink-500`}>
+        <Tip
+          focusable={false}
+          content={`Urteil ${r.verdictAt ? relativeTime(r.verdictAt) : '—'} · Marktdaten ${
+            r.dataAgeHours === null ? '—' : r.dataAgeHours < 48 ? `${r.dataAgeHours.toFixed(0)} Std.` : `${(r.dataAgeHours / 24).toFixed(0)} T.`} alt`}
+        >
           {r.verdictAt ? relativeTime(r.verdictAt) : '—'}
         </Tip>
       </td>
@@ -195,64 +171,6 @@ export default function StockTable({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-700 bg-ink-900 px-4 py-2">
-        <h2 className="text-sm font-semibold text-ink-100">
-          Übersicht{' '}
-          <span className="text-ink-500">
-            ({rows.length}{filtered ? ` von ${total}` : ''})
-          </span>
-        </h2>
-        {avg && (
-          <span className="text-xs text-ink-500">
-            Ø Score <span className={scoreColor(avg.avg)}>{avg.avg.toFixed(1)}</span>
-            {/* The count is the first thing a phone's header line can spare. */}
-            <span className="hidden sm:inline"> über {avg.count} bewertete</span>
-          </span>
-        )}
-        {/* On a phone the controls take a row of their own under the title,
-            and the two icons stay up beside it rather than wrapping alone. */}
-        <div className="order-last w-full sm:order-none sm:ml-auto sm:w-auto">
-          <StockListControls view={view} onChange={onViewChange} layout="bar" />
-        </div>
-        <div className="ml-auto flex items-center gap-3 sm:ml-0">
-          <button
-            onClick={onOpenDepot}
-            title="Depot — die Positionen aus umsatz gegen das Modell: Gewichte, Urteile, Begründungen"
-            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
-          >
-            <DepotIcon />
-          </button>
-          <button
-            onClick={onOpenJournal}
-            title="Journal — was ich gelesen, gedacht, gekauft und verkauft habe, und warum"
-            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
-          >
-            <JournalIcon />
-          </button>
-          <button
-            onClick={onOpenFeed}
-            title="Was ist passiert — Herabstufungen, Insider, Kurssprünge und Quartalszahlen der Watchlist"
-            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
-          >
-            <PulseIcon />
-          </button>
-          <button
-            onClick={onOpenEvaluation}
-            title="Auswertung — sagt der Score die spätere Rendite voraus?"
-            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
-          >
-            <ChartIcon />
-          </button>
-          <button
-            onClick={onOpenAdmin}
-            title="Administration — Cronjobs, Watchlist, Modelle"
-            className="rounded p-1 text-ink-400 transition hover:bg-ink-800 hover:text-ink-200"
-          >
-            <GearIcon />
-          </button>
-        </div>
-      </div>
-
       <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-auto">
         {loading && total === 0 ? (
           <div className="p-8 text-center text-sm text-ink-500">Lade Übersicht…</div>
@@ -268,14 +186,13 @@ export default function StockTable({
               <tr className={`${HEADER_HEIGHT} ${HEADER_RULE}`}>
                 <th className="px-3 py-0 text-left font-semibold">Aktie</th>
                 <th className="px-2 py-0 text-right font-semibold"><Term k="list.score">Score</Term></th>
-                <th className={`${COL.trend} px-2 py-0 text-left font-semibold`}><Term k="list.trend">Verlauf</Term></th>
-                <th className={`${COL.verdict} px-2 py-0 text-left font-semibold`}><Term k="list.verdict">Verdict</Term></th>
+                <th className={`${COL.verdict} px-2 py-0 text-left font-semibold`}><Term k="list.verdict">Urteil</Term></th>
                 <th className={`${COL.timing} px-2 py-0 text-left font-semibold`}><Term k="list.timing">Chart</Term></th>
                 <th className={`${COL.price} px-2 py-0 text-right font-semibold`}><Term k="list.price">Kurs</Term></th>
-                <th className={`${COL.target} px-2 py-0 text-right font-semibold`}><Term k="list.target">Ø Ziel</Term></th>
-                <th className={`${COL.model} px-2 py-0 text-right font-semibold`}><Term k="list.modelFv">Modell-FV</Term></th>
-                <th className={`${COL.mcap} px-2 py-0 text-right font-semibold`}><Term k="list.mcap">MCap</Term></th>
-                <th className={`${COL.age} px-3 py-0 text-right font-semibold`}><Term k="list.age">Aktualität</Term></th>
+                <th className={`${COL.target} px-2 py-0 text-right font-semibold`}><Term k="list.target">Kursziel</Term></th>
+                <th className={`${COL.model} px-2 py-0 text-right font-semibold`}><Term k="list.modelFv">Fairer Wert</Term></th>
+                <th className={`${COL.mcap} px-2 py-0 text-right font-semibold`}><Term k="list.mcap">Börsenwert</Term></th>
+                <th className={`${COL.age} px-3 py-0 text-right font-semibold`}><Term k="list.age">Analyse</Term></th>
               </tr>
             </thead>
             <tbody>

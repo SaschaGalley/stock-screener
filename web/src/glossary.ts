@@ -37,16 +37,16 @@ export const GLOSSARY = {
   'list.trend':
     'Der Score über die Zeit, ab dem ersten gespeicherten Punkt. Die Skala ist bewusst nicht auf Minimum und Maximum gezogen: Rauschen von einem Zehntel bleibt flach, echte Bewegung bleibt sichtbar. Grün steigend, rot fallend.',
   'list.verdict':
-    'Das Urteil ist das Band, in das der Score fällt. ⛔ heißt: Ein Deckel hält es bewusst darunter, etwa wegen schwacher Datenlage. Darunter „über … %“: über wie viel Prozent aller gespeicherten Aktien — Watchlist und Referenzuniversum — der Faktor-Score liegt; das trennt eine HOLD am oberen Rand von einer am unteren. Daneben das Modell, das die Texte gelesen hat.',
+    'Das Urteil ist das Band, in das der Score fällt. ⛔ heißt: Ein Deckel hält es bewusst darunter, etwa wegen schwacher Datenlage. Auf Hover: was das Urteil im Backtest brachte, über wie viel Prozent aller gespeicherten Aktien der Faktor-Score liegt — das trennt eine HOLD am oberen Rand von einer am unteren — und welches Modell die Texte gelesen hat.',
   'list.timing':
-    'Wo der Kurs in seinem Chart steht: Richtung des 3-Monats-Kanals und an welchem Rand er ist, darunter die Rendite des letzten Monats und der RSI. Ein Kästchen daneben nennt ein Setup, das heute auslöst — mit Stop, Ziel, Positionsgröße, Risiko und dem, was es im Backtest gegen einen Zufallseinstieg mit denselben Abständen brachte (grün umrandet nur, wenn es dort trug). Auf Hover steht jede Lesart neben dem, was der Backtest bei Aktien mit demselben Urteil dazu fand. Fließt nicht in Score und Urteil ein.',
+    'Wo der Kurs in seinem Chart steht: Richtung des 3-Monats-Kanals und an welchem Rand er ist; die Rendite des letzten Monats und der RSI stehen auf Hover. Ein Kästchen daneben nennt ein Setup, das heute auslöst — mit Stop, Ziel, Positionsgröße, Risiko und dem, was es im Backtest gegen einen Zufallseinstieg mit denselben Abständen brachte (grün umrandet nur, wenn es dort trug). Auf Hover steht jede Lesart neben dem, was der Backtest bei Aktien mit demselben Urteil dazu fand. Fließt nicht in Score und Urteil ein.',
   'list.price': 'Letzter Schlusskurs, in der Währung, in der die Aktie gehandelt wird.',
-  'list.target': 'Mittleres Analysten-Kursziel (Yahoo-Konsens) und sein Abstand zum Kurs.',
+  'list.target': 'Abstand des mittleren Analysten-Kursziels (Yahoo-Konsens) zum Kurs; das Kursziel selbst auf Hover.',
   'list.modelFv':
-    'Fairer Wert laut Bewertungsmodellen: der Primary-Composite aus DCF, Peer-Multiples, Peter Lynch und Analystenziel, und sein Abstand zum Kurs. Im Backtest (S&P 1500 seit 2013, Stand Oktober 2026) hat dieser Abstand keine Rendite vorhergesagt, und der Kurs hat sich dem Wert nicht genähert: Er beschreibt die Modelle, er ist keine erwartete Rendite.',
+    'Fairer Wert laut Bewertungsmodellen: der Primary-Composite aus DCF, Peer-Multiples, Peter Lynch und Analystenziel. Gezeigt ist sein Abstand zum Kurs, der Wert selbst auf Hover. Im Backtest (S&P 1500 seit 2013, Stand Oktober 2026) hat dieser Abstand keine Rendite vorhergesagt, und der Kurs hat sich dem Wert nicht genähert: Er beschreibt die Modelle, er ist keine erwartete Rendite.',
   'list.mcap': 'Börsenwert: Kurs mal alle ausstehenden Aktien.',
   'list.age':
-    'Oben: wie alt die Marktdaten sind (nächtliche Aktualisierung). Unten: wann zuletzt eine Textanalyse lief. Der Score selbst wird bei jeder Datenaktualisierung neu gerechnet.',
+    'Wann zuletzt eine Textanalyse lief; wie alt die Marktdaten sind, steht auf Hover. Der Score selbst wird bei jeder Datenaktualisierung neu gerechnet.',
   'list.consensus':
     'Konsens-Streifen: Anteil Kauf (grün), Halten (gelb) und Verkauf (rot) aus unserem Urteil und den Analystenratings zusammen.',
 

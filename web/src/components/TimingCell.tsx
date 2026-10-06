@@ -123,7 +123,11 @@ export function TimingEvidence({ t, verdict, evidence }: { t: TimingReadings; ve
   );
 }
 
-export default function TimingCell({ row, evidence }: { row: OverviewRow; evidence: VerdictEvidence | null }) {
+export default function TimingCell({ row, evidence, compact = false }: {
+  row: OverviewRow; evidence: VerdictEvidence | null;
+  /** One line — direction and place — with the month and the RSI left to the hover, for the list. */
+  compact?: boolean;
+}) {
   const timing = row.timing;
   if (!timing) return <span className="text-xs text-ink-500">—</span>;
   const d = direction(timing);
@@ -136,9 +140,11 @@ export default function TimingCell({ row, evidence }: { row: OverviewRow; eviden
         </Tip>
         <SetupBadge row={row} study={evidence?.setups ?? null} />
       </div>
-      <Tip focusable={false} className="block" content={<TimingEvidence t={timing} verdict={row.recommendation} evidence={evidence} />}>
-        <span className="whitespace-nowrap font-mono text-2xs leading-4 text-ink-500">1M {pct(timing.m1, 0)} · RSI {num(timing.rsi14, 0)}</span>
-      </Tip>
+      {!compact && (
+        <Tip focusable={false} className="block" content={<TimingEvidence t={timing} verdict={row.recommendation} evidence={evidence} />}>
+          <span className="whitespace-nowrap font-mono text-2xs leading-4 text-ink-500">1M {pct(timing.m1, 0)} · RSI {num(timing.rsi14, 0)}</span>
+        </Tip>
+      )}
     </div>
   );
 }

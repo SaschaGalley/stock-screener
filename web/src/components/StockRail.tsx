@@ -101,11 +101,10 @@ export default function StockRail({
 
   return (
     <aside className="flex h-full w-80 flex-col border-r border-ink-700 bg-ink-900">
-      {/* One control tall, matching the table's header exactly — see the
-          `badge` note in StockListControls. Sorting, grouping and the
-          watchlist filter live in the table, where you order the list; the
-          rail inherits that order and spends its height on stocks. */}
-      <div className="border-b border-ink-700 px-3 py-2">
+      {/* From `lg` up the search is in the bar above both lists, at the
+          same place as over the table; below it the rail is a drawer over
+          the page, and brings its own. */}
+      <div className="border-b border-ink-700 px-3 py-2 lg:hidden">
         <StockListControls
           view={view}
           onChange={onViewChange}

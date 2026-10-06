@@ -145,3 +145,34 @@ export function PeersIcon({ size = 16, strokeWidth = 1.8 }: IconProps) {
     </svg>
   );
 }
+
+/** The stock list: rows with a ranking bar beside them. */
+export function ListIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <path d="M4 6h1M4 12h1M4 18h1" />
+    </svg>
+  );
+}
+
+/** Looking back: a clock with an arrow turning back. */
+export function ReviewIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+/** Search: a lens. */
+export function SearchIcon({ size = 16, strokeWidth = 2 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" aria-hidden>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.5-3.5" />
+    </svg>
+  );
+}
