@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import ReactECharts from './ECharts';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useMoney } from '../../currency';
+import { deNumber, fmtPct } from '../../format';
 import { TREND_RATIOS, ratioSeries } from '../../../../src/analysis/trends';
 
 type Series = { year: number; value: number }[];
@@ -84,17 +85,17 @@ const MODE_PRESETS: Record<Mode, { label: string; series: SeriesDef[]; unit?: Un
  * absolutes are abbreviated one digit shorter than the app-wide `fmtBig` so the
  * axis stays narrow. Named apart from it so the difference is deliberate.
  *
- * `cur` is the trading currency's prefix — the whole series is FX-converted
- * into it upstream, so one prefix is right for every point.
+ * `cur` is the trading currency's sign, written after the amount — the whole
+ * series is FX-converted into it upstream, so one sign is right for every point.
  */
 function fmtChartValue(n: number, unit: Unit, cur: string): string {
-  if (unit === 'pct') return `${(n * 100).toFixed(1)}%`;
-  if (unit === 'perShare') return `${cur}${n.toFixed(2)}`;
+  if (unit === 'pct') return fmtPct(n, 1);
+  if (unit === 'perShare') return `${deNumber(n, 2)} ${cur}`;
   const a = Math.abs(n);
-  if (a >= 1e12) return `${cur}${(n / 1e12).toFixed(2)}T`;
-  if (a >= 1e9)  return `${cur}${(n / 1e9).toFixed(1)}B`;
-  if (a >= 1e6)  return `${cur}${(n / 1e6).toFixed(0)}M`;
-  return `${cur}${n.toFixed(0)}`;
+  if (a >= 1e12) return `${deNumber(n / 1e12, 2)} Bio. ${cur}`;
+  if (a >= 1e9)  return `${deNumber(n / 1e9, 1)} Mrd. ${cur}`;
+  if (a >= 1e6)  return `${deNumber(n / 1e6, 0)} Mio. ${cur}`;
+  return `${deNumber(n, 0)} ${cur}`;
 }
 
 export default function FundamentalsHistoryChart({ history, initialMode = 'income' }: Props) {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { BacktestResponse } from '../types';
-import { recommendationColor } from '../format';
+import { deNumber, fmt, fmtSignedPct, recommendationColor } from '../format';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 import { SignedBar } from './evaluationParts';
 import type { BucketReturn } from '../../../src/analysis/evaluate';
@@ -9,7 +9,7 @@ type Backtest = NonNullable<BacktestResponse['backtest']>;
 type Bands = NonNullable<Backtest['bands']>;
 
 /** Two decimals: a month's difference between tenths is a tenth of a per cent. */
-const pct = (v: number | null) => (v === null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)} %`);
+const pct = (v: number | null) => fmtSignedPct(v, 2);
 
 const STEPS = ['<3', '3–4', '4–5', '5–6', '6–7', '7–8', '≥8'];
 const DECILES = Array.from({ length: 10 }, (_, k) => `D${k + 1}`);
@@ -24,9 +24,9 @@ function Row({ label, r, scale }: { label: React.ReactNode; r: BucketReturn | un
       <td className="px-4 py-1 text-ink-200">{label}</td>
       <td className="w-32 px-2 py-1"><SignedBar value={r.meanExcess} scale={scale} /></td>
       <td className={`px-2 py-1 text-right font-mono ${cls}`}>{pct(r.meanExcess)}</td>
-      <td className="px-2 py-1 text-right font-mono text-ink-400">{t?.toFixed(1) ?? '—'}</td>
+      <td className="px-2 py-1 text-right font-mono text-ink-400">{fmt(t, '', 1)}</td>
       <td className="px-2 py-1 text-right font-mono text-ink-400">{r.hitRate === null ? '—' : `${Math.round(r.hitRate * 100)} %`}</td>
-      <td className="px-4 py-1 text-right font-mono text-ink-500">{r.months} / {r.count}</td>
+      <td className="px-4 py-1 text-right font-mono text-ink-500">{r.months} / {deNumber(r.count, 0)}</td>
     </tr>
   );
 }
@@ -121,8 +121,8 @@ export default function BacktestBands({ bt, horizon, monthName }: { bt: Backtest
       </div>
       <p className="border-t border-ink-800 px-4 py-2 text-xs leading-relaxed text-ink-500">
         Höchstes Zehntel des Scores vor der Schrumpfung und Streckung: {pct(at(b.rawDeciles, 'D10')?.meanExcess ?? null)}
-        {' '}(t {at(b.rawDeciles, 'D10')?.tStat?.toFixed(1) ?? '—'}), nach ihr {pct(at(b.deciles, 'D10')?.meanExcess ?? null)}
-        {' '}(t {at(b.deciles, 'D10')?.tStat?.toFixed(1) ?? '—'}). „Monate / Fälle“: Formationsmonate ohne Überlappung und die
+        {' '}(t {fmt(at(b.rawDeciles, 'D10')?.tStat, '', 1)}), nach ihr {pct(at(b.deciles, 'D10')?.meanExcess ?? null)}
+        {' '}(t {fmt(at(b.deciles, 'D10')?.tStat, '', 1)}). „Monate / Fälle“: Formationsmonate ohne Überlappung und die
         Aktien darin.
       </p>
     </section>

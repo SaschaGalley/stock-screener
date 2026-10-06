@@ -1,5 +1,6 @@
 import ReactECharts from './ECharts';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
+import { fmtPercentPoints } from '../../format';
 
 interface Props {
   estimates: any[];
@@ -25,7 +26,7 @@ export default function ForwardGrowthChart({ estimates }: Props) {
           backgroundColor: CHART_COLORS.bg,
           borderColor: '#1e293b',
           textStyle: { color: CHART_COLORS.text, fontSize: 13 },
-          valueFormatter: (v: number) => v == null ? 'N/A' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+          valueFormatter: (v: number) => fmtPercentPoints(v, 1),
         },
         legend: {
           textStyle: { color: CHART_COLORS.text, fontSize: 12 },
@@ -39,7 +40,7 @@ export default function ForwardGrowthChart({ estimates }: Props) {
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 12, formatter: '{value}%' },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 12, formatter: (v: number) => `${v.toLocaleString('de-DE').replace('-', '−')} %` },
           splitLine: { lineStyle: { color: '#1e293b' } },
         },
         series: [

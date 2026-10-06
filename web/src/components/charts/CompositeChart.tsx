@@ -2,6 +2,7 @@ import ReactECharts from './ECharts';
 import type { CompositeFairValue } from '../../types';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useMoney } from '../../currency';
+import { deNumber, fmtPct } from '../../format';
 import { GLOSSARY, MODEL_TERMS } from '../../glossary';
 
 interface Props {
@@ -15,7 +16,7 @@ interface Props {
  * price. Color reflects under/overvaluation.
  */
 export default function CompositeChart({ composite, price }: Props) {
-  const { symbol: cur } = useMoney();
+  const { symbol: cur, fmtPrice } = useMoney();
 
   type Row = { name: string; value: number; tier: 'primary' | 'conservative' };
   const rows: Row[] = [
@@ -57,8 +58,8 @@ export default function CompositeChart({ composite, price }: Props) {
             const row = rows[p.dataIndex];
             const tierLabel = row.tier === 'primary' ? 'Primary' : 'Conservative';
             const term = MODEL_TERMS[row.name];
-            return `${p.name} (${tierLabel}): <b>${cur}${p.value.toFixed(2)}</b><br/>vs price ${cur}${price.toFixed(2)}: ` +
-              `${((p.value - price) / price * 100).toFixed(1)}%` +
+            return `${p.name} (${tierLabel}): <b>${fmtPrice(p.value)}</b><br/>vs price ${fmtPrice(price)}: ` +
+              `${fmtPct((p.value - price) / price, 1)}` +
               (term ? `<div style="margin-top:6px;font-size:12px;line-height:1.45;opacity:.85">${GLOSSARY[term]}</div>` : '');
           },
         },
@@ -66,7 +67,7 @@ export default function CompositeChart({ composite, price }: Props) {
           type: 'value',
           min: xMin,
           max: xMax,
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: (v: number) => `${cur}${v.toFixed(0)}` },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 11, formatter: (v: number) => `${deNumber(v, 0)} ${cur}` },
           splitLine: { lineStyle: { color: CHART_COLORS.grid } },
         },
         yAxis: {
@@ -97,7 +98,7 @@ export default function CompositeChart({ composite, price }: Props) {
               color: CHART_COLORS.text,
               fontSize: 11,
               fontFamily: 'monospace',
-              formatter: (p: any) => `${cur}${p.value.toFixed(0)}`,
+              formatter: (p: any) => `${deNumber(p.value, 0)} ${cur}`,
             },
             markLine: {
               symbol: 'none',
@@ -106,7 +107,7 @@ export default function CompositeChart({ composite, price }: Props) {
                 color: CHART_COLORS.text,
                 fontSize: 11,
                 fontFamily: 'monospace',
-                formatter: () => `Price ${cur}${price.toFixed(2)}`,
+                formatter: () => `Price ${fmtPrice(price)}`,
                 position: 'end',
               },
               data: [{ xAxis: price }],

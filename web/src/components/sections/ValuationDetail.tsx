@@ -1,5 +1,5 @@
 import type { ComputedMetrics, PeerMultiplesEntry } from '../../types';
-import { fmtSignedPct, mosColor, fmt, fmtPct } from '../../format';
+import { deNumber, fmtSignedPct, mosColor, fmt, fmtPct } from '../../format';
 import { useMoney } from '../../currency';
 import Term from '../Term';
 import type { GlossaryKey } from '../../glossary';
@@ -27,12 +27,12 @@ export default function ValuationDetail({ metrics, price }: Props) {
 
   // Build inline notes defensively — every property might be null/undefined
   // depending on whether a stock has the input data the model needs.
-  const pctOf = (x: number | null | undefined) => (x !== null && x !== undefined && Number.isFinite(x) ? `${(x * 100).toFixed(1)}%` : '—');
+  const pctOf = (x: number | null | undefined) => fmtPct(x, 1);
   const dist = dcf.distribution;
   const dcfNote = dcf.fairValue !== null && dist
-    ? `p10 ${fmtPrice(dist.p10)} · p90 ${fmtPrice(dist.p90)} · ${(dist.probabilityAbovePrice * 100).toFixed(0)}% of ${dist.draws} draws above price`
+    ? `p10 ${fmtPrice(dist.p10)} · p90 ${fmtPrice(dist.p90)} · ${fmtPct(dist.probabilityAbovePrice, 0)} of ${deNumber(dist.draws, 0)} draws above price`
     : dcf.assumptions;
-  const grNote     = grahamRevised.bondYield ? `AAA yield ${(grahamRevised.bondYield * 100).toFixed(1)}%` : null;
+  const grNote     = grahamRevised.bondYield ? `AAA yield ${fmtPct(grahamRevised.bondYield, 1)}` : null;
   const lynchNote  = peterLynch.growthRate !== null ? `g=${pctOf(peterLynch.growthRate)}${peterLynch.growthSource ? ` (${peterLynch.growthSource})` : ''}` : null;
   const epvNote    = epv.normalizedMargin !== null ? `margin ${pctOf(epv.normalizedMargin)} · r=${pctOf(epv.wacc)}` : null;
   const rimNote    = rim.isApplicable
@@ -118,7 +118,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
                         <Term k={METRIC_TERM[e.metric]}>{METRIC_LABEL[e.metric] ?? e.metric}</Term>
                       </td>
                       <td className="py-1.5 px-2 text-right font-mono text-ink-300">
-                        {e.sectorMedian !== null ? `${e.sectorMedian.toFixed(2)}x` : '—'}
+                        {fmt(e.sectorMedian, 'x', 2)}
                       </td>
                       <td className="py-1.5 px-2 text-right font-mono text-ink-100">
                         {fmtPrice(e.fairPrice)}
@@ -155,7 +155,7 @@ export default function ValuationDetail({ metrics, price }: Props) {
               <div className="flex items-baseline justify-between">
                 <span className="text-xs text-ink-400">Market implies revenue growth (years 1–2) of</span>
                 <span className="font-mono text-lg font-semibold text-ink-50 tabular">
-                  {(reverseDCF.impliedGrowthRate * 100).toFixed(1)}%/yr
+                  {fmtPct(reverseDCF.impliedGrowthRate, 1)}/yr
                 </span>
               </div>
               <p className="mt-1.5 text-xs text-ink-400">{reverseDCF.interpretation}</p>

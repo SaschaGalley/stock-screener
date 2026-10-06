@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { NarrativeDimension, NarrativeDimensions, ScoreCard, ScoreCriterion, ScoreFinding, ScorePillar } from '../../types';
 import { scoreBarColor, scoreColor } from '../stockList';
-import { verdictForScore } from '../../format';
+import { deNumber, verdictForScore } from '../../format';
 import CheckMark, { type CheckMarkKind } from '../CheckMark';
 import Term from '../Term';
 import { DIMENSION_GLOSSARY, GLOSSARY, PILLAR_GLOSSARY } from '../../glossary';
@@ -80,25 +80,25 @@ function Formula({ card }: { card: ScoreCard }) {
   return (
     <div>
       <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 font-mono text-xs text-ink-400">
-        <Term k="score.factor.score" extra={dataNote} className="text-sky-400">Zahlen {factor.score.toFixed(1)}</Term>
+        <Term k="score.factor.score" extra={dataNote} className="text-sky-400">Zahlen {deNumber(factor.score, 1)}</Term>
         <Term k="score.final.factorWeight">× {fPct} %</Term>
         {narrative && (
           <>
             <span>+</span>
             <Term k="score.narrative.score" extra={narrative.summary} className="text-violet-400">
-              Text {narrative.score === null ? 'Enthaltung' : narrative.score.toFixed(1)}
+              Text {narrative.score === null ? 'Enthaltung' : deNumber(narrative.score, 1)}
             </Term>
             <span>× {nPct} %</span>
           </>
         )}
-        <span>→ {final.blend.toFixed(1)}</span>
+        <span>→ {deNumber(final.blend, 1)}</span>
         {final.adjustment !== 0 && (
           <Term k="score.final.adjustment" extra={final.adjustmentReason}>
-            {final.adjustment > 0 ? '+' : '−'} {Math.abs(final.adjustment).toFixed(1)} Korrektur
+            {final.adjustment > 0 ? '+' : '−'} {deNumber(Math.abs(final.adjustment), 1)} Korrektur
           </Term>
         )}
         <span>=</span>
-        <span className={`text-sm font-bold ${scoreColor(final.score)}`}>{final.score.toFixed(1)}</span>
+        <span className={`text-sm font-bold ${scoreColor(final.score)}`}>{deNumber(final.score, 1)}</span>
         <span className="font-sans text-xs font-semibold text-ink-200">{final.verdict}</span>
         {/* Against the band of the *final* score, not the factor's: those two
             differ whenever the blend moved the number, which is not a cap. */}
@@ -146,7 +146,7 @@ function PillarCell({ p }: { p: ScorePillar }) {
       <div className="flex items-baseline justify-between gap-2 text-xs">
         <Term text={PILLAR_GLOSSARY[p.key]} extra={criteria} className="truncate text-ink-300">{p.label}</Term>
         <span className={`font-mono font-semibold ${scoreColor(p.score)}`}>
-          {p.score === null ? '—' : p.score.toFixed(1)}
+          {p.score === null ? '—' : deNumber(p.score, 1)}
         </span>
       </div>
       <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-ink-800">
@@ -228,7 +228,7 @@ function Checklist({ pillars }: { pillars: ScorePillar[] }) {
             <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
               <span className="font-semibold text-ink-200">{p.label}</span>
               <span className="font-mono text-ink-500">
-                {passed(p)}/{p.criteria.length} ✓ · <span className={scoreColor(p.score)}>{p.score === null ? '—' : p.score.toFixed(1)}</span>
+                {passed(p)}/{p.criteria.length} ✓ · <span className={scoreColor(p.score)}>{p.score === null ? '—' : deNumber(p.score, 1)}</span>
               </span>
             </div>
             <ul className="space-y-1">
@@ -280,7 +280,7 @@ function Details({ card }: { card: ScoreCard }) {
             <Note
               title="Text"
               subtitle={`${narrative.sources.join(', ') || 'keine Quellen'} · ohne Kenntnis der Bewertung gelesen`
-                + (narrative.spread != null ? ` · Median aus ${narrative.runs} Lesungen, Spanne ${narrative.spread.toFixed(1)}` : '')}
+                + (narrative.spread != null ? ` · Median aus ${narrative.runs} Lesungen, Spanne ${deNumber(narrative.spread, 1)}` : '')}
             >
               {narrative.summary}
               {narrative.events.length > 0 && (
@@ -308,8 +308,8 @@ function Details({ card }: { card: ScoreCard }) {
         {/* Why this score sits where it does relative to 5 — the part a single
             digit cannot say, and the reason two stocks at 5.0 are not alike. */}
         <p>
-          Rohwert {factor.raw.toFixed(1)} · Vertrauen ×{factor.shrink.toFixed(2)} ·
-          Überzeugung ×{factor.conviction.toFixed(2)} bei{' '}
+          Rohwert {deNumber(factor.raw, 1)} · Vertrauen ×{deNumber(factor.shrink, 2)} ·
+          Überzeugung ×{deNumber(factor.conviction, 2)} bei{' '}
           <span className="text-ink-300">{Math.round(factor.agreement * 100)} % Einigkeit</span> der Säulen.{' '}
           {factor.agreement >= 0.7
             ? 'Die Linsen ziehen in dieselbe Richtung — Bestätigung ist selbst ein Befund, und der Score darf entsprechend weit von 5 weg.'
@@ -352,7 +352,7 @@ function FindingRow({ f }: { f: ScoreFinding }) {
       <span className="text-ink-300">
         {(f.kind === 'driver' || f.kind === 'drag') && (
           <span className="mr-1 font-mono text-2xs text-ink-500">
-            {f.impact >= 0 ? '+' : '−'}{Math.abs(f.impact).toFixed(2)}
+            {f.impact >= 0 ? '+' : '−'}{deNumber(Math.abs(f.impact), 2)}
           </span>
         )}
         {f.note}

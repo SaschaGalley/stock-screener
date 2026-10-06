@@ -1,4 +1,5 @@
 import type { ConsensusBand } from '../types';
+import { deNumber } from '../format';
 
 interface Props {
   consensus: ConsensusBand | null;
@@ -29,8 +30,8 @@ export default function ConsensusBar({ consensus, height = 44 }: Props) {
     <div
       className="flex w-[3px] shrink-0 flex-col overflow-hidden rounded-sm"
       style={{ height }}
-      title={`Consensus: ${buyPct.toFixed(0)}% buy · ${holdPct.toFixed(0)}% hold · ${sellPct.toFixed(0)}% sell`}
-      aria-label={`Buy ${buyPct.toFixed(0)}%, hold ${holdPct.toFixed(0)}%, sell ${sellPct.toFixed(0)}%`}
+      title={`Consensus: ${deNumber(buyPct, 0)} % buy · ${deNumber(holdPct, 0)} % hold · ${deNumber(sellPct, 0)} % sell`}
+      aria-label={`Buy ${deNumber(buyPct, 0)} %, hold ${deNumber(holdPct, 0)} %, sell ${deNumber(sellPct, 0)} %`}
     >
       {/* Colors are CSS vars — edit the hex values in styles.css under
           --color-consensus-buy / -hold / -sell to retheme the bar. */}

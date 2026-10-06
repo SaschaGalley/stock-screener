@@ -1,5 +1,6 @@
 import ReactECharts from './ECharts';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
+import { fmtPercentPoints } from '../../format';
 
 interface Props {
   returns: any;
@@ -29,7 +30,7 @@ export default function ReturnsChart({ returns }: Props) {
           backgroundColor: CHART_COLORS.bg,
           borderColor: '#1e293b',
           textStyle: { color: CHART_COLORS.text, fontSize: 13 },
-          valueFormatter: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+          valueFormatter: (v: number) => fmtPercentPoints(v, 1),
         },
         xAxis: {
           type: 'category',
@@ -39,7 +40,7 @@ export default function ReturnsChart({ returns }: Props) {
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: CHART_COLORS.ink, fontSize: 12, formatter: '{value}%' },
+          axisLabel: { color: CHART_COLORS.ink, fontSize: 12, formatter: (v: number) => `${v.toLocaleString('de-DE').replace('-', '−')} %` },
           splitLine: { lineStyle: { color: '#1e293b' } },
         },
         series: [{

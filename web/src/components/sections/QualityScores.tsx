@@ -1,5 +1,5 @@
 import type { ComputedMetrics } from '../../types';
-import { fmt, fmtPct } from '../../format';
+import { deNumber, fmt, fmtPct } from '../../format';
 import Term from '../Term';
 import Tip from '../Tip';
 import { GLOSSARY, type GlossaryKey } from '../../glossary';
@@ -82,28 +82,28 @@ function PiotroskiCard({ p }: { p: any }) {
 }
 
 function AltmanCard({ a }: { a: any }) {
-  if (a.score === null) return <ScoreCard title="Altman Z-Score" term="metrics.altmanZ.score" value="N/A" color="text-ink-500" />;
+  if (a.score === null) return <ScoreCard title="Altman Z-Score" term="metrics.altmanZ.score" value="—" color="text-ink-500" />;
   const color = a.zone === 'safe' ? 'text-emerald-400' : a.zone === 'distress' ? 'text-red-400' : 'text-amber-400';
   return (
     <ScoreCard
       title="Altman Z-Score" term="metrics.altmanZ.score"
-      value={a.score.toFixed(2)}
+      value={deNumber(a.score, 2)}
       subtitle={`${a.zone} zone`}
       color={color}
-      body={`${a.model} model · safe >${a.thresholds.safe}, distress <${a.thresholds.distress}`}
+      body={`${a.model} model · safe >${a.thresholds.safe.toLocaleString('de-DE')}, distress <${a.thresholds.distress.toLocaleString('de-DE')}`}
     />
   );
 }
 
 function BeneishCard({ b }: { b: any }) {
-  if (b.score === null) return <ScoreCard title="Beneish M-Score" term="metrics.beneish.score" value="N/A" color="text-ink-500" body={`${b.variablesComputed}/8 indices`} />;
+  if (b.score === null) return <ScoreCard title="Beneish M-Score" term="metrics.beneish.score" value="—" color="text-ink-500" body={`${b.variablesComputed}/8 indices`} />;
   const color = b.probability === 'unlikely manipulator' ? 'text-emerald-400'
               : b.probability === 'likely manipulator'   ? 'text-red-400'
               : 'text-amber-400';
   return (
     <ScoreCard
       title="Beneish M-Score" term="metrics.beneish.score"
-      value={b.score.toFixed(2)}
+      value={deNumber(b.score, 2)}
       subtitle={b.probability}
       color={color}
       body={`${b.variablesComputed}/8 indices computed`}
@@ -112,13 +112,13 @@ function BeneishCard({ b }: { b: any }) {
 }
 
 function SortinoCard({ s }: { s: any }) {
-  if (s.ratio === null) return <ScoreCard title="Sortino Ratio" term="metrics.sortino.ratio" value="N/A" color="text-ink-500" body="needs ≥6 months of data" />;
+  if (s.ratio === null) return <ScoreCard title="Sortino Ratio" term="metrics.sortino.ratio" value="—" color="text-ink-500" body="needs ≥6 months of data" />;
   const color = s.ratio >= 2 ? 'text-emerald-400' : s.ratio >= 1 ? 'text-emerald-500'
               : s.ratio >= 0.5 ? 'text-amber-400' : 'text-red-400';
   return (
     <ScoreCard
       title="Sortino Ratio" term="metrics.sortino.ratio"
-      value={s.ratio.toFixed(2)}
+      value={deNumber(s.ratio, 2)}
       subtitle={s.interpretation}
       color={color}
       body={`Annual ${fmtPct(s.annualReturn)} · downside dev ${fmtPct(s.downsideDeviation)}`}
@@ -127,22 +127,22 @@ function SortinoCard({ s }: { s: any }) {
 }
 
 function RuleOf40Card({ r }: { r: any }) {
-  if (r.score === null) return <ScoreCard title="Rule of 40" term="metrics.ruleOf40.score" value="N/A" color="text-ink-500" />;
+  if (r.score === null) return <ScoreCard title="Rule of 40" term="metrics.ruleOf40.score" value="—" color="text-ink-500" />;
   const color = r.passes ? 'text-emerald-400' : 'text-amber-400';
   return (
     <ScoreCard
       title="Rule of 40" term="metrics.ruleOf40.score"
-      value={r.score.toFixed(1)}
+      value={deNumber(r.score, 1)}
       subtitle={r.passes ? 'PASSES' : 'fails'}
       color={color}
-      body={`Rev growth ${r.revenueGrowthPct?.toFixed(1)}% + margin ${r.profitMarginPct?.toFixed(1)}%`}
+      body={`Rev growth ${fmt(r.revenueGrowthPct, ' %', 1)} + margin ${fmt(r.profitMarginPct, ' %', 1)}`}
     />
   );
 }
 
 function InterestCard({ ic }: { ic: any }) {
   if (ic.ratio === null && ic.interpretation === 'unknown') {
-    return <ScoreCard title="Interest Coverage" term="metrics.interestCoverage.ratio" value="N/A" color="text-ink-500" />;
+    return <ScoreCard title="Interest Coverage" term="metrics.interestCoverage.ratio" value="—" color="text-ink-500" />;
   }
   if (ic.ratio === null && ic.interpretation === 'excellent') {
     return <ScoreCard title="Interest Coverage" term="metrics.interestCoverage.ratio" value="∞" subtitle="debt-free" color="text-emerald-400" />;

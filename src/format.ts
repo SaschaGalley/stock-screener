@@ -87,3 +87,60 @@ export function fmtPrice(n: number | null | undefined, currency?: string | null)
   if (n === null || n === undefined || !Number.isFinite(n)) return 'N/A';
   return `${currencyPrefix(currency)}${n.toFixed(2)}`;
 }
+
+// ─── The same numbers as the German page writes them ─────────────────────────
+//
+// The browser is German and wrote "$328.09" beside "−1,7 %": amounts in the
+// terminal's notation, percentages in the page's own. These are the page's
+// notation for every formatter above — decimal comma, thousands point, the
+// currency after the amount, Mio./Mrd./Bio. — under the same contract (same
+// arguments, an em dash for anything unusable). The web app imports them
+// under the plain names; the terminal and the prompts keep the ones above.
+
+const UNUSABLE_DE = '—';
+const isNum = (n: number | null | undefined): n is number => n !== null && n !== undefined && Number.isFinite(n);
+
+/** 1234.5 → "1.234,50"; the minus is a real minus. */
+export function deNumber(n: number, decimals = 2): string {
+  return n.toLocaleString('de-DE', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).replace('-', '−');
+}
+
+/** Currency sign written after a German amount: "328,09 $", "154,34 €", "42,00 CHF". */
+export function currencySuffix(code?: string | null): string {
+  return currencyPrefix(code).trim();
+}
+
+export function fmtDe(n: number | null | undefined, suffix = '', decimals = 2): string {
+  return isNum(n) ? `${deNumber(n, decimals)}${suffix}` : UNUSABLE_DE;
+}
+
+export function fmtPctDe(n: number | null | undefined, decimals = 1): string {
+  return isNum(n) ? `${deNumber(n * 100, decimals)} %` : UNUSABLE_DE;
+}
+
+export function fmtSignedPctDe(n: number | null | undefined, decimals = 1): string {
+  return isNum(n) ? `${n >= 0 ? '+' : ''}${deNumber(n * 100, decimals)} %` : UNUSABLE_DE;
+}
+
+export function fmtPercentPointsDe(n: number | null | undefined, decimals = 1): string {
+  return isNum(n) ? `${n >= 0 ? '+' : ''}${deNumber(n, decimals)} %` : UNUSABLE_DE;
+}
+
+/** 1.23e9 → "1,23 Mrd." — share counts and other quantities without a unit. */
+export function fmtCountDe(n: number | null | undefined): string {
+  if (!isNum(n)) return UNUSABLE_DE;
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `${deNumber(n / 1e12)} Bio.`;
+  if (abs >= 1e9)  return `${deNumber(n / 1e9)} Mrd.`;
+  if (abs >= 1e6)  return `${deNumber(n / 1e6)} Mio.`;
+  if (abs >= 1e3)  return `${deNumber(n / 1e3, 1)} Tsd.`;
+  return deNumber(n, 0);
+}
+
+export function fmtBigDe(n: number | null | undefined, currency?: string | null): string {
+  return isNum(n) ? `${fmtCountDe(n)} ${currencySuffix(currency)}` : UNUSABLE_DE;
+}
+
+export function fmtPriceDe(n: number | null | undefined, currency?: string | null): string {
+  return isNum(n) ? `${deNumber(n)} ${currencySuffix(currency)}` : UNUSABLE_DE;
+}

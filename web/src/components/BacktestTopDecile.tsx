@@ -1,21 +1,22 @@
 import type { BacktestResponse } from '../types';
+import { deNumber, fmtPct, fmtSignedPct } from '../format';
 import { TOP_FEATURES, type SplitStat, type TopSplit } from '../../../src/backtest/top-decile';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
 
 /** How each feature reads: a return or a share in per cent, a size in billions, a ratio or a pillar as it is. */
 const FORMAT: Record<string, (v: number) => string> = {
-  mom12: (v) => `${(v * 100).toFixed(0)} %`,
-  mom3: (v) => `${(v * 100).toFixed(1)} %`,
-  nearHigh: (v) => `${(v * 100).toFixed(0)} %`,
-  size: (v) => `${(v / 1e9).toFixed(1)} Mrd.`,
-  upside: (v) => `${(v * 100).toFixed(0)} %`,
-  growth: (v) => `${(v * 100).toFixed(1)} %`,
-  ps: (v) => `${v.toFixed(1)}×`,
-  pe: (v) => `${v.toFixed(1)}×`,
+  mom12: (v) => fmtPct(v, 0),
+  mom3: (v) => fmtPct(v, 1),
+  nearHigh: (v) => fmtPct(v, 0),
+  size: (v) => `${deNumber(v / 1e9, 1)} Mrd.`,
+  upside: (v) => fmtPct(v, 0),
+  growth: (v) => fmtPct(v, 1),
+  ps: (v) => `${deNumber(v, 1)}×`,
+  pe: (v) => `${deNumber(v, 1)}×`,
 };
-const fmt = (key: string, v: number | null) => (v === null ? '—' : (FORMAT[key] ?? ((x: number) => x.toFixed(2)))(v));
-const pct = (s: SplitStat) => (s.mean === null ? '—' : `${s.mean >= 0 ? '+' : ''}${(s.mean * 100).toFixed(2)} %`);
+const fmt = (key: string, v: number | null) => (v === null ? '—' : (FORMAT[key] ?? ((x: number) => deNumber(x, 2)))(v));
+const pct = (s: SplitStat) => fmtSignedPct(s.mean, 2);
 const SEGMENT: Record<string, string> = { sp500: '500', sp400: '400', sp600: '600' };
 
 const same = (a: SplitStat, b: SplitStat) => a.mean !== null && b.mean !== null && Math.sign(a.mean) === Math.sign(b.mean);
@@ -50,7 +51,7 @@ function SplitTable({ splits, h, monthName, where, beside }: {
                 <td className={`px-4 py-1 ${steady ? 'text-ink-100' : 'text-ink-300'}`}>{x.label}</td>
                 <td className="px-2 py-1 text-right font-mono text-ink-300">{pct(x.high)}</td>
                 <td className="px-2 py-1 text-right font-mono text-ink-300">{pct(x.low)}</td>
-                <td className="px-2 py-1 text-right font-mono text-ink-100">{pct(x.diff)} <span className="text-ink-500">({x.diff.t?.toFixed(1) ?? '—'})</span></td>
+                <td className="px-2 py-1 text-right font-mono text-ink-100">{pct(x.diff)} <span className="text-ink-500">({x.diff.t == null ? '—' : deNumber(x.diff.t, 1)})</span></td>
                 <td className="px-2 py-1 text-right font-mono text-ink-400">{pct(x.first)}</td>
                 <td className="px-2 py-1 text-right font-mono text-ink-400">{pct(x.second)}</td>
                 <td className="px-4 py-1 text-right font-mono text-ink-400">{pct(x.ninth)}</td>

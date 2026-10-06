@@ -1,4 +1,5 @@
 import type { EvaluationResponse } from '../types';
+import { deNumber, fmt, fmtPct, fmtSignedPct } from '../format';
 
 /**
  * The pieces the evaluation page and the backtest panel share: how a return
@@ -9,7 +10,7 @@ type IcRow = EvaluationResponse['evaluation']['ics'][number];
 type WeightRow = EvaluationResponse['weights'][number];
 
 export function pct(v: number | null): string {
-  return v === null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)} %`;
+  return fmtSignedPct(v, 1);
 }
 
 /** How much the sample supports reading anything into the row. */
@@ -68,12 +69,12 @@ export function IcTable({ signals, rows, periodLabel }: {
             return (
               <tr key={s.key} className="border-b border-ink-800/60 last:border-0">
                 <td className={`px-4 py-1.5 ${s.pillar ? 'pl-8 text-ink-300' : 'font-medium text-ink-100'}`}>{s.title}</td>
-                <td className="px-2 py-1.5 text-right font-mono">{r.meanIc?.toFixed(3) ?? '—'}</td>
+                <td className="px-2 py-1.5 text-right font-mono">{fmt(r.meanIc, '', 3)}</td>
                 <td className="px-2 py-1.5"><SignedBar value={r.meanIc} scale={0.1} /></td>
-                <td className="px-2 py-1.5 text-right font-mono text-ink-300">{r.tStat?.toFixed(1) ?? '—'}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-ink-300">{fmt(r.tStat, '', 1)}</td>
                 <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
-                  {r.neutralIc === null ? '—' : r.neutralIc.toFixed(3)}
-                  {r.neutralTStat !== null && <span className="text-ink-500"> ({r.neutralTStat.toFixed(1)})</span>}
+                  {fmt(r.neutralIc, '', 3)}
+                  {r.neutralTStat !== null && <span className="text-ink-500"> ({deNumber(r.neutralTStat, 1)})</span>}
                 </td>
                 <td className="px-2 py-1.5 text-right font-mono text-ink-300">
                   {r.hitRate === null ? '—' : `${Math.round(r.hitRate * 100)} %`}
@@ -111,12 +112,12 @@ export function WeightsTable({ weights }: { weights: (WeightRow & { title?: stri
             return (
               <tr key={w.key} className="border-b border-ink-800/60 last:border-0">
                 <td className="px-4 py-1.5 text-ink-200">{w.title ?? w.key}</td>
-                <td className="px-2 py-1.5 text-right font-mono text-ink-300">{(w.current * 100).toFixed(0)} %</td>
+                <td className="px-2 py-1.5 text-right font-mono text-ink-300">{fmtPct(w.current, 0)}</td>
                 <td className={`px-2 py-1.5 text-right font-mono ${Math.abs(delta) < 0.005 ? 'text-ink-400' : delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {(w.suggested * 100).toFixed(0)} %
+                  {fmtPct(w.suggested, 0)}
                 </td>
-                <td className="px-2 py-1.5 text-right font-mono text-ink-300">{w.ic?.toFixed(3) ?? '—'}</td>
-                <td className="px-2 py-1.5 text-right font-mono text-ink-400">{w.shrunkIc.toFixed(3)}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-ink-300">{fmt(w.ic, '', 3)}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-ink-400">{deNumber(w.shrunkIc, 3)}</td>
                 <td className="px-4 py-1.5 text-right font-mono text-ink-500">{w.independent}</td>
               </tr>
             );

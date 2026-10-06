@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import type { CompositeFairValue } from '../types';
 import type { CoverageView } from '../../../src/stock-history-service';
 import { CoverageStrip, CoverageTable } from './AnalystCoverage';
-import { fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
+import { deNumber, fmtSignedPct, mosColor, mosBgColor, recommendationBarColor, relativeTime } from '../format';
 import { useMoney } from '../currency';
 import RecommendationBadge from './RecommendationBadge';
 import VerdictEvidence, { FairValueEvidence } from './VerdictEvidence';
@@ -112,7 +112,7 @@ export default function VerdictHero({
               />
               <div className="flex items-center gap-1">
                 <ScoreBar score={llm.score} recommendation={llm.recommendation} />
-                <span className="ml-1 font-mono text-sm font-semibold text-ink-100">{llm.score}/10</span>
+                <span className="ml-1 font-mono text-sm font-semibold text-ink-100">{deNumber(llm.score, 1)}/10</span>
               </div>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-ink-300">
@@ -171,7 +171,7 @@ export default function VerdictHero({
 
             <div className="mt-auto flex flex-wrap items-center gap-x-1.5 pt-2 text-xs text-ink-500">
               <Term k="metrics.composite.confidence">
-                Konfidenz {Number.isFinite(composite.confidence) ? composite.confidence.toFixed(1).replace('.', ',') : '—'}/10
+                Konfidenz {Number.isFinite(composite.confidence) ? deNumber(composite.confidence, 1) : '—'}/10
               </Term>
               {composite.pctPrimaryUndervalued !== null && composite.pctPrimaryUndervalued !== undefined && (
                 <>

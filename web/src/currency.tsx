@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { currencyPrefix, fmtBig, fmtCount, fmtPrice } from '../../src/format';
+import { currencySuffix, fmtBig, fmtCount, fmtPrice } from './format';
 
 /**
  * The trading currency of whatever is on screen.
@@ -40,8 +40,8 @@ export function useMoney() {
   return useMemo(
     () => ({
       code,
-      /** Prefix only — for hand-built strings that can't call a formatter. */
-      symbol: currencyPrefix(code),
+      /** The sign alone, as it follows an amount — for hand-built strings that can't call a formatter. */
+      symbol: currencySuffix(code),
       fmtPrice: (n: number | null | undefined) => fmtPrice(n, code),
       fmtBig:   (n: number | null | undefined) => fmtBig(n, code),
       /** Counts are currency-free; re-exported so components need one import. */

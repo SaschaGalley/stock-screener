@@ -1,9 +1,11 @@
 import { isStrongRecommendation, recommendationTone } from '../../src/verdict';
 
-// Numbers are formatted the same way in the terminal and the browser, so the
-// formatters come from the shared module; this file owns only the colours.
+// The formatters come from the shared module, in the German notation the page
+// is written in — "328,09 $", "−1,7 %", "4,87 Bio. $" — under the plain names,
+// so no call site has to know; this file owns only the colours.
 export {
-  fmt, fmtPct, fmtSignedPct, fmtPercentPoints, fmtBig, fmtCount, fmtPrice, currencyPrefix,
+  fmtDe as fmt, fmtPctDe as fmtPct, fmtSignedPctDe as fmtSignedPct, fmtPercentPointsDe as fmtPercentPoints,
+  fmtBigDe as fmtBig, fmtCountDe as fmtCount, fmtPriceDe as fmtPrice, currencySuffix, deNumber,
 } from '../../src/format';
 // `fmtBig`/`fmtPrice`/`currencyPrefix` take the currency as an argument. Views that
 // show a single stock get it from `useMoney()` (see currency.tsx) instead; the

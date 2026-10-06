@@ -1,7 +1,7 @@
 import EarningsSurpriseChart from '../charts/EarningsSurpriseChart';
 import ForwardGrowthChart from '../charts/ForwardGrowthChart';
 import ForecastChart from '../charts/ForecastChart';
-import { fmt } from '../../format';
+import { fmt, fmtSignedPct } from '../../format';
 import { useMoney } from '../../currency';
 import Term from '../Term';
 
@@ -42,7 +42,7 @@ export default function EarningsBlock({ financials: f }: Props) {
                   <td className="py-1 px-2 text-right font-mono text-ink-100">{fmt(q.epsEstimate, '', 2)}</td>
                   <td className="py-1 px-2 text-right font-mono text-ink-100">{fmt(q.epsActual, '', 2)}</td>
                   <td className={`py-1 pl-2 text-right font-mono ${q.surprisePct == null ? 'text-ink-500' : q.surprisePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {q.surprisePct == null ? '—' : `${q.surprisePct >= 0 ? '+' : ''}${(q.surprisePct * 100).toFixed(1)}%`}
+                    {fmtSignedPct(q.surprisePct, 1)}
                   </td>
                 </tr>
               ))}
@@ -77,11 +77,11 @@ export default function EarningsBlock({ financials: f }: Props) {
                     <td className="py-1 pr-2 text-ink-300">{map[e.period] ?? e.period}</td>
                     <td className="py-1 px-2 text-right font-mono text-ink-100">{e.epsEstimate ? fmtPrice(e.epsEstimate) : '—'}</td>
                     <td className={`py-1 px-2 text-right font-mono ${e.epsGrowth > 0 ? 'text-emerald-400' : e.epsGrowth < 0 ? 'text-red-400' : 'text-ink-400'}`}>
-                      {e.epsGrowth === null ? '—' : `${e.epsGrowth >= 0 ? '+' : ''}${(e.epsGrowth * 100).toFixed(1)}%`}
+                      {fmtSignedPct(e.epsGrowth, 1)}
                     </td>
                     <td className="py-1 px-2 text-right font-mono text-ink-100">{e.revenueEstimate ? fmtBig(e.revenueEstimate) : '—'}</td>
                     <td className={`py-1 pl-2 text-right font-mono ${e.revenueGrowth > 0 ? 'text-emerald-400' : e.revenueGrowth < 0 ? 'text-red-400' : 'text-ink-400'}`}>
-                      {e.revenueGrowth === null ? '—' : `${e.revenueGrowth >= 0 ? '+' : ''}${(e.revenueGrowth * 100).toFixed(1)}%`}
+                      {fmtSignedPct(e.revenueGrowth, 1)}
                     </td>
                   </tr>
                 );

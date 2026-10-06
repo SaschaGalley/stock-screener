@@ -1,5 +1,6 @@
 import type { BacktestResponse } from '../types';
 import { SignedBar } from './evaluationParts';
+import { deNumber, fmt, fmtPct } from '../format';
 
 type Validation = NonNullable<BacktestResponse['backtest']>['fit'];
 type Fold = Validation['forward'];
@@ -7,10 +8,10 @@ type Row = Validation['full']['rows'][number];
 type InForce = BacktestResponse['inForce'];
 
 const months = (h: number) => (h === 1 ? '1 Monat' : `${h} Monate`);
-const share = (w: number) => `${(w * 100).toFixed(1)} %`;
+const share = (w: number) => fmtPct(w, 1);
 const years = (from: string | null, to: string | null) => `${from?.slice(0, 4) ?? '—'}–${to?.slice(0, 4) ?? '—'}`;
 const signed = (v: number | null | undefined, digits: number) =>
-  (v === null || v === undefined ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(digits)}`);
+  (v === null || v === undefined ? '—' : `${v >= 0 ? '+' : ''}${deNumber(v, digits)}`);
 const decimal = (v: number, digits: number) => v.toFixed(digits).replace('.', ',');
 const rowId = (r: Row) => `${r.pillar}.${r.key ?? ''}`;
 
@@ -36,12 +37,12 @@ function FoldRows({ name, fold }: { name: string; fold: Fold }) {
             <td className="px-2 py-1.5 font-mono text-ink-400">{i === 0 ? years(fold.fit.from, fold.fit.to) : ''}</td>
             <td className="px-2 py-1.5 font-mono text-ink-400">{i === 0 ? years(fold.tested.from, fold.tested.to) : ''}</td>
             <td className="px-2 py-1.5 text-ink-300">{months(c.horizon)}</td>
-            <td className="px-2 py-1.5 text-right font-mono text-ink-300">{c.judgment.ic?.toFixed(3) ?? '—'}</td>
-            <td className="px-2 py-1.5 text-right font-mono text-ink-100">{c.fitted.ic?.toFixed(3) ?? '—'}</td>
+            <td className="px-2 py-1.5 text-right font-mono text-ink-300">{fmt(c.judgment.ic, '', 3)}</td>
+            <td className="px-2 py-1.5 text-right font-mono text-ink-100">{fmt(c.fitted.ic, '', 3)}</td>
             <td className={`px-2 py-1.5 text-right font-mono ${!gain ? 'text-ink-500' : gain > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
               {signed(gain, 4)}
             </td>
-            <td className="px-2 py-1.5 text-right font-mono text-ink-300">{same ? '—' : c.gain.tStat?.toFixed(1) ?? '—'}</td>
+            <td className="px-2 py-1.5 text-right font-mono text-ink-300">{same ? '—' : fmt(c.gain.tStat, '', 1)}</td>
             <td className="px-4 py-1.5 text-right font-mono text-ink-400">
               {same
                 ? <span className="text-ink-500">Regel ändert nichts</span>
@@ -160,7 +161,7 @@ export default function WeightFit({ v, inForce }: { v: Validation; inForce: InFo
                   <HalfIc r={first.get(rowId(r))} />
                   <HalfIc r={second.get(rowId(r))} />
                   <td className="px-4 py-1.5 text-right font-mono text-ink-400">
-                    {signed(r.ic, 3)}{r.se !== null && <span className="text-ink-500"> ± {r.se.toFixed(3)}</span>}
+                    {signed(r.ic, 3)}{r.se !== null && <span className="text-ink-500"> ± {deNumber(r.se, 3)}</span>}
                   </td>
                 </tr>
               );

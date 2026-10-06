@@ -5,7 +5,7 @@ import { averageScore, scoreColor, type GroupKey, type ListGroup } from './stock
 import ScoreSplit from './ScoreSplit';
 import RecommendationBadge from './RecommendationBadge';
 import Tip from './Tip';
-import { RECOMMENDATIONS } from '../format';
+import { RECOMMENDATIONS, deNumber } from '../format';
 
 /**
  * The part of a row that both densities show.
@@ -140,12 +140,12 @@ export function StockScore({ row, split = false }: { row: OverviewRow; split?: b
           className={`w-8 text-right text-2xs tabular ${
             (delta ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'
           }`}
-          content={delta ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} seit dem ersten Verdict` : null}
+          content={delta ? `${delta > 0 ? '+' : ''}${deNumber(delta, 1)} seit dem ersten Urteil` : null}
         >
-          {delta ? `${delta > 0 ? '▲' : '▼'}${Math.abs(delta).toFixed(1)}` : ''}
+          {delta ? `${delta > 0 ? '▲' : '▼'}${deNumber(Math.abs(delta), 1)}` : ''}
         </Tip>
         <span className={`w-8 text-right font-mono text-base font-semibold leading-5 tabular ${scoreColor(row.score)}`}>
-          {row.score === null ? '—' : row.score.toFixed(1)}
+          {row.score === null ? '—' : deNumber(row.score, 1)}
         </span>
       </span>
       {split && <ScoreSplit row={row} />}
@@ -179,7 +179,7 @@ export function GroupAverage({ group }: { group: ListGroup }) {
   if (!avg) return null;
   return (
     <span className="whitespace-nowrap font-mono text-xs text-ink-500">
-      Ø <span className={`inline-block w-8 text-right font-semibold ${scoreColor(avg.avg)}`}>{avg.avg.toFixed(1)}</span>
+      Ø <span className={`inline-block w-8 text-right font-semibold ${scoreColor(avg.avg)}`}>{deNumber(avg.avg, 1)}</span>
     </span>
   );
 }
@@ -190,7 +190,7 @@ export function rowTitle(row: OverviewRow, fmtBig: (n: number | null, c: string 
     row.companyName,
     row.sector ?? '—',
     fmtBig(row.marketCap, row.currency),
-    row.score === null ? 'nicht bewertet' : `Score ${row.score.toFixed(1)}`,
+    row.score === null ? 'nicht bewertet' : `Score ${deNumber(row.score, 1)}`,
     row.watched ? null : 'nicht in der Watchlist',
   ].filter(Boolean).join(' · ');
 }

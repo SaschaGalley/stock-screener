@@ -3,7 +3,7 @@ import ReactECharts from '../charts/ECharts';
 import { useSectionFinding } from '../Section';
 import { api } from '../../api';
 import { useMoney } from '../../currency';
-import { fmtSignedPct } from '../../format';
+import { deNumber, fmt, fmtPct, fmtSignedPct } from '../../format';
 import { CHART_COLORS, baseTextStyle } from '../charts/chartTheme';
 import {
   HISTORY_MULTIPLES, discountRange, growthVsPrice, multipleStats, normalPE,
@@ -254,11 +254,11 @@ function EarningsView({ history }: { history: History }) {
         const p = pts[i];
         const rows = items.map((it) => `${it.marker}${it.seriesName}: ${it.value == null ? '—' : fmtPrice(it.value)}`);
         return [monthLabel(p.date), ...rows, `EPS (TTM): ${p.eps == null ? '—' : fmtPrice(p.eps)}`,
-          `KGV: ${p.pe == null ? '—' : p.pe.toFixed(1)}`].join('<br/>');
+          `KGV: ${fmt(p.pe, '', 1)}`].join('<br/>');
       },
     },
     series: [
-      line(pe !== null ? `Gewinn × Median-KGV ${pe.toFixed(1)}` : 'Gewinn × Median-KGV', justified, CHART_COLORS.green, {
+      line(pe !== null ? `Gewinn × Median-KGV ${deNumber(pe, 1)}` : 'Gewinn × Median-KGV', justified, CHART_COLORS.green, {
         areaStyle: { color: CHART_COLORS.green, opacity: 0.12 },
       }),
       line('Kurs', pts.map((p) => p.price), CHART_COLORS.text),
@@ -269,7 +269,7 @@ function EarningsView({ history }: { history: History }) {
     <div className="space-y-2">
       <Lede>
         Die grüne Fläche ist der Kurs, den der jeweilige Gewinn je Aktie beim üblichen KGV der Aktie
-        {pe !== null ? <> (Median {pe.toFixed(1)})</> : null} ergäbe. Läuft der Kurs darüber, zahlt der Markt mehr als
+        {pe !== null ? <> (Median {deNumber(pe, 1)})</> : null} ergäbe. Läuft der Kurs darüber, zahlt der Markt mehr als
         sonst für denselben Gewinn
         {lastJustified != null && last
           ? <> — heute <strong className="text-ink-100">{fmtSignedPct(last.price / lastJustified - 1, 0)}</strong>.</>
@@ -299,7 +299,7 @@ function MultiplesView({ history }: { history: History }) {
   const [key, setKey] = useState<HistoryMultiple>(available[0]?.key ?? 'pe');
   const stats = useMemo(() => multipleStats(pts, key), [pts, key]);
   const dates = pts.map((p) => p.date);
-  const fmtX = (v: number) => `${v.toFixed(1)}x`;
+  const fmtX = (v: number) => fmt(v, 'x', 1);
 
   const flat = (v: number | null) => dates.map(() => v);
   // Capped near the top of the range rather than at its peak: ServiceNow's P/E
@@ -350,7 +350,7 @@ function MultiplesTable({ history, sector, fair }: { history: History; sector: S
     .map((m) => ({ ...m, s: multipleStats(history.points, m.key) }))
     .filter((r) => r.s.median5 !== null);
   if (rows.length === 0) return null;
-  const x = (v: number | null) => (v === null ? '—' : `${v.toFixed(1)}x`);
+  const x = (v: number | null) => fmt(v, 'x', 1);
   // Five years where the filings reach that far; an annual series starts a
   // quarter after its first fiscal year and says so.
   const span = `${Math.min(5, Math.max(1, Math.round(Math.max(...rows.map((r) => r.s.months)) / 12)))}J`;
@@ -433,28 +433,28 @@ function SectorCells({ d }: { d: SectorMultiples['multiples'][HistoryMultiple] }
     <>
       <td
         className="hidden py-1 text-right font-mono text-ink-300 md:table-cell"
-        title={`Mittlere Hälfte ${d.p25.toFixed(1)}x – ${d.p75.toFixed(1)}x, ${d.n} Werte`}
+        title={`Mittlere Hälfte ${fmt(d.p25, 'x', 1)} – ${fmt(d.p75, 'x', 1)}, ${deNumber(d.n, 0)} Werte`}
       >
-        {d.median.toFixed(1)}x
+        {fmt(d.median, 'x', 1)}
       </td>
       <td
         className={`hidden py-1 text-right font-mono md:table-cell ${d.rank === null ? 'text-ink-500' : d.rank > 0.75 ? 'text-red-400' : d.rank < 0.25 ? 'text-emerald-400' : 'text-ink-300'}`}
-        title={d.own !== null ? `Heute ${d.own.toFixed(1)}x, verglichen mit ${d.n} Werten` : 'Kein positiver Wert heute'}
+        title={d.own !== null ? `Heute ${fmt(d.own, 'x', 1)}, verglichen mit ${deNumber(d.n, 0)} Werten` : 'Kein positiver Wert heute'}
       >
-        {d.rank === null ? '—' : `${Math.round(d.rank * 100)} % von ${d.n}`}
+        {d.rank === null ? '—' : `${Math.round(d.rank * 100)} % von ${deNumber(d.n, 0)}`}
       </td>
     </>
   );
 }
 
-const pctOf = (v: number | null) => (v === null ? '—' : `${(v * 100).toFixed(0)} %`);
+const pctOf = (v: number | null) => fmtPct(v, 0);
 
 /** The inputs and the fit behind a fair multiple, for its tooltip. */
 function fairHint(f: FairRatio): string {
   const i = f.inputs;
   return `Erwartet aus Umsatzwachstum ${pctOf(i.revenueGrowth)}, operativer Marge ${pctOf(i.operatingMargin)}, `
-    + `Bruttomarge ${pctOf(i.grossMargin)}, Beta ${i.beta?.toFixed(2) ?? '—'} und Sektor ${i.sector ?? '—'} — `
-    + `Regression über ${f.n} Werte des Universums, R² ${f.r2.toFixed(2)}.`;
+    + `Bruttomarge ${pctOf(i.grossMargin)}, Beta ${fmt(i.beta, '', 2)} und Sektor ${i.sector ?? '—'} — `
+    + `Regression über ${deNumber(f.n, 0)} Werte des Universums, R² ${deNumber(f.r2, 2)}.`;
 }
 
 /** The multiple the stock's growth, margins and risk would normally earn. */
@@ -465,7 +465,7 @@ function FairCell({ f }: { f: FairRatio | undefined }) {
     <td
       className={`hidden py-1 text-right font-mono md:table-cell ${gap === null ? 'text-ink-300' : gap > 0.15 ? 'text-red-400' : gap < -0.15 ? 'text-emerald-400' : 'text-ink-300'}`}
     >
-      <Tip content={fairHint(f)}>{f.fair.toFixed(1)}x</Tip>
+      <Tip content={fairHint(f)}>{fmt(f.fair, 'x', 1)}</Tip>
     </td>
   );
 }
@@ -482,13 +482,13 @@ function FairLede({ fair }: { fair: FairRatios }) {
   return (
     <p className="text-xs leading-relaxed text-ink-300" title={fairHint(f)}>
       Wachstum, Margen und Risiko tragen über das ganze Universum gerechnet ein {label} von etwa{' '}
-      <strong className="text-ink-100">{f.fair.toFixed(1)}x</strong>; heute{' '}
-      <strong className="text-ink-100">{f.actual.toFixed(1)}x</strong>, {Math.abs(gap) < 0.1
+      <strong className="text-ink-100">{fmt(f.fair, 'x', 1)}</strong>; heute{' '}
+      <strong className="text-ink-100">{fmt(f.actual, 'x', 1)}</strong>, {Math.abs(gap) < 0.1
         ? 'also etwa das, was die Zahlen tragen.'
         : gap > 0
           ? `${Math.round(gap * 100)} % mehr, als die Zahlen allein tragen — der Markt zahlt einen Aufschlag, den sie nicht erklären.`
           : `${Math.round(-gap * 100)} % weniger, als die Zahlen tragen — ein Abschlag, den sie nicht erklären.`}
-      <span className="text-ink-500"> (R² {f.r2.toFixed(2)})</span>
+      <span className="text-ink-500"> (R² {deNumber(f.r2, 2)})</span>
     </p>
   );
 }

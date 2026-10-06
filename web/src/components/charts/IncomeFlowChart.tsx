@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import ReactECharts from './ECharts';
 import { api } from '../../api';
-import { fmtBig } from '../../format';
+import { fmtBig, fmtPct } from '../../format';
 import { CHART_COLORS, baseTextStyle } from './chartTheme';
 import { useArchive } from '../useArchive';
 import { flowLinks, type IncomeFlow } from '../../../../src/analysis/income-flow';
@@ -33,7 +33,7 @@ export default function IncomeFlowChart({ symbol }: { symbol: string }) {
   for (const l of links) kindOf.set(l.target, l.kind === 'cost' ? 'cost' : kindOf.get(l.target) ?? 'income');
   for (const l of links) if (l.kind === 'gap') kindOf.set(l.source, 'gap');
   const color = (n: string) => (kindOf.get(n) === 'cost' ? CHART_COLORS.red : kindOf.get(n) === 'gap' ? CHART_COLORS.amber : n === 'Umsatz' ? CHART_COLORS.blue : CHART_COLORS.green);
-  const margin = (v: number) => `${((v / f.revenue) * 100).toFixed(1)} %`;
+  const margin = (v: number) => fmtPct(v / f.revenue, 1);
 
   return (
     <div>

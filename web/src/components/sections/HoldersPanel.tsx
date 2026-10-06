@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { api } from '../../api';
 import { useMoney } from '../../currency';
+import { fmtPct, fmtSignedPct } from '../../format';
 import { useArchive } from '../useArchive';
 import type { Holder, Holders, InsiderTrade } from '../../../../src/analysis/holders';
 import Term from '../Term';
 import { useFirst } from '../More';
 
-const pct = (v: number | null, d = 1) => (v === null ? '—' : `${(v * 100).toFixed(d)} %`);
+const pct = (v: number | null, d = 1) => fmtPct(v, d);
 
 /**
  * Who holds the stock and who moved: the largest institutions and funds with
@@ -50,7 +51,7 @@ function Breakdown({ h }: { h: Holders }) {
         {n && (n.buys !== null || n.sells !== null) && (
           <span title="Yahoos Zusammenfassung der letzten sechs Monate">
             Insider 6 M: {n.buys ?? 0} Käufe, {n.sells ?? 0} Verkäufe
-            {n.netInstitutionalBuyingPercent !== null && <> · Institutionen netto {n.netInstitutionalBuyingPercent >= 0 ? '+' : ''}{(n.netInstitutionalBuyingPercent * 100).toFixed(1)} %</>}
+            {n.netInstitutionalBuyingPercent !== null && <> · Institutionen netto {fmtSignedPct(n.netInstitutionalBuyingPercent, 1)}</>}
           </span>
         )}
       </div>
@@ -81,7 +82,7 @@ function HolderTable({ title, rows }: { title: string; rows: Holder[] }) {
               <td className="py-1 text-right font-mono text-ink-200">{pct(r.pctHeld, 2)}</td>
               <td className="py-1 text-right font-mono text-ink-400">{r.value === null ? '—' : fmtBig(r.value)}</td>
               <td className={`py-1 text-right font-mono ${r.pctChange === null ? 'text-ink-500' : r.pctChange > 0.005 ? 'text-emerald-400' : r.pctChange < -0.005 ? 'text-red-400' : 'text-ink-400'}`}>
-                {r.pctChange === null ? '—' : `${r.pctChange >= 0 ? '+' : '−'}${Math.abs(r.pctChange * 100).toFixed(1)} %`}
+                {fmtSignedPct(r.pctChange, 1)}
               </td>
             </tr>
           ))}

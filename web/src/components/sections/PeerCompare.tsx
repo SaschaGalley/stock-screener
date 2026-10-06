@@ -1,4 +1,4 @@
-import { fmt, fmtPct } from '../../format';
+import { fmt, fmtPct, fmtPercentPoints } from '../../format';
 import Term from '../Term';
 import { GLOSSARY, type GlossaryKey } from '../../glossary';
 
@@ -88,7 +88,7 @@ export default function PeerCompare({ ratios, evMultiples: ev, financials: f, se
                 <td className="py-1.5 px-2 text-right font-mono text-ink-100">{fmtVal(r.value)}</td>
                 <td className="py-1.5 px-2 text-right font-mono text-ink-400">{fmtVal(r.median)}</td>
                 <td className={`py-1.5 pl-2 text-right font-mono ${color}`}>
-                  {pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`}
+                  {fmtPercentPoints(pct, 0)}
                 </td>
               </tr>
             );

@@ -1,5 +1,6 @@
 import type { OverviewRow } from '../types';
 import Tip from './Tip';
+import { deNumber } from '../format';
 
 /**
  * The two halves behind one headline, in the space of one line.
@@ -19,10 +20,10 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
 
   const conf = row.scoreConfidence === null ? null : Math.round(row.scoreConfidence * 100);
   const title = [
-    `Zahlen (deterministisch): ${row.factorScore.toFixed(1)}/10`,
+    `Zahlen (deterministisch): ${deNumber(row.factorScore, 1)}/10`,
     row.narrativeScore === null
       ? 'Text (Distill/Perplexity): keine verwertbare Quelle'
-      : `Text (Distill/Perplexity, ohne Kenntnis der Bewertung): ${row.narrativeScore.toFixed(1)}/10`,
+      : `Text (Distill/Perplexity, ohne Kenntnis der Bewertung): ${deNumber(row.narrativeScore, 1)}/10`,
     conf === null ? '' : `Konfidenz der Zahlen: ${conf} % — sie bestimmt das Mischungsverhältnis`,
     row.scoreAgreement === null ? '' :
       `Einigkeit der Säulen: ${Math.round(row.scoreAgreement * 100)} % — ${
@@ -33,8 +34,8 @@ export default function ScoreSplit({ row }: { row: OverviewRow }) {
 
   return (
     <Tip className="block whitespace-nowrap font-mono text-3xs font-normal leading-3 text-ink-500" content={title}>
-      Z {row.factorScore.toFixed(1)}
-      {row.narrativeScore !== null && <> · T {row.narrativeScore.toFixed(1)}</>}
+      Z {deNumber(row.factorScore, 1)}
+      {row.narrativeScore !== null && <> · T {deNumber(row.narrativeScore, 1)}</>}
       {conf !== null && <> · {conf}%</>}
     </Tip>
   );

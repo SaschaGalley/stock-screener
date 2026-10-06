@@ -1,4 +1,5 @@
 import { useMoney } from '../../currency';
+import { deNumber, fmtPct, fmtPercentPoints } from '../../format';
 import Term from '../Term';
 import type { GlossaryKey } from '../../glossary';
 
@@ -16,13 +17,13 @@ export default function OwnershipFlow({ financials: f }: Props) {
         {f.shortPercentOfFloat != null && Number.isFinite(f.shortPercentOfFloat) ? (
           <table className="w-full text-xs tabular">
             <tbody>
-              <Row label="% of Float" term="financials.shortPercentOfFloat" value={`${(f.shortPercentOfFloat * 100).toFixed(1)}%`}
+              <Row label="% of Float" term="financials.shortPercentOfFloat" value={fmtPct(f.shortPercentOfFloat, 1)}
                 accentColor={f.shortPercentOfFloat > 0.20 ? 'text-red-400' : f.shortPercentOfFloat > 0.08 ? 'text-amber-400' : 'text-emerald-400'} />
               <Row label="Shares Short"  term="financials.sharesShort" value={fmtCount(f.sharesShort)} />
-              <Row label="Days to Cover" term="financials.shortRatio" value={f.shortRatio != null && Number.isFinite(f.shortRatio) ? f.shortRatio.toFixed(1) + 'd' : '—'} />
+              <Row label="Days to Cover" term="financials.shortRatio" value={f.shortRatio != null && Number.isFinite(f.shortRatio) ? deNumber(f.shortRatio, 1) + 'd' : '—'} />
               {f.sharesShort != null && f.sharesShortPriorMonth != null && f.sharesShortPriorMonth > 0 && (() => {
                 const chg = (f.sharesShort - f.sharesShortPriorMonth) / f.sharesShortPriorMonth * 100;
-                return <Row label="MoM" term="concept.shortMoM" value={`${chg >= 0 ? '+' : ''}${chg.toFixed(0)}%`}
+                return <Row label="MoM" term="concept.shortMoM" value={fmtPercentPoints(chg, 0)}
                   accentColor={chg >= 0 ? 'text-red-400' : 'text-emerald-400'} />;
               })()}
             </tbody>
@@ -38,11 +39,11 @@ export default function OwnershipFlow({ financials: f }: Props) {
             <tbody>
               {f.institutionsPercentHeld != null && Number.isFinite(f.institutionsPercentHeld) && (
                 <Row label="Institutions" term="financials.institutionsPercentHeld"
-                  value={`${(f.institutionsPercentHeld * 100).toFixed(1)}%`}
-                  accent={f.institutionsCount ? `${f.institutionsCount.toLocaleString()} holders` : ''} />
+                  value={fmtPct(f.institutionsPercentHeld, 1)}
+                  accent={f.institutionsCount ? `${f.institutionsCount.toLocaleString('de-DE')} holders` : ''} />
               )}
               {f.insidersPercentHeld != null && Number.isFinite(f.insidersPercentHeld) && (
-                <Row label="Insiders" term="financials.insidersPercentHeld" value={`${(f.insidersPercentHeld * 100).toFixed(1)}%`} />
+                <Row label="Insiders" term="financials.insidersPercentHeld" value={fmtPct(f.insidersPercentHeld, 1)} />
               )}
             </tbody>
           </table>
@@ -61,7 +62,7 @@ export default function OwnershipFlow({ financials: f }: Props) {
                 <Row
                   label="Buys"
                   value={`${f.insiderBuyCount} txn`}
-                  accent={`+${f.insiderBuyShares?.toLocaleString() ?? 0} sh / ${fmtBig(f.insiderBuyValue)}`}
+                  accent={`+${f.insiderBuyShares?.toLocaleString('de-DE') ?? 0} sh / ${fmtBig(f.insiderBuyValue)}`}
                   accentColor="text-emerald-400"
                 />
               )}
@@ -69,14 +70,14 @@ export default function OwnershipFlow({ financials: f }: Props) {
                 <Row
                   label="Sells"
                   value={`${f.insiderSellCount} txn`}
-                  accent={`-${f.insiderSellShares?.toLocaleString() ?? 0} sh / ${fmtBig(f.insiderSellValue)}`}
+                  accent={`−${f.insiderSellShares?.toLocaleString('de-DE') ?? 0} sh / ${fmtBig(f.insiderSellValue)}`}
                   accentColor="text-red-400"
                 />
               )}
               {f.insiderBuyCount > 0 && f.insiderSellCount > 0 && (() => {
                 const netSh = (f.insiderBuyShares ?? 0) - (f.insiderSellShares ?? 0);
                 const netVal = (f.insiderBuyValue ?? 0) - (f.insiderSellValue ?? 0);
-                return <Row label="Net" value={`${netSh >= 0 ? '+' : ''}${netSh.toLocaleString()} sh`}
+                return <Row label="Net" value={`${netSh >= 0 ? '+' : ''}${deNumber(netSh, 0)} sh`}
                   accent={fmtBig(netVal)}
                   accentColor={netSh >= 0 ? 'text-emerald-400' : 'text-red-400'} />;
               })()}

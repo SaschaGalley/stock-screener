@@ -2,6 +2,7 @@ import { trendTable, type AnnualHistory } from '../../../../src/analysis/trends'
 import Term from '../Term';
 import Tip from '../Tip';
 import { GLOSSARY, TREND_TERMS } from '../../glossary';
+import { deNumber, fmtPct } from '../../format';
 
 /** Below this, a move against the prior years is noise rather than a trend. */
 const FLAT = 0.01;
@@ -55,7 +56,7 @@ export default function MarginTrends({ history }: { history: AnnualHistory }) {
                     focusable={false}
                     content={
                       <>
-                        {d !== null && <div>{d >= 0 ? '+' : '−'}{(Math.abs(d) * 100).toFixed(1)} Prozentpunkte gegenüber dem Schnitt der Vorjahre.</div>}
+                        {d !== null && <div>{d >= 0 ? '+' : '−'}{deNumber(Math.abs(d) * 100, 1)} Prozentpunkte gegenüber dem Schnitt der Vorjahre.</div>}
                         <div className="mt-1 text-ink-400">{GLOSSARY['concept.trendArrow']}</div>
                       </>
                     }
@@ -76,5 +77,5 @@ export default function MarginTrends({ history }: { history: AnnualHistory }) {
 }
 
 function pct(v: number | null): string {
-  return v === null || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(1)}%`;
+  return fmtPct(v, 1);
 }
