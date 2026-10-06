@@ -17,7 +17,8 @@ export const STOCK_TABS = [
   { key: 'valuation', label: 'Bewertung' },
   { key: 'business',  label: 'Geschäft & Zahlen' },
   { key: 'analysts',  label: 'Analysten & Eigentümer' },
-  { key: 'history',   label: 'Verlauf & Research' },
+  { key: 'research',  label: 'Research' },
+  { key: 'history',   label: 'Verlauf' },
   { key: 'journal',   label: 'Journal' },
 ] as const;
 

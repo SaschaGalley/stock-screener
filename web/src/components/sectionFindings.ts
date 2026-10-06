@@ -109,12 +109,3 @@ export function ownershipFinding(f: StockFinancials, fmtBig: Fmt): string | null
     ok(f.shortPercentOfFloat) && `leerverkauft ${share(f.shortPercentOfFloat, 1)}`,
   ]);
 }
-
-export function researchFinding(news: { datetime: number }[], perplexity: { fetchedAt: string } | null, deep: { fetchedAt: string } | null): string | null {
-  const day = (iso: string) => dayDe(iso.slice(0, 10));
-  return join([
-    perplexity && `Perplexity vom ${day(perplexity.fetchedAt)}`,
-    deep && `Deep Research vom ${day(deep.fetchedAt)}`,
-    news.length > 0 && `${news.length} Meldungen`,
-  ]);
-}

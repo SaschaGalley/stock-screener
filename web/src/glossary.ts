@@ -367,7 +367,11 @@ export const GLOSSARY = {
   // ── Timeline, research ───────────────────────────────────────────────────
   'section.journal': 'Deine eigenen Einträge zu dieser Aktie: was du gelesen und gedacht hast, wann und warum du gekauft oder verkauft hast. Neben jeder Aktie steht, wie sie sich seit dem Tag des Eintrags bewegt hat. Fließt nicht in den Score ein.',
   'section.timeline': 'Alles Archivierte auf einer Zeitachse: deine Journal-Einträge, Analystenaktionen, Insider-Trades, Quartalszahlen, Dividenden, unsere Urteilswechsel, datierte Ereignisse aus der Recherche und große Kurssprünge.',
-  'section.research': 'Die Quellen hinter der Text-Hälfte des Scores: das Distill-Dossier, die Perplexity-Recherche, Nachrichten und welche Suchen die Analyse ausgeführt hat.',
+  'section.distill': 'Distill sammelt laufend Nachrichten und Berichte zur Firma und ihren Branchen und verdichtet sie zu Dossiers; das Briefing fasst die jüngsten Insights zusammen. Die stärkste Textquelle der Analyse.',
+  'section.perplexity': 'Eine Recherche von Perplexity zur Firma: Geschäft, jüngste Entwicklungen, Risiken, mit Quellen. Wird gespeichert und von jeder Analyse gelesen, bis das im Admin eingestellte Zeitfenster abläuft.',
+  'section.deepResearch': 'Der ausführliche Firmenbericht — über die API gekauft oder in einer Chat-App recherchiert und eingefügt — und weitere Recherchen von Hand: Vorschau auf Zahlen, Prüfung eigener Thesen. Nur der Firmenbericht geht in die Analysen ein.',
+  'section.news': 'Die jüngsten Meldungen zur Aktie von Finnhub, mit Quelle und Datum.',
+  'section.searches': 'Welche Suchen die gespeicherte Analyse ausgeführt hat und was sie fand — zur Kontrolle, woraus das Modell sein Urteil gebaut hat.',
 } as const satisfies Record<string, string>;
 
 export type GlossaryKey = keyof typeof GLOSSARY;

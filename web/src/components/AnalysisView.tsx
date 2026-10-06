@@ -32,7 +32,7 @@ import ChartTechnicals from "./sections/ChartTechnicals";
 import ScoreHistoryChart from "./charts/ScoreHistoryChart";
 import OwnershipFlow from "./sections/OwnershipFlow";
 import EarningsBlock from "./sections/EarningsBlock";
-import NewsAndResearch from "./sections/NewsAndResearch";
+import ResearchTab from "./sections/NewsAndResearch";
 import CompanyInfo from "./sections/CompanyInfo";
 import FundamentalsHistoryChart from "./charts/FundamentalsHistoryChart";
 import { CloseIcon } from "./icons";
@@ -41,7 +41,7 @@ import OverviewCards from "./OverviewCards";
 import More from "./More";
 import {
   earningsFinding, fairValueFinding, fundamentalsFinding, modelsFinding,
-  ownershipFinding, peersFinding, qualityFinding, researchFinding,
+  ownershipFinding, peersFinding, qualityFinding,
 } from "./sectionFindings";
 // Markdown and the editor are only wanted once the section is opened.
 const Journal = lazy(() => import("./Journal"));
@@ -500,23 +500,24 @@ function AnalysisView({
               </Section>
             </TabPane>
 
+            <TabPane on={tab === 'research'} seen={shown.has('research')}>
+              {/* TIER 11: DISTILL + PERPLEXITY + DEEP RESEARCH + NEWS + SEARCH TRACES, a card each */}
+              <ResearchTab
+                symbol={symbol}
+                news={bundle.news}
+                perplexity={bundle.perplexity}
+                deepResearch={bundle.deepResearch ?? null}
+                pplx={flags.pplx}
+                distill={bundle.distill}
+                searches={analysis?.searches ?? null}
+                onRefreshed={() => setLocalRefresh((x) => x + 1)}
+              />
+            </TabPane>
+
             <TabPane on={tab === 'history'} seen={shown.has('history')}>
               {/* TIER 10b: WHAT HAPPENED WHEN — every archived event on one axis */}
               <Section fixed title="Zeitleiste" info="section.timeline" subtitle="Journal, Analysten, Insider, Zahlen, Dividenden, Urteil, Ereignisse, Kurssprünge" storageKey="timeline">
                 <StockTimeline symbol={symbol} />
-              </Section>
-              {/* TIER 11: DISTILL + PERPLEXITY + NEWS + SEARCH TRACES */}
-              <Section fixed title="Research & Nachrichten" finding={researchFinding(bundle.news, bundle.perplexity, bundle.deepResearch ?? null)} info="section.research">
-                <NewsAndResearch
-                  symbol={symbol}
-                  news={bundle.news}
-                  perplexity={bundle.perplexity}
-                  deepResearch={bundle.deepResearch ?? null}
-                  pplx={flags.pplx}
-                  distill={bundle.distill}
-                  searches={analysis?.searches ?? null}
-                  onRefreshed={() => setLocalRefresh((x) => x + 1)}
-                />
               </Section>
             </TabPane>
 

@@ -6,6 +6,7 @@ import { ManualResearch, ResearchReports } from '../ManualResearch';
 import { api } from '../../api';
 import PerplexityBrief from './PerplexityBrief';
 import { useFirst } from '../More';
+import Section from '../Section';
 import type {
   SearchTrace,
   SearchProviderTrace,
@@ -41,13 +42,18 @@ const PROVIDER_META: Record<SearchProviderTrace['provider'], { label: string; ti
   'openai-web-search':   { label: 'OpenAI web_search', tint: 'border-l-emerald-500' },
 };
 
-export default function NewsAndResearch({ symbol, news, perplexity, deepResearch, pplx, distill, searches, onRefreshed }: Props) {
-  const [firstNews, moreNews] = useFirst(news, 4, 'Meldungen');
+/**
+ * The research tab: each source its own card, the one the analysis weighs
+ * most first. It shared a tab with the timeline, and both ran long — a
+ * reader after the Perplexity brief scrolled through a year of events to
+ * reach it, one after the events through three reports.
+ */
+export default function ResearchTab({ symbol, news, perplexity, deepResearch, pplx, distill, searches, onRefreshed }: Props) {
   return (
-    <div className="space-y-6">
-      {/* Distill — top of the section because it's the most-weighted qualitative
-          signal in the LLM prompt. Always rendered (even with zero briefings)
-          so the user can trigger a first generation via the Refresh button. */}
+    <>
+      {/* Distill — first because it's the most-weighted qualitative signal in
+          the LLM prompt. Always rendered (even with zero briefings) so the
+          user can trigger a first generation via the refresh button. */}
       <DistillSection symbol={symbol} distill={distill} onRefreshed={onRefreshed} />
 
       {/* Also shown with nothing stored yet when Perplexity is selected, so a
@@ -58,49 +64,64 @@ export default function NewsAndResearch({ symbol, news, perplexity, deepResearch
 
       <DeepResearchSection symbol={symbol} deep={deepResearch} onRefreshed={onRefreshed} />
 
-      {/* Search Traces — one collapsible block per provider that ran. Persisted
+      {news.length > 0 && <NewsSection news={news} />}
+
+      {/* Search traces — one collapsible block per provider that ran. Persisted
           on the cached analysis so the user can audit what context the LLM saw
           (debug / provenance / "why did Claude get this wrong?"). Native
           providers expose only the queries because the actual fetched URLs are
           processed server-side by Anthropic/OpenAI and never reach our SDK. */}
-      {searches && searches.providers.length > 0 && (
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-semibold text-ink-300">
-              Search Traces
-            </h3>
-            <span className="text-2xs text-ink-500">
-              {searches.providers.length} provider{searches.providers.length === 1 ? '' : 's'} · debug context
-            </span>
-          </div>
-          <div className="space-y-2">
-            {searches.providers.map((p, i) => (
-              <SearchProviderBlock key={`${p.provider}-${i}`} trace={p} />
-            ))}
-          </div>
-        </div>
-      )}
+      {searches && searches.providers.length > 0 && <SearchesSection searches={searches} />}
+    </>
+  );
+}
 
-      {news.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-xs font-semibold text-ink-300">Recent News</h3>
-          <ul className="space-y-2">
-            {firstNews.map((n, i) => (
-              <li key={i} className="rounded border border-ink-800 bg-ink-950 p-2.5 text-xs">
-                <a href={n.url} target="_blank" rel="noopener noreferrer" className="font-medium text-ink-100 hover:underline">
-                  {n.headline}
-                </a>
-                <div className="mt-1 flex items-center justify-between text-2xs text-ink-500">
-                  <span>{n.source}</span>
-                  <span>{new Date(n.datetime * 1000).toLocaleDateString()}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-          {moreNews}
-        </div>
-      )}
-    </div>
+const dayDe = (iso: string) => new Date(iso).toLocaleDateString('de-DE');
+const timeDe = (iso: string) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+
+function NewsSection({ news }: { news: any[] }) {
+  const [first, more] = useFirst(news, 6, 'Meldungen');
+  const newest = Math.max(...news.map((n) => n.datetime ?? 0));
+  return (
+    <Section fixed
+      title="Nachrichten"
+      info="section.news"
+      finding={`${news.length} ${news.length === 1 ? 'Meldung' : 'Meldungen'}${newest > 0 ? `, die neueste vom ${new Date(newest * 1000).toLocaleDateString('de-DE')}` : ''}`}
+    >
+      <ul className="divide-y divide-ink-800">
+        {first.map((n, i) => (
+          <li key={i} className="flex items-baseline gap-3 py-2 first:pt-0">
+            <span className="w-20 shrink-0 font-mono text-xs text-ink-500">
+              {new Date(n.datetime * 1000).toLocaleDateString('de-DE')}
+            </span>
+            <div className="min-w-0">
+              <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-sm text-ink-100 hover:underline">
+                {n.headline}
+              </a>
+              <div className="text-xs text-ink-500">{n.source}</div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {more}
+    </Section>
+  );
+}
+
+function SearchesSection({ searches }: { searches: SearchTrace }) {
+  const queries = searches.providers.reduce((n, p) => n + p.queries.length, 0);
+  return (
+    <Section fixed
+      title="Suchen der Analyse"
+      info="section.searches"
+      finding={`${searches.providers.length} Anbieter, ${queries} ${queries === 1 ? 'Suchanfrage' : 'Suchanfragen'}`}
+    >
+      <div className="space-y-2">
+        {searches.providers.map((p, i) => (
+          <SearchProviderBlock key={`${p.provider}-${i}`} trace={p} />
+        ))}
+      </div>
+    </Section>
   );
 }
 
@@ -159,7 +180,7 @@ function DistillSection({
       await api.refreshDistill(symbol);
       onRefreshed();
     } catch (e) {
-      const msg = (e as Error).message ?? 'Refresh failed';
+      const msg = (e as Error).message ?? 'Neu holen fehlgeschlagen';
       if (msg.includes('distill_unauthorized')) {
         setPersistent({ kind: 'unauthorized' });
       } else if (msg.includes('distill_entity_unresolved')) {
@@ -178,26 +199,30 @@ function DistillSection({
     }
   }
 
+  const company = blocks.some((b) => b.kind !== 'sector');
+  const sectors = blocks.filter((b) => b.kind === 'sector').length;
+  const finding = [
+    company && 'Firmendossier',
+    sectors > 0 && `${sectors} ${sectors === 1 ? 'Branchendossier' : 'Branchendossiers'}`,
+    briefing && `Briefing vom ${dayDe(briefing.createdAt)}`,
+  ].filter(Boolean).join(' · ') || null;
+
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-ink-300">
-          Distill Briefing
-        </h3>
-        <div className="flex items-center gap-2">
-          {distill?.fetchedAt && (
-            <span className="text-2xs text-ink-500">
-              {new Date(distill.fetchedAt).toLocaleString()}
-            </span>
-          )}
-          <RefreshButton busy={busy} disabled={!!persistent} onClick={handleRefresh} />
-        </div>
-      </div>
+    <Section fixed
+      title="Distill"
+      info="section.distill"
+      finding={finding}
+      subtitle="Noch kein Dossier und kein Briefing"
+      rightHeader={<>
+        {distill?.fetchedAt && <span className="text-xs text-ink-500">geholt {timeDe(distill.fetchedAt)}</span>}
+        <RefreshButton busy={busy} disabled={!!persistent} onClick={handleRefresh} />
+      </>}
+    >
 
       {busy && (
         <div className="mb-2 rounded border border-accent/30 bg-accent-soft px-3 py-1.5 text-xs text-ink-300">
-          ⟳ Refreshing… first-time tickers can take a few minutes while the
-          backlog is distilled.
+          ⟳ Wird neu geholt … beim ersten Mal kann das ein paar Minuten dauern,
+          bis Distill den Rückstand verarbeitet hat.
         </div>
       )}
       {error && (
@@ -223,7 +248,7 @@ function DistillSection({
           {briefing && <DistillBriefingBlock briefing={briefing} />}
         </div>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -253,21 +278,20 @@ function PerplexitySection({
   const refresh = usePerplexityRefresh(symbol, model, onRefreshed);
 
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-ink-300">
-          Perplexity Research
-        </h3>
-        <div className="flex items-center gap-2">
-          {perplexity && <BriefMeta context={perplexity} />}
-          <RefreshButton
-            busy={refresh.busy}
-            disabled={false}
-            onClick={refresh.run}
-            title={`Perplexity neu abfragen (${perplexityLabel(model)}) — ohne Cache, kostet einen Aufruf.`}
-          />
-        </div>
-      </div>
+    <Section fixed
+      title="Perplexity"
+      info="section.perplexity"
+      finding={perplexity ? `Recherche vom ${briefMeta(perplexity)}` : null}
+      subtitle="Noch keine Recherche"
+      rightHeader={<>
+        <RefreshButton
+          busy={refresh.busy}
+          disabled={false}
+          onClick={refresh.run}
+          title={`Perplexity neu abfragen (${perplexityLabel(model)}) — ohne Cache, kostet einen Aufruf.`}
+        />
+      </>}
+    >
 
       {refresh.busy && <Busy>⟳ Frage Perplexity ab… dauert mit {perplexityLabel(model)} meist eine halbe bis zwei Minuten.</Busy>}
       {refresh.error && <Failed>{refresh.error}</Failed>}
@@ -282,10 +306,10 @@ function PerplexitySection({
       ) : (
         <div className="rounded border border-dashed border-ink-800 px-3 py-2 text-xs text-ink-500">
           Noch keine Perplexity-Recherche für {symbol}. Die nächste Analyse holt eine,
-          oder ↻ Refresh sofort.
+          „↻ Neu holen“ sofort.
         </div>
       )}
-    </div>
+    </Section>
   );
 }
 
@@ -320,23 +344,22 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
   }
 
   return (
-    <div>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-ink-300">
-          Deep Research
-        </h3>
-        <div className="flex flex-wrap items-center gap-2">
-          {deep && <BriefMeta context={deep} />}
-          <button
-            onClick={start}
-            disabled={refresh.busy}
-            title={`Firmenbericht über die API: ${cost} — Dutzende Suchen, 3–5 Minuten.`}
-            className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-2xs font-medium text-ink-400 transition hover:bg-ink-800 hover:text-ink-200 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {refresh.busy ? '⟳ läuft…' : 'API'}
-          </button>
-        </div>
-      </div>
+    <Section fixed
+      title="Deep Research & eigene Recherchen"
+      info="section.deepResearch"
+      finding={deep ? `Firmenbericht vom ${briefMeta(deep)}` : null}
+      subtitle="Kein Firmenbericht"
+      rightHeader={<>
+        <button
+          onClick={start}
+          disabled={refresh.busy}
+          title={`Firmenbericht über die API: ${cost} — Dutzende Suchen, 3–5 Minuten.`}
+          className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-xs font-medium text-ink-300 transition hover:bg-ink-800 hover:text-ink-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {refresh.busy ? '⟳ läuft …' : 'Über die API'}
+        </button>
+      </>}
+    >
 
       {refresh.busy && <Busy>⟳ Deep Research läuft — Perplexity sucht und schreibt drei bis fünf Minuten. Die Seite kann offen bleiben.</Busy>}
       {refresh.error && <Failed>{refresh.error}</Failed>}
@@ -345,7 +368,7 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
           kinds={['company', 'earnings', 'thesis']}
           symbols={[symbol]}
           replaces={(kind) => kind === 'company' && deep
-            ? `Ersetzt den Bericht vom ${new Date(deep.fetchedAt).toLocaleDateString()} in den Analysen; der alte bleibt im Archiv.`
+            ? `Ersetzt den Bericht vom ${dayDe(deep.fetchedAt)} in den Analysen; der alte bleibt im Archiv.`
             : null}
           onSaved={(kind) => (kind === 'company' ? onRefreshed() : setTick((n) => n + 1))}
         />
@@ -354,7 +377,7 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
       {deep ? (
         <details className="rounded border border-ink-800 bg-ink-950 px-3 py-2" open>
           <summary className="cursor-pointer text-2xs text-ink-500">
-            Firmenbericht vom {new Date(deep.fetchedAt).toLocaleDateString()} — geht in jede Analyse ein, solange er im Zeitfenster liegt
+            Firmenbericht vom {dayDe(deep.fetchedAt)} — geht in jede Analyse ein, solange er im Zeitfenster liegt
           </summary>
           <div className="mt-2 max-h-[48rem] overflow-y-auto">
             <PerplexityBrief context={deep} />
@@ -372,7 +395,7 @@ function DeepResearchSection({ symbol, deep, onRefreshed }: {
       <div className="mt-3">
         <ResearchReports symbol={symbol} tick={tick} title="Weitere Recherchen" />
       </div>
-    </div>
+    </Section>
   );
 }
 
@@ -389,7 +412,7 @@ function usePerplexityRefresh(symbol: string, model: PerplexityModelId, onRefres
       await api.refreshPerplexity(symbol, model);
       onRefreshed();
     } catch (e) {
-      setError((e as Error).message ?? 'Refresh failed');
+      setError((e as Error).message ?? 'Neu holen fehlgeschlagen');
     } finally {
       setBusy(false);
     }
@@ -397,13 +420,13 @@ function usePerplexityRefresh(symbol: string, model: PerplexityModelId, onRefres
   return { busy, error, run };
 }
 
-function BriefMeta({ context }: { context: PerplexityContext }) {
-  return (
-    <span className="text-2xs text-ink-500">
-      {context.pastedFrom ? `${context.pastedFrom}, von Hand` : context.model} · {new Date(context.fetchedAt).toLocaleString()}
-      {context.costUsd !== undefined && ` · ${context.costUsd.toFixed(2).replace('.', ',')} $`}
-    </span>
-  );
+/** "14.8.2026, sonar-pro, 0,42 $" — when a brief was bought, from where, for how much. */
+function briefMeta(context: PerplexityContext): string {
+  return [
+    dayDe(context.fetchedAt),
+    context.pastedFrom ? `${context.pastedFrom}, von Hand` : context.model,
+    context.costUsd !== undefined && `${context.costUsd.toFixed(2).replace('.', ',')} $`,
+  ].filter(Boolean).join(', ');
 }
 
 function Busy({ children }: { children: React.ReactNode }) {
@@ -426,7 +449,7 @@ function Citations({ urls }: { urls: string[] | undefined }) {
   if (!urls?.length) return null;
   return (
     <details className="mt-2">
-      <summary className="cursor-pointer text-2xs text-ink-500">{urls.length} sources</summary>
+      <summary className="cursor-pointer text-2xs text-ink-500">{urls.length} {urls.length === 1 ? 'Quelle' : 'Quellen'}</summary>
       <ul className="mt-1 space-y-0.5 pl-4 text-2xs text-ink-500">
         {urls.map((u, i) => (
           <li key={i}><a href={u} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">{u}</a></li>
@@ -447,11 +470,11 @@ function RefreshButton({ busy, disabled, onClick, title }: {
       onClick={onClick}
       disabled={busy || disabled}
       title={disabled
-        ? 'Refresh unavailable — see the hint below for the fix.'
-        : title ?? 'Trigger a Distill refresh — drains pending insights and (re)generates the briefing.'}
-      className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-2xs font-medium text-ink-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
+        ? 'Gerade nicht möglich — der Hinweis darunter sagt, was fehlt.'
+        : title ?? 'Distill neu holen: verarbeitet offene Insights und baut das Briefing (neu).'}
+      className="rounded border border-ink-700 bg-ink-900 px-2 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
     >
-      {busy ? '⟳' : '↻'} Refresh
+      {busy ? '⟳' : '↻'} Neu holen
     </button>
   );
 }
@@ -465,9 +488,9 @@ function PersistentHint({ kind, detail }: {
 }) {
   const messages: Record<typeof kind, string> = {
     'unauthorized':
-      'Distill rejected the key as invalid. Check `DISTILL_API_KEY` in your .env and confirm the key still exists in the Distill admin.',
+      'Distill hat den Schlüssel abgelehnt. `DISTILL_API_KEY` in der .env prüfen und ob der Schlüssel im Distill-Admin noch existiert.',
     'entity-unresolved':
-      'This ticker does not map to exactly one Distill entity. Add the ISIN or pick the entity in Distill — guessing would attach another company’s briefing.',
+      'Das Kürzel passt nicht zu genau einer Distill-Entity. Die ISIN ergänzen oder die Entity in Distill wählen — raten hängte womöglich das Briefing einer anderen Firma an.',
   };
   return (
     <div className="mt-1 text-2xs italic text-ink-500">
@@ -495,7 +518,7 @@ function PersistentHint({ kind, detail }: {
 function DossierBlock({ block, symbol }: { block: DistillDossierBlock; symbol: string }) {
   const isSector = block.kind === 'sector';
   const window = block.periodStart && block.periodEnd
-    ? `${block.periodStart.slice(0, 10)} – ${block.periodEnd.slice(0, 10)}`
+    ? `${dayDe(block.periodStart)} – ${dayDe(block.periodEnd)}`
     : null;
 
   return (
@@ -515,7 +538,7 @@ function DossierBlock({ block, symbol }: { block: DistillDossierBlock; symbol: s
           </span>
           <span className="shrink-0 text-2xs text-ink-500">
             {window}
-            {block.stale && <span className="ml-1 text-ink-600" title="A late document landed in an already-built tile — the window above still holds.">· stale</span>}
+            {block.stale && <span className="ml-1 text-ink-600" title="Ein spätes Dokument kam in ein schon gebautes Dossier — der Zeitraum oben gilt weiter.">· nachgereicht</span>}
           </span>
         </div>
         {isSector && (
@@ -550,14 +573,14 @@ function InsightList({ insights, truncated }: { insights: DistillInsight[]; trun
   if (insights.length === 0) return null;
   return (
     <div className="mt-3 border-t border-dashed border-ink-800 pt-2">
-      <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-ink-500">
+      <div className="mb-1 text-xs font-semibold text-ink-300">
         Nicht im Dossier · {insights.length} roh
         {truncated && <span className="ml-1 font-normal normal-case tracking-normal text-ink-500">(gekappt — es gibt mehr)</span>}
       </div>
       <ul className="space-y-1">
         {insights.map((i) => (
           <li key={i.id} className="text-xs text-ink-400">
-            <span className="font-mono text-ink-500">{i.at?.slice(0, 10) ?? '—'}</span>
+            <span className="font-mono text-ink-500">{i.at ? dayDe(i.at) : '—'}</span>
             {i.sourceName && <span className="ml-1 text-ink-500">{i.sourceName}</span>}
             {i.documentUrl ? (
               <a
@@ -587,10 +610,10 @@ function DistillBriefingBlock({ briefing }: { briefing: DistillBriefing }) {
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-semibold text-ink-100">{briefing.briefingTypeName}</span>
           <span className="shrink-0 text-2xs text-ink-500">
-            {briefing.createdAt.slice(0, 10)} · {briefing.insightCount} insights · {briefing.model}
+            {dayDe(briefing.createdAt)} · {briefing.insightCount} Insights · {briefing.model}
             {briefing.costUsd !== null && (
-              <span className="ml-1 font-mono tabular" title="LLM cost for this briefing">
-                · ${briefing.costUsd.toFixed(4)}
+              <span className="ml-1 font-mono tabular" title="Modellkosten dieses Briefings">
+                · {briefing.costUsd.toFixed(4).replace('.', ',')} $
               </span>
             )}
           </span>
@@ -675,15 +698,15 @@ function SearchProviderBlock({ trace }: { trace: SearchProviderTrace }) {
       <summary className="cursor-pointer px-3 py-1.5 text-xs">
         <span className="font-semibold text-ink-100">{meta.label}</span>
         <span className="ml-2 text-2xs text-ink-500">
-          {trace.queries.length} quer{trace.queries.length === 1 ? 'y' : 'ies'}
-          {trace.results.length > 0 ? ` · ${trace.results.length} result${trace.results.length === 1 ? '' : 's'}` : ' · server-side fetch'}
-          {' · '}{new Date(trace.fetchedAt).toLocaleString()}
+          {trace.queries.length} {trace.queries.length === 1 ? 'Suchanfrage' : 'Suchanfragen'}
+          {trace.results.length > 0 ? ` · ${trace.results.length} Treffer` : ' · beim Anbieter abgerufen'}
+          {' · '}{timeDe(trace.fetchedAt)}
         </span>
       </summary>
       <div className="space-y-3 px-3 py-2 text-xs">
         {trace.queries.length > 0 && (
           <div>
-            <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-ink-500">Queries</div>
+            <div className="mb-1 text-xs font-semibold text-ink-300">Suchanfragen</div>
             <ul className="list-disc pl-4 text-ink-300">
               {trace.queries.map((q, i) => (
                 <li key={i} className="font-mono">{q}</li>
@@ -694,7 +717,7 @@ function SearchProviderBlock({ trace }: { trace: SearchProviderTrace }) {
 
         {trace.results.length > 0 ? (
           <div>
-            <div className="mb-1 text-2xs font-semibold uppercase tracking-wider text-ink-500">Results</div>
+            <div className="mb-1 text-xs font-semibold text-ink-300">Treffer</div>
             <ul className="space-y-1.5">
               {trace.results.slice(0, 20).map((r, i) => (
                 <li key={i} className="rounded border border-ink-800 bg-ink-900 p-2">
@@ -707,19 +730,19 @@ function SearchProviderBlock({ trace }: { trace: SearchProviderTrace }) {
                     <div className="mt-1 line-clamp-3 text-2xs text-ink-400">{r.content}</div>
                   )}
                   {r.score !== undefined && (
-                    <div className="mt-1 font-mono text-3xs text-ink-500">score {r.score.toFixed(3)}</div>
+                    <div className="mt-1 font-mono text-3xs text-ink-500">Relevanz {r.score.toFixed(3).replace('.', ',')}</div>
                   )}
                 </li>
               ))}
             </ul>
             {trace.results.length > 20 && (
-              <div className="mt-1 text-2xs text-ink-500">+{trace.results.length - 20} more …</div>
+              <div className="mt-1 text-2xs text-ink-500">+ {trace.results.length - 20} weitere …</div>
             )}
           </div>
         ) : isNative ? (
           <div className="text-2xs italic text-ink-500">
-            Native provider — the LLM vendor fetched these URLs server-side and didn't surface them via the SDK.
-            Only the issued queries are observable.
+            Eingebaute Suche des Modellanbieters — er ruft die Seiten selbst ab und gibt sie nicht heraus.
+            Zu sehen sind nur die Suchanfragen.
           </div>
         ) : null}
       </div>
