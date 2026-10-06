@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { CloseIcon } from '../components/icons';
+import RecommendationBadge from '../components/RecommendationBadge';
+import StockLogo, { initialsFromName } from '../components/StockLogo';
+import { HEADER_HEIGHT, HEADER_RULE, ROW_HEIGHT, ROW_RULE } from '../components/StockRowCells';
+import { scoreColor } from '../components/stockList';
+import { evidenceLine, useVerdictEvidence } from '../components/VerdictEvidence';
 import { fmtSignedPct } from '../format';
 import type { DepotFlag, DepotPosition, DepotResponse, VerdictRecord } from '../../../src/analysis/depot';
 import { RECOMMENDATIONS } from '../../../src/verdict';
@@ -12,13 +17,18 @@ const fmtDay = (d: string) => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))
 const TYPE_LABEL: Record<string, string> = {
   stock: 'Aktie', etf: 'ETF', bond: 'Anleihe', crypto: 'Krypto', future: 'Future', metal: 'Metall', metals: 'Metall',
 };
+/**
+ * `ask` is something missing — a reason not written down, a stock outside the
+ * watchlist — and reads as a note, not as a warning beside the ▼ and ▲ that
+ * speak for holding less or more.
+ */
 const FLAG_TONE: Record<DepotFlag['tone'], string> = {
   reduce: 'text-red-400',
   add:    'text-emerald-400',
-  ask:    'text-amber-300',
+  ask:    'text-ink-500',
 };
 const FLAG_MARK: Record<DepotFlag['tone'], string> = { reduce: '▼', add: '▲', ask: '?' };
-const VERDICT_TONE = (v: string) => (/SELL/.test(v) ? 'text-red-400' : /BUY/.test(v) ? 'text-emerald-400' : 'text-amber-300');
+const openStock = (symbol: string) => { window.location.hash = `#/stock/${encodeURIComponent(symbol)}`; };
 
 /**
  * The depot weighed against the model: every position with its weight, its
@@ -96,19 +106,20 @@ export default function DepotPage({ onClose }: { onClose: () => void }) {
             </section>
 
             <section className="overflow-x-auto rounded-lg border border-ink-800">
-              <table className="w-full min-w-[56rem] text-xs">
-                <thead className="bg-ink-900 text-left text-2xs uppercase tracking-wider text-ink-500">
-                  <tr>
-                    <th className="px-3 py-2">Position</th>
-                    <th className="px-2 py-2">Gewicht</th>
-                    <th className="px-2 py-2 text-right">Wert</th>
-                    <th className="px-2 py-2 text-right">seit Kauf</th>
-                    <th className="px-2 py-2">Modell</th>
-                    <th className="px-2 py-2">Begründung</th>
-                    <th className="px-3 py-2">Hinweise</th>
+              <table className="w-full min-w-[56rem] border-collapse text-sm">
+                <thead className="whitespace-nowrap bg-ink-900 text-2xs uppercase tracking-wider text-ink-500">
+                  <tr className={`${HEADER_HEIGHT} ${HEADER_RULE}`}>
+                    <th className="px-3 py-0 text-left font-semibold">Position</th>
+                    <th className="px-2 py-0 text-left font-semibold">Gewicht</th>
+                    <th className="px-2 py-0 text-right font-semibold">Wert</th>
+                    <th className="px-2 py-0 text-right font-semibold">seit Kauf</th>
+                    <th className="px-2 py-0 text-right font-semibold">Score</th>
+                    <th className="px-2 py-0 text-left font-semibold">Verdict</th>
+                    <th className="px-2 py-0 text-left font-semibold">Begründung</th>
+                    <th className="px-3 py-0 text-left font-semibold">Hinweise</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-ink-800">
+                <tbody>
                   {view.positions.map((p) => <PositionRow key={p.isin} p={p} limit={view.limits.maxPosition} />)}
                 </tbody>
               </table>
@@ -123,12 +134,20 @@ export default function DepotPage({ onClose }: { onClose: () => void }) {
               {view.candidates.length > 0 && (
                 <section className="rounded-lg border border-ink-800 px-4 py-3">
                   <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">Laut Modell BUY, nicht im Depot</h3>
-                  <ul className="space-y-0.5 text-xs">
+                  <ul className="-mx-2">
                     {view.candidates.slice(0, 10).map((c) => (
-                      <li key={c.symbol} className="flex gap-2">
-                        <a href={`#/stock/${encodeURIComponent(c.symbol)}`} className="w-16 font-mono text-ink-100 hover:text-accent">{c.symbol}</a>
-                        <span className="min-w-0 flex-1 truncate text-ink-400">{c.name}</span>
-                        <span className={VERDICT_TONE(c.verdict)}>{c.verdict} {c.score.toFixed(1).replace('.', ',')}</span>
+                      <li key={c.symbol}>
+                        <button
+                          onClick={() => openStock(c.symbol)}
+                          className="flex w-full items-center gap-2 rounded px-2 py-1 text-left transition hover:bg-ink-800"
+                        >
+                          <StockLogo symbol={c.symbol} domain={null} fallbackInitials={initialsFromName(c.name ?? c.symbol)} size={18} />
+                          <span className="min-w-0 flex-1 truncate text-sm text-ink-100">
+                            {c.name ?? c.symbol} <span className="font-mono text-2xs text-ink-500">{c.symbol}</span>
+                          </span>
+                          <RecommendationBadge rec={c.verdict} size="sm" />
+                          <span className={`w-8 text-right font-mono text-sm font-semibold tabular ${scoreColor(c.score)}`}>{c.score.toFixed(1)}</span>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -143,46 +162,69 @@ export default function DepotPage({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * One position, in the overview's shape: logo and name over the ticker line,
+ * score and verdict chip as the list shows them. A stock the model scores
+ * opens its analysis; the rest have nothing to open.
+ */
 function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
+  const evidence = useVerdictEvidence();
+  const open = p.symbol && p.tracked ? p.symbol : null;
   return (
-    <tr className="align-top">
-      <td className="px-3 py-2">
-        <div className="flex items-baseline gap-2">
-          {p.symbol && p.tracked
-            ? <a href={`#/stock/${encodeURIComponent(p.symbol)}`} className="font-mono text-ink-100 hover:text-accent">{p.symbol}</a>
-            : <span className="font-mono text-ink-300">{p.symbol ?? '—'}</span>}
-          <span className="truncate text-ink-400" title={p.isin}>{p.name}</span>
-        </div>
-        <div className="text-2xs text-ink-600">
-          {TYPE_LABEL[p.assetType] ?? p.assetType}{p.sector && ` · ${p.sector}`} · seit {fmtDay(p.openedAt)}
+    <tr
+      onClick={open ? () => openStock(open) : undefined}
+      title={p.isin}
+      className={`${ROW_HEIGHT} ${ROW_RULE} ${open ? 'cursor-pointer transition hover:bg-ink-800' : ''}`}
+    >
+      <td className="min-w-[16rem] max-w-[22rem] py-1 pr-2 pl-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <StockLogo symbol={p.symbol} domain={null} fallbackInitials={initialsFromName(p.name)} size={22} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium leading-5 text-ink-100">{p.name}</div>
+            <div className="truncate font-mono text-2xs leading-4 text-ink-500">
+              {[p.symbol, TYPE_LABEL[p.assetType] ?? p.assetType, p.sector, `seit ${fmtDay(p.openedAt)}`].filter(Boolean).join(' · ')}
+            </div>
+          </div>
         </div>
       </td>
-      <td className="px-2 py-2">
+      <td className="px-2 py-1">
         {p.weight !== null && (
           <div className="flex items-center gap-1.5">
             <div className="h-1.5 w-16 overflow-hidden rounded bg-ink-800">
               <div className={`h-full ${p.concentrated ? 'bg-red-500' : 'bg-accent'}`} style={{ width: `${Math.min(100, p.weight * 100 / (limit * 2))}%` }} />
             </div>
-            <span className="whitespace-nowrap font-mono text-ink-300">{pct(p.weight)}</span>
+            <span className="whitespace-nowrap font-mono text-xs tabular text-ink-300">{pct(p.weight)}</span>
           </div>
         )}
       </td>
-      <td className="whitespace-nowrap px-2 py-2 text-right font-mono text-ink-300">{p.valueEur !== null ? eur(p.valueEur) : '—'}</td>
-      <td className={`px-2 py-2 text-right font-mono ${p.gain === null ? 'text-ink-600' : p.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+      <td className="whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-200">{p.valueEur !== null ? eur(p.valueEur) : '—'}</td>
+      <td className={`whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular ${p.gain === null ? 'text-ink-600' : p.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
         {p.gain !== null ? fmtSignedPct(p.gain) : '—'}
       </td>
-      <td className="px-2 py-2">
+      <td className={`px-2 py-1 text-right font-mono text-base font-semibold tabular ${scoreColor(p.score)}`}>
+        {p.score !== null ? p.score.toFixed(1) : <span className="text-sm font-normal text-ink-600">—</span>}
+      </td>
+      <td className="whitespace-nowrap px-2 py-1">
         {p.verdict
-          ? <span className={VERDICT_TONE(p.verdict)}>{p.verdict}{p.score !== null && <span className="text-ink-500"> {p.score.toFixed(1).replace('.', ',')}</span>}</span>
-          : <span className="text-ink-600">—</span>}
+          ? <RecommendationBadge rec={p.verdict} size="sm" note={evidence ? evidenceLine(evidence, p.verdict) : null} />
+          : <span className="text-xs text-ink-600">—</span>}
       </td>
-      <td className="max-w-[14rem] px-2 py-2">
+      <td className="max-w-[14rem] px-2 py-1 text-xs">
         {p.reason
-          ? <a href="#/journal" className="line-clamp-2 text-ink-300 hover:text-ink-100" title={`Journal, ${fmtDay(p.reason.day)}`}>{p.reason.headline}</a>
+          ? (
+            <a
+              href="#/journal"
+              onClick={(e) => e.stopPropagation()}
+              className="line-clamp-2 leading-4 text-ink-300 hover:text-ink-100"
+              title={`Journal, ${fmtDay(p.reason.day)}`}
+            >
+              {p.reason.headline}
+            </a>
+          )
           : <span className="text-ink-600">—</span>}
       </td>
-      <td className="px-3 py-2">
-        <ul className="space-y-0.5">
+      <td className="px-3 py-1 text-xs">
+        <ul className="space-y-0.5 leading-4">
           {p.flags.map((f) => <li key={f.text} className={FLAG_TONE[f.tone]}>{FLAG_MARK[f.tone]} {f.text}</li>)}
         </ul>
       </td>
@@ -222,10 +264,10 @@ function Evidence({ records }: { records: VerdictRecord[] }) {
   return (
     <section className="rounded-lg border border-ink-800 px-4 py-3">
       <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-300">Was ein Urteil im Backtest wert war</h3>
-      <ul className="space-y-0.5 text-xs">
+      <ul className="space-y-1 text-xs">
         {sorted.map((r) => (
-          <li key={r.verdict} className="flex gap-2">
-            <span className={`w-24 ${VERDICT_TONE(r.verdict)}`}>{r.verdict}</span>
+          <li key={r.verdict} className="flex items-center gap-2">
+            <span className="w-28"><RecommendationBadge rec={r.verdict} size="sm" /></span>
             <span className="w-16 text-right font-mono text-ink-200">{r.meanExcess !== null ? fmtSignedPct(r.meanExcess) : '—'}</span>
             <span className="font-mono text-ink-500">t {r.tStat !== null ? r.tStat.toFixed(1).replace('.', ',') : '—'}</span>
           </li>
