@@ -89,13 +89,14 @@ export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return '';
   const t = new Date(iso).getTime();
   const diff = (Date.now() - t) / 1000;
-  if (diff < 60)        return 'just now';
-  if (diff < 3600)      return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400)     return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 7 * 86400) return `${Math.floor(diff / 86400)}d ago`;
-  if (diff < 30 * 86400) return `${Math.floor(diff / (7 * 86400))}w ago`;
-  if (diff < 365 * 86400) return `${Math.floor(diff / (30 * 86400))}mo ago`;
-  return `${Math.floor(diff / (365 * 86400))}y ago`;
+  // German like the rest of the page, and short enough for the list's narrow column.
+  if (diff < 60)        return 'gerade eben';
+  if (diff < 3600)      return `vor ${Math.floor(diff / 60)} Min.`;
+  if (diff < 86400)     return `vor ${Math.floor(diff / 3600)} Std.`;
+  if (diff < 7 * 86400) return `vor ${Math.floor(diff / 86400)} T.`;
+  if (diff < 30 * 86400) return `vor ${Math.floor(diff / (7 * 86400))} Wo.`;
+  if (diff < 365 * 86400) return `vor ${Math.floor(diff / (30 * 86400))} Mon.`;
+  return `vor ${Math.floor(diff / (365 * 86400))} J.`;
 }
 
 /**

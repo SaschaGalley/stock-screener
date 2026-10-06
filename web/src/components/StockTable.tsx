@@ -183,8 +183,8 @@ export default function StockTable({
           {r.dataAgeHours === null
             ? '—'
             : r.dataAgeHours < 48
-              ? `${r.dataAgeHours.toFixed(0)}h`
-              : `${(r.dataAgeHours / 24).toFixed(0)}d`}
+              ? `${r.dataAgeHours.toFixed(0)} Std.`
+              : `${(r.dataAgeHours / 24).toFixed(0)} T.`}
         </Tip>
         <Tip className="block leading-4 text-ink-500" content="Letztes AI-Verdict">
           {r.verdictAt ? relativeTime(r.verdictAt) : '—'}

@@ -279,6 +279,7 @@ function AnalysisView({
           onOpenPeers={onOpenPeers}
           flagsLabel={flagsLabel}
           analyzing={analyzing}
+          dayChange={bundle.marketSignals?.technicals?.returns?.d1 ?? null}
         />
 
         <StockTabs tab={tab} onTab={onTab} counts={{ journal: journalCount ?? undefined }} />

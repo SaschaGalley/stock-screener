@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { StockSummary } from "../types";
 import { fmt, relativeTime } from "../format";
 import { useMoney } from "../currency";
@@ -39,6 +39,8 @@ interface Props {
   flagsLabel: string;
   /** An analysis this page is streaming, or one the queue knows about. */
   analyzing: boolean;
+  /** The last session's move, from the stored technicals; null when there are none. */
+  dayChange?: number | null;
 }
 
 export default function StockHeader({
@@ -57,6 +59,7 @@ export default function StockHeader({
   onOpenPeers,
   flagsLabel,
   analyzing,
+  dayChange = null,
 }: Props) {
   const { fmtPrice, fmtBig } = useMoney();
   const [refreshing, setRefreshing] = useState(false);
@@ -107,7 +110,7 @@ export default function StockHeader({
       onRefreshed?.();
       return true;
     } catch (e) {
-      alert(`Refresh failed: ${(e as Error).message}`);
+      alert(`Aktualisieren fehlgeschlagen: ${(e as Error).message}`);
       return false;
     } finally {
       clearTimeout(announce);
@@ -208,22 +211,30 @@ export default function StockHeader({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <KV label="Price" term="financials.price" value={fmtPrice(f.price)} bigValue />
-        <KV label="Market Cap" term="financials.marketCap" value={fmtBig(f.marketCap)} />
-        <KV label="Enterprise Value" term="financials.enterpriseValue" value={fmtBig(f.enterpriseValue)} />
+      {/* One row that swipes on a phone — the figures took three rows there,
+          and a third of the screen before the page began. */}
+      <div className="mt-3 flex gap-x-6 overflow-x-auto [scrollbar-width:none] sm:mt-4 sm:grid sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
         <KV
-          label="52W Range"
+          label="Kurs" term="financials.price" value={fmtPrice(f.price)} bigValue
+          extra={typeof dayChange === 'number' && Number.isFinite(dayChange) && (
+            <span className={`ml-2 text-xs font-semibold ${dayChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`} title="Veränderung zum vorigen Schlusskurs">
+              {dayChange >= 0 ? '+' : '−'}{Math.abs(dayChange * 100).toFixed(1).replace('.', ',')} %
+            </span>
+          )}
+        />
+        <KV label="Börsenwert" term="financials.marketCap" value={fmtBig(f.marketCap)} />
+        <KV label="Unternehmenswert" term="financials.enterpriseValue" value={fmtBig(f.enterpriseValue)} />
+        <KV
+          label="52 Wochen"
           term="concept.range52w"
           value={`${fmtPrice(f.fiftyTwoWeekLow)} – ${fmtPrice(f.fiftyTwoWeekHigh)}`}
+          below={<RangePosition low={f.fiftyTwoWeekLow} high={f.fiftyTwoWeekHigh} price={f.price} />}
         />
         <KV
           label="Beta"
           term="financials.beta"
           value={fmt(f.beta)}
-          subtle={
-            summary.cachedAt ? `cached ${relativeTime(summary.cachedAt)}` : ""
-          }
+          subtle={summary.cachedAt ? `Daten ${relativeTime(summary.cachedAt)}` : ''}
         />
       </div>
     </header>
@@ -236,24 +247,42 @@ function KV({
   value,
   bigValue,
   subtle,
+  extra,
+  below,
 }: {
   label: string;
   term?: GlossaryKey;
   value: string;
   bigValue?: boolean;
   subtle?: string;
+  /** Beside the value, on its line — the day's move beside the price. */
+  extra?: ReactNode;
+  /** Under the value — the price's place in its 52-week range. */
+  below?: ReactNode;
 }) {
   return (
-    <div>
-      <div className="text-2xs uppercase tracking-wider text-ink-500">
+    <div className="shrink-0">
+      <div className="whitespace-nowrap text-2xs uppercase tracking-wider text-ink-500">
         <Term k={term}>{label}</Term>
       </div>
       <div
-        className={`font-mono tabular ${bigValue ? "text-lg font-bold text-ink-50" : "text-sm text-ink-100"}`}
+        className={`flex items-baseline whitespace-nowrap font-mono tabular ${bigValue ? "text-lg font-bold text-ink-50" : "text-sm text-ink-100"}`}
       >
-        {value}
+        {value}{extra}
       </div>
-      {subtle && <div className="text-2xs text-ink-500">{subtle}</div>}
+      {below}
+      {subtle && <div className="whitespace-nowrap text-2xs text-ink-500">{subtle}</div>}
+    </div>
+  );
+}
+
+/** Where the price stands between the year's low and high, as a tick on a line. */
+function RangePosition({ low, high, price }: { low: number | null; high: number | null; price: number | null }) {
+  if (low == null || high == null || price == null || !(high > low)) return null;
+  const at = Math.min(1, Math.max(0, (price - low) / (high - low)));
+  return (
+    <div className="relative mt-1 h-1.5 w-28 rounded-full bg-ink-800" title={`${Math.round(at * 100)} % der Spanne`}>
+      <div className="absolute -top-0.5 h-2.5 w-0.5 rounded bg-ink-100" style={{ left: `calc(${at * 100}% - 1px)` }} />
     </div>
   );
 }
@@ -317,7 +346,7 @@ function RefreshMenu({
         className="relative flex items-center gap-1 rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? '⟳' : '↻'}
-        <span className="hidden sm:inline">{busy ? 'Aktualisiere…' : 'Refresh'}</span>
+        <span className="hidden sm:inline">{busy ? 'Aktualisiere…' : 'Aktualisieren'}</span>
         <span aria-hidden className="text-2xs text-ink-500">▾</span>
         {staleNote && !busy && (
           <span
