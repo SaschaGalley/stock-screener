@@ -98,6 +98,8 @@ export function fmtPrice(n: number | null | undefined, currency?: string | null)
 // under the plain names; the terminal and the prompts keep the ones above.
 
 const UNUSABLE_DE = '—';
+/** Between a number and its unit: a space the line may not break at, so "553,72 $" stays one piece in a narrow cell. */
+const NBSP = '\u00a0';
 const isNum = (n: number | null | undefined): n is number => n !== null && n !== undefined && Number.isFinite(n);
 
 /** 1234.5 → "1.234,50"; the minus is a real minus. */
@@ -115,32 +117,32 @@ export function fmtDe(n: number | null | undefined, suffix = '', decimals = 2): 
 }
 
 export function fmtPctDe(n: number | null | undefined, decimals = 1): string {
-  return isNum(n) ? `${deNumber(n * 100, decimals)} %` : UNUSABLE_DE;
+  return isNum(n) ? `${deNumber(n * 100, decimals)}${NBSP}%` : UNUSABLE_DE;
 }
 
 export function fmtSignedPctDe(n: number | null | undefined, decimals = 1): string {
-  return isNum(n) ? `${n >= 0 ? '+' : ''}${deNumber(n * 100, decimals)} %` : UNUSABLE_DE;
+  return isNum(n) ? `${n >= 0 ? '+' : ''}${deNumber(n * 100, decimals)}${NBSP}%` : UNUSABLE_DE;
 }
 
 export function fmtPercentPointsDe(n: number | null | undefined, decimals = 1): string {
-  return isNum(n) ? `${n >= 0 ? '+' : ''}${deNumber(n, decimals)} %` : UNUSABLE_DE;
+  return isNum(n) ? `${n >= 0 ? '+' : ''}${deNumber(n, decimals)}${NBSP}%` : UNUSABLE_DE;
 }
 
 /** 1.23e9 → "1,23 Mrd." — share counts and other quantities without a unit. */
 export function fmtCountDe(n: number | null | undefined): string {
   if (!isNum(n)) return UNUSABLE_DE;
   const abs = Math.abs(n);
-  if (abs >= 1e12) return `${deNumber(n / 1e12)} Bio.`;
-  if (abs >= 1e9)  return `${deNumber(n / 1e9)} Mrd.`;
-  if (abs >= 1e6)  return `${deNumber(n / 1e6)} Mio.`;
-  if (abs >= 1e3)  return `${deNumber(n / 1e3, 1)} Tsd.`;
+  if (abs >= 1e12) return `${deNumber(n / 1e12)}${NBSP}Bio.`;
+  if (abs >= 1e9)  return `${deNumber(n / 1e9)}${NBSP}Mrd.`;
+  if (abs >= 1e6)  return `${deNumber(n / 1e6)}${NBSP}Mio.`;
+  if (abs >= 1e3)  return `${deNumber(n / 1e3, 1)}${NBSP}Tsd.`;
   return deNumber(n, 0);
 }
 
 export function fmtBigDe(n: number | null | undefined, currency?: string | null): string {
-  return isNum(n) ? `${fmtCountDe(n)} ${currencySuffix(currency)}` : UNUSABLE_DE;
+  return isNum(n) ? `${fmtCountDe(n)}${NBSP}${currencySuffix(currency)}` : UNUSABLE_DE;
 }
 
 export function fmtPriceDe(n: number | null | undefined, currency?: string | null): string {
-  return isNum(n) ? `${deNumber(n)} ${currencySuffix(currency)}` : UNUSABLE_DE;
+  return isNum(n) ? `${deNumber(n)}${NBSP}${currencySuffix(currency)}` : UNUSABLE_DE;
 }

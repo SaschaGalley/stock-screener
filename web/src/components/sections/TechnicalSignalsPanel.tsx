@@ -12,13 +12,13 @@ export default function TechnicalSignalsPanel({ signals }: Props) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <TechnicalGauge title="Moving Averages" term="tech.movingAverages" group={signals.movingAverages} />
-        <TechnicalGauge title="Oscillators"     term="tech.oscillators"     group={signals.oscillators} />
-        <TechnicalGauge title="Overall"         term="tech.overall"         group={signals.overall} />
+        <TechnicalGauge title="Gleitende Durchschnitte" term="tech.movingAverages" group={signals.movingAverages} />
+        <TechnicalGauge title="Oszillatoren"     term="tech.oscillators"     group={signals.oscillators} />
+        <TechnicalGauge title="Gesamt"         term="tech.overall"         group={signals.overall} />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <IndicatorTable title={`Moving Averages (${signals.movingAverages.items.length})`} group={signals.movingAverages} />
-        <IndicatorTable title={`Oscillators (${signals.oscillators.items.length})`}        group={signals.oscillators} />
+        <IndicatorTable title={`Gleitende Durchschnitte (${signals.movingAverages.items.length})`} group={signals.movingAverages} />
+        <IndicatorTable title={`Oszillatoren (${signals.oscillators.items.length})`}        group={signals.oscillators} />
       </div>
     </div>
   );
@@ -33,8 +33,8 @@ function IndicatorTable({ title, group }: { title: string; group: SignalGroup })
       <table className="w-full text-xs tabular">
         <thead>
           <tr className="border-b border-ink-800 text-2xs uppercase tracking-wider text-ink-500">
-            <th className="py-1 pr-2 text-left font-medium">Indicator</th>
-            <th className="py-1 px-2 text-right font-medium">Value</th>
+            <th className="py-1 pr-2 text-left font-medium">Indikator</th>
+            <th className="py-1 px-2 text-right font-medium">Wert</th>
             <th className="py-1 pl-2 text-right font-medium">Signal</th>
           </tr>
         </thead>

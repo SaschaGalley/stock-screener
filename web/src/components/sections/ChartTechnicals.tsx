@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
 import { useMoney } from '../../currency';
-import type { OverviewRow, TechnicalSignals, TimingReadings } from '../../types';
+import type { MarketSignals, OverviewRow, TechnicalSignals, TimingReadings } from '../../types';
 import {
   CHART_PATTERN_STATUS_LABEL, channelMove,
   type ChartAnalysis, type ChartFinding, type ChartReadDoc, type ChartResponse, type PriceLevel,
@@ -13,7 +13,8 @@ import { TimingEvidence, channelDirection, channelPlace } from '../TimingCell';
 import { SetupPlan, firingSetups } from '../SetupBadge';
 import { useVerdictEvidence } from '../VerdictEvidence';
 import Term from '../Term';
-import More from '../More';
+import PriceAction from './PriceAction';
+import MarketContext from './MarketContext';
 import { useSectionFinding } from '../Section';
 import type { GlossaryKey } from '../../glossary';
 
@@ -28,6 +29,8 @@ interface Props {
   model:    string;
   /** CSS height of the price chart. */
   chartHeight?: number | string;
+  /** Returns, volatility, options, revisions and macro — the last of the chart's readings. */
+  marketSignals?: MarketSignals | null;
 }
 
 const RANGES = [{ sessions: 126, label: '6 M' }, { sessions: 252, label: '1 J' }, { sessions: 504, label: '2 J' }] as const;
@@ -63,7 +66,7 @@ function readLayers(): Set<ChartLayer> {
  * backtest beside them — and, on request, a model's reading of the chart.
  * The old indicator vote stays at the bottom, folded away.
  */
-export default function ChartTechnicals({ symbol, row, timing, signals, model, chartHeight }: Props) {
+export default function ChartTechnicals({ symbol, row, timing, signals, model, chartHeight, marketSignals = null }: Props) {
   const money = useMoney();
   const evidence = useVerdictEvidence();
   const [data, setData] = useState<ChartResponse | null | undefined>(undefined);
@@ -72,6 +75,7 @@ export default function ChartTechnicals({ symbol, row, timing, signals, model, c
   const [channel, setChannel] = useState<number>(63);
   const [layers, setLayers] = useState<Set<ChartLayer>>(readLayers);
   const [read, setRead] = useState<ChartReadDoc | null>(null);
+  const [view, setView] = useState<SubView>('findings');
 
   useEffect(() => {
     let live = true;
@@ -105,22 +109,9 @@ export default function ChartTechnicals({ symbol, row, timing, signals, model, c
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
             <Segmented options={RANGES.map((r) => ({ value: r.sessions, label: r.label }))} value={sessions} onChange={setSessions} />
-            <span className="text-ink-600">|</span>
             <span className="text-ink-500">Kanal</span>
             <Segmented options={CHANNELS.map((c) => ({ value: c.sessions, label: c.label }))} value={channel} onChange={setChannel} />
-            <div className="flex flex-wrap gap-1">
-              {CHART_LAYERS.filter((l) => l.key !== 'read' || read).map((l) => (
-                <button
-                  key={l.key}
-                  onClick={() => toggle(l.key)}
-                  className={`rounded-full border px-2 py-0.5 transition ${
-                    layers.has(l.key) ? 'border-ink-600 bg-ink-800 text-ink-200' : 'border-ink-800 text-ink-500 hover:text-ink-300'
-                  }`}
-                >
-                  {l.label}
-                </button>
-              ))}
-            </div>
+            <LayerMenu layers={layers} onToggle={toggle} hasRead={!!read} />
           </div>
           <div className="rounded border border-ink-700 bg-ink-950 p-2">
             <PriceChart
@@ -138,39 +129,72 @@ export default function ChartTechnicals({ symbol, row, timing, signals, model, c
         <p className="text-sm text-ink-500">Keine Kursdaten im Archiv.</p>
       )}
 
-      {a && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Findings findings={a.findings} />
-          <Levels a={a} fmtPrice={money.fmtPrice} />
+      {/* One reading at a time under the chart, not all of them down the page. */}
+      <div className="border-b border-ink-800">
+        <div className="-mb-px flex gap-1 overflow-x-auto [scrollbar-width:none]">
+          {SUB_VIEWS.filter((v) => v.key !== 'returns' || marketSignals).map((v) => (
+            <button
+              key={v.key}
+              onClick={() => setView(v.key)}
+              className={`shrink-0 whitespace-nowrap border-b-2 px-3 py-1.5 text-sm transition ${
+                view === v.key ? 'border-accent font-semibold text-ink-50' : 'border-transparent text-ink-400 hover:text-ink-200'
+              }`}
+            >
+              {v.label}{v.key === 'read' && read ? ' ✓' : ''}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {view === 'findings' && a && (
+        <div className="space-y-4">
+          {read && (
+            <button onClick={() => setView('read')} className="block w-full rounded border border-ink-700 bg-ink-950 px-3 py-2 text-left transition hover:border-ink-600">
+              <span className="text-xs font-semibold text-ink-300">KI-Lesung</span>
+              <span className="ml-2 text-xs text-ink-500">{dayDe(read.read.asOf)}</span>
+              <p className="mt-1 line-clamp-2 text-sm text-ink-200">{read.read.summary}</p>
+            </button>
+          )}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Findings findings={a.findings} />
+            <Levels a={a} fmtPrice={money.fmtPrice} />
+          </div>
         </div>
       )}
 
-      {data && data.bars.length > 0 && (
+      {view === 'read' && data && data.bars.length > 0 && (
         <ChartReadPanel symbol={symbol} model={model} read={read} asOf={a?.asOf ?? null} onRead={setRead} />
       )}
 
-      {(a || t || signals) && (
-        <More label="Trendkanäle, Durchschnitte, Volumen, Timing-Lesung, Setups und Indikator-Abstimmung">
-          {a && (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Channels a={a} fmtPrice={money.fmtPrice} />
-              <Structure a={a} fmtPrice={money.fmtPrice} />
-            </div>
-          )}
-          {t && (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Block title="Timing-Lesung mit Backtest">
-                <div className="text-xs"><TimingEvidence t={t} verdict={row?.recommendation ?? null} evidence={evidence} /></div>
-              </Block>
-              <Setups row={row} evidence={evidence} />
-            </div>
-          )}
-          {signals && (
-            <Block title="Indikator-Abstimmung" term="tech.vote">
-              <TechnicalSignalsPanel signals={signals} />
+      {view === 'trend' && a && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Channels a={a} fmtPrice={money.fmtPrice} />
+          <Structure a={a} fmtPrice={money.fmtPrice} />
+        </div>
+      )}
+
+      {view === 'timing' && (
+        t ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Block title="Timing-Lesung mit Backtest">
+              <div className="text-xs"><TimingEvidence t={t} verdict={row?.recommendation ?? null} evidence={evidence} /></div>
             </Block>
-          )}
-        </More>
+            <Setups row={row} evidence={evidence} />
+          </div>
+        ) : <p className="text-sm text-ink-500">Für diese Aktie liegen noch keine Timing-Lesungen vor.</p>
+      )}
+
+      {view === 'indicators' && (
+        signals
+          ? <Block title="Indikator-Abstimmung" term="tech.vote"><TechnicalSignalsPanel signals={signals} /></Block>
+          : <p className="text-sm text-ink-500">Keine Indikatoren gespeichert.</p>
+      )}
+
+      {view === 'returns' && marketSignals && (
+        <div className="space-y-6">
+          <PriceAction marketSignals={marketSignals} />
+          <MarketContext marketSignals={marketSignals} />
+        </div>
       )}
 
       <p className="text-2xs leading-relaxed text-ink-500">
@@ -178,6 +202,54 @@ export default function ChartTechnicals({ symbol, row, timing, signals, model, c
         diesem Bereich fließt in Score oder Urteil ein. Gerechnet aus den archivierten, splitbereinigten Tageskursen
         {a ? `, Stand ${dayDe(a.asOf)}` : ''}.
       </p>
+    </div>
+  );
+}
+
+type SubView = 'findings' | 'read' | 'trend' | 'timing' | 'indicators' | 'returns';
+const SUB_VIEWS: { key: SubView; label: string }[] = [
+  { key: 'findings',   label: 'Befund' },
+  { key: 'read',       label: 'KI-Lesung' },
+  { key: 'trend',      label: 'Trend & Kanäle' },
+  { key: 'timing',     label: 'Timing & Setups' },
+  { key: 'indicators', label: 'Indikatoren' },
+  { key: 'returns',    label: 'Renditen & Umfeld' },
+];
+
+/**
+ * What is drawn over the candles, as a menu of checkboxes rather than nine
+ * chips in a row above the chart: the chips were the busiest thing on the
+ * page and the one least often touched.
+ */
+function LayerMenu({ layers, onToggle, hasRead }: { layers: ReadonlySet<ChartLayer>; onToggle: (l: ChartLayer) => void; hasRead: boolean }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [open]);
+  const shown = CHART_LAYERS.filter((l) => l.key !== 'read' || hasRead);
+  return (
+    <div ref={root} className="relative ml-auto">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="rounded border border-ink-700 bg-ink-900 px-2 py-0.5 text-ink-300 transition hover:bg-ink-800"
+      >
+        Einblenden <span className="text-ink-500">{shown.filter((l) => layers.has(l.key)).length}/{shown.length} ▾</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded-lg border border-ink-700 bg-ink-900 p-1.5 shadow-2xl">
+          {shown.map((l) => (
+            <label key={l.key} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm text-ink-200 hover:bg-ink-800">
+              <input type="checkbox" checked={layers.has(l.key)} onChange={() => onToggle(l.key)} className="accent-[var(--color-accent)]" />
+              {l.label}
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -281,9 +353,9 @@ function Levels({ a, fmtPrice }: { a: ChartAnalysis; fmtPrice: (n: number) => st
   const rowFor = (l: PriceLevel) => (
     <tr key={`${l.kind}-${l.price}`} className="border-b border-ink-800">
       <td className={`py-1 pr-2 ${l.kind === 'support' ? 'text-emerald-400' : 'text-red-400'}`}>{l.kind === 'support' ? 'Unterstützung' : 'Widerstand'}</td>
-      <td className="py-1 px-2 text-right font-mono text-ink-100">{fmtPrice(l.price)}</td>
-      <td className="py-1 px-2 text-right font-mono text-ink-300">{pct(l.distance)}</td>
-      <td className="py-1 px-2 text-right font-mono text-ink-400">{l.distanceAtr !== null ? de(Math.abs(l.distanceAtr), 1) : '—'}</td>
+      <td className="whitespace-nowrap py-1 px-2 text-right font-mono text-ink-100">{fmtPrice(l.price)}</td>
+      <td className="whitespace-nowrap py-1 px-2 text-right font-mono text-ink-300">{pct(l.distance)}</td>
+      <td className="whitespace-nowrap py-1 px-2 text-right font-mono text-ink-400">{l.distanceAtr !== null ? de(Math.abs(l.distanceAtr), 1) : '—'}</td>
       <td className="py-1 pl-2 text-ink-400">
         {SOURCE_LABEL[l.source]}{l.touches > 1 ? ` · ${l.touches}×` : ''}{l.flipped ? ' · Rollentausch' : ''}
         <span className="ml-1 inline-block h-1 w-8 overflow-hidden rounded bg-ink-800 align-middle">
@@ -308,7 +380,7 @@ function Levels({ a, fmtPrice }: { a: ChartAnalysis; fmtPrice: (n: number) => st
           {above.map(rowFor)}
           <tr className="border-b border-ink-800 bg-ink-900">
             <td className="py-1 pr-2 font-semibold text-ink-200">Kurs</td>
-            <td className="py-1 px-2 text-right font-mono font-semibold text-ink-50">{fmtPrice(a.close)}</td>
+            <td className="whitespace-nowrap py-1 px-2 text-right font-mono font-semibold text-ink-50">{fmtPrice(a.close)}</td>
             <td colSpan={3} className="py-1 pl-2 text-ink-500">{dayDe(a.asOf)}</td>
           </tr>
           {below.map(rowFor)}
@@ -339,7 +411,7 @@ function Channels({ a, fmtPrice }: { a: ChartAnalysis; fmtPrice: (n: number) => 
                 <td className="py-1 pr-2 text-ink-300">{c.label}</td>
                 <td className={`py-1 px-2 text-right font-mono ${c.slope > 0.15 ? 'text-emerald-400' : c.slope < -0.15 ? 'text-red-400' : 'text-ink-300'}`}>{pct(move, 0)}</td>
                 <td className={`py-1 px-2 text-right font-mono ${c.r2 < 0.3 ? 'text-ink-500' : 'text-ink-200'}`}>{de(c.r2)}</td>
-                <td className="py-1 px-2 text-right font-mono text-ink-200">{de(c.z, 1)}σ</td>
+                <td className="whitespace-nowrap py-1 px-2 text-right font-mono text-ink-200">{de(c.z, 1)}σ</td>
                 <td className="whitespace-nowrap py-1 pl-2 text-right font-mono text-ink-400">{fmtPrice(c.lower[1])} – {fmtPrice(c.upper[1])}</td>
               </tr>
             );

@@ -10,7 +10,7 @@
  * Each returns null when it has nothing to say, and the subtitle stays.
  */
 
-import type { ComputedMetrics, MarketSignals, StockFinancials } from '../types';
+import type { ComputedMetrics, StockFinancials } from '../types';
 import type { SectorMedians } from '../../../src/types';
 
 type Fmt = (n: number | null | undefined) => string;
@@ -107,30 +107,6 @@ export function ownershipFinding(f: StockFinancials, fmtBig: Fmt): string | null
     ok(f.institutionsPercentHeld) && `Institutionen ${share(f.institutionsPercentHeld)}`,
     insiders,
     ok(f.shortPercentOfFloat) && `leerverkauft ${share(f.shortPercentOfFloat, 1)}`,
-  ]);
-}
-
-export function priceActionFinding(ms: MarketSignals | null): string | null {
-  const t = ms?.technicals;
-  if (!t) return null;
-  return join([
-    ok(t.returns?.y1) && `1 J ${pct(t.returns.y1)}`,
-    ok(t.returns?.ytd) && `seit Jahresbeginn ${pct(t.returns.ytd)}`,
-    ok(t.rsVsSPY3M) && `3 M ${pct(t.rsVsSPY3M)} gegen den S&P 500`,
-    ok(t.hv30) && `Volatilität ${share(t.hv30)}`,
-  ]);
-}
-
-const VIX_REGIME = { low: 'ruhig', normal: 'normal', elevated: 'erhöht', high: 'hoch', unknown: null } as const;
-
-export function marketContextFinding(ms: MarketSignals | null): string | null {
-  if (!ms) return null;
-  const o = ms.options;
-  const year = ms.revisions?.perPeriod.find((p) => p.period === '0y');
-  return join([
-    o && ok(o.ivAtm30d) && `implizite Vola ${share(o.ivAtm30d)}${ok(o.ivVsHv90Ratio) ? ` (${de(o.ivVsHv90Ratio)}× realisiert)` : ''}`,
-    year && ok(year.netRevision30d) && `EPS-Revisionen 30 T ${year.netRevision30d > 0 ? '+' : ''}${year.netRevision30d}`,
-    ok(ms.macro?.vix) && `VIX ${de(ms.macro.vix)}${VIX_REGIME[ms.macro.vixRegime] ? ` (${VIX_REGIME[ms.macro.vixRegime]})` : ''}`,
   ]);
 }
 

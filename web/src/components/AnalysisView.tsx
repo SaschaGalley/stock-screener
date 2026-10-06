@@ -30,8 +30,6 @@ import FundamentalsGrid from "./sections/FundamentalsGrid";
 import PeerCompare from "./sections/PeerCompare";
 import ChartTechnicals from "./sections/ChartTechnicals";
 import ScoreHistoryChart from "./charts/ScoreHistoryChart";
-import PriceAction from "./sections/PriceAction";
-import MarketContext from "./sections/MarketContext";
 import OwnershipFlow from "./sections/OwnershipFlow";
 import EarningsBlock from "./sections/EarningsBlock";
 import NewsAndResearch from "./sections/NewsAndResearch";
@@ -42,8 +40,8 @@ import StockTabs, { type StockTab } from "./StockTabs";
 import OverviewCards from "./OverviewCards";
 import More from "./More";
 import {
-  earningsFinding, fairValueFinding, fundamentalsFinding, marketContextFinding, modelsFinding,
-  ownershipFinding, peersFinding, priceActionFinding, qualityFinding, researchFinding,
+  earningsFinding, fairValueFinding, fundamentalsFinding, modelsFinding,
+  ownershipFinding, peersFinding, qualityFinding, researchFinding,
 } from "./sectionFindings";
 // Markdown and the editor are only wanted once the section is opened.
 const Journal = lazy(() => import("./Journal"));
@@ -364,29 +362,9 @@ function AnalysisView({
                   signals={bundle.technicalSignals}
                   model={flags.model}
                   chartHeight="clamp(420px, 62vh, 760px)"
+                  marketSignals={bundle.marketSignals}
                 />
               </Section>
-              {/* What the stock has done and what surrounds it — returns, volatility, options, revisions, macro */}
-              {bundle.marketSignals && (
-                <More label="Renditen, Volatilität, relative Stärke, Optionen, Revisionen und Makro">
-                  <Section fixed
-                    title="Kursentwicklung"
-                    finding={priceActionFinding(bundle.marketSignals)}
-                    info="section.priceAction"
-                    subtitle="Renditen, Volatilität, Position, relative Stärke"
-                  >
-                    <PriceAction marketSignals={bundle.marketSignals} />
-                  </Section>
-                  <Section fixed
-                    title="Marktumfeld"
-                    finding={marketContextFinding(bundle.marketSignals)}
-                    info="section.marketContext"
-                    subtitle="Optionen, Analystenrevisionen, Makro"
-                  >
-                    <MarketContext marketSignals={bundle.marketSignals} />
-                  </Section>
-                </More>
-              )}
             </TabPane>
 
             <TabPane on={tab === 'valuation'} seen={shown.has('valuation')}>
