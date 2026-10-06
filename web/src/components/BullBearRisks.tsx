@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMoney } from '../currency';
 import { fmtSignedPct } from '../format';
 import {
@@ -96,17 +96,17 @@ function CaseCard({ direction, side, price, scenarios }: {
       </div>
 
       <div className="space-y-4">
-        {side.unsorted.length > 0 && <Points points={side.unsorted} bulletClass={a.text} />}
+        {side.unsorted.length > 0 && <Points points={side.unsorted} bulletClass={a.text} first={THESES_SHOWN} />}
         {side.theses.length > 0 && (
           <div>
             <SectionLabel>{label('theses')}</SectionLabel>
-            <Points points={side.theses} bulletClass={a.text} />
+            <Points points={side.theses} bulletClass={a.text} first={THESES_SHOWN} />
           </div>
         )}
         {side.figures.length > 0 && (
           <div>
             <SectionLabel>{label('figures')}</SectionLabel>
-            <Points points={side.figures} bulletClass={a.text} muted />
+            <Points points={side.figures} bulletClass={a.text} muted first={FIGURES_SHOWN} />
           </div>
         )}
       </div>
@@ -133,22 +133,67 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
+/** A side shows its strongest points; the model leads each section with the strongest. */
+const THESES_SHOWN = 3;
+const FIGURES_SHOWN = 2;
+/** Text past this many characters is clamped to two lines until clicked. */
+const CLAMP_AT = 150;
+
 /**
- * A section's points. A point with a headline shows it above its text, so a
- * side can be read by its headlines alone; older points are the text alone.
+ * A headline for a point stored before points had one: the first clause,
+ * where the writing has one short enough to serve — up to a semicolon, a
+ * colon, a dash, or the end of the first sentence. "ROIC von 64,5 % bei WACC
+ * von 11,0 % liefert einen Spread von 53,5 %; das zeigt …" reads by its
+ * first half. A point without such a break keeps no headline.
  */
-function Points({ points, bulletClass, muted = false }: { points: CasePointView[]; bulletClass: string; muted?: boolean }) {
+export function leadOf(p: CasePointView): CasePointView {
+  if (p.title) return p;
+  // A sentence ends at a full stop before a capital — but not after an
+  // abbreviation of one to three letters: "z. B.", "Mio.", "bzw.".
+  const m = /^(.{18,110}?)(;\s+|:\s+|\s+—\s+|(?<!\b\p{L}{1,3})\.\s+(?=[A-ZÄÖÜ0-9]))(.{30,})$/su.exec(p.text);
+  return m ? { title: m[1].trim(), text: m[3].trim().replace(/^./, (c) => c.toUpperCase()) } : p;
+}
+
+/**
+ * A section's points: each a headline with its text clamped to two lines,
+ * the whole of it on a click, and only the first few shown until asked.
+ * Five sentences a point, five points a side, read as a wall; the headlines
+ * read as the case.
+ */
+function Points({ points, bulletClass, muted = false, first }: {
+  points: CasePointView[]; bulletClass: string; muted?: boolean; first?: number;
+}) {
+  const [all, setAll] = useState(false);
+  const shown = first !== undefined && !all ? points.slice(0, first) : points;
+  const rest = points.length - shown.length;
   return (
-    <ul className="space-y-2.5">
-      {points.map((p, i) => (
-        <li key={i} className="flex gap-2 leading-relaxed">
-          <span className={`mt-0.5 shrink-0 ${bulletClass}`}>·</span>
-          <div className="min-w-0">
-            {p.title && <div className={`font-semibold text-ink-100 ${muted ? 'text-[13px]' : 'text-sm'}`}>{p.title}</div>}
-            <div className={muted ? 'text-[13px] text-ink-400' : 'text-sm text-ink-300'}>{p.text}</div>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-3">
+        {shown.map((p, i) => <Point key={i} p={leadOf(p)} bulletClass={bulletClass} muted={muted} />)}
+      </ul>
+      {(rest > 0 || all) && first !== undefined && points.length > first && (
+        <button onClick={() => setAll((x) => !x)} className="mt-2 pl-4 text-xs text-ink-400 hover:text-ink-100">
+          {all ? 'weniger' : `+ ${rest} ${rest === 1 ? 'weiterer Punkt' : 'weitere Punkte'}`}
+        </button>
+      )}
+    </>
+  );
+}
+
+function Point({ p, bulletClass, muted }: { p: CasePointView; bulletClass: string; muted: boolean }) {
+  const [open, setOpen] = useState(false);
+  const long = p.text.length > CLAMP_AT;
+  return (
+    <li
+      className={`flex gap-2 leading-relaxed ${long ? 'cursor-pointer' : ''}`}
+      onClick={long ? () => setOpen((o) => !o) : undefined}
+      title={long && !open ? 'Ganzen Punkt zeigen' : undefined}
+    >
+      <span className={`mt-0.5 shrink-0 ${bulletClass}`}>•</span>
+      <div className="min-w-0">
+        {p.title && <div className={`font-semibold text-ink-50 ${muted ? 'text-sm' : 'text-[15px]'}`}>{p.title}</div>}
+        <div className={`${muted ? 'text-[13px] text-ink-400' : 'text-sm text-ink-300'} ${long && !open ? 'line-clamp-2' : ''}`}>{p.text}</div>
+      </div>
+    </li>
   );
 }
