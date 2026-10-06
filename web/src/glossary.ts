@@ -34,8 +34,6 @@ export const GLOSSARY = {
   // ── The list ──────────────────────────────────────────────────────────────
   'list.score':
     `Gesamtscore 0–10. Er mischt eine deterministische Bewertung aus den gespeicherten Zahlen (Z) mit einer Lektüre der Research-Texte (T), gewichtet nach dem Vertrauen in beide. Bänder: ${BANDS}. Der Pfeil links zeigt die Veränderung seit dem ersten gespeicherten Urteil.`,
-  'list.trend':
-    'Der Score über die Zeit, ab dem ersten gespeicherten Punkt. Die Skala ist bewusst nicht auf Minimum und Maximum gezogen: Rauschen von einem Zehntel bleibt flach, echte Bewegung bleibt sichtbar. Grün steigend, rot fallend.',
   'list.verdict':
     'Das Urteil ist das Band, in das der Score fällt. ⛔ heißt: Ein Deckel hält es bewusst darunter, etwa wegen schwacher Datenlage. Auf Hover: was das Urteil im Backtest brachte, über wie viel Prozent aller gespeicherten Aktien der Faktor-Score liegt — das trennt eine HOLD am oberen Rand von einer am unteren — und welches Modell die Texte gelesen hat.',
   'list.timing':

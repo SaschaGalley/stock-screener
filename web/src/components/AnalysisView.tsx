@@ -29,6 +29,7 @@ import QualityScores from "./sections/QualityScores";
 import FundamentalsGrid from "./sections/FundamentalsGrid";
 import PeerCompare from "./sections/PeerCompare";
 import ChartTechnicals from "./sections/ChartTechnicals";
+import ScoreHistoryChart from "./charts/ScoreHistoryChart";
 import PriceAction from "./sections/PriceAction";
 import MarketContext from "./sections/MarketContext";
 import OwnershipFlow from "./sections/OwnershipFlow";
@@ -509,12 +510,15 @@ function AnalysisView({
               </Section>
               {/* TIER 7c: THE SAME QUESTION, ASKED OF OUR OWN VERDICTS */}
               <Section fixed
-                title="Unser Urteil: Trefferquote"
+                title="Unser Urteil: Verlauf und Trefferquote"
                 info="section.verdictRecord"
-                subtitle="Jeder Urteilswechsel gegen den S&P 500 danach"
+                subtitle="Der Score über die Zeit, und jeder Urteilswechsel gegen den S&P 500 danach"
                 storageKey="verdict-record"
               >
-                <VerdictTrackRecord symbol={symbol} />
+                <div className="space-y-4">
+                  {row && row.scoreHistory.length > 1 && <ScoreHistoryChart points={row.scoreHistory} />}
+                  <VerdictTrackRecord symbol={symbol} />
+                </div>
               </Section>
               {/* TIER 10: OWNERSHIP & FLOW */}
               <Section fixed title="Eigentümer & Insider" finding={ownershipFinding(f, big)} info="section.ownership">
