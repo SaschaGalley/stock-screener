@@ -29,16 +29,27 @@ interface Props {
  * the two views would start disagreeing about what "sorted" means.
  */
 export default function StockListControls({ view, onChange, layout, badge }: Props) {
-  const search = (
+  const field = (
     <input
       type="search"
+      data-stock-search
       value={view.query}
       onChange={(e) => onChange({ ...view, query: e.target.value })}
+      onKeyDown={(e) => { if (e.key === 'Escape' && !view.query) e.currentTarget.blur(); }}
       placeholder={layout === 'rail' ? 'Symbol, Name, Sektor…' : 'Filtern nach Symbol, Name, Sektor…'}
-      className={`rounded border border-ink-700 bg-ink-950 py-1.5 pl-2.5 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent focus:outline-none ${
-        layout === 'rail' ? 'w-full pr-14' : 'w-full pr-2.5 sm:w-56'
+      className={`peer rounded border border-ink-700 bg-ink-950 py-1.5 pl-2.5 text-sm text-ink-100 placeholder:text-ink-500 focus:border-accent focus:outline-none ${
+        layout === 'rail' ? 'w-full pr-14' : 'w-full pr-7 sm:w-56'
       }`}
     />
+  );
+  // The key that gets here from anywhere, in the field while it is empty and unfocused.
+  const search = layout === 'rail' ? field : (
+    <div className="relative w-full sm:w-auto">
+      {field}
+      {!view.query && (
+        <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-ink-700 px-1 font-mono text-2xs text-ink-500 peer-focus:hidden lg:block">/</kbd>
+      )}
+    </div>
   );
 
   if (layout === 'rail') {

@@ -7,7 +7,8 @@ import AnalyzeForm from './components/AnalyzeForm';
 import AnalysisModal, { flagsLabel } from './components/AnalysisModal';
 import PeersModal from './components/PeersModal';
 import AnalysisView from './components/AnalysisView';
-import { isStockTab, type StockTab } from './components/StockTabs';
+import { isStockTab, STOCK_TABS, type StockTab } from './components/StockTabs';
+import { focusSearch, ShortcutsHelp, typing } from './components/Shortcuts';
 import AppNav, { NavIcons, type NavKey } from './components/AppNav';
 import AppBar from './components/AppBar';
 import ProgressBanner from './components/ProgressBanner';
@@ -19,7 +20,7 @@ const FeedPage = lazy(() => import('./pages/FeedPage'));
 const JournalPage = lazy(() => import('./pages/JournalPage'));
 const DepotPage = lazy(() => import('./pages/DepotPage'));
 const ReviewPage = lazy(() => import('./pages/ReviewPage'));
-import { applyListView, DEFAULT_LIST_VIEW, type ListView } from './components/stockList';
+import { applyListView, DEFAULT_LIST_VIEW, groupRows, type ListView } from './components/stockList';
 import { EMPTY_ANCHOR, type ListScrollAnchor } from './components/useListScroll';
 import type { Settings, OverviewRow, ProgressEvent, SearchChoice } from './types';
 import { DEFAULT_MODEL_ID, resolveModelId } from '../../src/models';
@@ -113,6 +114,8 @@ function withViewTransition(apply: () => void): void {
 /** No stages running — one array, so an idle stock's page sees the same prop each time. */
 const NO_STAGES: string[] = [];
 
+const RAIL_NARROW_KEY = 'stockcli:rail-narrow';
+
 export default function App() {
   const [rows, setRows] = useState<OverviewRow[]>([]);
   const [rowsLoading, setRowsLoading] = useState(true);
@@ -145,6 +148,18 @@ export default function App() {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   /** Who else is in the business, and adding them — a dialog from the header. */
   const [peersOpen, setPeersOpen] = useState(false);
+  /** The keys the app answers to, on `?`. */
+  const [helpOpen, setHelpOpen] = useState(false);
+  // The list beside an open stock, down to its tickers and scores: the page
+  // gets the width, and the next stock is still a click away. A layout
+  // preference, so it is remembered — unlike a fold inside the page.
+  const [railNarrow, setRailNarrow] = useState(() => {
+    try { return localStorage.getItem(RAIL_NARROW_KEY) === '1'; } catch { return false; }
+  });
+  const toggleRail = useCallback(() => setRailNarrow((n) => {
+    try { localStorage.setItem(RAIL_NARROW_KEY, n ? '0' : '1'); } catch { /* not kept, then */ }
+    return !n;
+  }), []);
   /** Symbols the queue is working on, keyed by symbol → the stages in flight. */
   const [activity, setActivityState] = useState<Record<string, string[]>>({});
   /**
@@ -478,14 +493,53 @@ export default function App() {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       // A dialog owns Esc while it is open, and closing it must not also
       // close the analysis underneath.
-      if (analysisOpen || peersOpen) return;
+      if (analysisOpen || peersOpen || helpOpen) return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       closeOverlay();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isTable, closeOverlay, analysisOpen, peersOpen]);
+  }, [isTable, closeOverlay, analysisOpen, peersOpen, helpOpen]);
+
+  // The stocks in the order the list shows them — under their group
+  // headings, without the groups folded shut — for `j` and `k`.
+  const listOrder = useMemo(() => {
+    const groups = groupRows(visibleRows, listView.group);
+    return groups ? groups.filter((g) => !listView.collapsed.includes(g.key)).flatMap((g) => g.rows) : visibleRows;
+  }, [visibleRows, listView.group, listView.collapsed]);
+
+  // The rest of the keys (see `SHORTCUTS`). Never while typing, with a
+  // modifier held, or under a dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
+      if (analysisOpen || peersOpen || helpOpen) return;
+      if (e.key === '?') { e.preventDefault(); setHelpOpen(true); return; }
+      if (e.key === '/' && (isTable || isAnalysis)) {
+        if (focusSearch()) e.preventDefault();
+        return;
+      }
+      if (!isAnalysis) return;
+      if (e.key === 'j' || e.key === 'k') {
+        if (listOrder.length === 0) return;
+        const at = listOrder.findIndex((r) => r.symbol === selected);
+        const next = at === -1 ? 0 : at + (e.key === 'j' ? 1 : -1);
+        if (next < 0 || next >= listOrder.length) return;
+        e.preventDefault();
+        handleSelectSymbol(listOrder[next].symbol);
+        return;
+      }
+      if (e.key === '[') { e.preventDefault(); toggleRail(); return; }
+      const n = Number(e.key);
+      if (Number.isInteger(n) && n >= 1 && n <= STOCK_TABS.length) {
+        e.preventDefault();
+        openTab(STOCK_TABS[n - 1].key);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isTable, isAnalysis, analysisOpen, peersOpen, helpOpen, listOrder, selected, handleSelectSymbol, toggleRail, openTab]);
 
   // The left column's highlight: an open stock is still the list.
   const nav: NavKey | null = isTable || isAnalysis ? 'overview'
@@ -499,7 +553,7 @@ export default function App() {
   startAnalyzeRef.current = startAnalyze;
   return (
     <div className="flex h-full bg-ink-950 text-ink-100">
-    <AppNav active={nav} onNavigate={navTo} />
+    <AppNav active={nav} onNavigate={navTo} onHelp={() => setHelpOpen(true)} />
     <div className="flex min-w-0 flex-1 flex-col">
       {/* Backdrop while the mobile drawer is open. Clicking it closes it. */}
       {stocksDrawer && (
@@ -586,6 +640,8 @@ export default function App() {
             onSelect={handleSelectAndClose}
             scrollAnchor={listScrollRef}
             visible={isAnalysis}
+            narrow={railNarrow}
+            onToggleNarrow={toggleRail}
             onDeleted={(s) => {
               if (selected === s) setSelected(null);
               void reloadRows();
@@ -635,6 +691,8 @@ export default function App() {
           onClose={() => setAnalysisOpen(false)}
         />
       )}
+
+      {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
 
       {/* Opening a peer switches the analysis to it; adding one only grows
           the list behind the dialog, so several can be added in a row. */}

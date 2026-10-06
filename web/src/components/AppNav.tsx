@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import { ChartIcon, DepotIcon, GearIcon, JournalIcon, ListIcon, PulseIcon, ReviewIcon } from './icons';
 import Tip from './Tip';
+import { Kbd } from './Shortcuts';
 
 /**
  * Where the app can take you, in one place.
@@ -51,11 +52,22 @@ function Item({ e, active, onNavigate }: { e: Entry; active: boolean; onNavigate
 }
 
 /** The column at the left edge, from `lg` up. */
-export default function AppNav({ active, onNavigate }: { active: NavKey | null; onNavigate: (k: NavKey) => void }) {
+export default function AppNav({ active, onNavigate, onHelp }: {
+  active: NavKey | null; onNavigate: (k: NavKey) => void; onHelp: () => void;
+}) {
   return (
     <nav aria-label="Bereiche" className="hidden w-[76px] shrink-0 flex-col items-center gap-1 border-r border-ink-700 bg-ink-900 py-2 lg:flex">
       {NAV.map((e) => <Item key={e.key} e={e} active={active === e.key} onNavigate={onNavigate} />)}
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col items-center gap-1">
+        <Tip focusable={false} content={<span className="flex items-center gap-2">Tastenkürzel <Kbd>?</Kbd></span>}>
+          <button
+            onClick={onHelp}
+            aria-label="Tastenkürzel"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-ink-700 font-mono text-xs text-ink-400 transition hover:border-ink-500 hover:text-ink-100"
+          >
+            ?
+          </button>
+        </Tip>
         <Item e={ADMIN} active={active === 'admin'} onNavigate={onNavigate} />
       </div>
     </nav>

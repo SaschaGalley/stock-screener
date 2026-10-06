@@ -1,13 +1,15 @@
-import { Fragment, useState, type MutableRefObject } from 'react';
+import { Fragment, useEffect, useState, type MutableRefObject } from 'react';
 import type { OverviewRow } from '../types';
 import { api } from '../api';
-import { fmtBig } from '../format';
+import { deNumber, fmtBig } from '../format';
 import StockListControls from './StockListControls';
 import {
   StockIdentity, StockScore, GroupName, GroupAverage, rowTitle, ROW_HEIGHT, HEADER_HEIGHT, GROUP_HEIGHT,
 } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
-import { groupRows, toggleGroup, type ListView } from './stockList';
+import { groupRows, scoreColor, toggleGroup, type ListView } from './stockList';
+import Tip from './Tip';
+import { Kbd } from './Shortcuts';
 import Term from './Term';
 
 interface Props {
@@ -26,6 +28,23 @@ interface Props {
   scrollAnchor: MutableRefObject<ListScrollAnchor>;
   /** Hidden rather than unmounted while the table is up — see `useListScroll`. */
   visible: boolean;
+  /** Down to tickers and scores, for the page's sake — wide screens only; the phone's drawer is always whole. */
+  narrow?: boolean;
+  onToggleNarrow?: () => void;
+}
+
+/** The width from which the rail is a column beside the page rather than a drawer over it — Tailwind's `lg`. */
+const WIDE = '(min-width: 1024px)';
+
+function useWide(): boolean {
+  const [wide, setWide] = useState(() => window.matchMedia(WIDE).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE);
+    const on = () => setWide(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return wide;
 }
 
 /**
@@ -39,8 +58,10 @@ interface Props {
  */
 export default function StockRail({
   rows, total, activity = {}, view, onViewChange,
-  selectedSymbol, onSelect, onDeleted, scrollAnchor, visible,
+  selectedSymbol, onSelect, onDeleted, scrollAnchor, visible, narrow = false, onToggleNarrow,
 }: Props) {
+  const wide = useWide();
+  const slim = narrow && wide;
   const [deleting, setDeleting] = useState<string | null>(null);
   const { containerRef, onScroll } = useListScroll(scrollAnchor, visible, selectedSymbol, rows.length);
 
@@ -63,6 +84,27 @@ export default function StockRail({
   // One stock — the same under a group heading as in the plain list.
   const renderRow = (r: OverviewRow) => {
     const active = r.symbol === selectedSymbol;
+    if (slim) {
+      return (
+        <li key={r.symbol} data-stock-row data-symbol={r.symbol} data-selected={active}>
+          <Tip focusable={false} className="block" content={
+            <><div className="font-semibold text-ink-100">{r.companyName}</div><div className="text-ink-400">{rowTitle(r, fmtBig)}</div></>
+          }>
+            <button
+              onClick={() => onSelect(r.symbol)}
+              className={`${ROW_HEIGHT} flex w-full flex-col items-center justify-center border-b border-ink-800 leading-tight transition ${
+                active ? 'border-l-2 border-l-accent bg-accent-soft' : 'hover:bg-ink-800'
+              }`}
+            >
+              <span className={`font-mono text-xs ${active ? 'text-ink-50' : 'text-ink-200'}`}>{r.symbol}</span>
+              <span className={`font-mono text-sm font-semibold tabular ${scoreColor(r.score)}`}>
+                {r.score === null ? '—' : deNumber(r.score, 1)}
+              </span>
+            </button>
+          </Tip>
+        </li>
+      );
+    }
     const isDeleting = deleting === r.symbol;
     return (
       <li
@@ -100,7 +142,7 @@ export default function StockRail({
   };
 
   return (
-    <aside className="flex h-full w-80 flex-col border-r border-ink-700 bg-ink-900">
+    <aside className={`flex h-full flex-col border-r border-ink-700 bg-ink-900 ${slim ? 'w-[84px]' : 'w-80'}`}>
       {/* From `lg` up the search is in the bar above both lists, at the
           same place as over the table; below it the rail is a drawer over
           the page, and brings its own. */}
@@ -120,9 +162,24 @@ export default function StockRail({
           </div>
         ) : (
           <ul>
-            <li className={`${HEADER_HEIGHT} sticky top-0 z-10 flex items-center justify-between border-b border-ink-700 bg-ink-900 px-3 text-2xs font-semibold uppercase tracking-wider text-ink-500`}>
-              <span>Aktie</span>
-              <Term k="list.score">Score</Term>
+            <li className={`${HEADER_HEIGHT} sticky top-0 z-10 flex items-center justify-between border-b border-ink-700 bg-ink-900 text-2xs font-semibold uppercase tracking-wider text-ink-500 ${slim ? 'justify-center' : 'pl-3 pr-1'}`}>
+              {!slim && <span>Aktie</span>}
+              <span className="flex items-center gap-1">
+                {!slim && <Term k="list.score">Score</Term>}
+                {onToggleNarrow && (
+                  <Tip focusable={false} className="hidden lg:inline-flex" content={
+                    <span className="flex items-center gap-2">{slim ? 'Liste breit' : 'Liste schmal, mehr Platz für die Aktie'} <Kbd>[</Kbd></span>
+                  }>
+                    <button
+                      onClick={onToggleNarrow}
+                      aria-label={slim ? 'Liste breit' : 'Liste schmal'}
+                      className="rounded px-1.5 py-0.5 text-sm normal-case tracking-normal text-ink-400 hover:bg-ink-800 hover:text-ink-100"
+                    >
+                      {slim ? '»' : '«'}
+                    </button>
+                  </Tip>
+                )}
+              </span>
             </li>
             {groups
               ? groups.map((g) => {
@@ -135,10 +192,11 @@ export default function StockRail({
                           type="button"
                           aria-expanded={!shut}
                           onClick={() => onViewChange(toggleGroup(view, g.key))}
-                          className={`${GROUP_HEIGHT} flex w-full items-center justify-between gap-2 border-b border-ink-700 bg-ink-900 pl-3 pr-7 transition hover:bg-ink-800`}
+                          className={`${GROUP_HEIGHT} flex w-full items-center justify-between gap-2 border-b border-ink-700 bg-ink-900 transition hover:bg-ink-800 ${slim ? 'px-1.5' : 'pl-3 pr-7'}`}
                         >
-                          <GroupName group={g} by={view.group} collapsed={shut} />
-                          <GroupAverage group={g} />
+                          {slim
+                            ? <span className="w-full truncate text-center text-3xs uppercase tracking-wider text-ink-500">{shut ? '▸ ' : ''}{g.label}</span>
+                            : <><GroupName group={g} by={view.group} collapsed={shut} /><GroupAverage group={g} /></>}
                         </button>
                       </li>
                       {!shut && g.rows.map(renderRow)}
