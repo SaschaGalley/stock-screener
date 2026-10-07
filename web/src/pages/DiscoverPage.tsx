@@ -6,19 +6,23 @@ import Tip from '../components/Tip';
 import StockLogo, { initialsFromName } from '../components/StockLogo';
 import { useFirst } from '../components/More';
 import { scoreColor } from '../components/stockList';
-import { deNumber, fmtBig, fmtPrice } from '../format';
+import { deNumber, fmtBig, fmtCount, fmtPrice } from '../format';
 import {
   ANALYST_DAYS, ANALYST_MIN_NET, CHEAP_CONFIDENCE, CHEAP_GAP, CHEAP_HEALTH, CHEAP_MAX_GAP, INSIDER_DAYS,
   STRONG_PILLAR, TURN_DAYS, WEAK_PILLAR,
   type DiscoverUniverse, type UniverseStock,
 } from '../../../src/analysis/discover';
+import {
+  MARKET_LISTS, MOVERS_SHOWN, movers, volumeRatio,
+  type MarketListDef, type MarketReason, type MarketRow, type MarketToday,
+} from '../../../src/analysis/market';
 
 type Region = 'all' | 'us' | 'eu';
 const REGIONS: { key: Region; label: string }[] = [
   { key: 'all', label: 'Alle' }, { key: 'us', label: 'USA' }, { key: 'eu', label: 'Europa' },
 ];
 /** The universe is the S&P 500 in dollars and the European indices in euros. */
-const regionOf = (s: UniverseStock): Region => (s.currency === 'USD' ? 'us' : 'eu');
+const regionOf = (s: { currency: string | null }): Region => (s.currency === 'USD' ? 'us' : 'eu');
 
 /** Rows each list shows before „alle anzeigen“. */
 const FIRST = 6;
@@ -30,6 +34,9 @@ function fmtDay(iso: string): string {
   return `${d.getDate()}.${d.getMonth() + 1}.${year}`;
 }
 const pct = (x: number) => `${deNumber(x * 100, 0)} %`;
+const signed = (x: number) => `${x >= 0 ? '+' : '−'}${deNumber(Math.abs(x * 100), 1)} %`;
+/** "14:05" */
+const clock = (iso: string) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -37,7 +44,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * lists at once instead of a loading line, and the filters as they were. For
  * the session only — a reload starts afresh.
  */
-let last: { data: DiscoverUniverse | null; region: Region; sector: string } = { data: null, region: 'all', sector: '' };
+let last: { data: DiscoverUniverse | null; market: MarketToday | null; region: Region; sector: string } = {
+  data: null, market: null, region: 'all', sector: '',
+};
 
 /** An add in flight, done, or the error it ended with. */
 type AddState = 'busy' | 'added' | { error: string };
@@ -56,10 +65,12 @@ export default function DiscoverPage({ onSelect, onAdded }: {
   onAdded: () => void;
 }) {
   const [data, setData] = useState<DiscoverUniverse | null>(last.data);
+  const [market, setMarket] = useState<MarketToday | null>(last.market);
   const [error, setError] = useState<string | null>(null);
+  const [marketError, setMarketError] = useState<string | null>(null);
   const [region, setRegion] = useState<Region>(last.region);
   const [sector, setSector] = useState(last.sector);
-  useEffect(() => { last = { data, region, sector }; }, [data, region, sector]);
+  useEffect(() => { last = { data, market, region, sector }; }, [data, market, region, sector]);
   const [adds, setAdds] = useState<Record<string, AddState>>({});
 
   useEffect(() => {
@@ -67,6 +78,10 @@ export default function DiscoverPage({ onSelect, onAdded }: {
     api.getDiscoverUniverse()
       .then((d) => { if (live) setData(d); })
       .catch((e) => { if (live) setError((e as Error).message); });
+    // Separately: Yahoo takes a second or two, and the universe need not wait for it.
+    api.getDiscoverMarket()
+      .then((m) => { if (live) setMarket(m); })
+      .catch((e) => { if (live) setMarketError((e as Error).message); });
     return () => { live = false; };
   }, []);
 
@@ -103,14 +118,35 @@ export default function DiscoverPage({ onSelect, onAdded }: {
     return (
       <StockLine
         key={symbol}
-        s={s}
+        s={{
+          symbol, name: s.name, logoDomain: s.logoDomain, score: s.score,
+          sub: [symbol, s.industry, s.marketCap !== null ? fmtBig(s.marketCap, s.currency) : null].filter(Boolean).join(' · '),
+          scoreNote: `${s.verdict ?? ''} — nur aus den Zahlen${s.asOf ? `, Stand ${fmtDay(s.asOf)}` : ''}`,
+        }}
         reason={reason}
+        listed={false}
         add={adds[symbol]}
         onAdd={() => { void add(symbol); }}
         onOpen={() => onSelect(symbol)}
       />
     );
   };
+  const marketLine = (r: MarketRow, reason: ReactNode) => (
+    <StockLine
+      key={r.symbol}
+      s={{
+        symbol: r.symbol, name: r.name, logoDomain: r.logoDomain, score: r.score,
+        sub: [r.symbol, r.industry ?? r.exchange, r.marketCap !== null ? fmtBig(r.marketCap, r.currency) : null].filter(Boolean).join(' · '),
+        scoreNote: r.status === 'list' ? `${r.verdict ?? ''} — auf deiner Liste` : `${r.verdict ?? ''} — nur aus den Zahlen`,
+      }}
+      reason={reason}
+      listed={r.status === 'list'}
+      add={adds[r.symbol]}
+      onAdd={() => { void add(r.symbol); }}
+      // A stock the app has never stored has no page to open yet.
+      onOpen={r.status === 'unknown' ? null : () => onSelect(r.symbol)}
+    />
+  );
   const name = (symbol: string) => data?.stocks[symbol]?.name ?? symbol;
 
   const asOf = data?.oldest && data.newest
@@ -155,10 +191,10 @@ export default function DiscoverPage({ onSelect, onAdded }: {
 
       {data && lists && (
         <>
-          <p className="text-sm text-ink-400">
+          <PartHeading title="Aus dem Universum">
             Die Scores hier rechnen nur mit den Zahlen. Die Text-Analyse kommt dazu, sobald eine Aktie auf der Liste steht;
             jede Aktie des Universums wird etwa einmal in der Woche neu bewertet.
-          </p>
+          </PartHeading>
           <div className="grid items-start gap-4 xl:grid-cols-2">
             <Section fixed
               title="Was schneidet am besten ab?"
@@ -268,7 +304,135 @@ export default function DiscoverPage({ onSelect, onAdded }: {
           </div>
         </>
       )}
+
+      <MarketPart
+        market={market}
+        error={marketError}
+        region={region}
+        sector={sector}
+        line={marketLine}
+      />
     </Page>
+  );
+}
+
+/** A part of the page: the universe's lists, or the market's. */
+function PartHeading({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="pt-2">
+      <h2 className="text-base font-semibold text-ink-50">{title}</h2>
+      {children && <p className="mt-0.5 text-sm leading-relaxed text-ink-400">{children}</p>}
+    </div>
+  );
+}
+
+/** Reasons joined by a dot, the missing ones left out. */
+function parts(...xs: (ReactNode | null | false)[]): ReactNode {
+  const shown = xs.filter((x): x is ReactNode => x !== null && x !== false && x !== undefined);
+  return shown.map((x, k) => <span key={k}>{k > 0 && ' · '}{x}</span>);
+}
+
+const Move = ({ x }: { x: number }) => <span className={x >= 0 ? 'text-emerald-400' : 'text-red-400'}>{signed(x)}</span>;
+
+/** A market row's reason: the move, the volume or the valuation first, as its list asks. */
+function marketReason(r: MarketRow, kind: MarketReason): ReactNode {
+  const ratio = volumeRatio(r);
+  const busy = ratio !== null && ratio >= 1.5 && <span className="text-ink-400">{deNumber(ratio, 1)}× so viel gehandelt wie üblich</span>;
+  if (kind === 'volume') {
+    return parts(
+      r.volume !== null && <>{fmtCount(r.volume)} Aktien gehandelt{ratio !== null && <span className="text-ink-400"> ({deNumber(ratio, 1)}× üblich)</span>}</>,
+      r.change !== null && <>heute <Move x={r.change} /></>,
+    );
+  }
+  if (kind === 'valuation') {
+    return parts(
+      r.pe !== null && <>KGV {deNumber(r.pe, 1)}</>,
+      r.year !== null && <>in 12 Monaten <Move x={r.year} /></>,
+      r.change !== null && <span className="text-ink-400">heute {signed(r.change)}</span>,
+    );
+  }
+  return parts(r.change !== null && <><Move x={r.change} /> heute</>, busy);
+}
+
+/** The list's answer in its header. */
+function marketFinding(def: MarketListDef, rows: readonly MarketRow[]): string {
+  const top = rows[0];
+  if (!top) return 'Keine Daten';
+  const name = top.name ?? top.symbol;
+  if ((def.key === 'day_gainers' || def.key === 'day_losers') && top.change !== null) return `vorn ${name} mit ${signed(top.change)}`;
+  if (def.key === 'most_actives' && top.volume !== null) return `vorn ${name} mit ${fmtCount(top.volume)} Aktien`;
+  const known = rows.filter((r) => r.status !== 'unknown').length;
+  return known === 0 ? `${rows.length} Aktien, keine davon kennt die App`
+    : `${rows.length} Aktien, ${known} davon auf deiner Liste oder im Universum`;
+}
+
+/**
+ * The market today: the day's moves across the universe, which the filters
+ * narrow, and Yahoo's lists — for US stocks only, so the region filter hides
+ * them for Europe and the sector filter does not reach them.
+ */
+function MarketPart({ market, error, region, sector, line }: {
+  market: MarketToday | null;
+  error: string | null;
+  region: Region;
+  sector: string;
+  line: (r: MarketRow, reason: ReactNode) => ReactNode;
+}) {
+  const universe = useMemo(() => (market
+    ? market.universe.filter((r) => (region === 'all' || regionOf(r) === region) && (!sector || r.sector === sector))
+    : []), [market, region, sector]);
+  const moved = useMemo(() => movers(universe), [universe]);
+  const byKey = new Map(market?.lists.map((l) => [l.key, l]) ?? []);
+
+  return (
+    <>
+      <PartHeading title="Markt heute">
+        Live von Yahoo{market ? `, Stand ${clock(market.at)} Uhr` : ''}; die Kurse kommen bis zu 15 Minuten verzögert.
+        {' '}Yahoos Listen gibt es nur für US-Aktien, der Sektorfilter erreicht sie nicht.
+      </PartHeading>
+      {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
+      {!market && !error && <div className="p-6 text-center text-sm text-ink-500">Hole die Listen von Yahoo …</div>}
+      {market && (
+        <div className="grid items-start gap-4 xl:grid-cols-2">
+          <div className="xl:col-span-2">
+            <Section fixed
+              title="Was bewegt sich heute im Universum?"
+              finding={[
+                moved.up[0] && `oben ${moved.up[0].name ?? moved.up[0].symbol} ${signed(moved.up[0].change!)}`,
+                moved.down[0] && `unten ${moved.down[0].name ?? moved.down[0].symbol} ${signed(moved.down[0].change!)}`,
+              ].filter(Boolean).join(' · ') || 'Keine Kurse'}
+            >
+              <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
+                {([['Gewinner', moved.up], ['Verlierer', moved.down]] as const).map(([title, rows]) => (
+                  <div key={title}>
+                    <h3 className="text-xs font-semibold text-ink-300">{title}</h3>
+                    {rows.length === 0
+                      ? <p className="py-2 text-sm text-ink-500">Keine.</p>
+                      : <ul className="divide-y divide-ink-800">{rows.map((r) => line(r, marketReason(r, 'move')))}</ul>}
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 border-t border-ink-800 pt-2 text-xs leading-relaxed text-ink-500">
+                Die {MOVERS_SHOWN} stärksten Bewegungen unter {universe.length} Aktien des Universums, die nicht auf deiner Liste
+                stehen — zum letzten Schlusskurs. Europas Börsen schließen um 17:30 Uhr, New York um 22 Uhr.
+              </p>
+            </Section>
+          </div>
+          {region === 'eu' ? (
+            <p className="text-sm text-ink-500 xl:col-span-2">Für Europa hat Yahoo keine Listen; „Alle“ oder „USA“ zeigt sie.</p>
+          ) : MARKET_LISTS.map((def) => {
+            const l = byKey.get(def.key);
+            return (
+              <Section fixed key={def.key} title={def.title} finding={l?.error ? 'Nicht abrufbar' : marketFinding(def, l?.rows ?? [])}>
+                {l?.error
+                  ? <p className="text-sm text-red-400">Yahoo hat die Liste nicht geliefert: {l.error}</p>
+                  : <List rows={l?.rows ?? []} empty="Die Liste ist gerade leer." render={(r) => line(r, marketReason(r, def.reason))} criteria={def.hint} />}
+              </Section>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -291,12 +455,26 @@ function List<T>({ rows, render, empty, criteria }: {
   );
 }
 
-function StockLine({ s, reason, add, onAdd, onOpen }: {
-  s: UniverseStock;
+/** What a line shows of a stock, wherever it comes from. */
+interface LineStock {
+  symbol:     string;
+  name:       string | null;
+  logoDomain: string | null;
+  /** The grey line under the name. */
+  sub:        string;
+  score:      number | null;
+  scoreNote:  string;
+}
+
+function StockLine({ s, reason, listed, add, onAdd, onOpen }: {
+  s: LineStock;
   reason: ReactNode;
+  /** Already on the list. */
+  listed: boolean;
   add?: AddState;
   onAdd: () => void;
-  onOpen: () => void;
+  /** Null for a stock with no page to open. */
+  onOpen: (() => void) | null;
 }) {
   const name = s.name ?? s.symbol;
   // A grid rather than a row: the reason runs under the score and the button
@@ -307,24 +485,28 @@ function StockLine({ s, reason, add, onAdd, onOpen }: {
         <StockLogo domain={s.logoDomain} symbol={s.symbol} fallbackInitials={initialsFromName(name)} size={24} />
       </span>
       <div className="min-w-0">
-        <Tip focusable={false} content={`${name} ansehen`}>
-          <button onClick={onOpen} className="max-w-full truncate text-left text-sm font-medium text-ink-100 transition hover:text-accent">
-            {name}
-          </button>
-        </Tip>
-        <div className="truncate font-mono text-2xs text-ink-500">
-          {s.symbol}{s.industry ? ` · ${s.industry}` : ''}{s.marketCap !== null ? ` · ${fmtBig(s.marketCap, s.currency)}` : ''}
-        </div>
+        {onOpen ? (
+          <Tip focusable={false} content={`${name} ansehen`}>
+            <button onClick={onOpen} className="max-w-full truncate text-left text-sm font-medium text-ink-100 transition hover:text-accent">
+              {name}
+            </button>
+          </Tip>
+        ) : (
+          <Tip focusable={false} content="Noch nie geladen — mit „+ Liste“ holt die App die Daten">
+            <span className="block truncate text-sm font-medium text-ink-200">{name}</span>
+          </Tip>
+        )}
+        <div className="truncate font-mono text-2xs text-ink-500">{s.sub}</div>
       </div>
       <span className="mt-0.5">
         {s.score !== null && (
-          <Tip focusable={false} content={`${s.verdict ?? ''} — nur aus den Zahlen${s.asOf ? `, Stand ${fmtDay(s.asOf)}` : ''}`}>
+          <Tip focusable={false} content={s.scoreNote}>
             <span className={`font-mono text-sm font-semibold tabular ${scoreColor(s.score)}`}>{deNumber(s.score, 1)}</span>
           </Tip>
         )}
       </span>
       <span className="w-[5.5rem] text-right">
-        {add === 'added' ? (
+        {listed || add === 'added' ? (
           <span className="text-xs text-emerald-400">✓ auf der Liste</span>
         ) : add === 'busy' ? (
           <span className="text-xs text-ink-400">Hole Daten …</span>

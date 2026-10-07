@@ -30,9 +30,11 @@ const pillarKey = (p: string) => `score.factor.pillars.${p}.score`;
 
 const DAY_MS = 86_400_000;
 const TTL_MS = 10 * 60_000;
-let memo: { at: number; value: Promise<DiscoverUniverse> } | null = null;
+/** Every stock of the universe off the list, and the lists drawn from them. */
+interface UniverseRead { stocks: UniverseStock[]; lists: DiscoverUniverse }
+let memo: { at: number; value: Promise<UniverseRead> } | null = null;
 
-async function readUniverse(now: Date): Promise<DiscoverUniverse> {
+async function readUniverse(now: Date): Promise<UniverseRead> {
   const days = (n: number) => new Date(now.getTime() - n * DAY_MS);
   const [profiles, listed, points, verdicts, moves, buys] = await Promise.all([
     universeProfiles(),
@@ -74,7 +76,8 @@ async function readUniverse(now: Date): Promise<DiscoverUniverse> {
       stale:       p.stale,
     };
   });
-  return discoverUniverse({ stocks: onePerCompany(stocks, listed), verdicts, moves, buys, now });
+  const kept = onePerCompany(stocks, listed);
+  return { stocks: kept, lists: discoverUniverse({ stocks: kept, verdicts, moves, buys, now }) };
 }
 
 /** Forget the lists — a stock just joined the watchlist and leaves them. */
@@ -82,11 +85,20 @@ export function invalidateDiscover(): void {
   memo = null;
 }
 
-/** The lists, from the cache while it is fresh. */
-export function universeLists(): Promise<DiscoverUniverse> {
+function cached(): Promise<UniverseRead> {
   if (memo && Date.now() - memo.at < TTL_MS) return memo.value;
   const entry = { at: Date.now(), value: readUniverse(new Date()) };
   entry.value.catch(() => { if (memo === entry) memo = null; });
   memo = entry;
   return entry.value;
+}
+
+/** The lists, from the cache while it is fresh. */
+export async function universeLists(): Promise<DiscoverUniverse> {
+  return (await cached()).lists;
+}
+
+/** Every stock of the universe that is not on the list, one line per company. */
+export async function universeStocks(): Promise<UniverseStock[]> {
+  return (await cached()).stocks;
 }

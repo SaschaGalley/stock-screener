@@ -22,6 +22,7 @@ import { fxTicker, majorCurrency } from './currencies.js';
 import type { YahooRaw } from './data/yahoo-raw.js';
 import { priceHistory, type PriceHistory } from './backtest/prices.js';
 import { logger } from './utils/logger.js';
+import { archiveMarketLists } from './market-service.js';
 
 /** Bump when a raw snapshot's shape changes; older rows stay as they were stored. */
 const RAW_VERSION = 1;
@@ -162,6 +163,8 @@ async function dailyArchive(): Promise<void> {
   await refreshBenchmarks();
   await topUpStockPrices();
   await syncMacroSeries();
+  // Yahoo's lists of the day — its gainers, losers, most traded, trending and screens.
+  await archiveMarketLists();
 }
 
 /**

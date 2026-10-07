@@ -92,6 +92,7 @@ import { reportExists, reportPath, symbolDir } from './files.js';
 import { pctChange } from './utils/num.js';
 import { logoDomain, looksLikeSymbol, SAFE_SYMBOL_RE } from './symbols.js';
 import { invalidateDiscover, universeLists } from './discover-service.js';
+import { marketToday } from './market-service.js';
 import { recommendationVote, verdictForScore } from './verdict.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1040,6 +1041,17 @@ export function createApp(): express.Express {
   app.get('/api/discover/universe', async (_req, res, next) => {
     try {
       res.json(await universeLists());
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/discover/market ───────────────────────────────────────────────
+  // Yahoo's lists of the day (gainers, losers, most traded, trending, its
+  // screens) and the day's move of every universe stock.
+  app.get('/api/discover/market', async (_req, res, next) => {
+    try {
+      res.json(await marketToday());
     } catch (e) {
       next(e);
     }
