@@ -49,8 +49,8 @@ function Breakdown({ h }: { h: Holders }) {
         <span><span className="text-sky-400">■</span> Institutionen {pct(institutions)}{institutionsCount ? ` · ${institutionsCount.toLocaleString('de-DE')} Halter` : ''}</span>
         <span><span className="text-ink-500">■</span> Übrige {pct(rest)}</span>
         {n && (n.buys !== null || n.sells !== null) && (
-          <span title="Yahoos Zusammenfassung der letzten sechs Monate">
-            Insider 6 M: {n.buys ?? 0} Käufe, {n.sells ?? 0} Verkäufe
+          <span>
+            <Term k="concept.insiderYahooCount">Insider 6 M laut Yahoo</Term>: {(n.buys ?? 0).toLocaleString('de-DE')} Zugänge, {(n.sells ?? 0).toLocaleString('de-DE')} Abgänge
             {n.netInstitutionalBuyingPercent !== null && <> · Institutionen netto {fmtSignedPct(n.netInstitutionalBuyingPercent, 1)}</>}
           </span>
         )}

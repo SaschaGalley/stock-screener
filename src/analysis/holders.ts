@@ -57,9 +57,63 @@ export interface Holders {
   history:       { organization: string; points: { day: string; pctHeld: number }[] }[];
 }
 
+/**
+ * How Yahoo words an insider buying on the open market with their own money:
+ * "Purchase at price 41.20 per share." Awards ("Stock Award(Grant) at price
+ * 0.00"), option exercises ("Conversion of Exercise of derivative security")
+ * and gifts are acquisitions too, but nobody paid the market for them. The
+ * discover page's query filters the archive on the same prefix.
+ */
+export const OPEN_MARKET_PURCHASE = 'purchase at price';
+
+export const isOpenMarketPurchase = (description: string | null): boolean =>
+  (description ?? '').trim().toLowerCase().startsWith(OPEN_MARKET_PURCHASE);
+
 export function tradeKind(description: string | null): InsiderTrade['kind'] {
   const d = (description ?? '').toLowerCase();
   if (d.startsWith('sale')) return 'sale';
-  if (d.startsWith('purchase') || d.startsWith('buy')) return 'purchase';
+  if (isOpenMarketPurchase(description)) return 'purchase';
   return 'other';
+}
+
+/** The insider totals the financials payload carries; null where there was nothing to count. */
+export interface InsiderTotals {
+  insiderBuyShares:  number | null;
+  insiderSellShares: number | null;
+  insiderBuyValue:   number | null;
+  insiderSellValue:  number | null;
+  insiderBuyCount:   number | null;
+  insiderSellCount:  number | null;
+}
+
+/**
+ * The insiders' buying and selling on or after `since`. Buys are purchases on
+ * the open market only; sales are whatever Yahoo words as a sale. Grants,
+ * exercises, gifts and rows without text count as neither.
+ */
+export function insiderTotals(
+  trades: readonly Pick<InsiderTrade, 'tradedOn' | 'description' | 'shares' | 'value'>[],
+  since: string,
+): InsiderTotals {
+  let buyShares = 0, buyValue = 0, buys = 0;
+  let sellShares = 0, sellValue = 0, sells = 0;
+  for (const t of trades) {
+    if (!t.tradedOn || t.tradedOn < since) continue;
+    const text = (t.description ?? '').toLowerCase();
+    const shares = Math.abs(t.shares ?? 0);
+    const value  = Math.abs(t.value  ?? 0);
+    if (text.includes('sale') || text.includes('sold')) {
+      sellShares += shares; sellValue += value; sells++;
+    } else if (isOpenMarketPurchase(t.description)) {
+      buyShares += shares; buyValue += value; buys++;
+    }
+  }
+  return {
+    insiderBuyShares:  buys  > 0 ? buyShares  : null,
+    insiderSellShares: sells > 0 ? sellShares : null,
+    insiderBuyValue:   buys  > 0 ? buyValue   : null,
+    insiderSellValue:  sells > 0 ? sellValue  : null,
+    insiderBuyCount:   buys  > 0 ? buys       : null,
+    insiderSellCount:  sells > 0 ? sells      : null,
+  };
 }

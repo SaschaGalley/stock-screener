@@ -486,7 +486,7 @@ function formatInsiderActivity(f: AnalysisResult['financials']): string[] {
   const hasSells = f.insiderSellCount !== null && f.insiderSellCount > 0;
   if (!hasBuys && !hasSells) return [];
 
-  const lines: string[] = [chalk.bold('## 👔 Insider Activity  (last 6 months)'), ''];
+  const lines: string[] = [chalk.bold('## 👔 Insider Activity  (last 6 months, open-market buys only)'), ''];
   lines.push(`| Direction | Transactions | Shares         | Value          |`);
   lines.push(`|-----------|-------------|----------------|----------------|`);
 

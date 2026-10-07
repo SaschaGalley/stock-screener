@@ -6,6 +6,7 @@
  */
 
 import type { AnalystMove, InsiderBuy, VerdictReading } from '../analysis/discover.js';
+import { OPEN_MARKET_PURCHASE } from '../analysis/holders.js';
 import { query } from './client.js';
 
 export interface UniverseProfile {
@@ -96,18 +97,18 @@ export async function universeAnalystMoves(from: Date): Promise<Map<string, Anal
 }
 
 /**
- * Insiders' purchases on the open market since `from`. Yahoo words them
- * "Purchase at price …"; awards, option exercises and conversions are
- * acquisitions too, but nobody paid for them, and they are left out.
+ * Insiders' purchases on the open market since `from`, by the same wording the
+ * financials' insider totals count (`OPEN_MARKET_PURCHASE`): awards, option
+ * exercises and conversions are acquisitions too, but nobody paid for them.
  */
 export async function universeInsiderBuys(from: string): Promise<Map<string, InsiderBuy[]>> {
   const res = await query<{ symbol: string; traded_on: string; filer: string | null; value: number | null }>(
     `SELECT s.symbol, t.traded_on::text AS traded_on, t.filer, t.value
        FROM insider_transactions t
        JOIN symbols s ON s.id = t.symbol_id AND s.reference
-      WHERE t.traded_on >= $1::date AND t.description ILIKE 'purchase at price%'
+      WHERE t.traded_on >= $1::date AND t.description ILIKE $2
       ORDER BY s.symbol, t.traded_on`,
-    [from],
+    [from, `${OPEN_MARKET_PURCHASE}%`],
   );
   const out = new Map<string, InsiderBuy[]>();
   for (const r of res.rows) {

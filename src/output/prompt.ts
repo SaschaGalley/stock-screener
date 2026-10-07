@@ -451,8 +451,8 @@ ${macroSection(d.marketSignals)}
 **Positionierung**
 - Short-Quote ${f.shortPercentOfFloat !== null ? fmtPct(f.shortPercentOfFloat) : 'N/A'} des Free Float, Days to Cover ${fmt(f.shortRatio, ' Tage', 1)}
 - Institutionell ${f.institutionsPercentHeld !== null ? fmtPct(f.institutionsPercentHeld) : 'N/A'} | Insider ${f.insidersPercentHeld !== null ? fmtPct(f.insidersPercentHeld) : 'N/A'}
-- Insider-Transaktionen (6M): ${(f.insiderBuyCount ?? 0) > 0 || (f.insiderSellCount ?? 0) > 0
-    ? `${f.insiderBuyCount ?? 0} Käufe, ${f.insiderSellCount ?? 0} Verkäufe`
+- Insider-Transaktionen (6M, ohne Zuteilungen und Optionsausübungen): ${(f.insiderBuyCount ?? 0) > 0 || (f.insiderSellCount ?? 0) > 0
+    ? `${f.insiderBuyCount ?? 0} Käufe an der Börse, ${f.insiderSellCount ?? 0} Verkäufe`
     : 'keine'}
 
 **Konsensschätzungen**

@@ -9,6 +9,7 @@ import {
   RevisionPeriod,
   StockFinancials,
 } from '../types.js';
+import { insiderTotals } from '../analysis/holders.js';
 import { DailyBar } from '../analysis/technical.js';
 import { auditFinancials, isFundamentalsStale } from '../analysis/data-quality.js';
 import { QuarterPoint, annualGrowth, latestValue, trailingGrowth, trailingSum } from '../analysis/trailing.js';
@@ -865,7 +866,6 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   const mhb = (summary as any)?.majorHoldersBreakdown ?? {};
   const eh  = (summary as any)?.earningsHistory?.history ?? [];
   const et  = (summary as any)?.earningsTrend?.trend ?? [];
-  const itx: any[] = (summary as any)?.insiderTransactions?.transactions ?? [];
 
   // Most recent annual period (last element = most recent)
   const bs  = bsData[bsData.length - 1]   ?? {};
@@ -1061,22 +1061,12 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
   };
 
   // ── Insider transactions (last 6 months) ─────────────────────────────────
-  const sixMonthsAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
-  let insiderBuyShares = 0, insiderBuyValue = 0, insiderBuyCount = 0;
-  let insiderSellShares = 0, insiderSellValue = 0, insiderSellCount = 0;
-  for (const t of itx) {
-    const ts = t.startDate instanceof Date ? t.startDate.getTime()
-             : typeof t.startDate === 'number' ? t.startDate * 1000 : 0;
-    if (ts < sixMonthsAgo) continue;
-    const text = String(t.transactionText ?? '').toLowerCase();
-    const shares = Math.abs(num(t.shares) ?? 0);
-    const value  = Math.abs(num(t.value)  ?? 0);
-    if (text.includes('sale') || text.includes('sold')) {
-      insiderSellShares += shares; insiderSellValue += value; insiderSellCount++;
-    } else if (text.includes('purchase') || text.includes('acquired') || text.includes('exercise')) {
-      insiderBuyShares += shares; insiderBuyValue += value; insiderBuyCount++;
-    }
-  }
+  // Buys are open-market purchases only. Option exercises used to count as
+  // buying too, and in the archive they outnumber the purchases three to one.
+  const insiders = insiderTotals(
+    insiderTransactionsFrom((summary as any)?.insiderTransactions),
+    new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10),
+  );
 
   // ── Next earnings date ────────────────────────────────────────────────────
   const earningsDates: any[] = cal.earnings?.earningsDate ?? [];
@@ -1474,12 +1464,7 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     earningsEstimates,
     quarterlyRevenues,
 
-    insiderBuyShares:  insiderBuyCount  > 0 ? insiderBuyShares  : null,
-    insiderSellShares: insiderSellCount > 0 ? insiderSellShares : null,
-    insiderBuyValue:   insiderBuyCount  > 0 ? insiderBuyValue   : null,
-    insiderSellValue:  insiderSellCount > 0 ? insiderSellValue  : null,
-    insiderBuyCount:   insiderBuyCount  > 0 ? insiderBuyCount   : null,
-    insiderSellCount:  insiderSellCount > 0 ? insiderSellCount  : null,
+    ...insiders,
 
     mostRecentQuarter,
     lastFiscalYearEnd,

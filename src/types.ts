@@ -248,11 +248,11 @@ export const StockFinancialsSchema = z.object({
   quarterlyRevenues: z.array(QuarterlyRevenueSchema).describe('Last ≤8 fiscal quarters of total revenue, oldest first. The most recent quarter × 4 is the SVR (run-rate P/S) denominator — more responsive to YoY changes than TTM P/S'),
 
   // ── Insider Activity (last 6 months) ─────────────────────────────────────────
-  insiderBuyShares:  z.number().nullable().describe('Total shares bought by insiders in the last 6 months'),
+  insiderBuyShares:  z.number().nullable().describe('Total shares insiders bought on the open market in the last 6 months (grants, option exercises and gifts excluded)'),
   insiderSellShares: z.number().nullable().describe('Total shares sold by insiders in the last 6 months'),
-  insiderBuyValue:   z.number().nullable().describe('Total dollar value of insider purchases in the last 6 months'),
+  insiderBuyValue:   z.number().nullable().describe('Total dollar value of insider open-market purchases in the last 6 months'),
   insiderSellValue:  z.number().nullable().describe('Total dollar value of insider sales in the last 6 months'),
-  insiderBuyCount:   z.number().nullable().describe('Number of distinct insider buy transactions in the last 6 months'),
+  insiderBuyCount:   z.number().nullable().describe('Number of insider open-market purchases in the last 6 months'),
   insiderSellCount:  z.number().nullable().describe('Number of distinct insider sell transactions in the last 6 months'),
 });
 export type StockFinancials = z.infer<typeof StockFinancialsSchema>;

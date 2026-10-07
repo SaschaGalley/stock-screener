@@ -56,9 +56,9 @@ export default function OwnershipFlow({ financials: f }: Props) {
         answer={buys + sells === 0 ? 'Keine Geschäfte' : net > 0 ? 'Sie kaufen' : net < 0 ? 'Sie verkaufen' : 'Ausgeglichen'}
         tone={insiderTone}
         why={[
-          ...(buys > 0 ? [`${buys} ${buys === 1 ? 'Kauf' : 'Käufe'} für ${fmtBig(f.insiderBuyValue)}`] : []),
+          ...(buys > 0 ? [`${buys} ${buys === 1 ? 'Kauf' : 'Käufe'} an der Börse für ${fmtBig(f.insiderBuyValue)}`] : []),
           ...(sells > 0 ? [`${sells} ${sells === 1 ? 'Verkauf' : 'Verkäufe'} für ${fmtBig(f.insiderSellValue)}`] : []),
-          'in den letzten sechs Monaten; Verkäufe sind oft geplant oder für Steuern',
+          'in den letzten sechs Monaten, ohne Zuteilungen und Optionsausübungen; Verkäufe sind oft geplant oder für Steuern',
         ]}
       />
     </div>
