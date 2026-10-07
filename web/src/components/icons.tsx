@@ -67,6 +67,26 @@ export function ChartIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
   );
 }
 
+/** A compass: where to look next. */
+export function CompassIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="m15.5 8.5-2 5-5 2 2-5z" />
+    </svg>
+  );
+}
+
 /** A pulse line: what has been happening. */
 export function PulseIcon({ size = 20, strokeWidth = 1.8 }: IconProps) {
   return (

@@ -20,6 +20,7 @@ const FeedPage = lazy(() => import('./pages/FeedPage'));
 const JournalPage = lazy(() => import('./pages/JournalPage'));
 const DepotPage = lazy(() => import('./pages/DepotPage'));
 const ReviewPage = lazy(() => import('./pages/ReviewPage'));
+const DiscoverPage = lazy(() => import('./pages/DiscoverPage'));
 import { applyListView, DEFAULT_LIST_VIEW, groupRows, type ListView } from './components/stockList';
 import { EMPTY_ANCHOR, type ListScrollAnchor } from './components/useListScroll';
 import type { Settings, OverviewRow, ProgressEvent, SearchChoice } from './types';
@@ -36,12 +37,13 @@ const DEFAULT_SETTINGS: Settings = {
  *
  * `#/overview` is the list, `#/stock/AAPL` is the list with that stock open
  * beside it, `#/admin` is the administration, `#/evaluation` the score's
- * track record, `#/journal` my own notes and trades, `#/depot` the depot against the model, `#/review` my decisions looked back on. Bare `#AAPL` still resolves to a
+ * track record, `#/journal` my own notes and trades, `#/depot` the depot against the model, `#/review` my decisions looked back on,
+ * `#/discover` stocks outside the list worth a look. Bare `#AAPL` still resolves to a
  * stock: those links are in bookmarks and history, and honouring them costs one
  * branch. No hash is the list — the app's resting state is the whole list, not
  * an empty detail pane waiting to be told what to show.
  */
-type ViewName = 'overview' | 'analysis' | 'admin' | 'evaluation' | 'feed' | 'journal' | 'depot' | 'review';
+type ViewName = 'overview' | 'analysis' | 'admin' | 'evaluation' | 'feed' | 'journal' | 'depot' | 'review' | 'discover';
 
 interface RouteState {
   view:   ViewName;
@@ -62,6 +64,7 @@ function readRoute(): RouteState {
   if (key === 'journal')  return { view: 'journal', symbol: null };
   if (key === 'depot')    return { view: 'depot', symbol: null };
   if (key === 'review')   return { view: 'review', symbol: null };
+  if (key === 'discover') return { view: 'discover', symbol: null };
   if (key === 'stock') {
     const tab = sub?.toLowerCase();
     return { view: 'analysis', symbol: tail ? tail.toUpperCase() : null, tab: isStockTab(tab) && tab !== 'overview' ? tab : null };
@@ -76,6 +79,7 @@ function routeToHash(route: RouteState): string {
   if (route.view === 'journal')  return '#/journal';
   if (route.view === 'depot')    return '#/depot';
   if (route.view === 'review')   return '#/review';
+  if (route.view === 'discover') return '#/discover';
   if (route.view === 'analysis' && route.symbol) return `#/stock/${route.symbol}${route.tab ? `/${route.tab}` : ''}`;
   return '#/overview';
 }
@@ -245,6 +249,11 @@ export default function App() {
     navigate('review');
   }, [navigate]);
 
+  const openDiscover = useCallback(() => {
+    setStocksDrawer(false);
+    navigate('discover');
+  }, [navigate]);
+
   // React to back/forward navigation
   useEffect(() => {
     const onHashChange = () => {
@@ -322,6 +331,16 @@ export default function App() {
       setProgress([]);
     });
   }, [route.view, selected, setSelected, closeOverlay]);
+
+  /**
+   * Open a stock from a page — the events, the discover lists. The page is
+   * kept in the history first, so back returns to it rather than to wherever
+   * the window was before the page.
+   */
+  const openFromPage = useCallback((s: string) => {
+    window.history.pushState(null, '', window.location.hash);
+    handleSelectSymbol(s);
+  }, [handleSelectSymbol]);
 
   // User-initiated settings change — flag it so the auto-switch effect yields.
   const handleSettingsChange = useCallback((s: Settings) => {
@@ -481,8 +500,9 @@ export default function App() {
   const isJournal    = route.view === 'journal';
   const isDepot      = route.view === 'depot';
   const isReview     = route.view === 'review';
+  const isDiscover   = route.view === 'discover';
   const isAnalysis   = route.view === 'analysis' && selected !== null;
-  const isTable      = !isAdmin && !isEvaluation && !isFeed && !isJournal && !isDepot && !isReview && !isAnalysis;
+  const isTable      = !isAdmin && !isEvaluation && !isFeed && !isJournal && !isDepot && !isReview && !isDiscover && !isAnalysis;
 
   // Esc is the keyboard counterpart of the ✕ — for the analysis and the
   // administration alike. Skipped while a field has focus, where Esc means
@@ -544,10 +564,10 @@ export default function App() {
   // The left column's highlight: an open stock is still the list.
   const nav: NavKey | null = isTable || isAnalysis ? 'overview'
     : isAdmin ? 'admin' : isEvaluation ? 'evaluation' : isFeed ? 'feed'
-    : isJournal ? 'journal' : isDepot ? 'depot' : isReview ? 'review' : null;
+    : isJournal ? 'journal' : isDepot ? 'depot' : isReview ? 'review' : isDiscover ? 'discover' : null;
   const navTo = (k: NavKey) => {
     if (k === 'overview') { if (!isTable) closeOverlay(); return; }
-    ({ admin: openAdmin, evaluation: openEvaluation, feed: openFeed, journal: openJournal, depot: openDepot, review: openReview })[k]();
+    ({ admin: openAdmin, evaluation: openEvaluation, feed: openFeed, journal: openJournal, depot: openDepot, review: openReview, discover: openDiscover })[k]();
   };
 
   startAnalyzeRef.current = startAnalyze;
@@ -599,10 +619,11 @@ export default function App() {
       <Suspense fallback={<div className="flex-1 p-4 text-sm text-ink-500">Lade …</div>}>
         {isAdmin && <AdminPage />}
         {isEvaluation && <EvaluationPage />}
-        {isFeed && <FeedPage onSelect={handleSelectSymbol} />}
+        {isFeed && <FeedPage onSelect={openFromPage} />}
         {isJournal && <JournalPage symbols={rows.map((r) => r.symbol)} />}
         {isDepot && <DepotPage />}
         {isReview && <ReviewPage />}
+        {isDiscover && <DiscoverPage onSelect={openFromPage} onAdded={() => { void reloadRows(); }} />}
       </Suspense>
 
       {/* The list at full width. Cheap to rebuild, so it mounts and unmounts. */}

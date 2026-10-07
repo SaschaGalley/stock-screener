@@ -90,7 +90,8 @@ import {
 } from './scheduler.js';
 import { reportExists, reportPath, symbolDir } from './files.js';
 import { pctChange } from './utils/num.js';
-import { looksLikeSymbol, SAFE_SYMBOL_RE } from './symbols.js';
+import { logoDomain, looksLikeSymbol, SAFE_SYMBOL_RE } from './symbols.js';
+import { invalidateDiscover, universeLists } from './discover-service.js';
 import { recommendationVote, verdictForScore } from './verdict.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -116,15 +117,6 @@ const KEY_COMPOSITE     = 'metrics.composite.primary.median';
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-function logoDomainFromWebsite(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    const u = new URL(url.startsWith('http') ? url : `https://${url}`);
-    return u.hostname.replace(/^www\./, '');
-  } catch {
-    return null;
-  }
-}
 
 /**
  * How many same-industry companies the peer dialog lists. Most Yahoo industries
@@ -137,7 +129,7 @@ function peerRow(p: StoredPeer): PeerRow {
   return {
     symbol:      p.symbol,
     companyName: p.companyName,
-    logoDomain:  logoDomainFromWebsite(p.website),
+    logoDomain:  logoDomain(p.website),
     price:       p.price,
     marketCap:   p.marketCap,
     currency:    p.currency,
@@ -299,7 +291,7 @@ function toSummary(
     marketCap:     typeof f.marketCap === 'number' ? f.marketCap : null,
     currency:      f.tradingCurrency ?? null,
     website:       f.website ?? null,
-    logoDomain:    logoDomainFromWebsite(f.website ?? null),
+    logoDomain:    logoDomain(f.website ?? null),
     cachedAt:      capturedAt,
     analysisCount: verdicts.length,
     consensus:     computeConsensus(f, verdicts),
@@ -404,6 +396,7 @@ export function createApp(): express.Express {
           return { data: d as never, symbol: d.symbol };
         },
       );
+      invalidateDiscover();
       res.status(201).json({
         ok:      true,
         symbol:  resolved,
@@ -916,7 +909,7 @@ export function createApp(): express.Express {
           symbol,
           companyName: f.companyName ?? symbol,
           sector:      f.sector ?? null,
-          logoDomain:  logoDomainFromWebsite(f.website ?? null),
+          logoDomain:  logoDomain(f.website ?? null),
           price,
           marketCap:   typeof f.marketCap === 'number' ? f.marketCap : null,
           currency:    f.tradingCurrency ?? null,
@@ -1036,6 +1029,17 @@ export function createApp(): express.Express {
         offset: Number(req.query.offset) || 0,
         limit:  Math.min(200, Number(req.query.limit) || FEED_PAGE),
       }));
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ── GET /api/discover/universe ─────────────────────────────────────────────
+  // Stocks of the reference universe worth a look: the best scores, fresh
+  // verdict turns, value without a warning, insider buying, analysts warming.
+  app.get('/api/discover/universe', async (_req, res, next) => {
+    try {
+      res.json(await universeLists());
     } catch (e) {
       next(e);
     }

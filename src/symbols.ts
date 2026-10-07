@@ -28,3 +28,14 @@ export function looksLikeSymbol(input: string): boolean {
  * `symbolDir()` confines to the cache root as defence in depth.
  */
 export const SAFE_SYMBOL_RE = /^[A-Za-z0-9][A-Za-z0-9.\-]{0,14}$/;
+
+/** The company's domain from its website, for the logo: "https://www.apple.com/" → "apple.com". */
+export function logoDomain(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url.startsWith('http') ? url : `https://${url}`);
+    return u.hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+}

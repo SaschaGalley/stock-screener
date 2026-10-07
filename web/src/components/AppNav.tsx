@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { ChartIcon, DepotIcon, GearIcon, JournalIcon, ListIcon, PulseIcon, ReviewIcon } from './icons';
+import { ChartIcon, CompassIcon, DepotIcon, GearIcon, JournalIcon, ListIcon, PulseIcon, ReviewIcon } from './icons';
 import Tip from './Tip';
 import { Kbd } from './Shortcuts';
 
@@ -14,7 +14,7 @@ import { Kbd } from './Shortcuts';
  * fifth of the width, so the same entries sit as icons in the top bar.
  */
 
-export type NavKey = 'overview' | 'depot' | 'journal' | 'review' | 'feed' | 'evaluation' | 'admin';
+export type NavKey = 'overview' | 'discover' | 'depot' | 'journal' | 'review' | 'feed' | 'evaluation' | 'admin';
 
 interface Entry {
   key:   NavKey;
@@ -25,6 +25,7 @@ interface Entry {
 
 export const NAV: readonly Entry[] = [
   { key: 'overview',   label: 'Liste',      Icon: ListIcon,    hint: 'Alle Aktien der Watchlist, nach Score geordnet' },
+  { key: 'discover',   label: 'Entdecken',  Icon: CompassIcon, hint: 'Aktien außerhalb der Watchlist, die einen Blick wert sind' },
   { key: 'depot',      label: 'Depot',      Icon: DepotIcon,   hint: 'Die Positionen aus umsatz gegen das Modell: Gewichte, Urteile, Begründungen' },
   { key: 'journal',    label: 'Journal',    Icon: JournalIcon, hint: 'Was ich gelesen, gedacht, gekauft und verkauft habe, und warum' },
   { key: 'review',     label: 'Rückblick',  Icon: ReviewIcon,  hint: 'Meine Käufe und Verkäufe im Nachhinein gemessen' },

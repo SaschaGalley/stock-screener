@@ -31,6 +31,7 @@ import type { HistoryMultiple, SectorMultiples, ValuationHistory } from '../../s
 import type { FairRatio } from '../../src/analysis/fair-ratio';
 import type { Holders } from '../../src/analysis/holders';
 import type { Timeline } from '../../src/analysis/timeline';
+import type { DiscoverUniverse } from '../../src/analysis/discover';
 import type { ChartReadDoc, ChartResponse } from '../../src/analysis/chart';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
@@ -169,6 +170,8 @@ export const api = {
     ),
   /** Every stored verdict as a call, against the index — cached on the server for hours. */
   getVerdictRecordSummary: () => jsonFetch<VerdictRecordSummary>(`${BASE}/verdict-record`),
+  /** Stocks of the reference universe worth a look, a list per question. */
+  getDiscoverUniverse: () => jsonFetch<DiscoverUniverse>(`${BASE}/discover/universe`),
   getTimeline: (symbol: string, days = 365) =>
     jsonFetch<{ symbol: string; data: Timeline }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/timeline?days=${days}`),
   getHolders: (symbol: string) =>
