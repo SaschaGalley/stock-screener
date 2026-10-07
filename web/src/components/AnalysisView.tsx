@@ -18,7 +18,7 @@ import ScoreBreakdown from "./sections/ScoreBreakdown";
 import MarginTrends from "./sections/MarginTrends";
 import BalanceChecks from "./sections/BalanceChecks";
 import AnalystTrackRecord from "./sections/AnalystTrackRecord";
-import VerdictTrackRecord from "./sections/VerdictTrackRecord";
+import VerdictTrackRecord, { VERDICT_RECORD_ID, VerdictRecordLine } from "./sections/VerdictTrackRecord";
 import HoldersPanel from "./sections/HoldersPanel";
 import StockTimeline from "./sections/StockTimeline";
 import IncomeFlowChart from "./charts/IncomeFlowChart";
@@ -30,7 +30,6 @@ import QualityScores from "./sections/QualityScores";
 import FundamentalsGrid from "./sections/FundamentalsGrid";
 import PeerCompare from "./sections/PeerCompare";
 import ChartTab from "./chart/ChartTab";
-import ScoreHistoryChart from "./charts/ScoreHistoryChart";
 import OwnershipFlow from "./sections/OwnershipFlow";
 import EarningsBlock from "./sections/EarningsBlock";
 import ResearchTab from "./sections/NewsAndResearch";
@@ -131,6 +130,8 @@ function AnalysisView({
   ).data ?? null;
   // Firm by firm, behind the consensus card — before the early returns, as hooks must be.
   const coverage = useArchive(() => api.getCoverage(symbol), [symbol, refreshKey, localRefresh]).data ?? null;
+  // Our own calls on this stock: a line under the verdict, and the record under its calculation.
+  const verdictRecord = useArchive(() => api.getVerdictRecord(symbol), [symbol, refreshKey, localRefresh]);
 
   // Clear stale cross-ticker state immediately when the symbol changes so we
   // don't flash the previous ticker's header/verdict while the new bundle
@@ -311,7 +312,10 @@ function AnalysisView({
                   analystStrongSell: f.analystStrongSell,
                 }}
                 // How the verdict was arrived at — the calculation, not a retelling.
-                verdictChanges={<VerdictChanges symbol={symbol} refreshKey={refreshKey} />}
+                verdictChanges={<>
+                  <VerdictChanges symbol={symbol} refreshKey={refreshKey} />
+                  <VerdictRecordLine data={verdictRecord.data} />
+                </>}
                 coverage={coverage}
               />
               {/* What the company is, before what each topic says about it */}
@@ -346,6 +350,16 @@ function AnalysisView({
               )}
               {/* How the score came about — the calculation behind the verdict, after the case for and against */}
               {analysis?.scoreCard && <ScoreBreakdown card={analysis.scoreCard} />}
+              {/* HOW THE VERDICT HAS DONE — the same question the analysts' record asks of their targets */}
+              <Section fixed
+                id={VERDICT_RECORD_ID}
+                title="Unser Urteil: Verlauf und Trefferquote"
+                info="section.verdictRecord"
+                subtitle="Der Score über die Zeit, und jeder Urteilswechsel gegen den S&P 500 danach"
+                storageKey="verdict-record"
+              >
+                <VerdictTrackRecord record={verdictRecord} scoreHistory={row?.scoreHistory} />
+              </Section>
             </TabPane>
 
             <TabPane on={tab === 'chart'} seen={shown.has('chart')}>
@@ -477,18 +491,6 @@ function AnalysisView({
                 storageKey="analyst-record"
               >
                 <AnalystTrackRecord symbol={symbol} />
-              </Section>
-              {/* TIER 7c: THE SAME QUESTION, ASKED OF OUR OWN VERDICTS */}
-              <Section fixed
-                title="Unser Urteil: Verlauf und Trefferquote"
-                info="section.verdictRecord"
-                subtitle="Der Score über die Zeit, und jeder Urteilswechsel gegen den S&P 500 danach"
-                storageKey="verdict-record"
-              >
-                <div className="space-y-4">
-                  {row && row.scoreHistory.length > 1 && <ScoreHistoryChart points={row.scoreHistory} />}
-                  <VerdictTrackRecord symbol={symbol} />
-                </div>
               </Section>
               {/* TIER 10: OWNERSHIP & FLOW */}
               <Section fixed title="Eigentümer & Insider" finding={ownershipFinding(f, big)} info="section.ownership">

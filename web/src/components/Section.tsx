@@ -25,6 +25,8 @@ interface Props {
    * open for good, so the tab does the choosing instead.
    */
   fixed?: boolean;
+  /** An anchor, for a line elsewhere on the page that jumps here. */
+  id?: string;
 }
 
 const STORAGE_PREFIX = 'stockcli:section:';
@@ -137,7 +139,7 @@ function useBuilt(ref: React.RefObject<HTMLElement | null>, wanted: boolean): bo
   return built;
 }
 
-export default function Section({ title, subtitle, defaultOpen = true, children, rightHeader, storageKey, info, fixed = false, finding = null }: Props) {
+export default function Section({ title, subtitle, defaultOpen = true, children, rightHeader, storageKey, info, fixed = false, finding = null, id }: Props) {
   const key = storageKey ?? title;
   const [reported, setReported] = useState<string | null>(null);
   const found = reported ?? finding;
@@ -154,7 +156,7 @@ export default function Section({ title, subtitle, defaultOpen = true, children,
   }, [built, key]);
 
   return (
-    <section ref={ref} className="overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
+    <section ref={ref} id={id} className="scroll-mt-4 overflow-hidden rounded-lg border border-ink-700 bg-ink-900">
       {fixed ? (
         <div className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ink-700 bg-ink-900 px-4 py-2.5">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">

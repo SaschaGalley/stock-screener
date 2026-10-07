@@ -22,6 +22,8 @@ export function deProse(s: string): string {
   return s
     // 2026-09-17 → 17.9.26
     .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_, y: string, m: string, d: string) => `${Number(d)}.${Number(m)}.${y.slice(2)}`)
+    // $569,56 — already the German way, only the sign in front → 569,56 $
+    .replace(/([−-]?)\$(\d{1,3}(?:\.\d{3})+|\d+),(\d{1,2})(?!\d)/g, (_, sign: string, int: string, dec: string) => `${sign}${int},${dec} $`)
     // $122.04, $214B, $1.2T → 122,04 $, 214 Mrd. $, 1,2 Bio. $
     .replace(new RegExp(String.raw`([−-]?)\$${NUM}(?:\s?([KMBT])\b)?`, 'g'),
       (_, sign: string, int: string, dec: string | undefined, scale: string | undefined) =>

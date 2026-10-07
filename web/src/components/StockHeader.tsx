@@ -6,6 +6,7 @@ import { api } from "../api"; // refresh endpoint (PDF/MD endpoints unused since
 import StockLogo, { initialsFromName } from "./StockLogo";
 import { CloseIcon, PeersIcon } from "./icons";
 import Term from "./Term";
+import Tip from "./Tip";
 import type { GlossaryKey } from "../glossary";
 
 interface Props {
@@ -163,15 +164,16 @@ export default function StockHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <button
-            onClick={onOpenPeers}
-            className="flex items-center gap-1 rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700"
-            title="Peers und Konkurrenten — vergleichen und zur Liste hinzufügen"
-            aria-label="Peers und Konkurrenten"
-          >
-            <PeersIcon size={14} />
-            <span className="hidden sm:inline">Peers</span>
-          </button>
+          <Tip focusable={false} content="Peers und Konkurrenten — vergleichen und zur Liste hinzufügen">
+            <button
+              onClick={onOpenPeers}
+              className="flex items-center gap-1 rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700"
+              aria-label="Peers und Konkurrenten"
+            >
+              <PeersIcon size={14} />
+              <span className="hidden sm:inline">Peers</span>
+            </button>
+          </Tip>
 
           <RefreshMenu
             busy={busy}
@@ -187,26 +189,32 @@ export default function StockHeader({
           {/* The way back to the table. Bordered and a heavier stroke than the
               icons beside it: leaving is the one action on this header someone
               needs to find without looking for it. */}
-          <button
-            onClick={onClose}
-            className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
-            title="Zurück zur Übersicht (Esc)"
-            aria-label="Analyse schließen"
-          >
-            <CloseIcon />
-          </button>
+          <Tip focusable={false} content="Zurück zur Übersicht (Esc)">
+            <button
+              onClick={onClose}
+              className="rounded border border-ink-700 bg-ink-800 p-1.5 text-ink-200 transition hover:border-ink-600 hover:bg-ink-700 hover:text-ink-50"
+              aria-label="Analyse schließen"
+            >
+              <CloseIcon />
+            </button>
+          </Tip>
         </div>
       </div>
 
       {/* One row that swipes on a phone — the figures took three rows there,
-          and a third of the screen before the page began. */}
-      <div className="mt-3 flex gap-x-6 overflow-x-auto [scrollbar-width:none] sm:mt-4 sm:grid sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
+          and a third of the screen before the page began. Wider, they wrap as
+          they fit: a grid of five fixed columns ran the figures into each
+          other beside the open stock list, where the pane is narrower than
+          the window says. */}
+      <div className="mt-3 flex gap-x-6 overflow-x-auto [scrollbar-width:none] sm:mt-4 sm:flex-wrap sm:gap-x-8 sm:gap-y-3 sm:overflow-visible">
         <KV
           label="Kurs" term="financials.price" value={fmtPrice(f.price)} bigValue
           extra={typeof dayChange === 'number' && Number.isFinite(dayChange) && (
-            <span className={`ml-2 text-xs font-semibold ${dayChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`} title="Veränderung zum vorigen Schlusskurs">
-              {dayChange >= 0 ? '+' : '−'}{Math.abs(dayChange * 100).toFixed(1).replace('.', ',')} %
-            </span>
+            <Tip focusable={false} content="Veränderung zum vorigen Schlusskurs">
+              <span className={`ml-2 text-xs font-semibold ${dayChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {dayChange >= 0 ? '+' : '−'}{Math.abs(dayChange * 100).toFixed(1).replace('.', ',')} %
+              </span>
+            </Tip>
           )}
         />
         <KV label="Börsenwert" term="financials.marketCap" value={fmtBig(f.marketCap)} />
@@ -268,9 +276,11 @@ function RangePosition({ low, high, price }: { low: number | null; high: number 
   if (low == null || high == null || price == null || !(high > low)) return null;
   const at = Math.min(1, Math.max(0, (price - low) / (high - low)));
   return (
-    <div className="relative mt-1 h-1.5 w-28 rounded-full bg-ink-800" title={`${Math.round(at * 100)} % der Spanne`}>
-      <div className="absolute -top-0.5 h-2.5 w-0.5 rounded bg-ink-100" style={{ left: `calc(${at * 100}% - 1px)` }} />
-    </div>
+    <Tip focusable={false} className="block w-28" content={`${Math.round(at * 100)} % der Spanne`}>
+      <span className="relative mt-1 block h-1.5 w-28 rounded-full bg-ink-800">
+        <span className="absolute -top-0.5 h-2.5 w-0.5 rounded bg-ink-100" style={{ left: `calc(${at * 100}% - 1px)` }} />
+      </span>
+    </Tip>
   );
 }
 
@@ -324,12 +334,12 @@ function RefreshMenu({
 
   return (
     <div ref={rootRef} className="relative">
+      <Tip focusable={false} content={staleNote ?? 'Daten und Analyse aktualisieren'}>
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={busy}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={staleNote ?? 'Daten und Analyse aktualisieren'}
         className="relative flex items-center gap-1 rounded border border-ink-700 bg-ink-800 px-2.5 py-1 text-xs font-medium text-ink-200 transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? '⟳' : '↻'}
@@ -344,6 +354,7 @@ function RefreshMenu({
           </span>
         )}
       </button>
+      </Tip>
 
       {open && (
         <div
