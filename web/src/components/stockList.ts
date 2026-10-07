@@ -34,14 +34,13 @@ export const GROUPINGS: { key: GroupKey; label: string }[] = [
 export interface ListView {
   query:       string;
   sort:        SortKey;
-  onlyWatched: boolean;
   group:       GroupKey;
   /** Keys of the groups folded shut — meaningful only under the `group` they were folded in. */
   collapsed:   string[];
 }
 
 export const DEFAULT_LIST_VIEW: ListView = {
-  query: '', sort: 'score', onlyWatched: false, group: 'none', collapsed: [],
+  query: '', sort: 'score', group: 'none', collapsed: [],
 };
 
 /** Nulls always sink, whatever the column — an empty cell is not a low value. */
@@ -100,7 +99,6 @@ export function scoreBarColor(score: number | null): string {
 export function applyListView(rows: OverviewRow[], view: ListView): OverviewRow[] {
   const q = view.query.trim().toLowerCase();
   const list = rows.filter((r) => {
-    if (view.onlyWatched && !r.watched) return false;
     if (!q) return true;
     return r.symbol.toLowerCase().includes(q)
       || r.companyName.toLowerCase().includes(q)
