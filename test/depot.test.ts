@@ -92,11 +92,10 @@ describe('the depot against the model', () => {
     assert.deepEqual(flags('XE'), ['ask: kein Kurs aus umsatz']);
   });
 
-  it('weighs the sectors among the stocks, and offers what the model rates a buy and is not held', () => {
+  it('weighs the sectors among the stocks', () => {
     assert.equal(v.sectors[0].sector, 'Technology');
     // The stock outside the watchlist counts, under "ohne Sektor".
     assert.ok(Math.abs(v.sectors[0].weight - 1300 / 1500) < 1e-12);
-    assert.deepEqual(v.candidates.map((c) => c.symbol), ['NEW']);
     assert.ok(v.findings.some((f) => f.includes('in einem Sektor (Technology)')));
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import Page, { HeaderButton } from '../components/Page';
+import DepotCheck from '../components/DepotCheck';
 import RecommendationBadge from '../components/RecommendationBadge';
 import StockLogo, { initialsFromName } from '../components/StockLogo';
 import { HEADER_HEIGHT, HEADER_RULE, ROW_HEIGHT, ROW_RULE } from '../components/StockRowCells';
@@ -116,31 +117,9 @@ export default function DepotPage() {
             <Shares title="Depot nach Anlageart" rows={view.byType.map((t) => ({ label: TYPE_LABEL[t.assetType] ?? t.assetType, weight: t.weight }))} />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            {view.candidates.length > 0 && (
-              <section className="rounded-lg border border-ink-800 px-4 py-3">
-                <h3 className="mb-1.5 text-xs font-semibold text-ink-300">Laut Modell BUY, nicht im Depot</h3>
-                <ul className="-mx-2">
-                  {view.candidates.slice(0, 10).map((c) => (
-                    <li key={c.symbol}>
-                      <button
-                        onClick={() => openStock(c.symbol)}
-                        className="flex w-full items-center gap-2 rounded px-2 py-1 text-left transition hover:bg-ink-800"
-                      >
-                        <StockLogo symbol={c.symbol} domain={null} fallbackInitials={initialsFromName(c.name ?? c.symbol)} size={18} />
-                        <span className="min-w-0 flex-1 truncate text-sm text-ink-100">
-                          {c.name ?? c.symbol} <span className="font-mono text-2xs text-ink-500">{c.symbol}</span>
-                        </span>
-                        <RecommendationBadge rec={c.verdict} size="sm" />
-                        <span className={`w-8 text-right font-mono text-sm font-semibold tabular ${scoreColor(c.score)}`}>{c.score.toFixed(1)}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {data?.evidence && <Evidence records={data.evidence} />}
-          </div>
+          <DepotCheck onOpen={openStock} />
+
+          {data?.evidence && <Evidence records={data.evidence} />}
         </>
       )}
     </Page>

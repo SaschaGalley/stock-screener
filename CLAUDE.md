@@ -7,11 +7,14 @@ Die Tabellen `trades` und `holding_prices` sind Kopien der echten Käufe, Verkä
 **Niemals in den Kontext holen**, egal ob per SQL, API, Browser oder Log:
 
 - Zeilen aus `trades` oder `holding_prices` (Datum, ISIN, Name, Stückzahl, Kurs, Gebühr), auch nicht „kurz zum Anschauen“ oder mit `LIMIT 5`
-- die Antwort von `/api/trades/open`, `/api/depot`, `/api/review` oder von umsatz ungefiltert, auch nicht per `curl`
+- die Antwort von `/api/trades/open`, `/api/depot`, `/api/depot/check`, `/api/review` oder von umsatz ungefiltert, auch nicht per `curl`
+- die `app_state`-Einträge `depot.check.umsatz.*` (Ergebnis des Depot-Checks: Depotwerte, Gewichte, Text des Depotmanagers)
 - Screenshots oder Seitentext des Journals („Ohne Begründung“), der Depot- oder der Rückblick-Seite, solange dort echte Daten stehen
 
 **Erlaubt** sind Aggregate ohne Einzelwerte: `count(*)` und `GROUP BY` über `kind`, `asset_type` oder Datums-Buckets; API-Antworten mit `jq` auf Status oder Anzahlen reduziert.
 
-Zum Testen einen Platzhalter-Server mit erfundenen Trades verwenden (`UMSATZ_API_URL` auf ihn zeigen lassen), nie das echte umsatz. Tests, Fixtures, Kommentare und Commit-Messages enthalten nur erfundene Beispiele. Bestände und Trades gehen nie in Prompts an ein Modell.
+Zum Testen einen Platzhalter-Server mit erfundenen Trades verwenden (`UMSATZ_API_URL` auf ihn zeigen lassen), nie das echte umsatz, und dazu `TRADES_SOURCE` auf eine eigene Quelle setzen (z. B. `preview`): Dann landen die erfundenen Trades unter dieser Quelle, die echte Kopie unter `umsatz` bleibt unberührt, und die Depot-Seite zeigt nur Erfundenes. Danach die Zeilen dieser Quelle aus `trades` und `holding_prices` und ihre `app_state`-Einträge (`trades.<quelle>.*`, `depot.check.<quelle>.*`) löschen. Tests, Fixtures, Kommentare und Commit-Messages enthalten nur erfundene Beispiele.
+
+Bestände und Trades gehen nie in Prompts an ein Modell, mit einer Ausnahme, die der Eigentümer am 8.10.2026 so festgelegt hat: der Text „Was ein Depotmanager tun würde“ im Depot-Check. Er bekommt je Position Name, Ticker, Anlageart, Sektor, Gewicht in Prozent und die eigene Bewertung der App (Score, Urteil, Chart-Trend), dazu die Sektorgewichte — nie Stückzahlen, Kaufkurse, Beträge, Gewinne, Daten, Trades oder das Journal. Was genau hinausgeht, legt allein `managerInput` in `src/analysis/depot-check.ts` fest; ein Test (`test/depot-check.test.ts`) prüft, dass nichts anderes durchkommt. Jede Erweiterung davon braucht seine ausdrückliche Zustimmung.
 
 Das Journal selbst (`journal_entries`) sind eigene Notizen des Eigentümers; beim Entwickeln ebenfalls nur so viel lesen, wie die Aufgabe braucht.

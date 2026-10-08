@@ -138,6 +138,19 @@ export const AppConfigSchema = z.object({
   }).prefault({}),
 
   /**
+   * The depot check (`src/depot-check-service.ts`): which stocks off the depot
+   * it analyses, and below what score a held one is weighed for reducing.
+   */
+  depotCheck: z.object({
+    /** Score a stock outside the depot needs to be analysed as a candidate. */
+    minScore:      z.number().min(0).max(10).default(8),
+    /** At most this many, the best first: each costs an analysis and a chart reading. */
+    maxCandidates: z.number().int().min(1).max(50).default(25),
+    /** A held stock scored below this is weighed for reducing. */
+    reduceBelow:   z.number().min(0).max(10).default(5),
+  }).prefault({}),
+
+  /**
    * Where a verdict change on the watchlist is announced once it has held
    * (`src/alerts.ts`). `json` suits any endpoint that takes a JSON POST —
    * Slack reads `text`, Discord `content`; `ntfy` posts to an ntfy topic URL

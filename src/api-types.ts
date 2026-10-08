@@ -242,6 +242,13 @@ export interface BacktestResponse {
   };
 }
 
+/** `GET /api/depot/check` — the last depot check, the one going, and the settings it runs with. */
+export interface DepotCheckResponse {
+  status:   import('./analysis/depot-check.js').DepotCheckStatus | null;
+  result:   import('./analysis/depot-check.js').DepotCheckResult | null;
+  settings: import('./analysis/depot-check.js').DepotCheckSettings;
+}
+
 /** `GET /api/verdict-changes` */
 export interface VerdictChangesResponse {
   changes: import('./db/store.js').VerdictChange[];

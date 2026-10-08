@@ -79,8 +79,6 @@ export interface DepotView {
   byType:     { assetType: string; weight: number }[];
   /** What stands out across the depot, as sentences. */
   findings:   string[];
-  /** Rated BUY or better on the watchlist, and not held. */
-  candidates: { symbol: string; name: string | null; score: number; verdict: string; sector: string | null }[];
   limits:     { maxPosition: number; maxSector: number };
 }
 
@@ -215,15 +213,9 @@ export function depotView(input: {
     findings.push(`${unexplained.length} von ${decided.size} gekauften Positionen haben keine Begründung im Journal.`);
   }
 
-  const held_ = new Set(positions.map((p) => p.symbol).filter(Boolean));
-  const candidates = [...model]
-    .filter(([s, m]) => !held_.has(s) && m.score !== null && m.verdict && /BUY/.test(m.verdict))
-    .map(([symbol, m]) => ({ symbol, name: m.name, score: m.score!, verdict: m.verdict!, sector: m.sector }))
-    .sort((a, b) => b.score - a.score);
-
   return {
     totalEur, unvalued: positions.filter((p) => p.valueEur === null).length,
-    positions, sectors, byType, findings, candidates,
+    positions, sectors, byType, findings,
     limits: { maxPosition: MAX_POSITION, maxSector: MAX_SECTOR },
   };
 }

@@ -66,6 +66,7 @@ import {
 import { isJournalKind, normalizeSymbols } from './journal.js';
 import { ignoreTrades, readOpenTrades } from './trades-service.js';
 import { readDepot } from './depot-service.js';
+import { readDepotCheck, reconcileDepotCheck, startDepotCheck } from './depot-check-service.js';
 import { ChartReadInputError, readChart, runChartRead } from './chart-service.js';
 import { invalidateReview, reviewPage, reviewStats } from './review-service.js';
 import { REVIEW_FILTERS, REVIEW_PAGE, REVIEW_SORTS, type ReviewFilter, type ReviewSort } from './analysis/review.js';
@@ -1214,6 +1215,23 @@ export function createApp(): express.Express {
       next(e);
     }
   });
+  // The depot check: the best stocks off the depot analysed, the weak holdings'
+  // charts read, and a depot manager's view of the lot. GET answers with the
+  // last run and the one going; POST starts one, or says why not.
+  app.get('/api/depot/check', async (_req, res, next) => {
+    try {
+      res.json(await readDepotCheck());
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.post('/api/depot/check', async (_req, res, next) => {
+    try {
+      res.json(await startDepotCheck());
+    } catch (e) {
+      next(e);
+    }
+  });
   // My purchases and sales looked back on: each against the S&P 500 at one to
   // twelve months, beside the situation it was made in. Real holdings.
   app.get('/api/review', async (req, res, next) => {
@@ -1862,6 +1880,7 @@ if (isMain) {
         // Install the cron only once the port is bound: if the process is going
         // to die on EADDRINUSE, it should do so without having kicked off a run.
         applySchedule().catch((e) => logger.error(`Could not install schedule: ${(e as Error).message}`));
+        reconcileDepotCheck().catch((e) => logger.error(`Could not reconcile the depot check: ${(e as Error).message}`));
         reconcileBacktestStatus()
           .then(() => applyBacktestSchedule())
           .catch((e) => logger.error(`Could not install backtest schedule: ${(e as Error).message}`));

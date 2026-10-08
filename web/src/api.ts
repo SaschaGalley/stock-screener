@@ -37,6 +37,7 @@ import type { ChartReadDoc, ChartResponse } from '../../src/analysis/chart';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
 import type { DepotResponse } from '../../src/analysis/depot';
+import type { DepotCheckResponse } from '../../src/api-types';
 import type { ReviewPage, ReviewStats } from '../../src/review-service';
 import type { ReviewFilter, ReviewSort } from '../../src/analysis/review';
 import type { ManualResearchTool } from '../../src/models';
@@ -159,6 +160,9 @@ export const api = {
   getReviewStats: () => jsonFetch<ReviewStats>(`${BASE}/review/stats`),
   /** The depot weighed against the model; `sync` asks umsatz first. */
   getDepot: (sync = false) => jsonFetch<DepotResponse>(`${BASE}/depot${sync ? '?sync=1' : ''}`),
+  /** The depot check: the last run, the one going, its settings — `depot-check-service.ts`. */
+  getDepotCheck: () => jsonFetch<DepotCheckResponse>(`${BASE}/depot/check`),
+  runDepotCheck: () => jsonFetch<{ started: boolean; reason?: string }>(`${BASE}/depot/check`, { method: 'POST' }),
   /** Mark trades as needing no reason. */
   dismissTrades: (ids: number[]) =>
     jsonFetch<{ dismissed: number }>(`${BASE}/trades/dismiss`, {

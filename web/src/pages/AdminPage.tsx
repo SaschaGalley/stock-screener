@@ -464,6 +464,36 @@ export default function AdminPage() {
         <CalibrationPanel committed={meta.calibration} />
       </Card>
 
+      {/* ── Depot-Check ────────────────────────────────────────────────── */}
+      <Card
+        title="Depot-Check"
+        hint="Der Button auf der Depot-Seite: welche Aktien außerhalb des Depots er analysiert (samt Chart), und ab wann ein Depotwert zum Reduzieren angesehen wird. Jeder Kandidat kostet eine Analyse und eine Chart-Lesung mit dem Analysemodell."
+      >
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          {([
+            ['minScore', 'Kandidaten ab Score', 0, 10, 0.1],
+            ['maxCandidates', 'höchstens', 1, 50, 1],
+            ['reduceBelow', 'Depotwerte reduzieren unter Score', 0, 10, 0.1],
+          ] as const).map(([key, label, min, max, stepSize]) => (
+            <label key={key} className="flex items-center gap-2">
+              <span className="text-xs text-ink-400">{label}</span>
+              <input
+                type="number"
+                min={min}
+                max={max}
+                step={stepSize}
+                value={config.depotCheck[key]}
+                onChange={(e) => patch((d) => {
+                  const v = Math.max(min, Math.min(max, Number(e.target.value) || 0));
+                  d.depotCheck[key] = stepSize === 1 ? Math.round(v) : Math.round(v * 10) / 10;
+                })}
+                className={`${inputCls} w-20 text-right font-mono`}
+              />
+            </label>
+          ))}
+        </div>
+      </Card>
+
       {/* ── Backtest ───────────────────────────────────────────────────── */}
       <Card
         title="Backtest"
