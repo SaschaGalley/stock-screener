@@ -52,8 +52,12 @@ export interface ScoredStock {
 export interface CheckedStock extends ScoredStock {
   /** The score that made a candidate one, before its analysis; null for a held stock. */
   scoreBefore: number | null;
-  /** What the model read in the chart: its trend, the phase and the summary. */
-  chart:       { trend: ChartTrend; phase?: string; summary: string; asOf: string } | null;
+  /** What the model read in the chart: its trend, the phase, the summary and the levels it names. */
+  chart:       {
+    trend: ChartTrend; phase?: string; summary: string; asOf: string;
+    /** Absent before 9.10.2026. */
+    levels?: { price: number; kind: 'support' | 'resistance'; strength: 'strong' | 'medium' | 'weak' }[];
+  } | null;
   /** Stop and trailing stop from the bars, and the readings beside them. Absent before 8.10.2026. */
   protection?: Protection | null;
   /** Share of the depot, for a held stock; null for a candidate. */
@@ -93,7 +97,11 @@ export interface ManagerMove {
   protect?: ProtectionChoice | null;
   /** The weight it would have after the step, in per cent of today's depot; the page turns it into euros. */
   targetPct?: number | null;
+  /** A stop level of its own — one the owner's note gave and the data bear out — in the stock's currency. */
+  stopPrice?: number | null;
   reason:   string;
+  /** Its answer to the owner's note on the stock, where there is one. */
+  noteReply?: string | null;
 }
 
 /** What a depot manager would do, as the model answers. */
@@ -119,7 +127,14 @@ export interface DepotCheckResult {
   sectorTrends?: SectorTrend[];
   manager:      ManagerView | null;
   managerError: string | null;
+  /** When the manager last answered: later than `generatedAt` once it was asked again. */
+  managerAt?:   string;
+  /** The owner's notes the manager answered, by ticker. */
+  notes?:       Record<string, string>;
 }
+
+/** The owner's note on a stock, for the depot manager (CLAUDE.md). */
+export interface DepotNote { text: string; at: string }
 
 export interface DepotCheckStatus {
   state:      'running' | 'done' | 'failed' | 'interrupted';
@@ -161,6 +176,49 @@ export function classifyDepotCheck(
   };
 }
 
+// ── A step's size ────────────────────────────────────────────────────────────
+
+/**
+ * What a target weight means for a position today. The manager names the
+ * weight after the step, as a share of the depot on the check's day; a sale
+ * is the share of the position that takes off — applied to the shares held
+ * today — and a purchase the euros the weight adds at today's depot value.
+ * Counted here, on the page, because the model never sees a quantity or an
+ * amount.
+ */
+export type StepSize =
+  | { kind: 'sell'; fraction: number; shares: number | null; euros: number | null }
+  | { kind: 'buy'; euros: number; shares: number | null };
+
+export function stepSize(
+  targetPct: number | null | undefined, weightAtCheck: number | null,
+  now: { quantity: number; valueEur: number | null } | null, totalEur: number,
+): StepSize | null {
+  if (targetPct == null) return null;
+  const target = targetPct / 100;
+  const before = weightAtCheck ?? 0;
+  if (target < before - 1e-9) {
+    const fraction = Math.min(1, 1 - target / before);
+    return { kind: 'sell', fraction, shares: now ? now.quantity * fraction : null, euros: now?.valueEur != null ? now.valueEur * fraction : null };
+  }
+  if (target > before + 1e-9) {
+    const euros = (target - before) * totalEur;
+    const price = now && now.valueEur != null && now.quantity > 0 ? now.valueEur / now.quantity : null;
+    return { kind: 'buy', euros, shares: price ? euros / price : null };
+  }
+  return null;
+}
+
+/** A share of a position in words: „die Hälfte“, „gut ein Drittel“, „alles“; else in per cent. */
+export function shareWords(f: number): string {
+  if (f >= 0.97) return 'alles';
+  const words: [number, string][] = [[1 / 4, 'ein Viertel'], [1 / 3, 'ein Drittel'], [1 / 2, 'die Hälfte'], [2 / 3, 'zwei Drittel'], [3 / 4, 'drei Viertel']];
+  const [x, w] = words.reduce((a, b) => (Math.abs(b[0] - f) < Math.abs(a[0] - f) ? b : a));
+  if (Math.abs(x - f) <= 0.015) return w;
+  if (Math.abs(x - f) <= 0.05) return `${f > x ? 'gut' : 'knapp'} ${w}`;
+  return `${Math.round(f * 100)} %`;
+}
+
 // ── The depot manager ────────────────────────────────────────────────────────
 
 /** A held position as the check sees it: the depot view's, of which only some fields go further. */
@@ -193,13 +251,17 @@ const trendDe: Record<ChartTrend, string> = { up: 'aufwärts', down: 'abwärts',
 
 /** The chart as the manager reads it: the model's trend and phase, and its summary. */
 function chartLine(c: CheckedStock['chart']) {
-  return c ? { trend: trendDe[c.trend], phase: c.phase || null, lesart: c.summary } : null;
+  return c ? {
+    trend: trendDe[c.trend], phase: c.phase || null, lesart: c.summary,
+    marken: c.levels?.map((l) => ({ preis: l.price, art: l.kind === 'support' ? 'Unterstützung' : 'Widerstand', staerke: l.strength })) ?? [],
+  } : null;
 }
 
 /** The levels and readings from the bars, as distances from the close: no price goes out. */
 function technik(p: Protection | null | undefined) {
   if (!p) return null;
   return {
+    kurs: Math.round(p.close * 100) / 100, waehrung: p.currency,
     rsi: p.rsi === null ? null : Math.round(p.rsi),
     ueber200TageProzent: pct(p.overSma200),
     kanal3Monate: p.channel,
@@ -212,10 +274,10 @@ function technik(p: Protection | null | undefined) {
 }
 
 /** A stock off the depot as the manager reads it. */
-function candidateLine(c: CheckedStock) {
+function candidateLine(c: CheckedStock, notes?: ReadonlyMap<string, string>) {
   return {
     symbol: c.symbol, name: c.name ?? c.symbol, sector: c.sector, score: c.score, urteil: c.verdict,
-    chart: chartLine(c.chart), technik: technik(c.protection),
+    chart: chartLine(c.chart), technik: technik(c.protection), notizDesAnlegers: notes?.get(c.symbol) ?? null,
   };
 }
 
@@ -240,6 +302,8 @@ export function managerInput(input: {
   lookThrough?: LookThrough | null;
   /** Money ready to invest over the depot's value; null when not entered. */
   cashShare?:   number | null;
+  /** The owner's notes, by ticker: his own words, sent as he wrote them for the manager. */
+  notes?:       ReadonlyMap<string, string>;
   today?:       string;
 }) {
   const lt = input.lookThrough;
@@ -258,6 +322,7 @@ export function managerInput(input: {
         score: p.score, scoreVor4Wochen: p.scoreBefore?.score ?? null, urteil: p.verdict,
         chart: chartLine(h?.chart ?? null), technik: technik(h?.protection),
         termine: (p.upcoming ?? []).map((e) => ({ datum: e.day, was: e.detail ? `${e.title} — ${e.detail}` : e.title })),
+        notizDesAnlegers: (p.symbol && input.notes?.get(p.symbol)) || null,
       };
     }),
     durchgerechnet: lt ? {
@@ -268,8 +333,8 @@ export function managerInput(input: {
     liquiditaetProzent: pct(input.cashShare),
     sektorenProzent: input.sectors.map((s) => ({ sector: s.sector, gewichtProzent: pct(s.weight) })),
     grenzen: { positionProzent: pct(input.limits.maxPosition), sektorProzent: pct(input.limits.maxSector) },
-    kaufenAnsehen:          input.lists.buy.map(candidateLine),
-    hochBewertetChartNicht: input.lists.waitForChart.map(candidateLine),
+    kaufenAnsehen:          input.lists.buy.map((c) => candidateLine(c, input.notes)),
+    hochBewertetChartNicht: input.lists.waitForChart.map((c) => candidateLine(c, input.notes)),
     markt: input.market ? {
       stand: input.market.fetchedAt.slice(0, 10),
       lage: input.market.state,
@@ -306,10 +371,12 @@ export const MANAGER_SYSTEM = [
   '  schon läuft. thesenCheck: wie viele der Kaufthesen des Anlegers ein Abgleich mit der aktuellen Lage widerlegt sah,',
   '  vor wie vielen Tagen.',
   '- liquiditaetProzent: Geld, das der Anleger bereitliegen hat, in Prozent des Depotwerts; null, wenn er keines angab.',
+  '- notizDesAnlegers: was der Anleger selbst zu der Aktie schreibt — eine Marke, die er sieht, ein Plan, ein Zweifel.',
   `  score: 0 bis 10, aus Kennzahlen und Analysetext; urteil: ${bandsDe}. Im Backtest sagt der Score die Rendite des`,
   '  nächsten Monats nur schwach voraus (Rangkorrelation 0,014). Stütze dich nicht auf kleine Unterschiede.',
-  '- chart: Trend und Phase laut Chart-Lesung, lesart ihre Zusammenfassung.',
-  '- technik, aus den Kursen gerechnet: rsi (über 70 heiß gelaufen, unter 30 ausverkauft); ueber200TageProzent (Abstand',
+  '- chart: Trend und Phase laut Chart-Lesung, lesart ihre Zusammenfassung, marken die Unterstützungen und Widerstände,',
+  '  die sie für wichtig hält (Preise in der Handelswährung).',
+  '- technik, aus den Kursen gerechnet: kurs (letzter Schlusskurs in waehrung); rsi (über 70 heiß gelaufen, unter 30 ausverkauft); ueber200TageProzent (Abstand',
   '  zur 200-Tage-Linie); kanal3Monate (Lage im Kanal der letzten drei Monate); tagesschwankungProzent (typische',
   '  Tagesbewegung); stopProzent (wo ein Stop läge, vom Kurs aus: unter der nächsten tragenden Unterstützung, sonst drei',
   '  Tagesschwankungen tiefer); trailingProzent (Abstand eines Trailing-Stops vom Hoch der letzten 22 Handelstage);',
@@ -335,6 +402,12 @@ export const MANAGER_SYSTEM = [
   '- Termine: Vor Quartalszahlen nicht ohne Grund nachkaufen; ein Stop schützt nicht vor einer Kurslücke am Tag danach.',
   '- Eine widerlegte Kaufthese wiegt schwer: Der Grund, aus dem gekauft wurde, gilt nicht mehr. Eine junge Position',
   '  (wenige Monate) nicht wegen kurzer Schwankungen aufgeben, eine alte nicht aus Gewohnheit halten.',
+  '- Bei verkaufen ist protect der Schutz bis zum Verkauf.',
+  '- Gibt es notizDesAnlegers, prüfe sie an den Daten (Kurs, Marken, technik) und antworte in noteReply: was dafür spricht,',
+  '  was dagegen, ob du deinen Schritt deshalb änderst. Nennt er eine Stop-Marke, die die Daten tragen, übernimm sie als',
+  '  stopPrice (protect "stop"); trägt sie nicht, sag warum und lass stopPrice null. Ohne Notiz ist noteReply null.',
+  '- reason ist nur das Warum, aus den Daten. Zielgewicht, Stückzahlen, Beträge, Stop-Marke und Trailing-Abstand rechnet',
+  '  und zeigt die Seite selbst neben deinem Text: Nenne sie im reason nicht.',
   '- Größen: Bei kaufen, aufstocken, reduzieren, gewinne mitnehmen und verkaufen nennst du targetPct, das Gewicht nach dem',
   '  Schritt in Prozent des heutigen Depotwerts (verkaufen: 0). Käufe zusammen nicht über liquiditaetProzent plus dem, was',
   '  Verkäufe freimachen; ohne Liquiditätsangabe nur aus Verkäufen. Keine Position über die Positionsgrenze.',
@@ -348,7 +421,8 @@ export const MANAGER_SYSTEM = [
   '{',
   '  "summary": "drei bis fünf Sätze: was ein Depotmanager mit diesem Depot jetzt tun würde und warum, mit Blick auf den Markt",',
   `  "moves": [ { "action": ${MANAGER_ACTIONS.map((a) => `"${a}"`).join(' | ')}, "symbol": "Ticker wie in den Daten",`,
-  `    "protect": ${PROTECTIONS.map((p) => `"${p}"`).join(' | ')} | null, "reason": "ein bis zwei Sätze Begründung aus den Daten" } ],`,
+  `    "protect": ${PROTECTIONS.map((p) => `"${p}"`).join(' | ')} | null, "targetPct": Zahl | null, "stopPrice": Zahl | null,`,
+  '    "reason": "ein bis zwei Sätze: warum, aus den Daten", "noteReply": "Antwort auf notizDesAnlegers" | null } ],',
   '  "risks": [ "was er im Blick behält: Klumpen, Sektoren, Markt, was gegen die Schritte spricht" ]',
   '}',
   'moves: zuerst jede Aktie im Depot, die dringendsten zuerst, protect immer gesetzt; dann die Käufe mit protect null.',

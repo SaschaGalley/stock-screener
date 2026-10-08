@@ -163,6 +163,11 @@ export const api = {
   /** The depot check: the last run, the one going, its settings — `depot-check-service.ts`. */
   getDepotCheck: () => jsonFetch<DepotCheckResponse>(`${BASE}/depot/check`),
   runDepotCheck: () => jsonFetch<{ started: boolean; reason?: string }>(`${BASE}/depot/check`, { method: 'POST' }),
+  askDepotManager: () => jsonFetch<{ started: boolean; reason?: string }>(`${BASE}/depot/check/manager`, { method: 'POST' }),
+  setDepotNote: (symbol: string, text: string) => jsonFetch<{ notes: Record<string, { text: string; at: string }> }>(
+    `${BASE}/depot/notes/${encodeURIComponent(symbol)}`,
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) },
+  ),
   setDepotCash: (amountEur: number | null) => jsonFetch<{ amountEur: number | null }>(`${BASE}/depot/cash`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amountEur }),
   }),

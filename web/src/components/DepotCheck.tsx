@@ -6,8 +6,9 @@ import Tip from './Tip';
 import { scoreColor } from './stockList';
 import { deNumber, fmtPrice, fmtSignedPct } from '../format';
 import type { DepotCheckResponse } from '../../../src/api-types';
-import type {
-  CheckedStock, DepotCheckResult, ManagerAction, ManagerMove, ProtectionChoice,
+import {
+  shareWords, stepSize, type CheckedStock, type DepotCheckResult, type DepotNote, type ManagerAction, type ManagerMove,
+  type ProtectionChoice,
 } from '../../../src/analysis/depot-check';
 import { SECTOR_DIRECTION_LABEL, type MarketBrief, type SectorDirection } from '../../../src/analysis/market-brief';
 import { GROUP_SIDE, type DepotCheckHistory, type RecordGroup } from '../../../src/analysis/depot-check-record';
@@ -15,7 +16,6 @@ import type { SectorPhase, SectorTrend } from '../../../src/analysis/sector-rota
 import type { Protection } from '../../../src/analysis/stops';
 
 const eur = (n: number) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-const signedEur = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${eur(Math.abs(n))}`;
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 const fmtDay = (d: string) => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}.${d.slice(0, 4)}`;
 const pct = (x: number) => `${deNumber(x * 100, 1)} %`;
@@ -29,7 +29,6 @@ const ACTION: Record<ManagerAction, string> = {
   kaufen: 'text-emerald-400', aufstocken: 'text-emerald-400', halten: 'text-ink-300',
   'gewinne mitnehmen': 'text-amber-300', reduzieren: 'text-red-400', verkaufen: 'text-red-400', beobachten: 'text-sky-300',
 };
-const PROTECT_LABEL: Record<ProtectionChoice, string> = { stop: 'Stop', trailing: 'Trailing', keiner: 'kein Schutz' };
 const PHASE: Record<SectorPhase, string> = {
   'führt': 'text-emerald-400', 'verliert Schwung': 'text-amber-300', 'hinkt': 'text-red-400', 'holt auf': 'text-sky-300',
 };
@@ -44,7 +43,7 @@ const DIRECTION: Record<SectorDirection, string> = {
  * buying — and the market it was all read against last. Possibilities, said
  * as such.
  */
-export default function DepotCheck({ onOpen, sectors, totalEur, cashEur }: {
+export default function DepotCheck({ onOpen, sectors, totalEur, cashEur, held }: {
   onOpen: (symbol: string) => void;
   /** The depot's sector weights among its stocks, to set beside the sectors' trends. */
   sectors: { sector: string; weight: number }[];
@@ -52,6 +51,8 @@ export default function DepotCheck({ onOpen, sectors, totalEur, cashEur }: {
   totalEur: number;
   /** Money ready to invest, as entered. */
   cashEur: number | null;
+  /** Today's positions by ticker: the steps become shares and euros here, never in the prompt. */
+  held: Map<string, Held>;
 }) {
   const [data, setData] = useState<DepotCheckResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +81,19 @@ export default function DepotCheck({ onOpen, sectors, totalEur, cashEur }: {
   const s = data?.settings;
   const st = data?.status ?? null;
   const r = data?.result ?? null;
+  const [notes, setNotes] = useState<Record<string, DepotNote>>({});
+  useEffect(() => { if (data) setNotes(data.notes); }, [data]);
+
+  async function askAgain() {
+    setError(null);
+    try {
+      const res = await api.askDepotManager();
+      if (!res.started) setError(res.reason ?? 'Nicht gestartet.');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    reload();
+  }
 
   return (
     <section className="rounded-lg border border-ink-800 px-4 py-3">
@@ -123,16 +137,28 @@ export default function DepotCheck({ onOpen, sectors, totalEur, cashEur }: {
         </p>
       )}
 
-      {r && <Result r={r} onOpen={onOpen} sectors={sectors} changes={data?.history?.changes ?? []} totalEur={totalEur} />}
+      {r && (
+        <Result
+          r={r} onOpen={onOpen} sectors={sectors} changes={data?.history?.changes ?? []} totalEur={totalEur} held={held}
+          notes={notes} onNotes={setNotes} onAskAgain={running ? null : () => void askAgain()}
+        />
+      )}
       {data?.history && <History h={data.history} onOpen={onOpen} />}
     </section>
   );
 }
 
-function Result({ r, onOpen, sectors, changes, totalEur }: {
+function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, onAskAgain }: {
   r: DepotCheckResult; onOpen: (symbol: string) => void; sectors: { sector: string; weight: number }[];
-  changes: DepotCheckHistory['changes']; totalEur: number;
+  changes: DepotCheckHistory['changes']; totalEur: number; held: Map<string, Held>;
+  notes: Record<string, DepotNote>; onNotes: (notes: Record<string, DepotNote>) => void;
+  /** Null while a run is going. */
+  onAskAgain: (() => void) | null;
 }) {
+  // Notes written or changed since the manager last answered.
+  const answered = r.notes ?? {};
+  const unanswered = [...new Set([...Object.keys(notes), ...Object.keys(answered)])]
+    .filter((k) => (notes[k]?.text ?? '') !== (answered[k] ?? ''));
   const moves = new Map((r.manager?.moves ?? []).map((m) => [m.symbol, m]));
   const order = new Map((r.manager?.moves ?? []).map((m, i) => [m.symbol, i]));
   const holdings = [...r.holdings].sort((a, b) =>
@@ -146,7 +172,21 @@ function Result({ r, onOpen, sectors, changes, totalEur }: {
   return (
     <div className="mt-3 space-y-5 border-t border-ink-800 pt-3">
       <div>
-        <h4 className="mb-1 text-xs font-semibold text-ink-300">Was ein Depotmanager tun würde</h4>
+        <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h4 className="text-xs font-semibold text-ink-300">Was ein Depotmanager tun würde</h4>
+          {r.managerAt && r.managerAt !== r.generatedAt && <span className="text-2xs text-ink-500">neu gefragt {fmtTime(r.managerAt)}</span>}
+          <Tip content="Fragt nur den Depotmanager neu: mit den Analysen, Charts und der Marktlage dieses Checks, dem heutigen Depot und deinen Notizen. Ein Modellaufruf, kein ganzer Check.">
+            <button
+              onClick={onAskAgain ?? undefined}
+              disabled={!onAskAgain}
+              className={`rounded border px-2 py-0.5 text-2xs transition disabled:opacity-40 ${
+                unanswered.length ? 'border-accent text-accent hover:bg-accent hover:text-ink-950' : 'border-ink-700 text-ink-300 hover:border-ink-500'
+              }`}
+            >
+              Depotmanager neu fragen{unanswered.length ? ` · ${unanswered.length} ${unanswered.length === 1 ? 'Notiz' : 'Notizen'} neu` : ''}
+            </button>
+          </Tip>
+        </div>
         {r.manager
           ? <p className="text-sm leading-relaxed text-ink-100">{r.manager.summary}</p>
           : <p className="text-xs text-ink-500">Kein Text{r.managerError ? `: ${r.managerError}` : '.'}</p>}
@@ -167,13 +207,17 @@ function Result({ r, onOpen, sectors, changes, totalEur }: {
       {holdings.length > 0 && (
         <div>
           <h4 className="mb-1 text-xs font-semibold text-ink-300">
-            <Tip content={`Jede Aktie im Depot: Schritt und Schutz laut Depotmanager, darunter seine Begründung. Stop und Trailing rechnet die App aus dem Chart; der gewählte ist hervorgehoben. Rot markiert: Score unter ${score(r.settings.reduceBelow)} und der Chart fällt.`}>
+            <Tip content={`Jede Aktie im Depot mit dem Schritt und dem Schutz, die der Depotmanager wählt, und seiner Begründung. Stückzahlen, Beträge, Stop-Marke und Trailing-Abstand rechnet die App selbst, aus deinem Depot und dem Chart; das Modell sieht keine Stückzahl. Rot markiert: Score unter ${score(r.settings.reduceBelow)} und der Chart fällt.`}>
               <span>{allHeld ? 'Deine Aktien' : `Depotwerte unter ${score(r.settings.reduceBelow)}`}</span>
             </Tip>
           </h4>
           <ul className="divide-y divide-ink-800/70">
             {holdings.map((h) => (
-              <HoldingRow key={h.symbol} h={h} move={moves.get(h.symbol) ?? null} weak={reduce.has(h.symbol)} onOpen={onOpen} totalEur={totalEur} />
+              <HoldingRow
+                key={h.symbol} h={h} move={moves.get(h.symbol) ?? null} weak={reduce.has(h.symbol)} onOpen={onOpen}
+                totalEur={totalEur} now={held.get(h.symbol) ?? null}
+                note={notes[h.symbol] ?? null} answered={answered[h.symbol] ?? null} onNotes={onNotes}
+              />
             ))}
           </ul>
         </div>
@@ -228,77 +272,209 @@ function Result({ r, onOpen, sectors, changes, totalEur }: {
   );
 }
 
+/** A position as the depot holds it today: what a step's size is counted in. */
+export interface Held { quantity: number; valueEur: number | null }
+
+/** Shares as the position counts them: whole where it holds whole shares, else to the hundredth. */
+const qty = (n: number, whole = false) => deNumber(whole ? Math.round(n) : n, whole || Number.isInteger(n) ? 0 : 2).replace(/,00$/, '');
+const roundEur = (n: number) => eur(Math.round(n / 10) * 10);
+
 /**
- * A stock held: what it is, where the investor stands with it and how the
- * app reads it on the first line; the manager's step, protection and reason
- * on the second. The two levels are the app's, from the bars; the manager
- * only picks one, and the pick is what lights up.
+ * A stock held: what it is and where the investor stands with it on the
+ * first line, labelled; then the manager's step said as what to do — how
+ * many shares, how many euros, worked out here from today's position — the
+ * protection said as an order to place, and the manager's reason.
  */
-function HoldingRow({ h, move, weak, onOpen, totalEur }: {
-  h: CheckedStock; move: ManagerMove | null; weak: boolean; onOpen: (symbol: string) => void; totalEur: number;
+function HoldingRow({ h, move, weak, onOpen, totalEur, now, note, answered, onNotes }: {
+  h: CheckedStock; move: ManagerMove | null; weak: boolean; onOpen: (symbol: string) => void;
+  totalEur: number; now: Held | null;
+  /** The owner's note as it stands, and as the manager read it. */
+  note: DepotNote | null; answered: string | null; onNotes: (notes: Record<string, DepotNote>) => void;
 }) {
   const t = h.chart ? TREND[h.chart.trend] : null;
   const p = h.protection ?? null;
+  const label = 'text-2xs text-ink-500';
   return (
-    <li className={`py-2 ${weak ? 'border-l-2 border-red-500/60 pl-2' : ''}`}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <button onClick={() => onOpen(h.symbol)} className="flex min-w-0 flex-1 basis-56 items-center gap-2 text-left">
+    <li className={`py-2.5 ${weak ? 'border-l-2 border-red-500/60 pl-2' : ''}`}>
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <button onClick={() => onOpen(h.symbol)} className="flex min-w-0 flex-1 basis-56 items-center gap-2 self-center text-left">
           <StockLogo symbol={h.symbol} domain={null} fallbackInitials={initialsFromName(h.name ?? h.symbol)} size={18} />
           <span className="truncate text-sm text-ink-100 hover:text-ink-50">
             {h.name ?? h.symbol} <span className="font-mono text-2xs text-ink-500">{h.symbol}</span>
           </span>
         </button>
-        <span className="flex items-center gap-3 font-mono text-xs tabular">
-          {h.weight !== null && <Tip focusable={false} content="Anteil am Depot"><span className="w-12 text-right text-ink-400">{pct(h.weight)}</span></Tip>}
-          <Tip focusable={false} content="Seit Kauf">
-            <span className={`w-14 text-right ${h.gain == null ? 'text-ink-600' : h.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {h.gain == null ? '—' : fmtSignedPct(h.gain)}
-            </span>
-          </Tip>
-          <span className={`w-7 text-right text-sm font-semibold ${h.score === null ? 'text-ink-500' : scoreColor(h.score)}`}>
-            {h.score === null ? '—' : score(h.score)}
+        <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1 font-mono text-xs tabular">
+          {h.weight !== null && <span className="text-ink-300">{pct(h.weight)} <span className={label}>des Depots</span></span>}
+          <span className={h.gain == null ? 'text-ink-600' : h.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+            {h.gain == null ? '—' : fmtSignedPct(h.gain)} <span className={label}>seit Kauf</span>
           </span>
-          <span className="w-4 text-center">
-            {t && (
-              <Tip focusable={false} content={chartTip(h, t.label)}>
-                <span className={`text-sm ${t.cls}`}>{t.mark}</span>
-              </Tip>
-            )}
+          <span>
+            <span className={label}>Score </span>
+            <span className={`text-sm font-semibold ${h.score === null ? 'text-ink-500' : scoreColor(h.score)}`}>{h.score === null ? '—' : score(h.score)}</span>
           </span>
+          {t && (
+            <Tip focusable={false} content={chartTip(h, t.label)}>
+              <span className={t.cls}>{t.mark} <span className={label}>{t.label}</span></span>
+            </Tip>
+          )}
           {p?.rsi != null && (p.rsi >= 70 || p.rsi <= 30) && (
             <Tip focusable={false} content={p.rsi >= 70 ? 'RSI über 70: heiß gelaufen' : 'RSI unter 30: ausverkauft'}>
               <span className={p.rsi >= 70 ? 'text-amber-300' : 'text-sky-300'}>RSI {Math.round(p.rsi)}</span>
             </Tip>
           )}
         </span>
-        {p && <Levels p={p} chosen={move?.protect ?? null} />}
       </div>
       {move && (
-        <p className="mt-1 text-xs leading-relaxed text-ink-300">
-          <span className={`font-semibold uppercase tracking-wide ${ACTION[move.action]}`}>{move.action}</span>
-          {move.protect && move.protect !== 'keiner' && <span className="text-ink-400"> · {PROTECT_LABEL[move.protect]}</span>}
-          <Size move={move} weight={h.weight} totalEur={totalEur} />
-          {' '}— {move.reason}
-        </p>
+        <dl className="mt-1.5 grid grid-cols-[7.5rem_1fr] gap-x-3 gap-y-0.5 text-xs leading-relaxed">
+          <dt className={`font-semibold uppercase tracking-wide ${ACTION[move.action]}`}>{move.action}</dt>
+          <dd className="text-ink-100">{stepWords(move, h, now, totalEur) ?? <span className="text-ink-400">nichts verändern</span>}</dd>
+          {p && move.protect && (
+            <>
+              <dt className="text-ink-500">{move.action === 'verkaufen' ? 'bis zum Verkauf' : 'Schutz'}</dt>
+              <dd><ProtectionWords p={p} choice={move.protect} own={move.stopPrice ?? null} /></dd>
+            </>
+          )}
+          <dt className="text-ink-500">warum</dt>
+          <dd className="text-ink-300">{move.reason}</dd>
+        </dl>
+      )}
+      <Note symbol={h.symbol} note={note} changed={(note?.text ?? '') !== (answered ?? '')} onNotes={onNotes} />
+      {move?.noteReply && answered && (
+        <div className="mt-0.5 grid grid-cols-[7.5rem_1fr] gap-x-3 text-xs leading-relaxed">
+          <span className="text-ink-500">Antwort</span>
+          <span className="text-ink-200">{move.noteReply}</span>
+        </div>
       )}
       {h.error && !h.chart && <p className="mt-0.5 text-2xs text-ink-500">{h.error}</p>}
     </li>
   );
 }
 
-/**
- * The size of a step: the weight the manager names, and what it means in
- * euros at today's depot value — worked out here, as the model never sees an
- * amount.
- */
-function Size({ move, weight, totalEur }: { move: ManagerMove; weight: number | null; totalEur: number }) {
-  if (move.targetPct == null) return null;
-  const target = move.targetPct / 100;
-  const delta = (target - (weight ?? 0)) * totalEur;
+/** The step as what to do: how much of the position, in shares and euros (`stepSize`). */
+function stepWords(move: ManagerMove, h: CheckedStock | null, now: Held | null, totalEur: number): ReactNode {
+  const size = stepSize(move.targetPct, h?.weight ?? null, now, totalEur);
+  if (!size || move.targetPct == null) return null;
+  const before = h?.weight ?? 0;
+  const span = <span className="text-ink-500"> · {before > 0 ? `${pct(before)} → ` : ''}{pct(move.targetPct / 100)} des Depots</span>;
+  if (size.kind === 'sell') {
+    const words = shareWords(size.fraction);
+    const what = words === 'alles' ? 'Alles verkaufen' : `${words.charAt(0).toUpperCase()}${words.slice(1)} verkaufen`;
+    if (!now || size.shares === null) return <>{what}{span}</>;
+    return (
+      <>
+        {what}: {words === 'alles' ? `${qty(now.quantity)} Stück` : `${qty(size.shares, Number.isInteger(now.quantity))} von ${qty(now.quantity)} Stück`}
+        {size.euros !== null && <>, ≈ {roundEur(size.euros)}</>}{span}
+      </>
+    );
+  }
   return (
-    <Tip focusable={false} content={`Gewicht nach dem Schritt laut Depotmanager${weight !== null ? ` (heute ${pct(weight)})` : ''}; der Betrag ist der Unterschied beim heutigen Depotwert von ${eur(totalEur)}.`}>
-      <span className="text-ink-400"> · auf {pct(target)} <span className="text-ink-500">({signedEur(Math.round(delta / 10) * 10)})</span></span>
-    </Tip>
+    <>
+      {before > 0 ? 'Nachkaufen' : 'Kaufen'} für ≈ {roundEur(size.euros)}{size.shares !== null ? ` (≈ ${qty(size.shares, !!now && Number.isInteger(now.quantity))} Stück)` : ''}{span}
+    </>
+  );
+}
+
+/** The protection as an order to place, with where its level comes from. */
+function ProtectionWords({ p, choice, own }: { p: Protection; choice: ProtectionChoice; own: number | null }) {
+  if (choice === 'keiner') return <span className="text-ink-400">kein Stop</span>;
+  // A level from the owner's note the manager took: below the close, and not absurdly far.
+  if (choice === 'stop' && own !== null && own < p.close && own > p.close * 0.5) {
+    return (
+      <span className="text-ink-100">
+        Stop-Loss bei {fmtPrice(own, p.currency)} setzen
+        <span className="text-ink-500">
+          {' '}· {pct(1 - own / p.close)} unter dem Kurs von {fmtPrice(p.close, p.currency)} am {fmtDay(p.asOf)}, deine Marke
+          {p.stop && ` (berechnet: ${fmtPrice(p.stop.price, p.currency)})`}
+        </span>
+      </span>
+    );
+  }
+  if (choice === 'stop' && p.stop) {
+    return (
+      <span className="text-ink-100">
+        Stop-Loss bei {fmtPrice(p.stop.price, p.currency)} setzen
+        <span className="text-ink-500">
+          {' '}· {pct(-p.stop.distance)} unter dem Kurs von {fmtPrice(p.close, p.currency)} am {fmtDay(p.asOf)}
+          {p.stop.basis === 'support' && p.stop.level !== null
+            ? `, knapp unter der Unterstützung bei ${fmtPrice(p.stop.level, p.currency)}`
+            : ', drei Tagesschwankungen tiefer — keine Unterstützung in Reichweite'}
+        </span>
+      </span>
+    );
+  }
+  if (choice === 'trailing' && p.trailing) {
+    return (
+      <span className="text-ink-100">
+        Trailing-Stop mit {pct(p.trailing.width)} Abstand setzen
+        <span className="text-ink-500">
+          {' '}· beginnt bei ≈ {fmtPrice(p.close * (1 - p.trailing.width), p.currency)} und zieht mit jedem neuen Hoch nach;
+          {' '}der Abstand sind drei übliche Tagesschwankungen
+        </span>
+      </span>
+    );
+  }
+  return <span className="text-ink-500">keine Marke berechnet</span>;
+}
+
+/**
+ * The owner's note on a stock, for the depot manager: what he sees in it — a
+ * level, a plan, a doubt. Kept apart from the journal, and sent to the model
+ * as written (CLAUDE.md); the manager answers it the next time it is asked.
+ */
+function Note({ symbol, note, changed, onNotes }: {
+  symbol: string; note: DepotNote | null; changed: boolean; onNotes: (notes: Record<string, DepotNote>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(note?.text ?? '');
+  const [error, setError] = useState<string | null>(null);
+  async function save() {
+    try {
+      setError(null);
+      onNotes((await api.setDepotNote(symbol, text)).notes);
+      setEditing(false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  if (editing) {
+    return (
+      <div className="mt-1.5 grid grid-cols-[7.5rem_1fr] gap-x-3 text-xs">
+        <span className="pt-1 text-ink-500">deine Notiz</span>
+        <div>
+          <textarea
+            autoFocus
+            rows={2}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="z. B. Ich sehe einen starken Support bei 13 $, Stop-Loss eher bei 12,70 $."
+            className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-1 text-ink-100 placeholder:text-ink-600 focus:border-accent focus:outline-none"
+          />
+          <div className="mt-1 flex items-center gap-2">
+            <button onClick={() => void save()} className="rounded bg-accent px-2 py-0.5 text-ink-950 hover:bg-accent-dark">Speichern</button>
+            <button onClick={() => { setEditing(false); setText(note?.text ?? ''); }} className="text-ink-400 hover:text-ink-100">Abbrechen</button>
+            <span className="text-2xs text-ink-500">Geht so an den Depotmanager, wenn du ihn neu fragst.</span>
+            {error && <span className="text-red-400">{error}</span>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!note) {
+    return (
+      <button onClick={() => setEditing(true)} className="mt-1 text-2xs text-ink-500 hover:text-ink-200">
+        + Notiz für den Depotmanager
+      </button>
+    );
+  }
+  return (
+    <div className="mt-1.5 grid grid-cols-[7.5rem_1fr] gap-x-3 text-xs leading-relaxed">
+      <span className="text-ink-500">deine Notiz</span>
+      <span className="text-ink-300">
+        {note.text}
+        <button onClick={() => { setText(note.text); setEditing(true); }} className="ml-2 text-2xs text-ink-500 hover:text-ink-200">ändern</button>
+        {changed && <span className="ml-2 text-2xs text-accent">noch nicht beantwortet</span>}
+      </span>
+    </div>
   );
 }
 
@@ -353,28 +529,6 @@ function chartTip(h: CheckedStock, label: string): string {
   return `${label}${h.chart?.phase ? ` — ${h.chart.phase}` : ''} (gelesen bis ${h.chart ? fmtDay(h.chart.asOf) : '—'}): ${h.chart?.summary ?? ''}${facts ? `\n${facts}` : ''}`;
 }
 
-/** Stop and trailing stop, in the stock's currency, with how far each is from the close. */
-function Levels({ p, chosen }: { p: Protection; chosen: ProtectionChoice | null }) {
-  const cls = (which: ProtectionChoice) => (chosen === which ? 'text-ink-100' : chosen ? 'text-ink-500' : 'text-ink-300');
-  return (
-    <span className="flex items-center gap-3 font-mono text-xs tabular">
-      {p.stop && (
-        <Tip focusable={false} content={p.stop.basis === 'support' && p.stop.level !== null
-          ? `Eine halbe Tagesschwankung unter der Unterstützung bei ${fmtPrice(p.stop.level, p.currency)} — die nächste zwischen 1,5 und 4 Tagesschwankungen unter dem Kurs. Stand ${fmtDay(p.asOf)}, Kurs ${fmtPrice(p.close, p.currency)}.`
-          : `Drei Tagesschwankungen unter dem Kurs von ${fmtPrice(p.close, p.currency)}: keine tragende Unterstützung in Reichweite. Stand ${fmtDay(p.asOf)}.`}
-        >
-          <span className={cls('stop')}>Stop {fmtPrice(p.stop.price, p.currency)} <span className="text-ink-500">{fmtSignedPct(p.stop.distance)}</span></span>
-        </Tip>
-      )}
-      {p.trailing && (
-        <Tip focusable={false} content={`Drei Tagesschwankungen unter dem Hoch der letzten 22 Handelstage (${fmtPrice(p.trailing.high, p.currency)}): heute bei ${fmtPrice(p.trailing.price, p.currency)}, ${pct(-p.trailing.distance)} unter dem Kurs. Als Trailing-Stop-Order: Abstand ${pct(p.trailing.width)}.`}>
-          <span className={cls('trailing')}>Trailing {pct(p.trailing.width)}</span>
-        </Tip>
-      )}
-    </span>
-  );
-}
-
 function List({ title, tone, rows, hint, empty, moves, onOpen, totalEur }: {
   title: string; tone: string; rows: CheckedStock[]; hint: string; empty?: string;
   moves: Map<string, ManagerMove>; onOpen: (symbol: string) => void; totalEur: number;
@@ -419,7 +573,8 @@ function List({ title, tone, rows, hint, empty, moves, onOpen, totalEur }: {
                 {m && (
                   <p className="px-2 pb-1 text-xs leading-relaxed text-ink-400">
                     <span className={`font-semibold uppercase tracking-wide ${ACTION[m.action]}`}>{m.action}</span>
-                    <Size move={m} weight={null} totalEur={totalEur} /> — {m.reason}
+                    {m.targetPct != null && <span className="text-ink-200"> · {stepWords(m, null, null, totalEur)}</span>}
+                    {' '}— {m.reason}
                   </p>
                 )}
               </li>

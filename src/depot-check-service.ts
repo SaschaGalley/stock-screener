@@ -25,7 +25,7 @@ import type { DepotCheckResponse } from './api-types.js';
 import { analysisFlagsFor, readAppConfig } from './app-config.js';
 import {
   classifyDepotCheck, isSingleStock, managerInput, MANAGER_ACTIONS, MANAGER_SYSTEM, managerUser, PROTECTIONS,
-  selectCandidates, type CheckedStock, type DepotCheckResult, type DepotCheckStatus, type ManagerView,
+  selectCandidates, type CheckedStock, type DepotCheckResult, type DepotCheckStatus,
   type ScoredStock,
 } from './analysis/depot-check.js';
 import type { MarketBrief } from './analysis/market-brief.js';
@@ -34,7 +34,7 @@ import { protectionOf } from './analysis/stops.js';
 import { readChart, runChartRead } from './chart-service.js';
 import { runAnalysis } from './cli.js';
 import { writeAppState } from './db/admin.js';
-import { CHECK_RESULT_KEY, CHECK_STATUS_KEY, readStateJson } from './depot-check-state.js';
+import { CHECK_RESULT_KEY, CHECK_STATUS_KEY, readDepotNotes, readStateJson } from './depot-check-state.js';
 import {
   changesSince, checkSteps, groupRecord, stepHit, type DepotCheckHistory, type StepOutcome,
 } from './analysis/depot-check-record.js';
@@ -76,7 +76,7 @@ export async function readDepotCheck(): Promise<DepotCheckResponse> {
     logger.warn(`Depot check history: ${(e as Error).message}`);
     return null;
   });
-  return { status, result, settings: config.depotCheck, history };
+  return { status, result, settings: config.depotCheck, history, notes: await readDepotNotes() };
 }
 
 /** The measured history changes with a new check or a new trading day; read at most every ten minutes. */
@@ -124,18 +124,34 @@ export async function reconcileDepotCheck(): Promise<void> {
 }
 
 /** `POST /api/depot/check`: start a run unless one is going. */
-export async function startDepotCheck(): Promise<{ started: boolean; reason?: string }> {
+export function startDepotCheck(): Promise<{ started: boolean; reason?: string }> {
+  return startRun('Kandidaten wählen', runCheck);
+}
+
+/**
+ * `POST /api/depot/check/manager`: ask the manager again, on the last check's
+ * analyses, charts and market, with today's depot and the owner's notes — one
+ * model call where a check is minutes of them.
+ */
+export async function startManagerAgain(): Promise<{ started: boolean; reason?: string }> {
+  if (!(await readStateJson<DepotCheckResult>(RESULT_KEY()))) return { started: false, reason: 'Noch kein Depot-Check, den der Manager neu lesen könnte.' };
+  return startRun('Depotmanager', runManagerAgain);
+}
+
+type Save = (patch: Partial<DepotCheckStatus>) => Promise<void>;
+
+async function startRun(phase: string, run: (save: Save) => Promise<void>): Promise<{ started: boolean; reason?: string }> {
   if (running) return { started: false, reason: 'Ein Depot-Check läuft schon.' };
   running = true;
   const status: DepotCheckStatus = {
-    state: 'running', startedAt: new Date().toISOString(), finishedAt: null, phase: 'Kandidaten wählen', done: 0, total: 0, error: null,
+    state: 'running', startedAt: new Date().toISOString(), finishedAt: null, phase, done: 0, total: 0, error: null,
   };
   const save = (patch: Partial<DepotCheckStatus>) => {
     Object.assign(status, patch);
     return writeAppState(STATUS_KEY(), JSON.stringify(status)).catch((e) => logger.warn(`Depot check status: ${(e as Error).message}`));
   };
   await save({});
-  void runCheck(save)
+  void run(save)
     .then(() => save({ state: 'done', phase: null, finishedAt: new Date().toISOString() }))
     .catch(async (e) => {
       logger.error(`Depot check failed: ${(e as Error).message}`);
@@ -145,7 +161,7 @@ export async function startDepotCheck(): Promise<{ started: boolean; reason?: st
   return { started: true };
 }
 
-async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void>): Promise<void> {
+async function runCheck(save: Save): Promise<void> {
   const config = await readAppConfig();
   const settings = config.depotCheck;
   const flags = analysisFlagsFor(config);
@@ -242,30 +258,66 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
   // The manager: the one model call that sees the depot, through `managerInput`.
   await save({ phase: 'Marktlage und Depotmanager' });
   const [{ brief, error: marketError }, sectorTrends] = await Promise.all([market, trends]);
-  let manager: ManagerView | null = null;
-  let managerError: string | null = null;
-  try {
-    const input = managerInput({
-      positions: view.positions, sectors: view.sectors, lists,
-      holdings: new Map(holdings.map((h) => [h.symbol, h])),
-      limits: { maxPosition: view.limits.maxPosition, maxSector: view.limits.maxSector },
-      market: brief, sectorTrends, lookThrough: view.lookThrough,
-      cashShare: view.cashEur !== null && view.totalEur > 0 ? view.cashEur / view.totalEur : null,
-    });
-    manager = await createProviderForModel(flags.model).complete({
-      label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 10_000,
-    });
-  } catch (e) {
-    managerError = (e as Error).message;
-    logger.warn(`Depot manager: ${managerError}`);
-  }
+  const asked = await askManager(view, { holdings, lists, market: brief, sectorTrends }, flags.model);
 
   const result: DepotCheckResult = {
     generatedAt: new Date().toISOString(), settings, model: flags.model,
     candidates: checkedCandidates, holdings, lists,
     market: brief, marketError, sectorTrends,
-    manager, managerError,
+    ...asked,
   };
+  await writeAppState(RESULT_KEY(), JSON.stringify(result));
+  await saveDepotCheck(tradesSource(), result);
+}
+
+/**
+ * The manager asked: the one model call that sees the depot, through
+ * `managerInput`, with the owner's notes as he wrote them for it.
+ */
+async function askManager(
+  view: NonNullable<Awaited<ReturnType<typeof readDepot>>['view']>,
+  check: Pick<DepotCheckResult, 'holdings' | 'lists' | 'sectorTrends'> & { market: MarketBrief | null },
+  model: string,
+): Promise<Pick<DepotCheckResult, 'manager' | 'managerError' | 'managerAt' | 'notes'>> {
+  const notes = Object.fromEntries(Object.entries(await readDepotNotes()).map(([k, n]) => [k, n.text]));
+  try {
+    const input = managerInput({
+      positions: view.positions, sectors: view.sectors, lists: check.lists,
+      holdings: new Map(check.holdings.map((h) => [h.symbol, h])),
+      limits: { maxPosition: view.limits.maxPosition, maxSector: view.limits.maxSector },
+      market: check.market, sectorTrends: check.sectorTrends ?? [], lookThrough: view.lookThrough,
+      cashShare: view.cashEur !== null && view.totalEur > 0 ? view.cashEur / view.totalEur : null,
+      notes: new Map(Object.entries(notes)),
+    });
+    const manager = await createProviderForModel(model).complete({
+      label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 10_000,
+    });
+    return { manager, managerError: null, managerAt: new Date().toISOString(), notes };
+  } catch (e) {
+    const managerError = (e as Error).message;
+    logger.warn(`Depot manager: ${managerError}`);
+    return { manager: null, managerError, managerAt: new Date().toISOString(), notes };
+  }
+}
+
+/** The manager asked again on the last check, with today's depot and notes; the charts' stops brought up to date. */
+async function runManagerAgain(save: Save): Promise<void> {
+  const last = await readStateJson<DepotCheckResult>(RESULT_KEY());
+  if (!last) throw new Error('Kein Depot-Check vorhanden.');
+  const depot = await readDepot();
+  if (!depot.view) throw new Error(depot.syncError ?? 'Kein Depot: umsatz hat keine Trades geliefert.');
+  await save({ phase: 'Depotmanager' });
+  // The levels from tonight's bars and the stored reading: no chart is read anew.
+  const holdings = await Promise.all(last.holdings.map(async (h) => {
+    const c = await readChart(h.symbol).catch(() => null);
+    if (!c?.analysis) return h;
+    const levels = c.read?.read.levels.map((l) => ({ price: l.price, kind: l.kind, strength: l.strength }));
+    return { ...h, protection: protectionOf(c.bars, c.analysis, c.currency), chart: h.chart ? { ...h.chart, levels: h.chart.levels ?? levels } : h.chart };
+  }));
+  // The model set today, not the last run's: the setting may have changed since.
+  const model = analysisFlagsFor(await readAppConfig()).model;
+  const asked = await askManager(depot.view, { ...last, holdings, market: last.market ?? null }, model);
+  const result: DepotCheckResult = { ...last, holdings, ...asked };
   await writeAppState(RESULT_KEY(), JSON.stringify(result));
   await saveDepotCheck(tradesSource(), result);
 }
@@ -277,7 +329,9 @@ const ManagerSchema = z.object({
     symbol:  z.string().describe('Ticker der Aktie, wie in den Daten'),
     protect: z.enum(PROTECTIONS).nullable().catch(null).describe('Schutz einer Aktie im Depot; null bei einem Kauf'),
     targetPct: z.number().min(0).max(100).nullable().catch(null).describe('Gewicht nach dem Schritt in Prozent des heutigen Depotwerts; null bei halten und beobachten'),
-    reason:  z.string().describe('Ein bis zwei Sätze Begründung aus den Daten'),
+    stopPrice: z.number().positive().nullable().catch(null).describe('Eigene Stop-Marke in der Handelswährung, wenn die Notiz des Anlegers eine tragfähige nennt; sonst null'),
+    noteReply: z.string().nullable().catch(null).describe('Antwort auf die Notiz des Anlegers zu dieser Aktie; ohne Notiz null'),
+    reason:  z.string().describe('Ein bis zwei Sätze: warum, aus den Daten — ohne Zielgewicht, Beträge, Stop-Marke oder Trailing-Abstand, die zeigt die Seite'),
   })).describe('Zuerst jede Aktie im Depot, die dringendsten zuerst; dann höchstens fünf Käufe.'),
   risks: z.array(z.string()).describe('Was ein Depotmanager im Blick behält: Klumpen, Sektoren, Markt, was gegen die Schritte spricht.'),
 });
@@ -295,7 +349,13 @@ async function look(symbol: string, model: string): Promise<Pick<CheckedStock, '
       const read = c.read && Date.now() - Date.parse(c.read.producedAt) < CHART_REUSE_MS
         ? c.read.read
         : (await runChartRead(symbol, model)).read;
-      return { chart: { trend: read.trend.direction, phase: read.trend.phase, summary: read.summary, asOf: read.asOf }, protection, error: null };
+      return {
+        chart: {
+          trend: read.trend.direction, phase: read.trend.phase, summary: read.summary, asOf: read.asOf,
+          levels: read.levels.map((l) => ({ price: l.price, kind: l.kind, strength: l.strength })),
+        },
+        protection, error: null,
+      };
     } catch (e) {
       return { chart: null, protection, error: `Chart: ${(e as Error).message}` };
     }

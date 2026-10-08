@@ -130,7 +130,10 @@ export default function DepotPage() {
             <Dates view={view} />
           </div>
 
-          <DepotCheck onOpen={openStock} sectors={view.sectors} totalEur={view.totalEur} cashEur={view.cashEur} />
+          <DepotCheck
+            onOpen={openStock} sectors={view.sectors} totalEur={view.totalEur} cashEur={view.cashEur}
+            held={new Map(view.positions.flatMap((p) => (p.symbol ? [[p.symbol, { quantity: p.quantity, valueEur: p.valueEur }] as const] : [])))}
+          />
 
           {data?.evidence && <Evidence records={data.evidence} />}
         </>

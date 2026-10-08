@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
-  classifyDepotCheck, managerInput, MANAGER_SYSTEM, selectCandidates,
+  classifyDepotCheck, managerInput, MANAGER_SYSTEM, selectCandidates, shareWords, stepSize,
   type CheckedStock, type DepotCheckSettings,
 } from '../src/analysis/depot-check.js';
 
@@ -84,6 +84,7 @@ describe('what the depot manager is told', () => {
     positions: [position, fund], sectors: [{ sector: 'Technology', weight: 1 }],
     holdings: new Map([['MADE', held]]), lists, limits: { maxPosition: 0.15, maxSector: 0.35 },
     market: null, sectorTrends: [], cashShare: 0.0825, today: '2026-10-08',
+    notes: new Map([['MADE', 'Starker Support bei 200 $, Stop eher bei 197 $.']]),
   });
   const text = JSON.stringify(input);
 
@@ -100,6 +101,13 @@ describe('what the depot manager is told', () => {
     assert.deepEqual(made.termine, [{ datum: '2026-10-28', was: 'Nächste Quartalszahlen' }]);
   });
 
+  it('carries the owner\'s note as he wrote it, and the close the note can be read against', () => {
+    const made = input.depot[0] as Extract<(typeof input.depot)[number], { seitKaufProzent: unknown }>;
+    assert.equal(made.notizDesAnlegers, 'Starker Support bei 200 $, Stop eher bei 197 $.');
+    assert.equal(made.technik?.kurs, 214.37);
+    assert.equal(made.technik?.waehrung, 'USD');
+  });
+
   it('carries the months held, the thesis check\'s counts and the cash as a share, as the owner allowed', () => {
     const made = input.depot[0] as Extract<(typeof input.depot)[number], { seitKaufProzent: unknown }>;
     assert.equal(made.gehaltenMonate, 30);
@@ -111,10 +119,10 @@ describe('what the depot manager is told', () => {
     assert.deepEqual(input.depot[1], { name: 'Made Up World ETF', symbol: 'FUND', art: 'etf', gewichtProzent: 45.7 });
   });
 
-  it('never quantities, prices, values, dates, trades, the journal, or a fund\'s gain', () => {
+  it('never quantities, prices paid, values, dates, trades, the journal, a fund\'s gain, or the computed stops', () => {
     for (const leak of [
       '123.45', '321.5', '87.65', '99.01', '12222', '45678', '0.1296', '31.4', '2024-03-15', '2025-11-02', 'geheime',
-      'isin', 'US0000000001', '214.37', '198.11', '203.25', '222.9', '201.5', '2026-09-10', '2026-09-20',
+      'isin', 'US0000000001', '198.11', '203.25', '222.9', '201.5', '2026-09-10', '2026-09-20',
     ]) {
       assert.ok(!text.includes(leak), `${leak} reached the prompt`);
     }
@@ -123,5 +131,37 @@ describe('what the depot manager is told', () => {
   it('is told what the verdict bands are, from the bands themselves', () => {
     assert.match(MANAGER_SYSTEM, /STRONG BUY ab 8,0/);
     assert.match(MANAGER_SYSTEM, /STRONG SELL darunter/);
+  });
+});
+
+describe('a step\'s size', () => {
+  const now = { quantity: 15, valueEur: 2_580 };
+
+  it('turns a lower target into the share of the position to sell, in today\'s shares and euros', () => {
+    const s = stepSize(0.8, 0.016, now, 160_000);
+    assert.equal(s?.kind, 'sell');
+    if (s?.kind !== 'sell') return;
+    assert.ok(Math.abs(s.fraction - 0.5) < 1e-9);
+    assert.ok(Math.abs(s.shares! - 7.5) < 1e-9);
+    assert.ok(Math.abs(s.euros! - 1_290) < 1e-9);
+    assert.equal(stepSize(0, 0.016, now, 160_000)?.kind, 'sell');
+  });
+
+  it('turns a higher target into euros at today\'s depot value, and shares at today\'s price', () => {
+    const s = stepSize(2.5, 0.016, now, 100_000);
+    assert.equal(s?.kind, 'buy');
+    if (s?.kind !== 'buy') return;
+    assert.ok(Math.abs(s.euros - 900) < 1e-9);
+    assert.ok(Math.abs(s.shares! - 900 / 172) < 1e-9);
+    assert.equal(stepSize(2, null, null, 100_000)?.kind, 'buy');
+    assert.equal(stepSize(null, 0.016, now, 100_000), null);
+  });
+
+  it('says a share in words where one fits', () => {
+    assert.equal(shareWords(0.5), 'die Hälfte');
+    assert.equal(shareWords(0.36), 'gut ein Drittel');
+    assert.equal(shareWords(0.3), 'knapp ein Drittel');
+    assert.equal(shareWords(0.42), '42 %');
+    assert.equal(shareWords(1), 'alles');
   });
 });

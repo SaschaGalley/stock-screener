@@ -66,7 +66,8 @@ import {
 import { isJournalKind, normalizeSymbols } from './journal.js';
 import { ignoreTrades, readOpenTrades } from './trades-service.js';
 import { readDepot, writeDepotCash } from './depot-service.js';
-import { readDepotCheck, reconcileDepotCheck, startDepotCheck } from './depot-check-service.js';
+import { readDepotCheck, reconcileDepotCheck, startDepotCheck, startManagerAgain } from './depot-check-service.js';
+import { writeDepotNote } from './depot-check-state.js';
 import { ChartReadInputError, readChart, runChartRead } from './chart-service.js';
 import { invalidateReview, reviewPage, reviewStats } from './review-service.js';
 import { REVIEW_FILTERS, REVIEW_PAGE, REVIEW_SORTS, type ReviewFilter, type ReviewSort } from './analysis/review.js';
@@ -1228,6 +1229,22 @@ export function createApp(): express.Express {
   app.post('/api/depot/check', async (_req, res, next) => {
     try {
       res.json(await startDepotCheck());
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.post('/api/depot/check/manager', async (_req, res, next) => {
+    try {
+      res.json(await startManagerAgain());
+    } catch (e) {
+      next(e);
+    }
+  });
+  // The owner's note on a stock, for the depot manager; an empty text forgets it.
+  app.put('/api/depot/notes/:symbol', async (req, res, next) => {
+    try {
+      const text = (req.body as { text?: unknown } | undefined)?.text;
+      res.json({ notes: await writeDepotNote(req.params.symbol.toUpperCase(), typeof text === 'string' ? text : '') });
     } catch (e) {
       next(e);
     }

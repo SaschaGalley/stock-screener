@@ -249,6 +249,8 @@ export interface DepotCheckResponse {
   settings: import('./analysis/depot-check.js').DepotCheckSettings;
   /** Every check kept, and what came of their steps; null while none is kept. */
   history:  import('./analysis/depot-check-record.js').DepotCheckHistory | null;
+  /** The owner's notes for the manager, by ticker. */
+  notes:    Record<string, import('./analysis/depot-check.js').DepotNote>;
 }
 
 /** `GET /api/verdict-changes` */
