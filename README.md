@@ -261,6 +261,20 @@ five models were being run outside the firms they describe:
 - **The value-lens criterion needs two surviving models**
   (`CONSERVATIVE_MIN_MODELS`); one is not a lens — Berkshire's came down to
   Graham's V* alone and scored 10/10 on it.
+- **A lender's value lens is read among lenders** (`LENDER_REFERENCE`). For a
+  bank, insurer or lender the lens comes down to the Graham Number and V* — no
+  EPV without free cash flow to the firm, and the excess return model is its
+  headline value — and both are rules on P/E and P/B, which leverage keeps low.
+  Against every stock the median lender scored 8.3 of 10 on the lens, the rest
+  4.9, and the backtest found nothing in that tilt (0.010, t 1.0, across the
+  market; 0.006, t 0.6, within sectors). Among lenders the same figures still
+  say which one is cheap; their whole sector would not do, because card
+  networks, exchanges and asset managers would then read as dear for not
+  borrowing. Recalibrated on 8 October 2026: the median lender's lens 5.2 in
+  dollars and 5.0 in euros, buys among lenders 14 % → 7 % in dollars and 5 → 2
+  of 13 in euros, the other stocks unchanged. Over the S&P 1500 the score did
+  not move: 0.014 at one month (t 2.2 against 2.3), within the sector t 2.5
+  before and after.
 
 Excluded models are listed with their reason in the composite's exclusions.
 Graham's V* and EPV stay for everyone: they value earnings, not the balance
@@ -392,9 +406,10 @@ same 595 stocks: American firms −1.70 points, American lenders +0.05, euro
 firms +1.30, and the euro area as a whole +1.60, which its thirteen lenders
 take. The euro firms' median DCF is at 1.12 times the price, 10 % of them read
 as buys; the median lender's excess return value is at 1.00 in dollars and
-1.03 in euros. Five of the thirteen euro lenders remain buys, on momentum, the
-balance sheet and a value lens that sits high for every lender, American ones
-too — not on the premium any more.
+1.03 in euros. Five of the thirteen euro lenders remained buys, on momentum,
+the balance sheet and a value lens that sat high for every lender, American
+ones too — not on the premium any more. Reading that lens among lenders (see
+the conservative tier above) brought them to two.
 
 The backtest measures the lenders' own adjustment every month now, on their
 excess return model: +0.11 points in the median of 165 months against the

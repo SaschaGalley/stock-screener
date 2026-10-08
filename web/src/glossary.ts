@@ -72,7 +72,7 @@ export const GLOSSARY = {
     'Abstand zum Kurs: (Wert − Kurs) / Kurs. Positiv heißt, der Wert liegt über dem Kurs. Das ist die Sicherheitsmarge, wenn man dem Wert glaubt.',
   'concept.modelRange': 'Niedrigster und höchster Wert unter den Modellen dieses Tiers. Je weiter die Spanne, desto weniger sind sich die Modelle einig.',
   'metrics.composite.conservative.median':
-    'Die Value-Linse: Modelle, die kein Wachstum unterstellen oder an Vermögen ansetzen, nämlich Graham Number, Graham V*, EPV, Residual Income und das Dividendenmodell, jeweils nur, wo sie das Geschäft beschreiben. Sie liegt meist unter Primary. Ein Kurs darunter ist ein starkes Value-Signal.',
+    'Die Value-Linse: Modelle, die kein Wachstum unterstellen oder an Vermögen ansetzen, nämlich Graham Number, Graham V*, EPV, Residual Income und das Dividendenmodell, jeweils nur, wo sie das Geschäft beschreiben. Sie liegt meist unter Primary. Ein Kurs darunter ist ein starkes Value-Signal. Banken, Versicherer und Kreditgeber werden im Score nur untereinander verglichen: Nach Grahams Formeln sieht jede Firma mit viel Fremdkapital billig aus.',
   'metrics.composite.confidence':
     'Wie verlässlich der Composite ist, 0–10. Bis zu 5 Punkte gibt es dafür, wie viele Primary-Modelle einen Wert liefern, bis zu 5 dafür, wie eng sie beieinander liegen. Der Wert wird halbiert, wenn die Beneish-Prüfung auf geschönte Zahlen hindeutet, und ist 0 bei weniger als zwei Modellen.',
   'metrics.composite.pctPrimaryUndervalued': 'Anteil der Primary-Modelle, deren fairer Wert über dem Kurs liegt.',

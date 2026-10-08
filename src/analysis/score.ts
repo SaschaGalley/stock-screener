@@ -704,6 +704,22 @@ export function marketImplied(
 /** Fewest conservative models whose median counts as the value lens. */
 export const CONSERVATIVE_MIN_MODELS = 2;
 
+/**
+ * The reference group a lender's value lens is read in, as a sector would be.
+ *
+ * For a bank, insurer or lender the lens comes down to Graham's number and V*
+ * — EPV has no free cash flow to the firm to work on, and the excess return
+ * model is its headline value — and both are rules on its P/E and its P/B,
+ * which leverage keeps low. Against every stock nearly all of them sat at the
+ * top: 8.3 of 10 in dollars, 8.2 in euros, against 4.9 for the rest, and the
+ * backtest found nothing in that tilt (the lens ranks the month at 0.010,
+ * t 1.0, across the market and 0.006 within sectors). Among themselves the same
+ * figures still say which one is cheap for a lender. Not their whole sector:
+ * card networks, exchanges and asset managers would then sit beside the banks
+ * and read as dear for not borrowing.
+ */
+export const LENDER_REFERENCE = 'lenders';
+
 function valuationPillar(
   f: StockFinancials, m: ComputedMetrics, peers: SectorMedians | null,
 ): Draft[] {
@@ -773,6 +789,7 @@ function valuationPillar(
   const consModels = comp.conservative.models.length;
   const consMedian = consModels >= CONSERVATIVE_MIN_MODELS ? comp.conservative.median : null;
   const consLog = consMedian !== null && consMedian > 0 ? Math.log(consMedian / f.price) : null;
+  const lender = borrowsToLend(f);
 
   return [
     criterion('intrinsic', 'Innerer Wert (DCF-Szenarien)', intrinsic.points, intrinsic.note, intrinsic.value),
@@ -797,11 +814,13 @@ function valuationPillar(
       implied ? Math.log(Math.max(implied.ratio, 1e-6)) : null),
 
     criterion('value-lens', 'Value-Lens (konservative Modelle)',
-      calibrated('valuation.value-lens', consLog, 1, (v) => ramp(v, Math.log(0.5), Math.log(1.3))),
+      calibrated('valuation.value-lens', consLog, 1, (v) => ramp(v, Math.log(0.5), Math.log(1.3)),
+        { sector: lender ? LENDER_REFERENCE : null }),
       comp.conservative.median !== null
         ? consMedian !== null
           ? `Konservativer Wert ${P(consMedian)} gegen ${P(f.price)} (${fmtSignedPct(consMedian / f.price - 1)}) `
             + `aus ${comp.conservative.models.map((x) => x.name).join(', ')}`
+            + (lender ? ' — gelesen gegen andere Banken, Versicherer und Kreditgeber' : '')
           : `Nur ein konservatives Modell anwendbar (${comp.conservative.models[0].name}) — keine Linse, nicht gewertet`
         : 'Keine konservativen Modelle anwendbar',
       consLog),

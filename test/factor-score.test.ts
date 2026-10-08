@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { useCalibrationTable } from '../src/analysis/calibration.js';
 
-import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict, saturate, unsaturate, narrativeScoreFrom } from '../src/analysis/score.js';
+import { adjustedCurrentRatio, analystConsensus, blendScores, combineNarrativeReads, computeFactorScore, marketImplied, convictionFor, fairValueRange, intrinsicValue, LENDER_REFERENCE, PILLAR_WEIGHTS, readAltman, readBeneish, capVerdict, saturate, unsaturate, narrativeScoreFrom } from '../src/analysis/score.js';
 import { recommendationTone, SCORE_BANDS, verdictForScore } from '../src/verdict.js';
 import { computeAllMetrics } from '../src/analysis/computeMetrics.js';
 import { FALLBACK_RATES } from '../src/data/fred.js';
@@ -550,6 +550,30 @@ describe('fair value range', () => {
       earningsGrowth: null, revenueGrowth: null,
     });
     assert.equal(fairValueRange(blank, computeAllMetrics(blank, FALLBACK_RATES, null).composite), '—');
+  });
+});
+
+describe('the value lens of a bank', () => {
+  // Every stock in the market sits below −9, every lender above +9: the market
+  // reads anyone at the top, the lenders read anyone at the bottom.
+  const dist = (lo: number) => ({ n: 50, symbols: 50, quantiles: Array.from({ length: 101 }, (_, i) => lo + i / 100) });
+  const table = { 'valuation.value-lens': dist(-10), [`valuation.value-lens@${LENDER_REFERENCE}`]: dist(9) };
+  const lens = (over: Partial<StockFinancials>) => score(over).pillars
+    .find((p) => p.key === 'valuation')!.criteria.find((c) => c.key === 'value-lens')!;
+
+  it('is read against other lenders, and every other stock against the market', () => {
+    useCalibrationTable(table);
+    try {
+      // Graham's number and V* both apply to either: two models make a lens.
+      const common = { bookValue: 60, epsGrowth3Y: 0.08, trailingSource: 'quarters', normalizedNetIncome: 60_000_000 } as Partial<StockFinancials>;
+      const bank = lens({ ...common, industry: 'Banks - Regional', sector: 'Financial Services' });
+      const firm = lens(common);
+      assert.equal(bank.points, 0, bank.note);
+      assert.match(bank.note, /gegen andere Banken/);
+      assert.equal(firm.points, 1, firm.note);
+    } finally {
+      useCalibrationTable({});
+    }
   });
 });
 
