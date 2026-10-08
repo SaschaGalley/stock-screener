@@ -179,6 +179,8 @@ export async function runBacktest(
   };
   const scored = new Set<string>();
   const premiums: number[] = [];
+  // The lenders' own, in the months with enough of them to have one.
+  const lenderPremiums: number[] = [];
   // Every company-month's criteria, for weighing them again (`weights.ts`).
   const rows: ScoredRow[] = [];
   // And what each looked like, for the study of the top tenth (`top-decile.ts`).
@@ -212,8 +214,10 @@ export async function runBacktest(
       year.covered += entries.filter((e) => e.financials.targetMeanPrice !== null).length;
       coverage.set(Number(day.slice(0, 4)), year);
 
-      const { premium, metrics, score } = calibrateCrossSection(entries, ratesOn(day));
+      const { premium, premiums: groups, metrics, score } = calibrateCrossSection(entries, ratesOn(day));
       premiums.push(premium);
+      const lenders = groups['*|lender'];
+      if (lenders !== undefined) lenderPremiums.push(lenders);
 
       // Dated the day before: the evaluation counts a signal from the days
       // strictly before a formation day, and these scores saw that day's
@@ -297,7 +301,8 @@ export async function runBacktest(
       });
       progress(`Monatsende ${day} (${m + 1}/${days.length}), ${entries.length} Aktien`);
       if (m % 12 === 0 || m === days.length - 1) {
-        logger.info(`  ${day}: ${entries.length} stocks, premium ${(premium * 100).toFixed(2)} pts`);
+        logger.info(`  ${day}: ${entries.length} stocks, premium ${(premium * 100).toFixed(2)} pts`
+          + (lenderPremiums.length ? `, lenders ${(lenderPremiums[lenderPremiums.length - 1] * 100).toFixed(2)} pts` : ''));
       }
     }
   } finally {
@@ -463,6 +468,7 @@ export async function runBacktest(
   }).validate(calendar);
 
   const sortedPremiums = [...premiums].sort((a, b) => a - b);
+  const sortedLenders = [...lenderPremiums].sort((a, b) => a - b);
   const result: BacktestResult = {
     generatedAt: new Date().toISOString(),
     from: days[0] ?? from, to: days[days.length - 1] ?? to,
@@ -475,6 +481,10 @@ export async function runBacktest(
       min: sortedPremiums[0] ?? 0,
       max: sortedPremiums[sortedPremiums.length - 1] ?? 0,
     },
+    lenderPremium: sortedLenders.length ? {
+      median: median(lenderPremiums) ?? 0, min: sortedLenders[0], max: sortedLenders[sortedLenders.length - 1],
+      months: sortedLenders.length,
+    } : undefined,
     evaluation,
     candidateHalves,
     byYear: [...years.entries()].sort(([a], [b]) => a - b).map(([year, v]) => {
@@ -524,7 +534,8 @@ function fmt(v: number | null | undefined, digits = 3): string {
 export function renderBacktest(r: BacktestResult): string {
   const lines = [
     `Backtest ${r.universe ?? 'S&P 500'} ${r.from} → ${r.to} · ${r.months} month-ends · ${r.companies} companies`,
-    `Premium adjustment per month: median ${(r.premium.median * 100).toFixed(2)} pts (${(r.premium.min * 100).toFixed(2)} … ${(r.premium.max * 100).toFixed(2)})`,
+    `Premium adjustment per month: median ${(r.premium.median * 100).toFixed(2)} pts (${(r.premium.min * 100).toFixed(2)} … ${(r.premium.max * 100).toFixed(2)})`
+      + (r.lenderPremium ? `; lenders ${(r.lenderPremium.median * 100).toFixed(2)} pts (${(r.lenderPremium.min * 100).toFixed(2)} … ${(r.lenderPremium.max * 100).toFixed(2)}, ${r.lenderPremium.months} months)` : ''),
   ];
   for (const h of BACKTEST_HORIZONS) {
     lines.push('', `── ${h} month${h > 1 ? 's' : ''} ahead ──`);

@@ -66,8 +66,13 @@ export interface BacktestResult {
    * in older results and in a run with no live scores to compare.
    */
   fidelity?:   Fidelity;
-  /** Median premium adjustment over the months, and its range. */
+  /** Median premium adjustment over the months, and its range: the operating firms', measured on their DCFs. */
   premium:     { median: number; min: number; max: number };
+  /**
+   * The lenders' own, measured on their excess return model, over the months
+   * with enough lenders to have one (`premiumTable`). Absent in older results.
+   */
+  lenderPremium?: { median: number; min: number; max: number; months: number };
   evaluation:  Evaluation;
   /**
    * Each candidate over one month in the first half of the months and in the

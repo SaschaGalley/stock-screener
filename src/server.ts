@@ -719,7 +719,7 @@ export function createApp(): express.Express {
           generatedAt:       CALIBRATION_META.generatedAt,
           symbols:           CALIBRATION_META.symbols,
           observations:      CALIBRATION_META.observations,
-          premiumAdjustment: CALIBRATION_META.premiumAdjustment,
+          premiumAdjustments: CALIBRATION_META.premiumAdjustments,
           due:               calibrationDue(counts.watchlist + counts.reference),
         },
       });

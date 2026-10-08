@@ -28,7 +28,7 @@
  */
 
 import { computeAllMetrics } from '../analysis/computeMetrics.js';
-import { CALIBRATION_META, useCalibrationTable, usePremiumAdjustment } from '../analysis/calibration.js';
+import { CALIBRATION_META, premiumFor, useCalibrationTable, usePremiumAdjustment } from '../analysis/calibration.js';
 import { spearman } from '../analysis/evaluate.js';
 import { computeFactorScore, PILLAR_LABELS } from '../analysis/score.js';
 import type { MarketRates } from '../data/fred.js';
@@ -237,7 +237,8 @@ export async function fidelityCheck(data: BacktestData, ratesOn: (day: string) =
       generatedAt: new Date().toISOString(),
       sessions: [...bySession].map(([day, g]) => ({ day, symbols: g.length })).sort((a, b) => b.day.localeCompare(a.day)),
       compared: both.length, outside, missing,
-      premium: { live: CALIBRATION_META.premiumAdjustment, backtest: median(premiums) ?? 0 },
+      // The American firms' on both sides: the backtest's stocks are no others.
+      premium: { live: premiumFor(CALIBRATION_META.premiumAdjustments, 'USD', false), backtest: median(premiums) ?? 0 },
       rates: {
         live: { riskFree: liveRates.riskFreeRate, premium: liveRates.equityRiskPremium },
         backtest: { riskFree: fred.riskFreeRate, premium: fred.equityRiskPremium },

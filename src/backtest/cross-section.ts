@@ -1,7 +1,7 @@
 /**
  * One day's cross-section, calibrated as the backtest calibrates every
  * month-end: the peer groups from that day's GICS sub-industries, the model
- * premium from that day's DCFs, and every criterion's reference distribution
+ * premium of each group from that day's stocks, and every criterion's reference distribution
  * from that day's figures — nothing from any other day.
  *
  * The month-end run (`run.ts`) and the comparison with the live scores
@@ -10,10 +10,11 @@
  */
 
 import {
-  collectCalibrated, percentiles, sectorKey, useCalibrationTable, usePremiumAdjustment,
-  type CriterionDistribution,
+  collectCalibrated, percentiles, premiumFor, premiumTable, sectorKey, useCalibrationTable, usePremiumAdjustment,
+  type CriterionDistribution, type PremiumAdjustments,
 } from '../analysis/calibration.js';
 import { computeAllMetrics, impliedPremiumShift } from '../analysis/computeMetrics.js';
+import { borrowsToLend } from '../analysis/dcf.js';
 import { computeFactorScore } from '../analysis/score.js';
 import type { MarketRates } from '../data/fred.js';
 import type { FactorScore, MarketSignals, SectorMedians, StockFinancials } from '../types.js';
@@ -26,8 +27,10 @@ export interface CrossEntry {
 }
 
 export interface CrossSection {
-  /** The day's model premium adjustment, the median of its DCFs' implied shifts. */
+  /** The day's model premium adjustment for operating firms, the median of their DCFs' implied shifts. */
   premium: number;
+  /** The day's adjustment for every group with enough stocks (`premiumTable`): the firms and the lenders. */
+  premiums: PremiumAdjustments;
   peers:   Map<string, SectorMedians | null>;
   metrics: ReturnType<typeof computeAllMetrics>[];
   /** Entry `k` scored under the day's own distributions and premium. */
@@ -51,14 +54,16 @@ export function calibrateCrossSection(entries: readonly CrossEntry[], rates: Mar
     symbol: e.c.symbol, sector: e.c.sector, subIndustry: e.c.subIndustry, financials: e.financials,
   })));
 
-  // The day's premium adjustment, from the day's DCFs only.
+  // The day's premium adjustments, from the day's stocks only, each group's
+  // from the model that carries it.
   usePremiumAdjustment(0);
-  const shifts = entries.flatMap((e) => {
-    const s = impliedPremiumShift({ financials: e.financials, rates, sectorMedians: peers.get(e.c.symbol) ?? null });
-    return s === null ? [] : [s];
+  const points = entries.flatMap((e) => {
+    const shift = impliedPremiumShift({ financials: e.financials, rates, sectorMedians: peers.get(e.c.symbol) ?? null });
+    return shift === null ? [] : [{ currency: e.financials.tradingCurrency, lender: borrowsToLend(e.financials), shift }];
   });
-  const premium = median(shifts) ?? 0;
-  usePremiumAdjustment(premium);
+  const premiums = premiumTable(points).adjustments;
+  const premium = premiumFor(premiums, null, false);
+  usePremiumAdjustment(premiums);
 
   const metrics = entries.map((e) => computeAllMetrics(e.financials, rates, peers.get(e.c.symbol) ?? null));
   const score = (k: number) => computeFactorScore({
@@ -76,7 +81,7 @@ export function calibrateCrossSection(entries: readonly CrossEntry[], rates: Mar
   const table: Record<string, CriterionDistribution> = {};
   for (const [key, xs] of values) table[key] = { quantiles: percentiles(xs), n: xs.length, symbols: xs.length };
   useCalibrationTable(table);
-  usePremiumAdjustment(premium);
+  usePremiumAdjustment(premiums);
 
-  return { premium, peers, metrics, score };
+  return { premium, premiums, peers, metrics, score };
 }

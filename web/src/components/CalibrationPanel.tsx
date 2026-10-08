@@ -5,12 +5,35 @@ import type { CalibrationOverview } from '../../../src/calibration-service';
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 const pts = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(2).replace('.', ',')} Pkt.`;
 
+/** A premium group's key (`premiumGroups`) as it reads: „EUR“, „USD Banken & Versicherer“, „übrige“. */
+function groupLabel(key: string): string {
+  const [currency, kind] = key.split('|');
+  const who = kind === 'lender' ? 'Banken & Versicherer' : kind === 'firm' ? 'Firmen' : '';
+  if (currency === '*') return who ? `übrige ${who}` : 'übrige';
+  return kind === '*' ? currency : `${currency} ${who}`;
+}
+
+/**
+ * Every group's adjustment that some stock reads, on one line, the narrow groups
+ * first. A wider group whose firms and lenders both have their own is read by
+ * nobody and left out.
+ */
+function premiumLine(adjustments: Record<string, number>): string {
+  const read = (key: string) => {
+    const [currency, kind] = key.split('|');
+    return kind !== '*' || !(`${currency}|firm` in adjustments && `${currency}|lender` in adjustments);
+  };
+  const keys = Object.keys(adjustments).filter(read)
+    .sort((a, b) => Number(a.startsWith('*')) - Number(b.startsWith('*')) || a.localeCompare(b));
+  return keys.length ? keys.map((k) => `${groupLabel(k)} ${pts(adjustments[k])}`).join(' · ') : 'keine';
+}
+
 interface Committed {
-  generatedAt:       string | null;
-  symbols:           number;
-  observations:      number;
-  premiumAdjustment: number;
-  due:               string | null;
+  generatedAt:        string | null;
+  symbols:            number;
+  observations:       number;
+  premiumAdjustments: Record<string, number>;
+  due:                string | null;
 }
 
 /**
@@ -52,7 +75,7 @@ export default function CalibrationPanel({ committed }: { committed: Committed }
       <div className="flex flex-wrap items-center gap-2">
         <span>
           Kalibrierung {committed.generatedAt ? `vom ${new Date(committed.generatedAt).toLocaleDateString('de-DE')}` : 'fehlt'}
-          {' '}· {committed.symbols} Aktien, {committed.observations} Beobachtungen · Prämienkorrektur {pts(committed.premiumAdjustment)}
+          {' '}· {committed.symbols} Aktien, {committed.observations} Beobachtungen · Prämienkorrektur {premiumLine(committed.premiumAdjustments)}
         </span>
         <button
           onClick={() => void run()}
@@ -77,7 +100,7 @@ export default function CalibrationPanel({ committed }: { committed: Committed }
           <div className="text-ink-200">
             Neue Tabelle vom {fmtTime(pending.generatedAt)}: {pending.symbols} Aktien (bisher {pending.current.symbols}),
             {' '}{pending.observations} Beobachtungen (bisher {pending.current.observations}), {pending.criteria} Verteilungen
-            (bisher {pending.current.criteria}), Prämienkorrektur {pts(pending.premiumAdjustment)} (bisher {pts(pending.current.premiumAdjustment)}).
+            (bisher {pending.current.criteria}). Prämienkorrektur {premiumLine(pending.premiumAdjustments ?? {})} (bisher {premiumLine(pending.current.premiumAdjustments ?? {})}).
           </div>
           {pending.shifts.length > 0 && (
             <>

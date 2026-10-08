@@ -64,7 +64,8 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       <p className="text-xs leading-relaxed text-ink-400">
         {bt.universe ?? 'S&P 500'}, Monatsenden {bt.from} bis {bt.to} · {bt.months} Stichtage · {bt.companies} Firmen
         {bt.departed && <> (davon {bt.departed.included} der {bt.departed.departed} seither ausgeschiedenen)</>} ·
-        Prämienkorrektur im Median {deNumber(bt.premium.median * 100, 2)} Pkt. ·
+        Prämienkorrektur im Median {deNumber(bt.premium.median * 100, 2)} Pkt.
+        {bt.lenderPremium && <>, für Banken & Versicherer {deNumber(bt.lenderPremium.median * 100, 2)} Pkt.</>} ·
         gerechnet {new Date(bt.generatedAt).toLocaleDateString('de-DE')}
         {overview.data?.schedule.next && <> · nächster Lauf {new Date(overview.data.schedule.next).toLocaleDateString('de-DE')}</>}
       </p>

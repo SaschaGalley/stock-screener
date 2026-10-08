@@ -224,7 +224,8 @@ export interface ConfigResponse {
     generatedAt:       string | null;
     symbols:           number;
     observations:      number;
-    premiumAdjustment: number;
+    /** By premium group, `currency|firm` or `currency|lender`, `*` for all (`premiumGroups`). */
+    premiumAdjustments: Record<string, number>;
     /** Why a recalibration is due, or null. */
     due:               string | null;
   };

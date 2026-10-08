@@ -119,8 +119,8 @@ export function percentileIn(quantiles: readonly number[], value: number): numbe
 
 /** A table in place of the committed one — `useCalibrationTable`. */
 let override: CalibrationTable | null = null;
-/** A premium adjustment in place of the committed one — `usePremiumAdjustment`. */
-let premiumOverride: number | null = null;
+/** Premium adjustments in place of the committed ones — `usePremiumAdjustment`. */
+let premiumOverride: PremiumAdjustments | null = null;
 
 /**
  * Score against another table, `{}` for none — for tests, which pin the
@@ -129,17 +129,52 @@ let premiumOverride: number | null = null;
  */
 export function useCalibrationTable(table: CalibrationTable | null): void {
   override = table;
-  premiumOverride = table === null ? null : 0;
+  premiumOverride = table === null ? null : { [ALL_STOCKS]: 0 };
 }
 
-/** Price with another premium adjustment; `null` restores the committed one. */
-export function usePremiumAdjustment(adjustment: number | null): void {
-  premiumOverride = adjustment;
+/**
+ * Price with other premium adjustments — one number for every stock, or one per
+ * group — and `null` to restore the committed ones.
+ */
+export function usePremiumAdjustment(adjustment: number | PremiumAdjustments | null): void {
+  premiumOverride = typeof adjustment === 'number' ? { [ALL_STOCKS]: adjustment } : adjustment;
+}
+
+// ── The model's premium ──────────────────────────────────────────────────────
+
+/** What the models add to the market premium, by premium group (`premiumGroups`). */
+export type PremiumAdjustments = Readonly<Record<string, number>>;
+
+/** The group every stock belongs to: the fallback of last resort. */
+const ALL_STOCKS = '*|*';
+
+/**
+ * Stocks a group needs before it has an adjustment of its own; a thinner one
+ * takes the next wider group's. The euro area's banks and insurers were
+ * thirteen, too few for their median to be more than whichever one sat in the
+ * middle.
+ */
+export const PREMIUM_GROUP_MIN = 20;
+
+/**
+ * The groups a stock's premium is read from, narrowest first: its trading
+ * currency and whether it lends, its currency, whether it lends, and all
+ * stocks. A stock with no currency on record skips the currency's two.
+ */
+export function premiumGroups(currency: string | null | undefined, lender: boolean): string[] {
+  const kind = lender ? 'lender' : 'firm';
+  return [...(currency ? [`${currency}|${kind}`, `${currency}|*`] : []), `*|${kind}`, ALL_STOCKS];
+}
+
+/** The adjustment for a stock: its narrowest group the table has, else none. */
+export function premiumFor(table: PremiumAdjustments, currency: string | null | undefined, lender: boolean): number {
+  for (const key of premiumGroups(currency, lender)) if (table[key] !== undefined) return table[key];
+  return 0;
 }
 
 /**
  * What the models add to the market's implied premium so that they price the
- * typical stock at its price.
+ * typical stock of a group at its price.
  *
  * Damodaran's premium is the one at which *his* cash flows for the S&P 500
  * equal its price. Ours are harsher — growth fades within ten years, taxes
@@ -147,12 +182,52 @@ export function usePremiumAdjustment(adjustment: number | null): void {
  * sales-to-capital — and at his premium the DCF valued the median stock of the
  * universe at 71 % of its price and seventy per cent of all stocks below it.
  * That is a statement about the model, not about the market. The adjustment is
- * the median premium shift at which the DCF values each universe stock at its
- * price (`pnpm run calibrate`), so that the fair values on the page say which
- * stocks are cheap for this model, not that nearly all of them are dear.
+ * the median premium shift at which the model carrying each stock values it at
+ * its price (`pnpm run calibrate`), so that the fair values on the page say
+ * which stocks are cheap for this model, not that nearly all of them are dear.
+ *
+ * Measured and applied by group (`premiumGroups`), because one number did not
+ * fit them. Measured on the DCFs of a universe that is nine tenths American, it
+ * was −1.75 points; the euro area's firms needed +1.3, so their median DCF
+ * stood at 2.4 times the price and nearly a quarter of them read as a buy
+ * against a twelfth of the American ones. Banks and insurers are carried by the
+ * excess return model, which priced the median lender at its price with no
+ * adjustment at all, and with the DCF's sat at 1.7 times it: eight of the
+ * thirteen in euros were buys. Each group now prices its own typical stock.
  */
-export function modelPremiumAdjustment(): number {
-  return premiumOverride ?? CALIBRATION_META.premiumAdjustment;
+export function modelPremiumAdjustment(currency: string | null | undefined, lender: boolean): number {
+  return premiumFor(premiumOverride ?? CALIBRATION_META.premiumAdjustments, currency, lender);
+}
+
+/** One stock's measured shift, with what places it in a group. */
+export interface PremiumPoint {
+  currency: string | null | undefined;
+  lender:   boolean;
+  shift:    number;
+}
+
+/**
+ * The adjustment of every group with at least `min` stocks: the median of their
+ * shifts. Each stock counts in all four of its groups, so the wider groups are
+ * there for the thin ones to fall back on.
+ */
+export function premiumTable(points: readonly PremiumPoint[], min = PREMIUM_GROUP_MIN): {
+  adjustments: Record<string, number>;
+  groups:      Record<string, { stocks: number; iqr: [number, number] }>;
+} {
+  const byGroup = new Map<string, number[]>();
+  for (const p of points) {
+    for (const key of premiumGroups(p.currency, p.lender)) byGroup.set(key, [...(byGroup.get(key) ?? []), p.shift]);
+  }
+  const adjustments: Record<string, number> = {};
+  const groups: Record<string, { stocks: number; iqr: [number, number] }> = {};
+  for (const [key, shifts] of [...byGroup].sort(([a], [b]) => a.localeCompare(b))) {
+    if (shifts.length < min) continue;
+    const q = percentiles(shifts);
+    adjustments[key] = q[50];
+    groups[key] = { stocks: shifts.length, iqr: [q[25], q[75]] };
+  }
+  return { adjustments, groups };
 }
 
 /**

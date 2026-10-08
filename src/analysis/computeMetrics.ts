@@ -9,7 +9,7 @@ import {
   calculatePeerMultiples, calculateInterestCoverage, calculateSortino,
   calculateBeneish, calculateCompositeFairValue,
 } from './metrics.js';
-import { baseFairValue } from './dcf.js';
+import { baseFairValue, borrowsToLend } from './dcf.js';
 import { calculateHealthChecks } from './health.js';
 
 export interface ComputedMetrics {
@@ -47,10 +47,12 @@ export const MIN_EQUITY_PREMIUM = 0.015;
  * The rates the models price one stock with: the risk-free rate of the
  * currency its cash flows are in, net of the default spread its government
  * carries over the US, and the market's premium plus the model's adjustment
+ * for the stock's group — its currency, and whether it lends
  * (`modelPremiumAdjustment`).
  */
 export function modelRates(
-  financials: StockFinancials, marketRates: MarketRates | null, adjustment = modelPremiumAdjustment(),
+  financials: StockFinancials, marketRates: MarketRates | null,
+  adjustment = modelPremiumAdjustment(financials.tradingCurrency, borrowsToLend(financials)),
 ): MarketRates {
   const local = ratesForCurrency(marketRates ?? FALLBACK_RATES, financials.tradingCurrency, financials.currencyDefaultSpread ?? 0);
   const premium = Math.max(MIN_EQUITY_PREMIUM, local.equityRiskPremium + adjustment);
@@ -61,12 +63,14 @@ export function modelRates(
 const PREMIUM_SEARCH = { range: 0.04, steps: 30 } as const;
 
 /**
- * The shift of the market premium at which the DCF's base case values one
- * stock at its price. A stock no shift within the range can price sits at the
- * range's edge rather than dropping out: the ones the model finds dearest are
- * exactly the ones that need the largest cut, and leaving them out pulled the
- * median towards zero. Null only where there is no DCF — a lender, a firm with
- * no margin to converge to.
+ * The shift of the market premium at which the model that carries a stock
+ * values it at its price: the DCF's base case, and for a bank, insurer or
+ * lender the excess return model, which takes the DCF's place in its headline
+ * tier. A stock no shift within the range can price sits at the range's edge
+ * rather than dropping out: the ones the model finds dearest are exactly the
+ * ones that need the largest cut, and leaving them out pulled the median
+ * towards zero. Null where that model has no value — a firm with no margin to
+ * converge to, a lender without book value.
  */
 export function impliedPremiumShift(inputs: {
   financials: StockFinancials; rates: MarketRates | null; sectorMedians: SectorMedians | null;
@@ -74,7 +78,11 @@ export function impliedPremiumShift(inputs: {
   const { financials: f, rates, sectorMedians } = inputs;
   const price = f.price;
   if (typeof price !== 'number' || !(price > 0)) return null;
-  const at = (shift: number) => baseFairValue(f, modelRates(f, rates, shift), sectorMedians);
+  const lender = borrowsToLend(f);
+  const at = (shift: number) => {
+    const r = modelRates(f, rates, shift);
+    return lender ? calculateRIM(f, r, sectorMedians).fairValue : baseFairValue(f, r, sectorMedians);
+  };
   let lo: number = -PREMIUM_SEARCH.range;
   let hi: number = PREMIUM_SEARCH.range;
   const vLo = at(lo);

@@ -9,9 +9,11 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { useCalibrationTable } from '../src/analysis/calibration.js';
+import {
+  premiumFor, premiumGroups, premiumTable, PREMIUM_GROUP_MIN, useCalibrationTable, usePremiumAdjustment,
+} from '../src/analysis/calibration.js';
 
-import { calculateDCF, calculateReverseDCF } from '../src/analysis/metrics.js';
+import { calculateDCF, calculateReverseDCF, calculateRIM } from '../src/analysis/metrics.js';
 import { adjustedBeta, betaPrior, costOfEquity, MATURE_MAX_DEBT_SHARE, wacc } from '../src/analysis/cost-of-capital.js';
 import { valuationBasis } from '../src/analysis/basis.js';
 import { baseFairValue, dcfInputs, MIN_TERMINAL_SPREAD } from '../src/analysis/dcf.js';
@@ -267,5 +269,53 @@ describe('the model\'s premium', () => {
     const fair = baseFairValue(f, modelRates(f, r, 0))!;
     const absurd = { ...f, price: fair * 50, marketCap: fair * 50 * 10_000_000 } as typeof f;
     assert.equal(impliedPremiumShift({ financials: absurd, rates: r, sectorMedians: null }), -0.04);
+  });
+
+  it('measures a bank on the excess return model, which carries it, not on a DCF it has none of', () => {
+    const bank = financials({ industry: 'Banks - Regional', normalizedNetIncome: 75_000_000, payoutRatio: 0.4 });
+    const r = rates(0.0475, 0.041);
+    const fair = calculateRIM(bank, modelRates(bank, r, 0)).fairValue!;
+    const cheap = { ...bank, price: fair * 0.8, marketCap: fair * 0.8 * 10_000_000 } as typeof bank;
+    const shift = impliedPremiumShift({ financials: cheap, rates: r, sectorMedians: null })!;
+    assert.ok(shift > 0, `${shift}`);
+    close(calculateRIM(cheap, modelRates(cheap, r, shift)).fairValue, cheap.price, cheap.price * 1e-3);
+  });
+});
+
+describe('the premium by group', () => {
+  it('reads a stock\'s premium from its narrowest group the table has', () => {
+    const table = { 'USD|firm': -0.017, 'EUR|*': 0.013, '*|lender': 0.005, '*|*': -0.01 };
+    assert.equal(premiumFor(table, 'USD', false), -0.017);
+    assert.equal(premiumFor(table, 'USD', true), 0.005, 'no American lenders of their own: all lenders');
+    assert.equal(premiumFor(table, 'EUR', true), 0.013, 'the currency before the kind');
+    assert.equal(premiumFor(table, 'CHF', false), -0.01);
+    assert.equal(premiumFor(table, null, true), 0.005);
+    assert.equal(premiumFor({}, 'USD', false), 0);
+    assert.deepEqual(premiumGroups('EUR', true), ['EUR|lender', 'EUR|*', '*|lender', '*|*']);
+  });
+
+  it('gives a group its own median only once it has enough stocks', () => {
+    const points = [
+      ...Array.from({ length: PREMIUM_GROUP_MIN }, (_, i) => ({ currency: 'USD', lender: false, shift: -0.02 + i * 1e-4 })),
+      ...Array.from({ length: PREMIUM_GROUP_MIN - 1 }, () => ({ currency: 'EUR', lender: false, shift: 0.015 })),
+      ...Array.from({ length: 5 }, () => ({ currency: 'EUR', lender: true, shift: 0.02 })),
+    ];
+    const { adjustments, groups } = premiumTable(points);
+    assert.deepEqual(Object.keys(adjustments).sort(), ['*|*', '*|firm', 'EUR|*', 'USD|*', 'USD|firm']);
+    close(adjustments['USD|firm'], -0.02 + 9.5e-4, 1e-12);
+    assert.equal(adjustments['EUR|*'], 0.015, 'the euro lenders pool with the euro firms');
+    assert.equal(groups['*|*'].stocks, 2 * PREMIUM_GROUP_MIN + 4);
+  });
+
+  it('prices each stock with its group\'s premium', () => {
+    usePremiumAdjustment({ 'USD|firm': -0.017, 'EUR|*': 0.013 });
+    try {
+      close(modelRates(financials({ tradingCurrency: 'USD' }), rates(0.0475, 0.041)).equityRiskPremium, 0.041 - 0.017, 1e-12);
+      // No currency on record, and no wider group in the table: no adjustment.
+      close(modelRates(financials(), rates(0.0475, 0.041)).equityRiskPremium, 0.041, 1e-12);
+      close(modelRates(financials({ tradingCurrency: 'EUR' }), rates(0.0475, 0.041)).equityRiskPremium, 0.041 + 0.013, 1e-12);
+    } finally {
+      useCalibrationTable({});
+    }
   });
 });

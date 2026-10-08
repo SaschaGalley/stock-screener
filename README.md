@@ -355,13 +355,14 @@ every detail page as though it were one about the market.
 
 So the models discount at the market's premium plus an adjustment
 (`modelPremiumAdjustment`). `pnpm run calibrate` measures the adjustment: for
-every stock with a DCF, it finds the shift of the premium at which the base
-case equals the price, and takes the median. A stock that no shift within four
-points can reach sits at the edge of that range rather than dropping out. The
-ones the model finds dearest need the largest cut, and leaving them out pulled
-the median towards zero. The adjustment is committed with the calibration
-table. At runtime the premium is Damodaran's month plus the adjustment, never
-below 1.5 %. The DCF's assumptions line shows both parts. A fair value now says
+every stock, it finds the shift of the premium at which the model that carries
+it — the DCF's base case, or for a bank, insurer or lender the excess return
+model — equals the price, and takes the median of each group of stocks. A
+stock that no shift within four points can reach sits at the edge of that
+range rather than dropping out. The ones the model finds dearest need the
+largest cut, and leaving them out pulled the median towards zero. The
+adjustments are committed with the calibration table. At runtime a stock's
+premium is Damodaran's month plus its group's adjustment, never below 1.5 %. The DCF's assumptions line shows both parts. A fair value now says
 which stocks are cheap for this model, and the market as a whole sits near its
 price, as the implied premium says it should.
 
@@ -372,6 +373,41 @@ same thing for every month since 2013 and finds between −2.2 and +1.3 points.
 The model is harsher than the market in expensive years and gentler in cheap
 ones, which is what a fixed set of cash-flow assumptions against a moving
 market does.
+
+**By group (8 October 2026).** One adjustment for every stock did not fit. The
+universe is nine tenths American, so the −1.75 points were the American
+firms'. Measured by group, the euro area's firms needed +1.3, and banks and
+insurers, carried by the excess return model, needed none in dollars and +1.8
+in euros. With the one number the euro firms' median DCF stood at 2.4 times the
+price, the median lender's excess return value at 1.7 times, and the verdicts
+followed: 23 % of the euro firms and 8 of the 13 euro lenders read as buys,
+against 8 % of the American firms. Damodaran's premium had also fallen from
+4.09 % to 3.70 % since the calibration, so even the American DCFs had drifted
+to 1.06 times the price.
+
+Now a stock's group is its trading currency and whether it lends
+(`premiumGroups`); a group under 20 stocks takes the next wider one's — the
+currency's, then the lenders' or firms', then all stocks'. Recalibrated on the
+same 595 stocks: American firms −1.70 points, American lenders +0.05, euro
+firms +1.30, and the euro area as a whole +1.60, which its thirteen lenders
+take. The euro firms' median DCF is at 1.12 times the price, 10 % of them read
+as buys; the median lender's excess return value is at 1.00 in dollars and
+1.03 in euros. Five of the thirteen euro lenders remain buys, on momentum, the
+balance sheet and a value lens that sits high for every lender, American ones
+too — not on the premium any more.
+
+The backtest measures the lenders' own adjustment every month now, on their
+excess return model: +0.11 points in the median of 165 months against the
+firms' −0.63, and in 2021 +2.73 against −0.98. Over the S&P 1500 the score did
+not move — 0.014 (t 2.3) at one month, within the sector t 2.4 before and 2.5
+after — and the lenders' intrinsic value ranks as it did (0.038, t 2.3, against
+0.035, t 2.2); the live comparison stays at ρ 0.75 with 80 % the same verdict.
+The euro groups it cannot test.
+
+This makes a fair value relative to the stock's own market. Whether European
+stocks are cheap or that market asks for more premium, the backtest, which
+knows only American ones, cannot say; before, one American number decided it
+unseen.
 
 ## Score and verdict
 
@@ -1487,7 +1523,8 @@ split are put on today's basis. The result says, year by year, for what share
 of the stocks there was a consensus.
 
 **Everything calibrated is recalibrated per month**, from that month's
-cross-section only: the premium adjustment, and every criterion's reference
+cross-section only: the premium adjustment of each group — the firms', and the
+lenders' where a month has twenty — and every criterion's reference
 distribution. Peer medians come from the index's own GICS sub-industries that
 month, with the same filters Finnhub's go through. Rates are FRED's month-end
 series and Damodaran's premium for the month. Nothing from after a month-end
@@ -2171,7 +2208,7 @@ src/
 │   ├── admin.ts           Runs, settings, entity mappings, filing index
 │   ├── backfill.ts        One-shot import of the old file cache
 │   ├── rescore.ts         Re-scores stored history on today's code; the current card from stored inputs
-│   ├── calibrate.ts       Reference distributions and the premium adjustment (`pnpm run calibrate`, `--store`)
+│   ├── calibrate.ts       Reference distributions and the premium adjustment by group (`pnpm run calibrate`, `--store`)
 │   ├── timing-series.ts   The stored timing readings, put back together per refresh
 │   ├── golden.ts          Captures stored inputs as golden fixtures (`pnpm run golden:capture`)
 │   └── evaluate.ts        CLI for the outcome evaluation (`pnpm run evaluate`)
