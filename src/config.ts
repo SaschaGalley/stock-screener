@@ -21,6 +21,13 @@ const ConfigSchema = z.object({
    */
   umsatzApiUrl: z.string().default('http://localhost:8505'),
   umsatzApiKey: z.string().optional(),
+  /**
+   * The `source` the trades and depot prices are stored and read under. Always
+   * `umsatz`, except when developing against a placeholder server with made-up
+   * trades (CLAUDE.md): a source of its own keeps its sync from marking the
+   * real copy's rows as removed, and its rows are deleted by source afterwards.
+   */
+  tradesSource: z.string().regex(/^[a-z][a-z0-9-]*$/).default('umsatz'),
   // A malformed briefing-type id should disable the feature, not crash the
   // process; a bad LOG_LEVEL should fall back to 'info'. `.catch()` degrades
   // gracefully instead of failing safeParse for the whole config.
@@ -83,6 +90,7 @@ export function getConfig(): EnvConfig {
     distillApiUrl: process.env.DISTILL_API_URL,
     umsatzApiUrl: process.env.UMSATZ_API_URL,
     umsatzApiKey: process.env.UMSATZ_API_KEY || undefined,
+    tradesSource: process.env.TRADES_SOURCE || undefined,
     databaseUrl: process.env.DATABASE_URL,
     // CACHE_DIR is still honoured so an existing deployment keeps finding its
     // downloaded filings after the rename.

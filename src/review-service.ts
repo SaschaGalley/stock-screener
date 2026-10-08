@@ -18,7 +18,7 @@ import { readSeries } from './db/store.js';
 import { allTrades } from './db/trades-store.js';
 import { journalHeadline } from './journal.js';
 import { decisionOutcomes } from './stock-history-service.js';
-import { syncTradesIfStale, tradesSyncState } from './trades-service.js';
+import { syncTradesIfStale, tradesSource, tradesSyncState } from './trades-service.js';
 
 const DAY_MS = 86_400_000;
 /** A year before the first decision for the situation's high, low and jumps, and a margin. */
@@ -99,7 +99,7 @@ export async function reviewStats(): Promise<ReviewStats> {
 
 export async function readReview(force = false): Promise<ReviewResponse> {
   await syncTradesIfStale(force);
-  const [state, journal, trades] = await Promise.all([tradesSyncState(), listJournal(), allTrades('umsatz')]);
+  const [state, journal, trades] = await Promise.all([tradesSyncState(), listJournal(), allTrades(tradesSource())]);
   const decisions = decisionsFrom(journal, trades, (b) => journalHeadline(b, 120));
   const measurable = decisions.filter((d): d is typeof d & { symbol: string } => d.symbol !== null);
   if (measurable.length === 0) {

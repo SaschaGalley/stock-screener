@@ -59,16 +59,16 @@ const COLUMNS = `t.id, t.day, t.isin, COALESCE(t.symbol, t.source_symbol) AS sym
  * Purchases and sales nobody has given a reason for yet — neither in an entry
  * nor by dismissing them. Newest first; for one stock when `symbol` is given.
  */
-export async function openTrades(symbol?: string): Promise<Trade[]> {
+export async function openTrades(source: string, symbol?: string): Promise<Trade[]> {
   const res = await query<Trade>(
     `SELECT ${COLUMNS} FROM trades t
-      WHERE t.kind IN ('buy', 'sell') AND t.removed_at IS NULL AND t.dismissed_at IS NULL
+      WHERE t.source = $2 AND t.kind IN ('buy', 'sell') AND t.removed_at IS NULL AND t.dismissed_at IS NULL
         AND ($1::text IS NULL OR COALESCE(t.symbol, t.source_symbol) = $1)
         AND NOT EXISTS (
           SELECT 1 FROM journal_entries j WHERE j.deleted_at IS NULL AND t.id = ANY(j.trade_ids)
         )
       ORDER BY t.day DESC, t.id DESC`,
-    [symbol?.toUpperCase() ?? null],
+    [symbol?.toUpperCase() ?? null, source],
   );
   return res.rows;
 }

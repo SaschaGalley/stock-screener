@@ -14,16 +14,15 @@ import { latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
 import { allTrades, latestPrices } from './db/trades-store.js';
 import { journalHeadline } from './journal.js';
 import { listResearch } from './research/research.js';
-import { syncTradesIfStale, tradesSyncState } from './trades-service.js';
+import { syncTradesIfStale, tradesSource, tradesSyncState } from './trades-service.js';
 
-const SOURCE = 'umsatz';
 
 export async function readDepot(force = false): Promise<DepotResponse> {
   await syncTradesIfStale(force);
   const [state, trades, prices, watchlist, points, journal, research, evidence] = await Promise.all([
     tradesSyncState(),
-    allTrades(SOURCE),
-    latestPrices(SOURCE),
+    allTrades(tradesSource()),
+    latestPrices(tradesSource()),
     listSymbols('watchlist'),
     latestPointsForAll(['score.final.score', 'score.final.verdict']),
     listJournal(),

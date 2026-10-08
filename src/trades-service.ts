@@ -15,10 +15,11 @@ import { dismissTrades, openTrades, replaceTrades, savePrices, type TradeRow } f
 import { TRADE_KINDS, type OpenTrades, type TradeKind } from './journal.js';
 import { logger } from './utils/logger.js';
 
-const SOURCE = 'umsatz';
-const SYNCED_AT = 'trades.umsatz.syncedAt';
-const SYNC_ERROR = 'trades.umsatz.syncError';
-const SYNC_TRIED_AT = 'trades.umsatz.triedAt';
+/** Where the copy is kept: `umsatz`, or a placeholder's own source in development (`tradesSource`). */
+export const tradesSource = (): string => getConfig().tradesSource;
+const SYNCED_AT = () => `trades.${tradesSource()}.syncedAt`;
+const SYNC_ERROR = () => `trades.${tradesSource()}.syncError`;
+const SYNC_TRIED_AT = () => `trades.${tradesSource()}.triedAt`;
 /** The journal page asks on every visit; umsatz is asked at most this often. */
 const SYNC_EVERY_MS = 10 * 60_000;
 
@@ -102,11 +103,11 @@ export async function syncTrades(): Promise<{ total: number; added: number }> {
     ]);
     if (!Array.isArray(body.trades)) throw new Error('umsatz hat keine Liste von Trades geschickt');
     const rows = body.trades.map(tradeFromUmsatz).filter((r): r is TradeRow => r !== null);
-    const out = await replaceTrades(SOURCE, rows);
+    const out = await replaceTrades(tradesSource(), rows);
     const prices = Array.isArray(priced.prices) ? priced.prices.map(priceFromUmsatz).filter((p) => p !== null) : [];
-    await savePrices(SOURCE, prices);
-    await writeAppState(SYNCED_AT, new Date().toISOString());
-    await writeAppState(SYNC_ERROR, '');
+    await savePrices(tradesSource(), prices);
+    await writeAppState(SYNCED_AT(), new Date().toISOString());
+    await writeAppState(SYNC_ERROR(), '');
     logger.info(`Trades from umsatz: ${out.total}, ${out.added} new; ${prices.length} prices`);
     return out;
   } catch (e) {
@@ -115,7 +116,7 @@ export async function syncTrades(): Promise<{ total: number; added: number }> {
       // Node's fetch says only "fetch failed" for a refused or unresolvable host.
       : e instanceof TypeError && e.message === 'fetch failed' ? `umsatz unter ${where} ist nicht erreichbar — stimmt UMSATZ_API_URL?`
       : (e as Error).message;
-    await writeAppState(SYNC_ERROR, message);
+    await writeAppState(SYNC_ERROR(), message);
     throw new Error(message);
   }
 }
@@ -125,17 +126,17 @@ export async function syncTradesIfStale(force = false): Promise<void> {
   if (!getConfig().umsatzApiKey) return;
   // By the last attempt, not the last success: a sync that keeps failing
   // would otherwise be retried by every page that reads the trades.
-  const [last, tried] = await Promise.all([readAppState(SYNCED_AT), readAppState(SYNC_TRIED_AT)]);
+  const [last, tried] = await Promise.all([readAppState(SYNCED_AT()), readAppState(SYNC_TRIED_AT())]);
   const newest = [last, tried].filter((x): x is string => !!x).map(Date.parse).reduce((a, b) => Math.max(a, b), 0);
   if (force || Date.now() - newest > SYNC_EVERY_MS) {
-    await writeAppState(SYNC_TRIED_AT, new Date().toISOString());
-    await syncTrades().catch(() => { /* recorded in SYNC_ERROR */ });
+    await writeAppState(SYNC_TRIED_AT(), new Date().toISOString());
+    await syncTrades().catch(() => { /* recorded under SYNC_ERROR */ });
   }
 }
 
 /** When the copy was last refreshed, and why the last attempt failed if it did. */
 export async function tradesSyncState(): Promise<{ configured: boolean; syncedAt: string | null; syncError: string | null }> {
-  const [syncedAt, syncError] = await Promise.all([readAppState(SYNCED_AT), readAppState(SYNC_ERROR)]);
+  const [syncedAt, syncError] = await Promise.all([readAppState(SYNCED_AT()), readAppState(SYNC_ERROR())]);
   return { configured: !!getConfig().umsatzApiKey, syncedAt, syncError: syncError || null };
 }
 
@@ -146,7 +147,7 @@ export async function tradesSyncState(): Promise<{ configured: boolean; syncedAt
  */
 export async function readOpenTrades(symbol?: string, force = false): Promise<OpenTrades> {
   await syncTradesIfStale(force);
-  const [state, trades] = await Promise.all([tradesSyncState(), openTrades(symbol)]);
+  const [state, trades] = await Promise.all([tradesSyncState(), openTrades(tradesSource(), symbol)]);
   return { ...state, trades };
 }
 
