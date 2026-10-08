@@ -103,6 +103,8 @@ export interface DepotView {
   lookThrough: LookThrough;
   /** The market's own dates in the coming weeks, from the newest market brief. */
   market:     { day: string; event: string; watch: string }[];
+  /** Money ready to invest, as the owner entered it on the page; null when not entered. */
+  cashEur:    number | null;
 }
 
 /** One open position, summed from its trades. */
@@ -174,6 +176,7 @@ export function depotView(input: {
   market?:   DepotView['market'];
   /** Today, for the dates: a report within a week is flagged. */
   today?:    string;
+  cashEur?:  number | null;
 }): DepotView {
   const { held, prices, model, reasons, theses, charts } = input;
   const today = input.today ?? new Date().toISOString().slice(0, 10);
@@ -292,6 +295,7 @@ export function depotView(input: {
     limits: { maxPosition: MAX_POSITION, maxSector: MAX_SECTOR },
     lookThrough: lt,
     market: input.market ?? [],
+    cashEur: input.cashEur ?? null,
   };
 }
 

@@ -15,8 +15,9 @@
  * The depot manager's text is the one place holdings reach a model, and
  * `managerInput` is the one place that decides what of them does: names,
  * sectors, weights — the funds' too, read as what they hold — and, for single
- * stocks, the gain since purchase in per cent; never quantities, prices paid,
- * values or the dates of trades (CLAUDE.md).
+ * stocks, the gain since purchase in per cent, the months held and the thesis
+ * check's counts; the money ready to invest as a share of the depot; never
+ * quantities, prices paid, values, amounts or the dates of trades (CLAUDE.md).
  *
  * Pure and dependency-free: the web app imports the types.
  */
@@ -90,6 +91,8 @@ export interface ManagerMove {
   symbol:   string;
   /** For a held stock; null for a purchase. Absent before 8.10.2026. */
   protect?: ProtectionChoice | null;
+  /** The weight it would have after the step, in per cent of today's depot; the page turns it into euros. */
+  targetPct?: number | null;
   reason:   string;
 }
 
@@ -176,6 +179,10 @@ export interface HeldForManager {
   scoreBefore?: { score: number; at: string } | null;
   /** What is scheduled for it. */
   upcoming?:    { day: string; title: string; detail: string | null }[];
+  /** When the position was opened: only the months since go out. */
+  openedAt?:    string;
+  /** The newest thesis check: only its counts and age go out, never the theses. */
+  thesis?:      { contradicted: number; total: number; at: string } | null;
 }
 
 /** Single stocks are judged one by one; funds, coins and metals are the depot's mix. */
@@ -231,8 +238,14 @@ export function managerInput(input: {
   market:       MarketBrief | null;
   sectorTrends: readonly SectorTrend[];
   lookThrough?: LookThrough | null;
+  /** Money ready to invest over the depot's value; null when not entered. */
+  cashShare?:   number | null;
+  today?:       string;
 }) {
   const lt = input.lookThrough;
+  const today = input.today ?? new Date().toISOString().slice(0, 10);
+  const months = (from: string) => Math.max(0, Math.floor((Date.parse(today) - Date.parse(from)) / (30.44 * 86_400_000)));
+  const days = (from: string) => Math.max(0, Math.round((Date.parse(today) - Date.parse(from)) / 86_400_000));
   return {
     depot: input.positions.map((p) => {
       const base = { name: p.name, symbol: p.symbol, art: p.assetType, gewichtProzent: pct(p.weight) };
@@ -240,6 +253,8 @@ export function managerInput(input: {
       const h = p.symbol ? input.holdings.get(p.symbol) : undefined;
       return {
         ...base, ueberFondsProzent: pct(p.viaFunds), sector: p.sector, seitKaufProzent: pct(p.gain),
+        gehaltenMonate: p.openedAt ? months(p.openedAt) : null,
+        thesenCheck: p.thesis ? { widerlegt: p.thesis.contradicted, gesamt: p.thesis.total, vorTagen: days(p.thesis.at) } : null,
         score: p.score, scoreVor4Wochen: p.scoreBefore?.score ?? null, urteil: p.verdict,
         chart: chartLine(h?.chart ?? null), technik: technik(h?.protection),
         termine: (p.upcoming ?? []).map((e) => ({ datum: e.day, was: e.detail ? `${e.title} — ${e.detail}` : e.title })),
@@ -250,6 +265,7 @@ export function managerInput(input: {
       groessteWerte: lt.stocks.map((x) => ({ name: x.name, symbol: x.symbol, direkt: pct(x.direct), ueberFonds: pct(x.viaFunds) })),
       fondsBeschriebenProzent: pct(lt.funds.known),
     } : null,
+    liquiditaetProzent: pct(input.cashShare),
     sektorenProzent: input.sectors.map((s) => ({ sector: s.sector, gewichtProzent: pct(s.weight) })),
     grenzen: { positionProzent: pct(input.limits.maxPosition), sektorProzent: pct(input.limits.maxSector) },
     kaufenAnsehen:          input.lists.buy.map(candidateLine),
@@ -286,7 +302,10 @@ export const MANAGER_SYSTEM = [
   '  Gewicht darin: Sie sind die Mischung des Depots, nicht Gegenstand einzelner Schritte.',
   '- Bei Aktien: seitKaufProzent ist, wo der Anleger mit der Position steht. ueberFondsProzent: was seine Fonds an derselben',
   '  Aktie zusätzlich halten. scoreVor4Wochen: der Score vor etwa vier Wochen; ein fallender Score sagt mehr als sein Stand.',
-  '  termine: Quartalszahlen, Dividenden und Katalysatoren der nächsten Wochen.',
+  '  termine: Quartalszahlen, Dividenden und Katalysatoren der nächsten Wochen. gehaltenMonate: wie lange die Position',
+  '  schon läuft. thesenCheck: wie viele der Kaufthesen des Anlegers ein Abgleich mit der aktuellen Lage widerlegt sah,',
+  '  vor wie vielen Tagen.',
+  '- liquiditaetProzent: Geld, das der Anleger bereitliegen hat, in Prozent des Depotwerts; null, wenn er keines angab.',
   `  score: 0 bis 10, aus Kennzahlen und Analysetext; urteil: ${bandsDe}. Im Backtest sagt der Score die Rendite des`,
   '  nächsten Monats nur schwach voraus (Rangkorrelation 0,014). Stütze dich nicht auf kleine Unterschiede.',
   '- chart: Trend und Phase laut Chart-Lesung, lesart ihre Zusammenfassung.',
@@ -314,6 +333,11 @@ export const MANAGER_SYSTEM = [
   '  widerlegt ist); „keiner“, wo eine Marke nur das Rauschen träfe. Nenne den Abstand aus technik, erfinde keinen.',
   '  Ein Stop begrenzt Verluste, er bringt keine Rendite: Er lohnt, wo Trends laufen, und kostet, wo der Kurs nur pendelt.',
   '- Termine: Vor Quartalszahlen nicht ohne Grund nachkaufen; ein Stop schützt nicht vor einer Kurslücke am Tag danach.',
+  '- Eine widerlegte Kaufthese wiegt schwer: Der Grund, aus dem gekauft wurde, gilt nicht mehr. Eine junge Position',
+  '  (wenige Monate) nicht wegen kurzer Schwankungen aufgeben, eine alte nicht aus Gewohnheit halten.',
+  '- Größen: Bei kaufen, aufstocken, reduzieren, gewinne mitnehmen und verkaufen nennst du targetPct, das Gewicht nach dem',
+  '  Schritt in Prozent des heutigen Depotwerts (verkaufen: 0). Käufe zusammen nicht über liquiditaetProzent plus dem, was',
+  '  Verkäufe freimachen; ohne Liquiditätsangabe nur aus Verkäufen. Keine Position über die Positionsgrenze.',
   '- Klumpen nach durchgerechnet beurteilen: eine Aktie, die die Fonds schon groß halten, ist doppelt im Depot.',
   '- Denk an das ganze Depot und an den Markt: Klumpen, Sektoren, ob der Markt den Sektoren der Positionen Rückenwind',
   '  oder Gegenwind gibt, welche Termine anstehen. Ein Kauf, der einen Sektor über die Grenze bringt, ist eher keiner.',

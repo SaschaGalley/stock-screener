@@ -65,7 +65,7 @@ import {
 } from './journal-service.js';
 import { isJournalKind, normalizeSymbols } from './journal.js';
 import { ignoreTrades, readOpenTrades } from './trades-service.js';
-import { readDepot } from './depot-service.js';
+import { readDepot, writeDepotCash } from './depot-service.js';
 import { readDepotCheck, reconcileDepotCheck, startDepotCheck } from './depot-check-service.js';
 import { ChartReadInputError, readChart, runChartRead } from './chart-service.js';
 import { invalidateReview, reviewPage, reviewStats } from './review-service.js';
@@ -1228,6 +1228,21 @@ export function createApp(): express.Express {
   app.post('/api/depot/check', async (_req, res, next) => {
     try {
       res.json(await startDepotCheck());
+    } catch (e) {
+      next(e);
+    }
+  });
+  // Money ready to invest, entered on the depot page for the depot check's sizes.
+  app.put('/api/depot/cash', async (req, res, next) => {
+    try {
+      const raw = (req.body as { amountEur?: unknown } | undefined)?.amountEur;
+      const amount = raw === null || raw === '' || raw === undefined ? null : Number(raw);
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        res.status(400).json({ error: 'invalid_amount' });
+        return;
+      }
+      await writeDepotCash(amount);
+      res.json({ amountEur: amount });
     } catch (e) {
       next(e);
     }

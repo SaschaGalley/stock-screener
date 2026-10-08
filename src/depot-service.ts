@@ -17,6 +17,7 @@ import { watchSignals, type WatchSignal } from './analysis/depot-watch.js';
 import { protectionOf } from './analysis/stops.js';
 import { verdictEvidence } from './backtest/result.js';
 import { readChart } from './chart-service.js';
+import { readAppState, writeAppState } from './db/admin.js';
 import { listJournal } from './db/journal-store.js';
 import { latestPointsForAll, listSymbols, seriesForAll, symbolFacts } from './db/store.js';
 import { allTrades, latestPrices } from './db/trades-store.js';
@@ -35,6 +36,20 @@ const TREND_DAYS = 28;
 /** How far ahead the dates reach. */
 const AHEAD_DAYS = 30;
 const FUND_TYPES = new Set(['etf', 'fund']);
+
+/** Money ready to invest, entered on the depot page: private like the trades, kept under their source. */
+const CASH_KEY = () => `depot.cash.${tradesSource()}`;
+
+export async function readDepotCash(): Promise<number | null> {
+  const raw = await readAppState(CASH_KEY());
+  const n = raw === null ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** `PUT /api/depot/cash`: null forgets it. */
+export async function writeDepotCash(amountEur: number | null): Promise<void> {
+  await writeAppState(CASH_KEY(), amountEur === null ? '' : String(Math.round(amountEur * 100) / 100));
+}
 
 
 export async function readDepot(force = false): Promise<DepotResponse> {
@@ -91,11 +106,12 @@ export async function readDepot(force = false): Promise<DepotResponse> {
   const funds = held.flatMap((p) => (p.symbol && FUND_TYPES.has(p.assetType) ? [p.symbol] : []));
   const today = new Date().toISOString().slice(0, 10);
   const ahead = new Date(Date.now() + AHEAD_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const [config, lastCheck, fundMap, scoreSeries, market] = await Promise.all([
+  const [config, lastCheck, fundMap, scoreSeries, market, cashEur] = await Promise.all([
     readAppConfig(), readCheckResult(),
     fundHoldings(funds).catch((e) => { logger.warn(`Fund holdings: ${(e as Error).message}`); return new Map(); }),
     seriesForAll('score.final.score', { since: new Date(Date.now() - (TREND_DAYS + 10) * DAY_MS) }),
     marketDates(today, ahead),
+    readDepotCash(),
   ]);
   const lastStops = new Map((lastCheck?.holdings ?? []).flatMap((h) => (h.protection?.stop ? [[h.symbol, h.protection.stop.price] as const] : [])));
 
@@ -131,7 +147,7 @@ export async function readDepot(force = false): Promise<DepotResponse> {
   const horizon = evidence ? Math.max(...evidence.verdicts.map((v) => v.horizon)) : null;
   return {
     ...state,
-    view: depotView({ held, prices, model, reasons, theses, charts, funds: fundMap, scoresBefore, upcoming, signals, market, today }),
+    view: depotView({ held, prices, model, reasons, theses, charts, funds: fundMap, scoresBefore, upcoming, signals, market, today, cashEur }),
     evidence: evidence && horizon !== null
       ? evidence.verdicts.filter((v) => v.horizon === horizon)
         .map((v) => ({ verdict: v.bucket, horizon: v.horizon, meanExcess: v.meanExcess, tStat: v.tStat }))

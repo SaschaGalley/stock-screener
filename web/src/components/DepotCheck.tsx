@@ -14,6 +14,8 @@ import { GROUP_SIDE, type DepotCheckHistory, type RecordGroup } from '../../../s
 import type { SectorPhase, SectorTrend } from '../../../src/analysis/sector-rotation';
 import type { Protection } from '../../../src/analysis/stops';
 
+const eur = (n: number) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const signedEur = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${eur(Math.abs(n))}`;
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 const fmtDay = (d: string) => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}.${d.slice(0, 4)}`;
 const pct = (x: number) => `${deNumber(x * 100, 1)} %`;
@@ -42,10 +44,14 @@ const DIRECTION: Record<SectorDirection, string> = {
  * buying — and the market it was all read against last. Possibilities, said
  * as such.
  */
-export default function DepotCheck({ onOpen, sectors }: {
+export default function DepotCheck({ onOpen, sectors, totalEur, cashEur }: {
   onOpen: (symbol: string) => void;
   /** The depot's sector weights among its stocks, to set beside the sectors' trends. */
   sectors: { sector: string; weight: number }[];
+  /** Today's depot value: the manager's target weights become euros here, never in the prompt. */
+  totalEur: number;
+  /** Money ready to invest, as entered. */
+  cashEur: number | null;
 }) {
   const [data, setData] = useState<DepotCheckResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +104,8 @@ export default function DepotCheck({ onOpen, sectors }: {
         </button>
       </div>
 
+      <Cash initial={cashEur} totalEur={totalEur} />
+
       {error && <p className="mt-2 text-xs text-red-400">⚠ {error}</p>}
       {st && running && (
         <p className="mt-2 text-xs text-amber-300">
@@ -115,15 +123,15 @@ export default function DepotCheck({ onOpen, sectors }: {
         </p>
       )}
 
-      {r && <Result r={r} onOpen={onOpen} sectors={sectors} changes={data?.history?.changes ?? []} />}
+      {r && <Result r={r} onOpen={onOpen} sectors={sectors} changes={data?.history?.changes ?? []} totalEur={totalEur} />}
       {data?.history && <History h={data.history} onOpen={onOpen} />}
     </section>
   );
 }
 
-function Result({ r, onOpen, sectors, changes }: {
+function Result({ r, onOpen, sectors, changes, totalEur }: {
   r: DepotCheckResult; onOpen: (symbol: string) => void; sectors: { sector: string; weight: number }[];
-  changes: DepotCheckHistory['changes'];
+  changes: DepotCheckHistory['changes']; totalEur: number;
 }) {
   const moves = new Map((r.manager?.moves ?? []).map((m) => [m.symbol, m]));
   const order = new Map((r.manager?.moves ?? []).map((m, i) => [m.symbol, i]));
@@ -165,7 +173,7 @@ function Result({ r, onOpen, sectors, changes }: {
           </h4>
           <ul className="divide-y divide-ink-800/70">
             {holdings.map((h) => (
-              <HoldingRow key={h.symbol} h={h} move={moves.get(h.symbol) ?? null} weak={reduce.has(h.symbol)} onOpen={onOpen} />
+              <HoldingRow key={h.symbol} h={h} move={moves.get(h.symbol) ?? null} weak={reduce.has(h.symbol)} onOpen={onOpen} totalEur={totalEur} />
             ))}
           </ul>
         </div>
@@ -173,12 +181,12 @@ function Result({ r, onOpen, sectors, changes }: {
 
       <div className="grid gap-4 md:grid-cols-2">
         <List
-          title="Kaufen ansehen" tone="text-emerald-400" rows={r.lists.buy} moves={moves} onOpen={onOpen}
+          title="Kaufen ansehen" tone="text-emerald-400" rows={r.lists.buy} moves={moves} onOpen={onOpen} totalEur={totalEur}
           empty={`Keine Aktie hält ${score(r.settings.minScore)} nach der Analyse und hat einen steigenden Chart.`}
           hint="Außerhalb des Depots: Score nach der Analyse noch über der Schwelle, Urteil BUY oder STRONG BUY, Chart steigt."
         />
         <List
-          title="Hoch bewertet, Chart noch nicht" tone="text-ink-200" rows={r.lists.waitForChart} moves={moves} onOpen={onOpen}
+          title="Hoch bewertet, Chart noch nicht" tone="text-ink-200" rows={r.lists.waitForChart} moves={moves} onOpen={onOpen} totalEur={totalEur}
           hint="Score hält, aber der Chart steigt nicht — oder das Urteil wurde zurückgehalten."
         />
       </div>
@@ -212,8 +220,8 @@ function Result({ r, onOpen, sectors, changes }: {
       <p className="text-2xs leading-relaxed text-ink-500">
         Geprüft {fmtTime(r.generatedAt)} mit {r.model} · {r.candidates.length} Kandidaten ab {score(r.settings.minScore)},{' '}
         {r.holdings.length} Aktien im Depot. Das Modell bekommt je Position Name, Anlageart und Gewicht, bei Aktien dazu
-        Sektor, „seit Kauf“ in Prozent, Score, Chart und die Abstände zu Stop und Trailing — keine Stückzahlen, Kaufkurse,
-        Beträge oder Daten. Perplexity bekommt nur die Frage nach dem Markt. Stops begrenzen Verluste, sie bringen keine
+        Sektor, „seit Kauf“ in Prozent, Haltedauer in Monaten, das Ergebnis des Thesen-Checks, Score, Chart und die Abstände
+        zu Stop und Trailing, dazu das verfügbare Geld als Anteil am Depot — keine Stückzahlen, Kaufkurse, Beträge oder Daten. Perplexity bekommt nur die Frage nach dem Markt. Stops begrenzen Verluste, sie bringen keine
         Rendite und sind nicht im Backtest geprüft. Keine Anlageberatung.
       </p>
     </div>
@@ -226,8 +234,8 @@ function Result({ r, onOpen, sectors, changes }: {
  * on the second. The two levels are the app's, from the bars; the manager
  * only picks one, and the pick is what lights up.
  */
-function HoldingRow({ h, move, weak, onOpen }: {
-  h: CheckedStock; move: ManagerMove | null; weak: boolean; onOpen: (symbol: string) => void;
+function HoldingRow({ h, move, weak, onOpen, totalEur }: {
+  h: CheckedStock; move: ManagerMove | null; weak: boolean; onOpen: (symbol: string) => void; totalEur: number;
 }) {
   const t = h.chart ? TREND[h.chart.trend] : null;
   const p = h.protection ?? null;
@@ -269,11 +277,69 @@ function HoldingRow({ h, move, weak, onOpen }: {
         <p className="mt-1 text-xs leading-relaxed text-ink-300">
           <span className={`font-semibold uppercase tracking-wide ${ACTION[move.action]}`}>{move.action}</span>
           {move.protect && move.protect !== 'keiner' && <span className="text-ink-400"> · {PROTECT_LABEL[move.protect]}</span>}
+          <Size move={move} weight={h.weight} totalEur={totalEur} />
           {' '}— {move.reason}
         </p>
       )}
       {h.error && !h.chart && <p className="mt-0.5 text-2xs text-ink-500">{h.error}</p>}
     </li>
+  );
+}
+
+/**
+ * The size of a step: the weight the manager names, and what it means in
+ * euros at today's depot value — worked out here, as the model never sees an
+ * amount.
+ */
+function Size({ move, weight, totalEur }: { move: ManagerMove; weight: number | null; totalEur: number }) {
+  if (move.targetPct == null) return null;
+  const target = move.targetPct / 100;
+  const delta = (target - (weight ?? 0)) * totalEur;
+  return (
+    <Tip focusable={false} content={`Gewicht nach dem Schritt laut Depotmanager${weight !== null ? ` (heute ${pct(weight)})` : ''}; der Betrag ist der Unterschied beim heutigen Depotwert von ${eur(totalEur)}.`}>
+      <span className="text-ink-400"> · auf {pct(target)} <span className="text-ink-500">({signedEur(Math.round(delta / 10) * 10)})</span></span>
+    </Tip>
+  );
+}
+
+/**
+ * Money ready to invest, entered here: the depot check sizes its purchases
+ * by it. The model is told it as a share of the depot, never the amount.
+ */
+function Cash({ initial, totalEur }: { initial: number | null; totalEur: number }) {
+  const [value, setValue] = useState(initial === null ? '' : String(initial));
+  const [saved, setSaved] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setValue(initial === null ? '' : String(initial)); setSaved(initial); }, [initial]);
+  async function save() {
+    const parsed = value.trim() === '' ? null : Number(value.replace(/\./g, '').replace(',', '.'));
+    if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) { setError('Kein Betrag'); return; }
+    if (parsed === saved) return;
+    try {
+      setError(null);
+      setSaved((await api.setDepotCash(parsed)).amountEur);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  return (
+    <label className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-400">
+      <Tip content="Geld, das du bereitliegen hast. Der Depotmanager plant Käufe damit; er bekommt nur den Anteil am Depotwert, nie den Betrag.">
+        <span>Verfügbar zum Investieren</span>
+      </Tip>
+      <input
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => void save()}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        placeholder="—"
+        className="w-28 rounded border border-ink-700 bg-ink-950 px-2 py-1 text-right font-mono text-ink-100 focus:border-accent focus:outline-none"
+      />
+      <span>€</span>
+      {saved !== null && totalEur > 0 && <span className="text-ink-500">≈ {pct(saved / totalEur)} des Depots</span>}
+      {error && <span className="text-red-400">{error}</span>}
+    </label>
   );
 }
 
@@ -309,9 +375,9 @@ function Levels({ p, chosen }: { p: Protection; chosen: ProtectionChoice | null 
   );
 }
 
-function List({ title, tone, rows, hint, empty, moves, onOpen }: {
+function List({ title, tone, rows, hint, empty, moves, onOpen, totalEur }: {
   title: string; tone: string; rows: CheckedStock[]; hint: string; empty?: string;
-  moves: Map<string, ManagerMove>; onOpen: (symbol: string) => void;
+  moves: Map<string, ManagerMove>; onOpen: (symbol: string) => void; totalEur: number;
 }) {
   if (rows.length === 0 && !empty) return null;
   return (
@@ -352,7 +418,8 @@ function List({ title, tone, rows, hint, empty, moves, onOpen }: {
                 </button>
                 {m && (
                   <p className="px-2 pb-1 text-xs leading-relaxed text-ink-400">
-                    <span className={`font-semibold uppercase tracking-wide ${ACTION[m.action]}`}>{m.action}</span> — {m.reason}
+                    <span className={`font-semibold uppercase tracking-wide ${ACTION[m.action]}`}>{m.action}</span>
+                    <Size move={m} weight={null} totalEur={totalEur} /> — {m.reason}
                   </p>
                 )}
               </li>

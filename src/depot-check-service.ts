@@ -250,6 +250,7 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
       holdings: new Map(holdings.map((h) => [h.symbol, h])),
       limits: { maxPosition: view.limits.maxPosition, maxSector: view.limits.maxSector },
       market: brief, sectorTrends, lookThrough: view.lookThrough,
+      cashShare: view.cashEur !== null && view.totalEur > 0 ? view.cashEur / view.totalEur : null,
     });
     manager = await createProviderForModel(flags.model).complete({
       label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 10_000,
@@ -275,6 +276,7 @@ const ManagerSchema = z.object({
     action:  z.enum(MANAGER_ACTIONS),
     symbol:  z.string().describe('Ticker der Aktie, wie in den Daten'),
     protect: z.enum(PROTECTIONS).nullable().catch(null).describe('Schutz einer Aktie im Depot; null bei einem Kauf'),
+    targetPct: z.number().min(0).max(100).nullable().catch(null).describe('Gewicht nach dem Schritt in Prozent des heutigen Depotwerts; null bei halten und beobachten'),
     reason:  z.string().describe('Ein bis zwei Sätze Begründung aus den Daten'),
   })).describe('Zuerst jede Aktie im Depot, die dringendsten zuerst; dann höchstens fünf Käufe.'),
   risks: z.array(z.string()).describe('Was ein Depotmanager im Blick behält: Klumpen, Sektoren, Markt, was gegen die Schritte spricht.'),

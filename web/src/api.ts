@@ -163,6 +163,9 @@ export const api = {
   /** The depot check: the last run, the one going, its settings — `depot-check-service.ts`. */
   getDepotCheck: () => jsonFetch<DepotCheckResponse>(`${BASE}/depot/check`),
   runDepotCheck: () => jsonFetch<{ started: boolean; reason?: string }>(`${BASE}/depot/check`, { method: 'POST' }),
+  setDepotCash: (amountEur: number | null) => jsonFetch<{ amountEur: number | null }>(`${BASE}/depot/cash`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amountEur }),
+  }),
   /** Mark trades as needing no reason. */
   dismissTrades: (ids: number[]) =>
     jsonFetch<{ dismissed: number }>(`${BASE}/trades/dismiss`, {

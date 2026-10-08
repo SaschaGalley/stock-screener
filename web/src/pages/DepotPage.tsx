@@ -130,7 +130,7 @@ export default function DepotPage() {
             <Dates view={view} />
           </div>
 
-          <DepotCheck onOpen={openStock} sectors={view.sectors} />
+          <DepotCheck onOpen={openStock} sectors={view.sectors} totalEur={view.totalEur} cashEur={view.cashEur} />
 
           {data?.evidence && <Evidence records={data.evidence} />}
         </>

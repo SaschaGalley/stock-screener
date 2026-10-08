@@ -63,7 +63,8 @@ describe('what the depot manager is told', () => {
     costEur: 87.65, priceEur: 99.01, priceDay: '2026-10-07', valueEur: 12_222.33, weight: 0.1234,
     concentrated: false, gain: 0.1296, openedAt: '2024-03-15', lastTradeAt: '2025-11-02', tradeIds: [41, 42],
     tracked: true, score: 4.1, verdict: 'HOLD', sector: 'Technology',
-    reason: { entryId: 7, day: '2024-03-15', headline: 'Meine geheime These' }, thesis: null, flags: [],
+    reason: { entryId: 7, day: '2024-03-15', headline: 'Meine geheime These' }, flags: [],
+    thesis: { contradicted: 1, total: 3, at: '2026-09-20T18:00:00.000Z' },
     viaFunds: 0.0123, scoreBefore: { score: 5.3, at: '2026-09-10T22:00:00.000Z' },
     upcoming: [{ day: '2026-10-28', kind: 'earnings', title: 'Nächste Quartalszahlen', detail: null }],
   };
@@ -82,7 +83,7 @@ describe('what the depot manager is told', () => {
   const input = managerInput({
     positions: [position, fund], sectors: [{ sector: 'Technology', weight: 1 }],
     holdings: new Map([['MADE', held]]), lists, limits: { maxPosition: 0.15, maxSector: 0.35 },
-    market: null, sectorTrends: [],
+    market: null, sectorTrends: [], cashShare: 0.0825, today: '2026-10-08',
   });
   const text = JSON.stringify(input);
 
@@ -99,6 +100,13 @@ describe('what the depot manager is told', () => {
     assert.deepEqual(made.termine, [{ datum: '2026-10-28', was: 'Nächste Quartalszahlen' }]);
   });
 
+  it('carries the months held, the thesis check\'s counts and the cash as a share, as the owner allowed', () => {
+    const made = input.depot[0] as Extract<(typeof input.depot)[number], { seitKaufProzent: unknown }>;
+    assert.equal(made.gehaltenMonate, 30);
+    assert.deepEqual(made.thesenCheck, { widerlegt: 1, gesamt: 3, vorTagen: 17 });
+    assert.equal(input.liquiditaetProzent, 8.3);
+  });
+
   it('carries a fund by name, kind and weight alone', () => {
     assert.deepEqual(input.depot[1], { name: 'Made Up World ETF', symbol: 'FUND', art: 'etf', gewichtProzent: 45.7 });
   });
@@ -106,7 +114,7 @@ describe('what the depot manager is told', () => {
   it('never quantities, prices, values, dates, trades, the journal, or a fund\'s gain', () => {
     for (const leak of [
       '123.45', '321.5', '87.65', '99.01', '12222', '45678', '0.1296', '31.4', '2024-03-15', '2025-11-02', 'geheime',
-      'isin', 'US0000000001', '214.37', '198.11', '203.25', '222.9', '201.5', '2026-09-10',
+      'isin', 'US0000000001', '214.37', '198.11', '203.25', '222.9', '201.5', '2026-09-10', '2026-09-20',
     ]) {
       assert.ok(!text.includes(leak), `${leak} reached the prompt`);
     }
