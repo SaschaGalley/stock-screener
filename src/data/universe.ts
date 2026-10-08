@@ -1,9 +1,14 @@
 /**
- * Who is in the reference universe: three indices, each read from a list kept
+ * Who is in the reference universe: five indices, each read from a list kept
  * by other people.
  *
  *   S&P 500       — the community-maintained `datasets/s-and-p-500-companies`
  *                   file on GitHub
+ *   S&P MidCap 400, S&P SmallCap 600
+ *                 — the constituents tables of their English Wikipedia
+ *                   articles, the ones the backtest reads: with the 500 they
+ *                   are the S&P Composite 1500, so the live universe is the
+ *                   population the backtest measures on
  *   EURO STOXX 50 — the constituents table of the English Wikipedia article,
  *                   whose tickers already carry the main listing's suffix
  *   DAX           — the constituents table of the German article, Xetra
@@ -392,6 +397,12 @@ export interface UniverseSource {
  */
 export const UNIVERSE_SOURCES: readonly UniverseSource[] = [
   { key: 'sp500', label: 'S&P 500', minSize: 400, fetch: fetchSp500 },
+  // The MidCap 400 and SmallCap 600 as the backtest reads them; a quarter short
+  // of their size and the table is broken, not the index smaller.
+  ...COMPOSITE_INDEXES.flatMap((ix) => (ix.members === null ? [] : [{
+    key: ix.key, label: ix.label, minSize: ix.key === 'sp400' ? 300 : 450,
+    fetch: async () => parseIndexMembers(await fetchWikitext('en', ix.members!), ix.key).map((c) => c.symbol),
+  }])),
   {
     key: 'eurostoxx50', label: 'EURO STOXX 50', minSize: 40,
     fetch: async () => parseWikiTickers(await fetchWikitext('en', 'EURO_STOXX_50'), { tableId: 'constituents', column: 'ticker' }),
@@ -401,3 +412,9 @@ export const UNIVERSE_SOURCES: readonly UniverseSource[] = [
     fetch: async () => parseWikiTickers(await fetchWikitext('de', 'DAX'), { tableId: 'Zusammensetzung', column: 'symbol', suffix: '.DE' }),
   },
 ];
+
+/** The universe's indices as a sentence names them: „S&P 500, … und DAX“. */
+export function universeIndices(): string {
+  const labels = UNIVERSE_SOURCES.map((s) => s.label);
+  return labels.length > 1 ? `${labels.slice(0, -1).join(', ')} und ${labels[labels.length - 1]}` : labels.join('');
+}

@@ -12,6 +12,7 @@ import {
   STRONG_PILLAR, TURN_DAYS, WEAK_PILLAR,
   type DiscoverUniverse, type UniverseStock,
 } from '../../../src/analysis/discover';
+import { universeIndices } from '../../../src/data/universe';
 import {
   MARKET_LISTS, MOVERS_SHOWN, movers, volumeRatio,
   type MarketListDef, type MarketReason, type MarketRow, type MarketToday,
@@ -21,7 +22,7 @@ type Region = 'all' | 'us' | 'eu';
 const REGIONS: { key: Region; label: string }[] = [
   { key: 'all', label: 'Alle' }, { key: 'us', label: 'USA' }, { key: 'eu', label: 'Europa' },
 ];
-/** The universe is the S&P 500 in dollars and the European indices in euros. */
+/** The universe is the S&P 1500 in dollars and the European indices in euros. */
 const regionOf = (s: { currency: string | null }): Region => (s.currency === 'USD' ? 'us' : 'eu');
 
 /** Rows each list shows before „alle anzeigen“. */
@@ -157,7 +158,7 @@ export default function DiscoverPage({ onSelect, onAdded }: {
     <Page
       title="Entdecken"
       subtitle={data
-        ? `${data.size} Aktien aus S&P 500, EURO STOXX 50 und DAX, die nicht auf deiner Liste stehen${asOf ? ` · ${asOf}` : ''}`
+        ? `${data.size} Aktien aus ${universeIndices()}, die nicht auf deiner Liste stehen${asOf ? ` · ${asOf}` : ''}`
         : 'Aktien außerhalb der Watchlist, die einen Blick wert sind'}
       width="max-w-6xl"
       actions={

@@ -8,7 +8,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { csvRecord, parseConstituents, parseWikiTickers, yahooTicker } from '../src/data/universe.js';
+import {
+  COMPOSITE_INDEXES, csvRecord, parseConstituents, parseWikiTickers, UNIVERSE_SOURCES, universeIndices, yahooTicker,
+} from '../src/data/universe.js';
 import { activeMembers, nextMembership, unionMembers } from '../src/universe.js';
 import { RateWindow } from '../src/utils/rate-window.js';
 import { settledPool } from '../src/utils/pool.js';
@@ -164,5 +166,16 @@ describe('membership', () => {
     assert.ok(!activeMembers(left, '2027-01-27').includes('B'), 'gone after the quarter');
     const back = nextMembership(left, { sp500: ['A', 'B', 'C'], eurostoxx50: [], dax: [] }, '2026-10-01');
     assert.deepEqual(back.departed, {});
+  });
+});
+
+describe('the indices', () => {
+  it('are the S&P 1500 the backtest measures on, and the two European ones', () => {
+    assert.deepEqual(UNIVERSE_SOURCES.map((x) => x.key), [...COMPOSITE_INDEXES.map((x) => x.key), 'eurostoxx50', 'dax']);
+    assert.equal(universeIndices(), 'S&P 500, S&P MidCap 400, S&P SmallCap 600, EURO STOXX 50 und DAX');
+  });
+
+  it('count a company moving between two of them once', () => {
+    assert.deepEqual(unionMembers({ sp400: ['AAON', 'MOVE'], sp500: ['AAPL', 'MOVE'] }), ['AAPL', 'MOVE', 'AAON']);
   });
 });

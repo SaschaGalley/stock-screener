@@ -123,14 +123,18 @@ export const AppConfigSchema = z.object({
   }).prefault({}),
 
   /**
-   * The reference universe (`src/universe.ts`): the S&P 500, refreshed on a
-   * rotation after the watchlist and scored on the numbers alone, so that the
-   * calibration and the evaluation have a population to read the score against.
+   * The reference universe (`src/universe.ts`): the S&P 1500, the EURO STOXX 50
+   * and the DAX, refreshed on a rotation after the watchlist and scored on the
+   * numbers alone, so that the calibration and the evaluation have a population
+   * to read the score against.
    */
   universe: z.object({
     enabled:   z.boolean().default(true),
-    /** Reference symbols refreshed per night; the universe comes round every size / batchSize nights. */
-    batchSize: z.number().int().min(0).max(600).default(100),
+    /**
+     * Reference symbols refreshed per night; the universe comes round every
+     * size / batchSize nights. 250 brings some 1,600 members round in a week.
+     */
+    batchSize: z.number().int().min(0).max(600).default(250),
   }).prefault({}),
 
   /**

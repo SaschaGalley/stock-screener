@@ -5,6 +5,7 @@ import { MODELS, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel } fr
 import Page from '../components/Page';
 import { BacktestStatusLine, useBacktestOverview } from '../components/BacktestRuns';
 import CalibrationPanel from '../components/CalibrationPanel';
+import { universeIndices } from '../../../src/data/universe';
 import { deNumber } from '../format';
 
 /** Poll interval while a run is in flight — fast enough to feel live, slow
@@ -430,7 +431,7 @@ export default function AdminPage() {
       {/* ── Referenzuniversum ──────────────────────────────────────────── */}
       <Card
         title={`Referenzuniversum (${meta.referenceSymbols} gespeichert)`}
-        hint="S&P 500, EURO STOXX 50 und DAX, nach der Watchlist rotierend aktualisiert und nur mit Zahlen bewertet — die Grundgesamtheit für Kalibrierung und Auswertung. Erscheint nie in der Liste, wird nie analysiert."
+        hint={`${universeIndices()}, nach der Watchlist rotierend aktualisiert und nur mit Zahlen bewertet — die Grundgesamtheit für Kalibrierung, Auswertung und „Entdecken“. Erscheint nie in der Liste, wird nie analysiert.`}
       >
         <Toggle
           checked={config.universe.enabled}

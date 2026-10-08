@@ -1399,14 +1399,21 @@ where the typical stock sits on each criterion, and the evaluation asks whether
 the score ranked the stocks that did better. Asked of 37 stocks picked by one
 person, both answer questions about that person's taste.
 
-So the nightly run also scores three indices (`src/universe.ts`), 576 stocks
-in all:
+So the nightly run also scores five indices (`src/universe.ts`), some 1,600
+stocks in all:
 
 | Index | Where the list comes from |
 |---|---|
 | S&P 500 | the community-maintained [`datasets/s-and-p-500-companies`](https://github.com/datasets/s-and-p-500-companies) file on GitHub, with share classes in Yahoo's spelling (`BRK.B` → `BRK-B`) |
+| S&P MidCap 400, S&P SmallCap 600 | the constituents tables of their English Wikipedia articles, the ones the backtest reads |
 | EURO STOXX 50 | the constituents table of the English Wikipedia article, whose tickers carry the main listing's suffix (`AIR.PA`, `ASML.AS`) |
 | DAX | the constituents table of the German article, Xetra symbols with `.DE` added |
+
+The MidCap 400 and SmallCap 600 joined in October 2026. With the 500 they are
+the S&P Composite 1500 the backtest measures on, so the calibration and the
+backtest now read the same American population, and the discover page draws
+from three times as many American companies. 250 a night bring them all round
+in about a week.
 
 Europe is in it because the watchlist is: a euro listing read only against
 American ones is read against a market it does not trade in. A company two
@@ -1419,7 +1426,7 @@ that need one abstain or fall back to their own figures.
 
 Each index's last good list is kept in `app_state`, so a night without GitHub or
 Wikipedia uses yesterday's. A list that parses to fewer members than the index
-has (400, 40, 30) counts as a failed download, not a smaller index.
+has (400, 300, 450, 40, 30) counts as a failed download, not a smaller index.
 
 **Leaving is part of the record.** A stock usually falls before it drops out of
 an index. An evaluation that stops scoring it the day it leaves only ever sees
@@ -2159,7 +2166,7 @@ cancel, and the momentum pillar reads the return series directly instead.
 | FRED | 10Y Treasury, Moody's AAA, ten-year government yields for 19 currencies, VIX, DXY, yield curve, HY spreads, sector ETF prices |
 | SEC EDGAR | Latest 10-K / 10-Q filings; operating lease liabilities from XBRL (US filers only) |
 | [`datasets/s-and-p-500-companies`](https://github.com/datasets/s-and-p-500-companies) | S&P 500 members — the reference universe |
-| Wikipedia (`EURO_STOXX_50`, de: `DAX`) | EURO STOXX 50 and DAX members — the reference universe |
+| Wikipedia (`List_of_S&P_400_companies`, `List_of_S&P_600_companies`, `EURO_STOXX_50`, de: `DAX`) | S&P MidCap 400, SmallCap 600, EURO STOXX 50 and DAX members — the reference universe |
 | Wikidata `P946` | ISIN lookup (Yahoo dropped the field; Wikidata is curated and global). German WKN derived from `DE0…` ISINs. |
 | Perplexity Sonar | Optional forensic brief — dated events, contrary evidence, bull and bear claims graded against the evidence; goes to the narrative stage, which never sees the valuation |
 
@@ -2269,7 +2276,7 @@ src/
 │   ├── fred.ts            FRED rates (live 10Y, AAA, …) and the local ten-year yields
 │   ├── country-risk.ts    Damodaran's country risk premiums, default spreads and tax rates
 │   ├── edgar-facts.ts     SEC XBRL company facts, point in time: every figure from the day it was filed
-│   ├── universe.ts        Index members: the S&P 500 file, EURO STOXX 50 and DAX from Wikipedia
+│   ├── universe.ts        Index members: the S&P 500 file; the MidCap 400, SmallCap 600, EURO STOXX 50 and DAX from Wikipedia
 │   ├── macro.ts           SPY + sector-ETF bundles, yield curve, VIX
 │   ├── perplexity.ts      Sonar-Pro forensic brief → structured findings
 │   ├── distill.ts         Distill briefing service — briefings for a resolved entity
@@ -2444,7 +2451,7 @@ Per symbol, in order:
 | 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
 | 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`). Free, with nothing to configure | on |
 | 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-6.1-sol` |
-| 4 | **Referenz** | After the whole watchlist, on full runs only: the next members of the [reference universe](#the-reference-universe) (S&P 500, EURO STOXX 50, DAX), numbers and factor score only | on, 100 per night |
+| 4 | **Referenz** | After the whole watchlist, on full runs only: the next members of the [reference universe](#the-reference-universe) (S&P 1500, EURO STOXX 50, DAX), numbers and factor score only | on, 250 per night |
 
 Default schedule is `0 0 * * *` (daily at midnight, `Europe/Berlin`).
 

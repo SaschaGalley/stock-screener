@@ -1,7 +1,7 @@
 /**
  * What to look at next: lists drawn from the reference universe.
  *
- * The universe (S&P 500, EURO STOXX 50, DAX) is scored every few nights to give
+ * The universe (S&P 1500, EURO STOXX 50, DAX) is scored every few nights to give
  * the score a population, and until now it was only ever seen as a rank and as
  * the peers of a stock already on the list. Each list here asks one question of
  * it — which score best, whose verdict just turned, what trades well below its
