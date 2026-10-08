@@ -3,13 +3,24 @@
  * lists, fetched live and kept as they came, and a quote for every stock of
  * the universe for the day's moves on both sides of the Atlantic. Fetched at
  * most every few minutes, and only while someone looks.
+ *
+ * And the market as the depot check reads it: the sector funds against the
+ * index from the price archive, and Perplexity's brief, bought at most twice
+ * a day.
  */
 
 import {
   MARKET_LISTS, MARKET_LIST_SIZE, quoteRow, type MarketList, type MarketListDef, type MarketRow, type MarketToday,
 } from './analysis/market.js';
+import type { MarketBrief } from './analysis/market-brief.js';
+import { sectorTrends, type SectorTrend } from './analysis/sector-rotation.js';
+import { getConfig } from './config.js';
+import { fetchMarketBrief, MARKET_BRIEF_PROMPT_HASH } from './data/market-brief.js';
+import { SECTOR_ETFS } from './data/macro.js';
 import { quotesFor, screenerQuotes, trendingTickers } from './data/yahoo-market.js';
-import { saveMarketList } from './db/market-store.js';
+import { readPriceBarsMany } from './db/history-store.js';
+import { latestMarketBrief, saveMarketBrief, saveMarketList } from './db/market-store.js';
+import type { PerplexityModelId } from './models.js';
 import { peersBySymbol, type StoredPeer } from './db/store.js';
 import { universeStocks } from './discover-service.js';
 import { logoDomain } from './symbols.js';
@@ -104,4 +115,34 @@ export function marketToday(): Promise<MarketToday> {
   entry.value.catch(() => { if (memo === entry) memo = null; });
   memo = entry;
   return entry.value;
+}
+
+/** The index the sector funds are measured against: the fund, so dividends count on both sides. */
+const SECTOR_INDEX = 'SPY';
+/** Seven months of sessions: six to measure, and the weekends and holidays. */
+const SECTOR_DAYS = 230;
+
+/** The US sector funds against the S&P 500, from the price archive. */
+export async function sectorTrendsNow(): Promise<SectorTrend[]> {
+  const from = new Date(Date.now() - SECTOR_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const bars = await readPriceBarsMany([SECTOR_INDEX, ...SECTOR_ETFS.map((s) => s.etf)], from);
+  const closes = new Map([...bars].map(([t, xs]) => [t, xs.map((b) => ({ day: b.day, close: b.adjClose ?? b.close }))]));
+  return sectorTrends(SECTOR_ETFS, closes, SECTOR_INDEX);
+}
+
+/** A brief younger than this is the morning's: the market has not turned since. */
+const BRIEF_REUSE_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Perplexity's market brief: the stored one while it is fresh and from this
+ * model and question, else a new one, kept. Throws without a key or an answer.
+ */
+export async function marketBrief(model: PerplexityModelId): Promise<MarketBrief> {
+  const stored = await latestMarketBrief(model, MARKET_BRIEF_PROMPT_HASH, BRIEF_REUSE_MS);
+  if (stored) return stored;
+  const key = getConfig().pplxApiKey;
+  if (!key) throw new Error('Kein PPLX_API_KEY: ohne ihn keine Marktlage.');
+  const { brief, raw } = await fetchMarketBrief(model, key);
+  await saveMarketBrief(brief, raw);
+  return brief;
 }

@@ -7,10 +7,11 @@
  * Real holdings: develop against it in aggregate only (see CLAUDE.md).
  */
 
-import { depotView, positionsFromTrades, type DepotResponse, type HeldPosition } from './analysis/depot.js';
+import type { ChartRead } from './analysis/chart.js';
+import { depotView, positionsFromTrades, type DepotPosition, type DepotResponse, type HeldPosition } from './analysis/depot.js';
 import { verdictEvidence } from './backtest/result.js';
 import { listJournal } from './db/journal-store.js';
-import { latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
+import { latestDocument, latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
 import { allTrades, latestPrices } from './db/trades-store.js';
 import { journalHeadline } from './journal.js';
 import { listResearch } from './research/research.js';
@@ -66,10 +67,18 @@ export async function readDepot(force = false): Promise<DepotResponse> {
     }
   }
 
+  // The newest chart reading of each stock held: the depot check reads them all.
+  const held = positionsFromTrades(trades);
+  const charts = new Map<string, NonNullable<DepotPosition['chart']>>();
+  await Promise.all(held.flatMap((p) => (p.symbol && model.has(p.symbol) ? [p.symbol] : [])).map(async (s) => {
+    const doc = await latestDocument<ChartRead>(s, 'chart').catch(() => null);
+    if (doc?.data) charts.set(s, { trend: doc.data.trend.direction, asOf: doc.data.asOf, summary: doc.data.summary });
+  }));
+
   const horizon = evidence ? Math.max(...evidence.verdicts.map((v) => v.horizon)) : null;
   return {
     ...state,
-    view: depotView({ held: positionsFromTrades(trades), prices, model, reasons, theses }),
+    view: depotView({ held, prices, model, reasons, theses, charts }),
     evidence: evidence && horizon !== null
       ? evidence.verdicts.filter((v) => v.horizon === horizon)
         .map((v) => ({ verdict: v.bucket, horizon: v.horizon, meanExcess: v.meanExcess, tStat: v.tStat }))

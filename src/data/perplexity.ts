@@ -578,16 +578,24 @@ interface PplxResponse {
   };
 }
 
-export async function fetchPerplexity(
-  ticker: string,
-  companyName: string,
-  apiKey: string,
-  model: PerplexityModelId = DEFAULT_PERPLEXITY_MODEL,
-): Promise<PerplexityContext> {
-  logger.step(`Fetching Perplexity AI context (${model})...`);
-  const params = MODEL_PARAMS[model];
-  const { system, user } = researchPrompt(ticker, companyName);
+/** One answer from the chat endpoint, as the callers need it. */
+export interface PplxAnswer {
+  raw:           string;
+  citations:     string[];
+  costUsd?:      number;
+  usage?:        unknown;
+  finishReason?: string;
+}
 
+/**
+ * One request to Perplexity: retried through the rate limit, streamed where
+ * the model needs it (see `readStream`). `extra` goes into the body beside the
+ * shared search settings.
+ */
+export async function pplxComplete(
+  model: PerplexityModelId, system: string, user: string, apiKey: string, extra: Record<string, unknown> = {},
+): Promise<PplxAnswer> {
+  const params = MODEL_PARAMS[model];
   const request = () => fetch(PPLX_API_URL, {
     method: 'POST',
     headers: {
@@ -604,6 +612,7 @@ export async function fetchPerplexity(
       ...(params.max_tokens ? { max_tokens: params.max_tokens } : {}),
       ...(params.stream ? { stream: true } : {}),
       ...params.extra,
+      ...extra,
     }),
     signal: AbortSignal.timeout(params.timeoutMs),
   });
@@ -625,12 +634,27 @@ export async function fetchPerplexity(
   const json = params.stream
     ? await readStream(res)
     : await res.json().catch(() => null) as PplxResponse | null;
-  const raw       = json?.choices?.[0]?.message?.content ?? '';
   if (json?.choices?.[0]?.finish_reason === 'length') {
     logger.warn(`Perplexity hit its token ceiling (${params.max_tokens ?? 'model default'}) — keeping the items that finished`);
   }
-  const citations = json?.citations ?? [];
-  const costUsd = json?.usage?.cost?.total_cost;
+  return {
+    raw: json?.choices?.[0]?.message?.content ?? '',
+    citations: json?.citations ?? [],
+    costUsd: json?.usage?.cost?.total_cost,
+    usage: json?.usage,
+    finishReason: json?.choices?.[0]?.finish_reason,
+  };
+}
+
+export async function fetchPerplexity(
+  ticker: string,
+  companyName: string,
+  apiKey: string,
+  model: PerplexityModelId = DEFAULT_PERPLEXITY_MODEL,
+): Promise<PerplexityContext> {
+  logger.step(`Fetching Perplexity AI context (${model})...`);
+  const { system, user } = researchPrompt(ticker, companyName);
+  const { raw, citations, costUsd, usage, finishReason } = await pplxComplete(model, system, user, apiKey);
 
   // A parsed answer is never a refusal, even with every list empty — "nothing
   // found" is the finding. Only free text falls back to the refusal heuristics.
@@ -654,8 +678,8 @@ export async function fetchPerplexity(
     ...(findings ? { findings } : {}),
     promptHash: PERPLEXITY_PROMPT_HASH,
     ...(costUsd !== undefined ? { costUsd } : {}),
-    usage: json?.usage,
-    finishReason: json?.choices?.[0]?.finish_reason,
+    usage,
+    finishReason,
     raw,
   };
 }

@@ -467,7 +467,7 @@ export default function AdminPage() {
       {/* ── Depot-Check ────────────────────────────────────────────────── */}
       <Card
         title="Depot-Check"
-        hint="Der Button auf der Depot-Seite: welche Aktien außerhalb des Depots er analysiert (samt Chart), und ab wann ein Depotwert zum Reduzieren angesehen wird. Jeder Kandidat kostet eine Analyse und eine Chart-Lesung mit dem Analysemodell."
+        hint="Der Button auf der Depot-Seite: welche Aktien außerhalb des Depots er analysiert (samt Chart), ab wann ein Depotwert zum Reduzieren angesehen wird, und mit welchem Perplexity-Modell er die Marktlage holt. Jeder Kandidat kostet eine Analyse und eine Chart-Lesung mit dem Analysemodell, jede Aktie im Depot eine Chart-Lesung (eine jüngere als 24 Stunden wird wiederverwendet), die Marktlage einen Perplexity-Aufruf (zwölf Stunden wiederverwendet)."
       >
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           {([
@@ -491,6 +491,22 @@ export default function AdminPage() {
               />
             </label>
           ))}
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-ink-400">Marktlage</span>
+            <select
+              value={config.depotCheck.marketModel ?? 'none'}
+              onChange={(e) => patch((d) => {
+                const v = e.target.value;
+                d.depotCheck.marketModel = v === 'none' ? null : (v as PerplexityModelId);
+              })}
+              className={inputCls}
+            >
+              <option value="none">keine</option>
+              {PERPLEXITY_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>{perplexityLabel(m.id)}</option>
+              ))}
+            </select>
+          </label>
         </div>
       </Card>
 

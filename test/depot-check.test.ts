@@ -57,7 +57,7 @@ describe('the lists', () => {
 });
 
 describe('what the depot manager is told', () => {
-  // A position as the depot view carries it, every private field filled in.
+  // Positions as the depot view carries them, every private field filled in.
   const position = {
     isin: 'US0000000001', symbol: 'MADE', name: 'Made Up Inc', assetType: 'stock', quantity: 123.45,
     costEur: 87.65, priceEur: 99.01, priceDay: '2026-10-07', valueEur: 12_222.33, weight: 0.1234,
@@ -65,21 +65,43 @@ describe('what the depot manager is told', () => {
     tracked: true, score: 4.1, verdict: 'HOLD', sector: 'Technology',
     reason: { entryId: 7, day: '2024-03-15', headline: 'Meine geheime These' }, thesis: null, flags: [],
   };
-  const lists = classifyDepotCheck([], [stock('MADE', 4.1, { verdict: 'HOLD', chart: chart('down'), weight: 0.1234 })], settings);
+  const fund = {
+    ...position, isin: 'IE0000000002', symbol: 'FUND', name: 'Made Up World ETF', assetType: 'etf',
+    quantity: 321.5, valueEur: 45_678.9, weight: 0.4567, gain: 0.3141, sector: null, score: null, verdict: null,
+  };
+  const protection = {
+    asOf: '2026-10-07', close: 214.37, currency: 'USD', dailyMove: 0.0213, rsi: 71.6, overSma200: 0.183, channel: 'oben' as const,
+    stop: { price: 198.11, distance: -0.0758, basis: 'support' as const, level: 201.5 },
+    trailing: { price: 203.25, high: 222.9, width: 0.0882, distance: -0.0519 }, resistance: 0.04,
+  };
+  const held = stock('MADE', 4.1, { verdict: 'HOLD', chart: chart('down'), weight: 0.1234, gain: 0.1296, protection });
+  const lists = classifyDepotCheck([], [held], settings);
   const input = managerInput({
-    positions: [position], sectors: [{ sector: 'Technology', weight: 1 }],
-    charts: new Map([['MADE', chart('down')]]), lists, limits: { maxPosition: 0.15, maxSector: 0.35 },
+    positions: [position, fund], sectors: [{ sector: 'Technology', weight: 1 }],
+    holdings: new Map([['MADE', held]]), lists, limits: { maxPosition: 0.15, maxSector: 0.35 },
+    market: null, sectorTrends: [],
   });
   const text = JSON.stringify(input);
 
-  it('carries the weight in per cent, the sector and the app\'s own reading', () => {
-    assert.equal(input.depot[0].gewichtProzent, 12.3);
-    assert.equal(input.depot[0].chart, 'abwärts');
-    assert.deepEqual(input.reduzierenAnsehen.map((x) => x.symbol), ['MADE']);
+  it('carries a stock\'s weight and gain in per cent, its sector and the app\'s own reading', () => {
+    const made = input.depot[0] as Extract<(typeof input.depot)[number], { seitKaufProzent: unknown }>;
+    assert.equal(made.gewichtProzent, 12.3);
+    assert.equal(made.seitKaufProzent, 13);
+    assert.equal(made.chart?.trend, 'abwärts');
+    assert.equal(made.technik?.stopProzent, -7.6);
+    assert.equal(made.technik?.trailingProzent, 8.8);
+    assert.equal(made.technik?.rsi, 72);
   });
 
-  it('never quantities, prices, values, gains, dates, trades or the journal', () => {
-    for (const leak of ['123.45', '87.65', '99.01', '12222', '0.1296', '2024-03-15', '2025-11-02', 'geheime', 'isin', 'US0000000001']) {
+  it('carries a fund by name, kind and weight alone', () => {
+    assert.deepEqual(input.depot[1], { name: 'Made Up World ETF', symbol: 'FUND', art: 'etf', gewichtProzent: 45.7 });
+  });
+
+  it('never quantities, prices, values, dates, trades, the journal, or a fund\'s gain', () => {
+    for (const leak of [
+      '123.45', '321.5', '87.65', '99.01', '12222', '45678', '0.1296', '31.4', '2024-03-15', '2025-11-02', 'geheime',
+      'isin', 'US0000000001', '214.37', '198.11', '203.25', '222.9', '201.5',
+    ]) {
       assert.ok(!text.includes(leak), `${leak} reached the prompt`);
     }
   });

@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api } from '../api';
 import RecommendationBadge from './RecommendationBadge';
 import StockLogo, { initialsFromName } from './StockLogo';
 import Tip from './Tip';
 import { scoreColor } from './stockList';
-import { deNumber } from '../format';
+import { deNumber, fmtPrice, fmtSignedPct } from '../format';
 import type { DepotCheckResponse } from '../../../src/api-types';
-import type { CheckedStock, ManagerAction } from '../../../src/analysis/depot-check';
+import type {
+  CheckedStock, DepotCheckResult, ManagerAction, ManagerMove, ProtectionChoice,
+} from '../../../src/analysis/depot-check';
+import { SECTOR_DIRECTION_LABEL, type MarketBrief, type SectorDirection } from '../../../src/analysis/market-brief';
+import type { SectorPhase, SectorTrend } from '../../../src/analysis/sector-rotation';
+import type { Protection } from '../../../src/analysis/stops';
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+const fmtDay = (d: string) => `${Number(d.slice(8, 10))}.${Number(d.slice(5, 7))}.${d.slice(0, 4)}`;
 const pct = (x: number) => `${deNumber(x * 100, 1)} %`;
 const score = (x: number) => deNumber(x, 1);
 const TREND: Record<'up' | 'down' | 'sideways', { mark: string; label: string; cls: string }> = {
@@ -17,16 +23,29 @@ const TREND: Record<'up' | 'down' | 'sideways', { mark: string; label: string; c
   sideways: { mark: '→', label: 'Chart seitwärts', cls: 'text-ink-400' },
 };
 const ACTION: Record<ManagerAction, string> = {
-  kaufen: 'text-emerald-400', aufstocken: 'text-emerald-400', reduzieren: 'text-red-400', verkaufen: 'text-red-400',
-  halten: 'text-ink-300', beobachten: 'text-amber-300',
+  kaufen: 'text-emerald-400', aufstocken: 'text-emerald-400', halten: 'text-ink-300',
+  'gewinne mitnehmen': 'text-amber-300', reduzieren: 'text-red-400', verkaufen: 'text-red-400', beobachten: 'text-sky-300',
+};
+const PROTECT_LABEL: Record<ProtectionChoice, string> = { stop: 'Stop', trailing: 'Trailing', keiner: 'kein Schutz' };
+const PHASE: Record<SectorPhase, string> = {
+  'führt': 'text-emerald-400', 'verliert Schwung': 'text-amber-300', 'hinkt': 'text-red-400', 'holt auf': 'text-sky-300',
+};
+const DIRECTION: Record<SectorDirection, string> = {
+  'strong': 'text-emerald-400', 'turning-up': 'text-sky-300', 'turning-down': 'text-amber-300', 'weak': 'text-red-400',
 };
 
 /**
  * The depot check on the depot page: one button, and what came of the last
- * run. Answer first — what to look at buying, what to look at reducing — then
- * what a depot manager would make of it. Possibilities, said as such.
+ * run. Answer first — what a depot manager would do, then each stock held
+ * with its step and where the chart would protect it, then what to look at
+ * buying — and the market it was all read against last. Possibilities, said
+ * as such.
  */
-export default function DepotCheck({ onOpen }: { onOpen: (symbol: string) => void }) {
+export default function DepotCheck({ onOpen, sectors }: {
+  onOpen: (symbol: string) => void;
+  /** The depot's sector weights among its stocks, to set beside the sectors' trends. */
+  sectors: { sector: string; weight: number }[];
+}) {
   const [data, setData] = useState<DepotCheckResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(() => {
@@ -54,7 +73,6 @@ export default function DepotCheck({ onOpen }: { onOpen: (symbol: string) => voi
   const s = data?.settings;
   const st = data?.status ?? null;
   const r = data?.result ?? null;
-  const name = (c: CheckedStock) => c.name ?? c.symbol;
 
   return (
     <section className="rounded-lg border border-ink-800 px-4 py-3">
@@ -64,8 +82,9 @@ export default function DepotCheck({ onOpen }: { onOpen: (symbol: string) => voi
           <p className="mt-0.5 text-xs leading-relaxed text-ink-400">
             {s
               ? <>Analysiert die bis zu {s.maxCandidates} besten Aktien außerhalb des Depots ab Score {score(s.minScore)} — aus der
-                Liste und dem Universum — samt Chart, liest die Charts der Depotwerte unter {score(s.reduceBelow)} und fragt dann ein
-                Modell, was ein Depotmanager tun würde. Möglichkeiten zum Prüfen, keine Anlageberatung.</>
+                Liste und dem Universum — samt Chart, liest die Charts aller Aktien im Depot und rechnet ihre Stops,
+                {s.marketModel ? ' holt die Marktlage von Perplexity' : ''} und fragt dann ein Modell, was ein Depotmanager tun
+                würde. Möglichkeiten zum Prüfen, keine Anlageberatung.</>
               : 'Lädt …'}
           </p>
         </div>
@@ -95,85 +114,187 @@ export default function DepotCheck({ onOpen }: { onOpen: (symbol: string) => voi
         </p>
       )}
 
-      {r && (
-        <div className="mt-3 space-y-4 border-t border-ink-800 pt-3">
-          <div className="grid gap-4 md:grid-cols-2">
-            <List
-              title="Kaufen ansehen" tone="text-emerald-400" rows={r.lists.buy} onOpen={onOpen}
-              empty={`Keine Aktie hält ${score(r.settings.minScore)} nach der Analyse und hat einen steigenden Chart.`}
-              hint="Außerhalb des Depots: Score nach der Analyse noch über der Schwelle, Urteil BUY oder STRONG BUY, Chart steigt."
-            />
-            <List
-              title="Reduzieren ansehen" tone="text-red-400" rows={r.lists.reduce} onOpen={onOpen} showWeight
-              empty={`Kein Depotwert unter ${score(r.settings.reduceBelow)} mit fallendem Chart.`}
-              hint="Im Depot: Score unter der Schwelle und der Chart fällt."
-            />
-            <List
-              title="Hoch bewertet, Chart noch nicht" tone="text-ink-200" rows={r.lists.waitForChart} onOpen={onOpen}
-              hint="Score hält, aber der Chart steigt nicht — oder das Urteil wurde zurückgehalten."
-            />
-            <List
-              title="Schwach bewertet, Chart hält" tone="text-ink-200" rows={r.lists.watch} onOpen={onOpen} showWeight
-              hint="Im Depot unter der Schwelle, der Chart fällt aber nicht."
-            />
-          </div>
-
-          {(r.lists.dropped.length > 0 || r.candidates.some((c) => c.error)) && (
-            <p className="text-xs text-ink-500">
-              {r.lists.dropped.length > 0 && (
-                <>Nach der Analyse unter {score(r.settings.minScore)}: {r.lists.dropped.map((c) => `${name(c)} (${c.score === null ? '—' : score(c.score)})`).join(', ')}. </>
-              )}
-              {r.candidates.filter((c) => c.error).length > 0 && (
-                <Tip content={r.candidates.filter((c) => c.error).map((c) => `${c.symbol}: ${c.error}`).join('\n')}>
-                  <span className="underline decoration-dotted">Bei {r.candidates.filter((c) => c.error).length} ging etwas schief.</span>
-                </Tip>
-              )}
-            </p>
-          )}
-
-          <div>
-            <h4 className="mb-1 text-xs font-semibold text-ink-300">Was ein Depotmanager tun würde</h4>
-            {r.manager ? (
-              <div className="space-y-2 text-sm leading-relaxed text-ink-200">
-                <p>{r.manager.summary}</p>
-                {r.manager.moves.length > 0 && (
-                  <ul className="space-y-1">
-                    {r.manager.moves.map((m, i) => (
-                      <li key={`${m.symbol}-${i}`} className="flex gap-2">
-                        <span className={`w-24 shrink-0 text-xs font-semibold uppercase tracking-wide ${ACTION[m.action]}`}>{m.action}</span>
-                        <span className="min-w-0">
-                          <button onClick={() => onOpen(m.symbol)} className="font-mono text-xs text-ink-300 hover:text-ink-100">{m.symbol}</button>
-                          {' '}— {m.reason}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {r.manager.risks.length > 0 && (
-                  <ul className="list-disc space-y-0.5 pl-5 text-xs text-ink-400">
-                    {r.manager.risks.map((x, i) => <li key={i}>{x}</li>)}
-                  </ul>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-ink-500">Kein Text{r.managerError ? `: ${r.managerError}` : '.'}</p>
-            )}
-          </div>
-
-          <p className="text-2xs text-ink-500">
-            Geprüft {fmtTime(r.generatedAt)} mit {r.model} · {r.candidates.length} Kandidaten ab {score(r.settings.minScore)},{' '}
-            {r.holdings.length} Depotwerte unter {score(r.settings.reduceBelow)}. Das Modell bekommt Namen, Sektoren und Gewichte in
-            Prozent, keine Stückzahlen, Kaufkurse oder Beträge. Keine Anlageberatung.
-          </p>
-        </div>
-      )}
+      {r && <Result r={r} onOpen={onOpen} sectors={sectors} />}
     </section>
   );
 }
 
-function List({ title, tone, rows, hint, empty, showWeight = false, onOpen }: {
-  title: string; tone: string; rows: CheckedStock[]; hint: string; empty?: string; showWeight?: boolean;
-  onOpen: (symbol: string) => void;
+function Result({ r, onOpen, sectors }: { r: DepotCheckResult; onOpen: (symbol: string) => void; sectors: { sector: string; weight: number }[] }) {
+  const moves = new Map((r.manager?.moves ?? []).map((m) => [m.symbol, m]));
+  const order = new Map((r.manager?.moves ?? []).map((m, i) => [m.symbol, i]));
+  const holdings = [...r.holdings].sort((a, b) =>
+    (order.get(a.symbol) ?? Infinity) - (order.get(b.symbol) ?? Infinity) || (b.weight ?? 0) - (a.weight ?? 0));
+  const reduce = new Set(r.lists.reduce.map((c) => c.symbol));
+  const failed = r.candidates.filter((c) => c.error);
+  const name = (c: CheckedStock) => c.name ?? c.symbol;
+  // Results before 8.10.2026 read only the weak stocks held.
+  const allHeld = r.holdings.some((h) => h.protection !== undefined);
+
+  return (
+    <div className="mt-3 space-y-5 border-t border-ink-800 pt-3">
+      <div>
+        <h4 className="mb-1 text-xs font-semibold text-ink-300">Was ein Depotmanager tun würde</h4>
+        {r.manager
+          ? <p className="text-sm leading-relaxed text-ink-100">{r.manager.summary}</p>
+          : <p className="text-xs text-ink-500">Kein Text{r.managerError ? `: ${r.managerError}` : '.'}</p>}
+      </div>
+
+      {holdings.length > 0 && (
+        <div>
+          <h4 className="mb-1 text-xs font-semibold text-ink-300">
+            <Tip content={`Jede Aktie im Depot: Schritt und Schutz laut Depotmanager, darunter seine Begründung. Stop und Trailing rechnet die App aus dem Chart; der gewählte ist hervorgehoben. Rot markiert: Score unter ${score(r.settings.reduceBelow)} und der Chart fällt.`}>
+              <span>{allHeld ? 'Deine Aktien' : `Depotwerte unter ${score(r.settings.reduceBelow)}`}</span>
+            </Tip>
+          </h4>
+          <ul className="divide-y divide-ink-800/70">
+            {holdings.map((h) => (
+              <HoldingRow key={h.symbol} h={h} move={moves.get(h.symbol) ?? null} weak={reduce.has(h.symbol)} onOpen={onOpen} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <List
+          title="Kaufen ansehen" tone="text-emerald-400" rows={r.lists.buy} moves={moves} onOpen={onOpen}
+          empty={`Keine Aktie hält ${score(r.settings.minScore)} nach der Analyse und hat einen steigenden Chart.`}
+          hint="Außerhalb des Depots: Score nach der Analyse noch über der Schwelle, Urteil BUY oder STRONG BUY, Chart steigt."
+        />
+        <List
+          title="Hoch bewertet, Chart noch nicht" tone="text-ink-200" rows={r.lists.waitForChart} moves={moves} onOpen={onOpen}
+          hint="Score hält, aber der Chart steigt nicht — oder das Urteil wurde zurückgehalten."
+        />
+      </div>
+
+      {(r.lists.dropped.length > 0 || failed.length > 0) && (
+        <p className="text-xs text-ink-500">
+          {r.lists.dropped.length > 0 && (
+            <>Nach der Analyse unter {score(r.settings.minScore)}: {r.lists.dropped.map((c) => `${name(c)} (${c.score === null ? '—' : score(c.score)})`).join(', ')}. </>
+          )}
+          {failed.length > 0 && (
+            <Tip content={failed.map((c) => `${c.symbol}: ${c.error}`).join('\n')}>
+              <span className="underline decoration-dotted">Bei {failed.length} ging etwas schief.</span>
+            </Tip>
+          )}
+        </p>
+      )}
+
+      {r.manager && r.manager.risks.length > 0 && (
+        <div>
+          <h4 className="mb-1 text-xs font-semibold text-ink-300">Was er im Blick behält</h4>
+          <ul className="list-disc space-y-0.5 pl-5 text-xs leading-relaxed text-ink-300">
+            {r.manager.risks.map((x, i) => <li key={i}>{x}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {(r.market || r.marketError || (r.sectorTrends?.length ?? 0) > 0) && (
+        <Market brief={r.market ?? null} error={r.marketError ?? null} trends={r.sectorTrends ?? []} sectors={sectors} />
+      )}
+
+      <p className="text-2xs leading-relaxed text-ink-500">
+        Geprüft {fmtTime(r.generatedAt)} mit {r.model} · {r.candidates.length} Kandidaten ab {score(r.settings.minScore)},{' '}
+        {r.holdings.length} Aktien im Depot. Das Modell bekommt je Position Name, Anlageart und Gewicht, bei Aktien dazu
+        Sektor, „seit Kauf“ in Prozent, Score, Chart und die Abstände zu Stop und Trailing — keine Stückzahlen, Kaufkurse,
+        Beträge oder Daten. Perplexity bekommt nur die Frage nach dem Markt. Stops begrenzen Verluste, sie bringen keine
+        Rendite und sind nicht im Backtest geprüft. Keine Anlageberatung.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * A stock held: what it is, where the investor stands with it and how the
+ * app reads it on the first line; the manager's step, protection and reason
+ * on the second. The two levels are the app's, from the bars; the manager
+ * only picks one, and the pick is what lights up.
+ */
+function HoldingRow({ h, move, weak, onOpen }: {
+  h: CheckedStock; move: ManagerMove | null; weak: boolean; onOpen: (symbol: string) => void;
+}) {
+  const t = h.chart ? TREND[h.chart.trend] : null;
+  const p = h.protection ?? null;
+  return (
+    <li className={`py-2 ${weak ? 'border-l-2 border-red-500/60 pl-2' : ''}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button onClick={() => onOpen(h.symbol)} className="flex min-w-0 flex-1 basis-56 items-center gap-2 text-left">
+          <StockLogo symbol={h.symbol} domain={null} fallbackInitials={initialsFromName(h.name ?? h.symbol)} size={18} />
+          <span className="truncate text-sm text-ink-100 hover:text-ink-50">
+            {h.name ?? h.symbol} <span className="font-mono text-2xs text-ink-500">{h.symbol}</span>
+          </span>
+        </button>
+        <span className="flex items-center gap-3 font-mono text-xs tabular">
+          {h.weight !== null && <Tip focusable={false} content="Anteil am Depot"><span className="w-12 text-right text-ink-400">{pct(h.weight)}</span></Tip>}
+          <Tip focusable={false} content="Seit Kauf">
+            <span className={`w-14 text-right ${h.gain == null ? 'text-ink-600' : h.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              {h.gain == null ? '—' : fmtSignedPct(h.gain)}
+            </span>
+          </Tip>
+          <span className={`w-7 text-right text-sm font-semibold ${h.score === null ? 'text-ink-500' : scoreColor(h.score)}`}>
+            {h.score === null ? '—' : score(h.score)}
+          </span>
+          <span className="w-4 text-center">
+            {t && (
+              <Tip focusable={false} content={chartTip(h, t.label)}>
+                <span className={`text-sm ${t.cls}`}>{t.mark}</span>
+              </Tip>
+            )}
+          </span>
+          {p?.rsi != null && (p.rsi >= 70 || p.rsi <= 30) && (
+            <Tip focusable={false} content={p.rsi >= 70 ? 'RSI über 70: heiß gelaufen' : 'RSI unter 30: ausverkauft'}>
+              <span className={p.rsi >= 70 ? 'text-amber-300' : 'text-sky-300'}>RSI {Math.round(p.rsi)}</span>
+            </Tip>
+          )}
+        </span>
+        {p && <Levels p={p} chosen={move?.protect ?? null} />}
+      </div>
+      {move && (
+        <p className="mt-1 text-xs leading-relaxed text-ink-300">
+          <span className={`font-semibold uppercase tracking-wide ${ACTION[move.action]}`}>{move.action}</span>
+          {move.protect && move.protect !== 'keiner' && <span className="text-ink-400"> · {PROTECT_LABEL[move.protect]}</span>}
+          {' '}— {move.reason}
+        </p>
+      )}
+      {h.error && !h.chart && <p className="mt-0.5 text-2xs text-ink-500">{h.error}</p>}
+    </li>
+  );
+}
+
+function chartTip(h: CheckedStock, label: string): string {
+  const p = h.protection;
+  const facts = p ? [
+    p.rsi !== null ? `RSI ${Math.round(p.rsi)}` : null,
+    p.overSma200 !== null ? `${fmtSignedPct(p.overSma200)} zur 200-Tage-Linie` : null,
+    p.channel ? `im 3-Monats-Kanal: ${p.channel}` : null,
+  ].filter(Boolean).join(' · ') : '';
+  return `${label}${h.chart?.phase ? ` — ${h.chart.phase}` : ''} (gelesen bis ${h.chart ? fmtDay(h.chart.asOf) : '—'}): ${h.chart?.summary ?? ''}${facts ? `\n${facts}` : ''}`;
+}
+
+/** Stop and trailing stop, in the stock's currency, with how far each is from the close. */
+function Levels({ p, chosen }: { p: Protection; chosen: ProtectionChoice | null }) {
+  const cls = (which: ProtectionChoice) => (chosen === which ? 'text-ink-100' : chosen ? 'text-ink-500' : 'text-ink-300');
+  return (
+    <span className="flex items-center gap-3 font-mono text-xs tabular">
+      {p.stop && (
+        <Tip focusable={false} content={p.stop.basis === 'support' && p.stop.level !== null
+          ? `Eine halbe Tagesschwankung unter der Unterstützung bei ${fmtPrice(p.stop.level, p.currency)} — die nächste zwischen 1,5 und 4 Tagesschwankungen unter dem Kurs. Stand ${fmtDay(p.asOf)}, Kurs ${fmtPrice(p.close, p.currency)}.`
+          : `Drei Tagesschwankungen unter dem Kurs von ${fmtPrice(p.close, p.currency)}: keine tragende Unterstützung in Reichweite. Stand ${fmtDay(p.asOf)}.`}
+        >
+          <span className={cls('stop')}>Stop {fmtPrice(p.stop.price, p.currency)} <span className="text-ink-500">{fmtSignedPct(p.stop.distance)}</span></span>
+        </Tip>
+      )}
+      {p.trailing && (
+        <Tip focusable={false} content={`Drei Tagesschwankungen unter dem Hoch der letzten 22 Handelstage (${fmtPrice(p.trailing.high, p.currency)}): heute bei ${fmtPrice(p.trailing.price, p.currency)}, ${pct(-p.trailing.distance)} unter dem Kurs. Als Trailing-Stop-Order: Abstand ${pct(p.trailing.width)}.`}>
+          <span className={cls('trailing')}>Trailing {pct(p.trailing.width)}</span>
+        </Tip>
+      )}
+    </span>
+  );
+}
+
+function List({ title, tone, rows, hint, empty, moves, onOpen }: {
+  title: string; tone: string; rows: CheckedStock[]; hint: string; empty?: string;
+  moves: Map<string, ManagerMove>; onOpen: (symbol: string) => void;
 }) {
   if (rows.length === 0 && !empty) return null;
   return (
@@ -187,6 +308,7 @@ function List({ title, tone, rows, hint, empty, showWeight = false, onOpen }: {
         <ul className="-mx-2">
           {rows.map((c) => {
             const t = c.chart ? TREND[c.chart.trend] : null;
+            const m = moves.get(c.symbol);
             return (
               <li key={c.symbol}>
                 <button
@@ -197,9 +319,8 @@ function List({ title, tone, rows, hint, empty, showWeight = false, onOpen }: {
                   <span className="min-w-0 flex-1 truncate text-sm text-ink-100">
                     {c.name ?? c.symbol} <span className="font-mono text-2xs text-ink-500">{c.symbol}</span>
                   </span>
-                  {showWeight && c.weight !== null && <span className="font-mono text-xs text-ink-400">{pct(c.weight)}</span>}
                   {t && (
-                    <Tip focusable={false} content={c.chart ? `${t.label} (Stand ${c.chart.asOf}): ${c.chart.summary}` : t.label}>
+                    <Tip focusable={false} content={chartTip(c, t.label)}>
                       <span className={`font-mono text-sm ${t.cls}`}>{t.mark}</span>
                     </Tip>
                   )}
@@ -212,6 +333,11 @@ function List({ title, tone, rows, hint, empty, showWeight = false, onOpen }: {
                     </span>
                   </Tip>
                 </button>
+                {m && (
+                  <p className="px-2 pb-1 text-xs leading-relaxed text-ink-400">
+                    <span className={`font-semibold uppercase tracking-wide ${ACTION[m.action]}`}>{m.action}</span> — {m.reason}
+                  </p>
+                )}
               </li>
             );
           })}
@@ -219,4 +345,121 @@ function List({ title, tone, rows, hint, empty, showWeight = false, onOpen }: {
       )}
     </div>
   );
+}
+
+/**
+ * The market the check read: Perplexity's brief in words, and the sectors as
+ * measured — the US sector funds against the S&P 500 — beside what the brief
+ * says of each and how much of the depot's stocks sit in it.
+ */
+function Market({ brief, error, trends, sectors }: {
+  brief: MarketBrief | null; error: string | null; trends: SectorTrend[]; sectors: { sector: string; weight: number }[];
+}) {
+  const said = new Map((brief?.sectors ?? []).map((s) => [s.sector, s]));
+  const held = new Map(sectors.map((s) => [s.sector, s.weight]));
+  const signed = (x: number | null) => (x === null ? '—' : fmtSignedPct(x));
+  const signedCls = (x: number | null) => (x === null ? 'text-ink-600' : x >= 0 ? 'text-emerald-400' : 'text-red-400');
+  return (
+    <div className="space-y-3">
+      <h4 className="text-xs font-semibold text-ink-300">
+        Marktlage
+        {brief && <span className="ml-1 font-normal text-ink-500">· Perplexity {brief.model}, {fmtTime(brief.fetchedAt)}</span>}
+      </h4>
+      {brief ? (
+        <div className="space-y-1.5 text-sm leading-relaxed text-ink-200">
+          <p>{brief.state}</p>
+          {brief.rotation && <p className="text-ink-300"><span className="text-ink-500">Rotation: </span>{brief.rotation}</p>}
+        </div>
+      ) : error && <p className="text-xs text-ink-500">Keine Marktlage: {error}</p>}
+
+      {trends.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[34rem] text-xs">
+            <thead className="text-2xs uppercase tracking-wider text-ink-500">
+              <tr>
+                <th className="py-1 pr-2 text-left font-semibold">Sektor</th>
+                <th className="px-2 py-1 text-right font-semibold"><Tip content="Anteil an den Aktien im Depot"><span>Depot</span></Tip></th>
+                <th className="px-2 py-1 text-right font-semibold"><Tip content="US-Sektorfonds gegen den S&P 500, ein Monat"><span>1 M</span></Tip></th>
+                <th className="px-2 py-1 text-right font-semibold">3 M</th>
+                <th className="px-2 py-1 text-right font-semibold">6 M</th>
+                <th className="px-2 py-1 text-left font-semibold">
+                  <Tip content="Gemessen: über drei Monate vor dem Index und im letzten Monat weiter vorne — führt; vorne, aber zuletzt zurück — verliert Schwung; hinten und weiter zurück — hinkt; hinten, aber zuletzt vorne — holt auf. Beschreibt die letzten Monate, keine geprüfte Vorhersage.">
+                    <span>gemessen</span>
+                  </Tip>
+                </th>
+                {brief && <th className="py-1 pl-2 text-left font-semibold">laut Recherche</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {trends.map((t) => {
+                const s = said.get(t.sector);
+                const w = held.get(t.sector);
+                return (
+                  <tr key={t.sector} className="border-t border-ink-800/60">
+                    <td className={`py-1 pr-2 ${w ? 'text-ink-100' : 'text-ink-400'}`}>
+                      {t.sector} <span className="font-mono text-2xs text-ink-600">{t.etf}</span>
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono tabular text-ink-300">{w ? pct(w) : ''}</td>
+                    <td className={`px-2 py-1 text-right font-mono tabular ${signedCls(t.rel1m)}`}>{signed(t.rel1m)}</td>
+                    <td className={`px-2 py-1 text-right font-mono tabular ${signedCls(t.rel3m)}`}>{signed(t.rel3m)}</td>
+                    <td className={`px-2 py-1 text-right font-mono tabular ${signedCls(t.rel6m)}`}>{signed(t.rel6m)}</td>
+                    <td className={`px-2 py-1 ${t.phase ? PHASE[t.phase] : 'text-ink-600'}`}>{t.phase ?? '—'}</td>
+                    {brief && (
+                      <td className="py-1 pl-2">
+                        {s && (
+                          <Tip content={s.why}>
+                            <span className={DIRECTION[s.direction]}>{SECTOR_DIRECTION_LABEL[s.direction]}</span>
+                          </Tip>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {brief && (brief.drivers.length > 0 || brief.problems.length > 0 || brief.calendar.length > 0) && (
+        <details className="text-xs text-ink-300">
+          <summary className="cursor-pointer text-ink-400 hover:text-ink-200">Treiber, Probleme, Termine und Quellen</summary>
+          <div className="mt-2 grid gap-4 md:grid-cols-3">
+            <Points title="Was den Markt bewegt" items={brief.drivers.map((d) => ({ text: d.impact ? <>{d.what} <span className="text-ink-500">— {d.impact}</span></> : d.what, source: d.source }))} />
+            <Points title="Wo es Probleme gibt" items={brief.problems.map((x) => ({ text: x.what, source: x.source }))} />
+            <Points title="Termine" items={brief.calendar.map((c) => ({ text: <>{c.date ? <span className="font-mono text-ink-400">{fmtDay(c.date)} </span> : null}{c.event}{c.watch && <span className="text-ink-500"> — {c.watch}</span>}</> }))} />
+          </div>
+          {brief.citations.length > 0 && (
+            <p className="mt-2 flex flex-wrap gap-x-2 text-2xs text-ink-500">
+              Quellen:
+              {brief.citations.map((u, i) => (
+                <a key={u} href={u} target="_blank" rel="noreferrer" className="hover:text-ink-300">[{i + 1}] {hostOf(u)}</a>
+              ))}
+            </p>
+          )}
+        </details>
+      )}
+    </div>
+  );
+}
+
+function Points({ title, items }: { title: string; items: { text: ReactNode; source?: string | null }[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <h5 className="mb-1 font-semibold text-ink-400">{title}</h5>
+      <ul className="list-disc space-y-1 pl-4 leading-relaxed">
+        {items.map((x, i) => (
+          <li key={i}>
+            {x.text}
+            {x.source && <> <a href={x.source} target="_blank" rel="noreferrer" className="text-2xs text-ink-500 hover:text-ink-300">{hostOf(x.source)}</a></>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
 }

@@ -1,11 +1,13 @@
 /**
  * The depot check, run: the best stocks off the depot analysed as the stock
- * page's „Alles“ would analyse them, their charts and the weak holdings' charts
- * read, the lot sorted (`analysis/depot-check.ts`), and a depot manager's view
- * asked of the model on top.
+ * page's „Alles“ would analyse them, their charts and the charts of every
+ * single stock held read, the stops worked out from the bars, the market
+ * brief and the sector funds beside them, the lot sorted
+ * (`analysis/depot-check.ts`), and a depot manager's view asked of the model on
+ * top.
  *
  * One run at a time, in this process, and minutes long: twenty-five analyses
- * and as many chart readings. Its progress and its result are kept in
+ * and as many chart readings again. Its progress and its result are kept in
  * `app_state`, under the trades source, so a placeholder's check in
  * development never overwrites the real one. A run this process did not finish
  * — the server restarted under it — is marked interrupted at the next boot.
@@ -22,19 +24,22 @@ import { z } from 'zod';
 import type { DepotCheckResponse } from './api-types.js';
 import { analysisFlagsFor, readAppConfig } from './app-config.js';
 import {
-  classifyDepotCheck, managerInput, MANAGER_ACTIONS, MANAGER_SYSTEM, managerUser, selectCandidates,
-  type CheckedStock, type DepotCheckResult, type DepotCheckStatus, type ManagerView,
+  classifyDepotCheck, isSingleStock, managerInput, MANAGER_ACTIONS, MANAGER_SYSTEM, managerUser, PROTECTIONS,
+  selectCandidates, type CheckedStock, type DepotCheckResult, type DepotCheckStatus, type ManagerView,
   type ScoredStock,
 } from './analysis/depot-check.js';
-import type { ChartRead } from './analysis/chart.js';
-import { runChartRead } from './chart-service.js';
+import type { MarketBrief } from './analysis/market-brief.js';
+import type { SectorTrend } from './analysis/sector-rotation.js';
+import { protectionOf } from './analysis/stops.js';
+import { readChart, runChartRead } from './chart-service.js';
 import { runAnalysis } from './cli.js';
 import { readAppState, writeAppState } from './db/admin.js';
-import { latestDocument, latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
+import { latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
 import { readDepot } from './depot-service.js';
 import { invalidateDiscover } from './discover-service.js';
 import { isHatchetConfigured } from './hatchet/client.js';
 import { interactive, NoWorkerError, viaHatchet } from './hatchet/via.js';
+import { marketBrief, sectorTrendsNow } from './market-service.js';
 import { createProviderForModel } from './providers/factory.js';
 import { refreshStockData } from './refresh.js';
 import { tradesSource } from './trades-service.js';
@@ -117,6 +122,15 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
   if (!view) throw new Error(depot.syncError ?? 'Kein Depot: umsatz hat keine Trades geliefert.');
   const held = new Set(view.positions.flatMap((p) => (p.symbol ? [p.symbol] : [])));
 
+  // The market, asked beside everything else: nothing of the depot goes into either.
+  const market = settings.marketModel
+    ? marketBrief(settings.marketModel).then((brief) => ({ brief, error: null }), (e: Error) => {
+      logger.warn(`Market brief: ${e.message}`);
+      return { brief: null as MarketBrief | null, error: e.message };
+    })
+    : Promise.resolve({ brief: null as MarketBrief | null, error: null });
+  const trends = sectorTrendsNow().catch((e: Error): SectorTrend[] => { logger.warn(`Sector trends: ${e.message}`); return []; });
+
   // Every stored stock with a score, the list's and the universe's.
   const symbols = await listSymbols('all');
   const [points, facts] = await Promise.all([
@@ -130,10 +144,10 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
     verdict: points.get(symbol)?.get(VERDICT)?.text ?? null,
   });
   const candidates = selectCandidates(symbols.map(scored), held, settings);
-  const weak = view.positions.filter((p) => p.symbol && p.score !== null && p.score < settings.reduceBelow);
-  const total = candidates.length + weak.length;
+  const stocks = view.positions.filter((p) => p.symbol && isSingleStock(p));
+  const total = candidates.length + stocks.length;
   await save({ total, phase: candidates.length ? `Analyse 0/${candidates.length}` : 'Charts der Depotwerte' });
-  logger.info(`Depot check: ${candidates.length} candidates at ${settings.minScore}+, ${weak.length} weak holdings`);
+  logger.info(`Depot check: ${candidates.length} candidates at ${settings.minScore}+, ${stocks.length} stocks held`);
 
   let done = 0;
   const step = async (phase: string) => { done++; await save({ done, phase }); };
@@ -153,21 +167,21 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
     } catch (e) {
       error = `Analyse: ${(e as Error).message}`;
     }
-    const chart = await chartOf(c.symbol, flags.model).catch((e) => { error ??= `Chart: ${(e as Error).message}`; return null; });
+    const seen = await look(c.symbol, flags.model);
     await step(`Analyse ${done + 1}/${candidates.length}: ${c.symbol}`);
-    return { ...c, scoreBefore: c.score, chart, weight: null, error };
+    return { ...c, scoreBefore: c.score, ...seen, error: error ?? seen.error, weight: null };
   });
   if (candidates.length) invalidateDiscover();
 
-  // The weak holdings: their charts, the analysis they have is the night's.
-  const holdingCharts = await settledPool(weak, CONCURRENCY, async (p) => {
-    const chart = await chartOf(p.symbol!, flags.model).catch(() => null);
+  // The stocks held: their charts and stops; the analysis they have is the night's.
+  const checkedHoldings = await settledPool(stocks, CONCURRENCY, async (p): Promise<CheckedStock> => {
+    const seen = await look(p.symbol!, flags.model);
     await step(`Chart ${p.symbol}`);
-    return [p.symbol!, chart] as const;
+    return {
+      symbol: p.symbol!, name: p.name, sector: p.sector, score: p.score, verdict: p.verdict,
+      scoreBefore: null, weight: p.weight, gain: p.gain, ...seen,
+    };
   });
-  const charts = new Map<string, CheckedStock['chart']>(
-    holdingCharts.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : [])),
-  );
 
   // The scores as the analyses left them.
   await save({ phase: 'Einordnen' });
@@ -179,25 +193,27 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
   });
   const checkedCandidates = analysed.map((r, i) => (r.status === 'fulfilled'
     ? now(r.value)
-    : { ...candidates[i], scoreBefore: candidates[i].score, chart: null, weight: null, error: String(r.reason) }));
-  const holdings: CheckedStock[] = weak.map((p) => ({
-    symbol: p.symbol!, name: p.name, sector: p.sector, score: p.score, verdict: p.verdict,
-    scoreBefore: null, chart: charts.get(p.symbol!) ?? null, weight: p.weight, error: charts.get(p.symbol!) ? null : 'Chart nicht gelesen',
+    : { ...candidates[i], scoreBefore: candidates[i].score, chart: null, protection: null, weight: null, error: String(r.reason) }));
+  const holdings: CheckedStock[] = checkedHoldings.map((r, i) => (r.status === 'fulfilled' ? r.value : {
+    symbol: stocks[i].symbol!, name: stocks[i].name, sector: stocks[i].sector, score: stocks[i].score, verdict: stocks[i].verdict,
+    scoreBefore: null, chart: null, protection: null, weight: stocks[i].weight, gain: stocks[i].gain, error: String(r.reason),
   }));
   const lists = classifyDepotCheck(checkedCandidates, holdings, settings);
 
   // The manager: the one model call that sees the depot, through `managerInput`.
-  await save({ phase: 'Depotmanager' });
+  await save({ phase: 'Marktlage und Depotmanager' });
+  const [{ brief, error: marketError }, sectorTrends] = await Promise.all([market, trends]);
   let manager: ManagerView | null = null;
   let managerError: string | null = null;
   try {
     const input = managerInput({
       positions: view.positions, sectors: view.sectors, lists,
-      charts: new Map([...charts, ...checkedCandidates.map((c) => [c.symbol, c.chart] as const)]),
+      holdings: new Map(holdings.map((h) => [h.symbol, h])),
       limits: { maxPosition: view.limits.maxPosition, maxSector: view.limits.maxSector },
+      market: brief, sectorTrends,
     });
     manager = await createProviderForModel(flags.model).complete({
-      label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 6000,
+      label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 10_000,
     });
   } catch (e) {
     managerError = (e as Error).message;
@@ -206,7 +222,9 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
 
   const result: DepotCheckResult = {
     generatedAt: new Date().toISOString(), settings, model: flags.model,
-    candidates: checkedCandidates, holdings, lists, manager, managerError,
+    candidates: checkedCandidates, holdings, lists,
+    market: brief, marketError, sectorTrends,
+    manager, managerError,
   };
   await writeAppState(RESULT_KEY(), JSON.stringify(result));
 }
@@ -214,18 +232,32 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
 const ManagerSchema = z.object({
   summary: z.string().describe('Drei bis fünf Sätze: was ein Depotmanager mit diesem Depot jetzt tun würde, und warum.'),
   moves: z.array(z.object({
-    action: z.enum(MANAGER_ACTIONS),
-    symbol: z.string().describe('Ticker der Aktie, wie in den Daten'),
-    reason: z.string().describe('Ein Satz Begründung aus den Daten'),
-  })).describe('Die Schritte, je Aktie einer, die wichtigsten zuerst; höchstens zehn.'),
-  risks: z.array(z.string()).describe('Was ein Depotmanager im Blick behält: Klumpen, Sektoren, was gegen die Schritte spricht.'),
+    action:  z.enum(MANAGER_ACTIONS),
+    symbol:  z.string().describe('Ticker der Aktie, wie in den Daten'),
+    protect: z.enum(PROTECTIONS).nullable().catch(null).describe('Schutz einer Aktie im Depot; null bei einem Kauf'),
+    reason:  z.string().describe('Ein bis zwei Sätze Begründung aus den Daten'),
+  })).describe('Zuerst jede Aktie im Depot, die dringendsten zuerst; dann höchstens fünf Käufe.'),
+  risks: z.array(z.string()).describe('Was ein Depotmanager im Blick behält: Klumpen, Sektoren, Markt, was gegen die Schritte spricht.'),
 });
 
-/** The model's reading of a stock's chart: a fresh one is reused, else it is read now. */
-async function chartOf(symbol: string, model: string): Promise<CheckedStock['chart']> {
-  const doc = await latestDocument<ChartRead>(symbol, 'chart');
-  const read = doc?.data && Date.now() - Date.parse(doc.producedAt) < CHART_REUSE_MS
-    ? doc.data
-    : (await runChartRead(symbol, model)).read;
-  return { trend: read.trend.direction, summary: read.summary, asOf: read.asOf };
+/**
+ * A stock's chart, as the check sees it: the model's reading — a fresh one is
+ * reused, else it is read now — and the stops worked out from the same bars.
+ * A reading that fails leaves the stops; no bars leave neither.
+ */
+async function look(symbol: string, model: string): Promise<Pick<CheckedStock, 'chart' | 'protection' | 'error'>> {
+  try {
+    const c = await readChart(symbol);
+    const protection = c.analysis ? protectionOf(c.bars, c.analysis, c.currency) : null;
+    try {
+      const read = c.read && Date.now() - Date.parse(c.read.producedAt) < CHART_REUSE_MS
+        ? c.read.read
+        : (await runChartRead(symbol, model)).read;
+      return { chart: { trend: read.trend.direction, phase: read.trend.phase, summary: read.summary, asOf: read.asOf }, protection, error: null };
+    } catch (e) {
+      return { chart: null, protection, error: `Chart: ${(e as Error).message}` };
+    }
+  } catch (e) {
+    return { chart: null, protection: null, error: `Chart: ${(e as Error).message}` };
+  }
 }

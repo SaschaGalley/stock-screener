@@ -23,8 +23,8 @@ import { logger } from './utils/logger.js';
 import { readSettingsJson, writeSettingsJson } from './db/admin.js';
 import { listSymbols } from './db/store.js';
 import {
-  DEFAULT_MODEL_ID, DEFAULT_PIPELINE_MODEL_ID, DEFAULT_SUMMARY_MODEL_ID, PERPLEXITY_MODEL_IDS, PerplexityModelId,
-  resolveModelId,
+  DEFAULT_MODEL_ID, DEFAULT_PERPLEXITY_MODEL, DEFAULT_PIPELINE_MODEL_ID, DEFAULT_SUMMARY_MODEL_ID, PERPLEXITY_MODEL_IDS,
+  PerplexityModelId, resolveModelId,
 } from './models.js';
 import { ADJUSTMENT_LIMIT, NARRATIVE_MAX_WEIGHT } from './analysis/score.js';
 
@@ -139,7 +139,8 @@ export const AppConfigSchema = z.object({
 
   /**
    * The depot check (`src/depot-check-service.ts`): which stocks off the depot
-   * it analyses, and below what score a held one is weighed for reducing.
+   * it analyses, below what score a held one is weighed for reducing, and
+   * which Perplexity model writes the market brief.
    */
   depotCheck: z.object({
     /** Score a stock outside the depot needs to be analysed as a candidate. */
@@ -148,6 +149,8 @@ export const AppConfigSchema = z.object({
     maxCandidates: z.number().int().min(1).max(50).default(25),
     /** A held stock scored below this is weighed for reducing. */
     reduceBelow:   z.number().min(0).max(10).default(5),
+    /** The market brief's model; null asks for none. Reused for twelve hours. */
+    marketModel:   z.enum(PERPLEXITY_MODEL_IDS).nullable().default(DEFAULT_PERPLEXITY_MODEL),
   }).prefault({}),
 
   /**

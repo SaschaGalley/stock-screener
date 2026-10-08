@@ -31,8 +31,13 @@ const EPS = 1e-6;
 
 export interface DepotFlag {
   /** `reduce`: a reason to look at holding less; `add`: at holding more; `ask`: something missing. */
-  tone: 'reduce' | 'add' | 'ask';
-  text: string;
+  tone:  'reduce' | 'add' | 'ask';
+  /** What it is about, so a view can say it where it belongs — a missing reason under the reason. */
+  key:   'concentrated' | 'sell' | 'thesis' | 'underweight' | 'reason' | 'unscored' | 'unpriced';
+  /** A word or two, for a chip. */
+  label: string;
+  /** The sentence. */
+  text:  string;
 }
 
 export interface DepotPosition {
@@ -65,6 +70,8 @@ export interface DepotPosition {
   reason:      { entryId: number; day: string; headline: string } | null;
   /** The newest thesis check of it. */
   thesis:      { contradicted: number; total: number; at: string } | null;
+  /** The newest model reading of its chart: the trend, the session it saw last, the summary. */
+  chart:       { trend: 'up' | 'down' | 'sideways'; asOf: string; summary: string } | null;
   flags:       DepotFlag[];
 }
 
@@ -140,8 +147,9 @@ export function depotView(input: {
   model:     Map<string, { score: number | null; verdict: string | null; sector: string | null; name: string | null }>;
   reasons:   (p: HeldPosition) => DepotPosition['reason'];
   theses:    Map<string, NonNullable<DepotPosition['thesis']>>;
+  charts?:   Map<string, NonNullable<DepotPosition['chart']>>;
 }): DepotView {
-  const { held, prices, model, reasons, theses } = input;
+  const { held, prices, model, reasons, theses, charts } = input;
   const valued = held.map((p) => {
     const price = prices.get(p.isin) ?? null;
     return { p, price, value: price ? p.quantity * price.priceEur : null };
@@ -159,27 +167,33 @@ export function depotView(input: {
     const flags: DepotFlag[] = [];
     // A fund is many stocks; its weight is a choice of mix, not a concentration.
     const concentrated = weight !== null && weight > MAX_POSITION && !DIVERSIFIED.has(p.assetType);
-    if (concentrated) flags.push({ tone: 'reduce', text: `Klumpen: ${pct(weight)} des Depots` });
+    if (concentrated) flags.push({ tone: 'reduce', key: 'concentrated', label: 'Klumpen', text: `Klumpen: ${pct(weight)} des Depots` });
     if (verdict && /SELL/.test(verdict)) {
-      flags.push({ tone: 'reduce', text: `Modell-Urteil ${verdict}${m?.score != null ? ` (${num(m.score)})` : ''}` });
+      flags.push({ tone: 'reduce', key: 'sell', label: verdict, text: `Modell-Urteil ${verdict}${m?.score != null ? ` (${num(m.score)})` : ''}` });
     }
     if (thesis && thesis.contradicted > 0) {
-      flags.push({ tone: 'reduce', text: `Thesen-Check: ${thesis.contradicted} von ${thesis.total} widerlegt` });
+      flags.push({
+        tone: 'reduce', key: 'thesis', label: `These ${thesis.contradicted}/${thesis.total} widerlegt`,
+        text: `Thesen-Check: ${thesis.contradicted} von ${thesis.total} widerlegt`,
+      });
     }
     if (verdict && /BUY/.test(verdict) && weight !== null && average !== null && weight < average) {
-      flags.push({ tone: 'add', text: `Modell-Urteil ${verdict}, unter dem Durchschnittsgewicht von ${pct(average)}` });
+      flags.push({
+        tone: 'add', key: 'underweight', label: 'untergewichtet',
+        text: `Modell-Urteil ${verdict}, unter dem Durchschnittsgewicht von ${pct(average)}`,
+      });
     }
     // A savings plan runs by itself: what it buys was decided once, not each month.
-    if (!reason && p.decided) flags.push({ tone: 'ask', text: 'keine Begründung im Journal' });
-    if (!m && p.assetType === 'stock') flags.push({ tone: 'ask', text: 'nicht in der Watchlist — kein Score' });
-    if (!price) flags.push({ tone: 'ask', text: 'kein Kurs aus umsatz' });
+    if (!reason && p.decided) flags.push({ tone: 'ask', key: 'reason', label: 'ohne Begründung', text: 'keine Begründung im Journal' });
+    if (!m && p.assetType === 'stock') flags.push({ tone: 'ask', key: 'unscored', label: 'kein Score', text: 'nicht in der Watchlist — kein Score' });
+    if (!price) flags.push({ tone: 'ask', key: 'unpriced', label: 'kein Kurs', text: 'kein Kurs aus umsatz' });
     return {
       isin: p.isin, symbol: p.symbol, name: m?.name ?? p.name, assetType: p.assetType, quantity: p.quantity,
       costEur: p.costEur, priceEur: price?.priceEur ?? null, priceDay: price?.day ?? null, valueEur: value, weight, concentrated,
       gain: value !== null && p.costEur ? value / p.costEur - 1 : null,
       openedAt: p.openedAt, lastTradeAt: p.lastTradeAt, tradeIds: p.tradeIds,
       tracked: !!m && m.score !== null, score: m?.score ?? null, verdict, sector: m?.sector ?? null,
-      reason, thesis, flags,
+      reason, thesis, chart: (p.symbol && charts?.get(p.symbol)) || null, flags,
     };
   }).sort((a, b) => (b.valueEur ?? -1) - (a.valueEur ?? -1));
 

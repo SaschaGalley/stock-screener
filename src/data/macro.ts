@@ -45,6 +45,15 @@ export const BENCHMARK_TICKERS: readonly string[] = [...new Set([
   SPY_SYMBOL, 'SPY', VIX_SYMBOL, DXY_SYMBOL, ...Object.values(SECTOR_ETF_MAP),
 ])];
 
+/**
+ * One fund per sector, named as Yahoo names it — the first of the map's
+ * spellings, which is Yahoo's — for the depot check's sector trend and the
+ * market brief's sector vocabulary.
+ */
+export const SECTOR_ETFS: readonly { sector: string; etf: string }[] = Object.entries(SECTOR_ETF_MAP)
+  .filter(([, etf], i, all) => all.findIndex(([, e]) => e === etf) === i)
+  .map(([sector, etf]) => ({ sector, etf }));
+
 export function sectorToEtf(sector: string | null): string | null {
   if (!sector) return null;
   return SECTOR_ETF_MAP[sector] ?? null;

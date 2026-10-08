@@ -5,9 +5,10 @@ import DepotCheck from '../components/DepotCheck';
 import RecommendationBadge from '../components/RecommendationBadge';
 import StockLogo, { initialsFromName } from '../components/StockLogo';
 import { HEADER_HEIGHT, HEADER_RULE, ROW_HEIGHT, ROW_RULE } from '../components/StockRowCells';
+import Tip from '../components/Tip';
 import { scoreColor } from '../components/stockList';
 import { evidenceLine, useVerdictEvidence } from '../components/VerdictEvidence';
-import { fmtSignedPct } from '../format';
+import { deNumber, fmtSignedPct } from '../format';
 import type { DepotFlag, DepotPosition, DepotResponse, VerdictRecord } from '../../../src/analysis/depot';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 
@@ -24,11 +25,18 @@ const TYPE_LABEL: Record<string, string> = {
  * speak for holding less or more.
  */
 const FLAG_TONE: Record<DepotFlag['tone'], string> = {
-  reduce: 'text-red-400',
-  add:    'text-emerald-400',
-  ask:    'text-ink-500',
+  reduce: 'border-red-500/40 text-red-400',
+  add:    'border-emerald-500/40 text-emerald-400',
+  ask:    'border-ink-700 text-ink-400',
 };
 const FLAG_MARK: Record<DepotFlag['tone'], string> = { reduce: '▼', add: '▲', ask: '?' };
+/** Said elsewhere in the row: the sell verdict by its chip, the missing reason in the reason's place. */
+const SAID_ELSEWHERE = new Set<DepotFlag['key']>(['sell', 'reason']);
+const TREND: Record<NonNullable<DepotPosition['chart']>['trend'], { mark: string; label: string; cls: string }> = {
+  up:       { mark: '↗', label: 'Chart steigt', cls: 'text-emerald-400' },
+  down:     { mark: '↘', label: 'Chart fällt', cls: 'text-red-400' },
+  sideways: { mark: '→', label: 'Chart seitwärts', cls: 'text-ink-400' },
+};
 const openStock = (symbol: string) => { window.location.hash = `#/stock/${encodeURIComponent(symbol)}`; };
 
 /**
@@ -93,17 +101,16 @@ export default function DepotPage() {
           </section>
 
           <section className="overflow-x-auto rounded-lg border border-ink-800">
-            <table className="w-full min-w-[56rem] border-collapse text-sm">
+            <table className="w-full min-w-[52rem] border-collapse text-sm">
               <thead className="whitespace-nowrap bg-ink-900 text-2xs uppercase tracking-wider text-ink-500">
                 <tr className={`${HEADER_HEIGHT} ${HEADER_RULE}`}>
                   <th className="px-3 py-0 text-left font-semibold">Position</th>
                   <th className="px-2 py-0 text-left font-semibold">Gewicht</th>
                   <th className="px-2 py-0 text-right font-semibold">Wert</th>
                   <th className="px-2 py-0 text-right font-semibold">seit Kauf</th>
-                  <th className="px-2 py-0 text-right font-semibold">Score</th>
-                  <th className="px-2 py-0 text-left font-semibold">Verdict</th>
-                  <th className="px-2 py-0 text-left font-semibold">Begründung</th>
-                  <th className="px-3 py-0 text-left font-semibold">Hinweise</th>
+                  <th className="px-2 py-0 text-left font-semibold">Urteil</th>
+                  <th className="px-2 py-0 text-center font-semibold">Chart</th>
+                  <th className="px-3 py-0 text-left font-semibold">Begründung · Hinweise</th>
                 </tr>
               </thead>
               <tbody>
@@ -117,7 +124,7 @@ export default function DepotPage() {
             <Shares title="Depot nach Anlageart" rows={view.byType.map((t) => ({ label: TYPE_LABEL[t.assetType] ?? t.assetType, weight: t.weight }))} />
           </div>
 
-          <DepotCheck onOpen={openStock} />
+          <DepotCheck onOpen={openStock} sectors={view.sectors} />
 
           {data?.evidence && <Evidence records={data.evidence} />}
         </>
@@ -128,25 +135,31 @@ export default function DepotPage() {
 
 /**
  * One position, in the overview's shape: logo and name over the ticker line,
- * score and verdict chip as the list shows them. A stock the model scores
- * opens its analysis; the rest have nothing to open.
+ * the score beside its verdict chip. Every cell holds to the row's two lines —
+ * a long reason or a third note would make one row taller than the rest — so
+ * the purchase date sits under the gain and the notes are chips, said in full
+ * on hover. A stock the model scores opens its analysis; the rest have nothing
+ * to open.
  */
 function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
   const evidence = useVerdictEvidence();
   const open = p.symbol && p.tracked ? p.symbol : null;
+  const missingReason = p.flags.some((f) => f.key === 'reason');
+  const chips = p.flags.filter((f) => !SAID_ELSEWHERE.has(f.key));
+  const trend = p.chart ? TREND[p.chart.trend] : null;
   return (
     <tr
       onClick={open ? () => openStock(open) : undefined}
       title={p.isin}
       className={`${ROW_HEIGHT} ${ROW_RULE} ${open ? 'cursor-pointer transition hover:bg-ink-800' : ''}`}
     >
-      <td className="min-w-[16rem] max-w-[22rem] py-1 pr-2 pl-3">
+      <td className="min-w-[15rem] max-w-[20rem] py-1 pr-2 pl-3">
         <div className="flex min-w-0 items-center gap-2">
           <StockLogo symbol={p.symbol} domain={null} fallbackInitials={initialsFromName(p.name)} size={22} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium leading-5 text-ink-100">{p.name}</div>
             <div className="truncate font-mono text-2xs leading-4 text-ink-500">
-              {[p.symbol, TYPE_LABEL[p.assetType] ?? p.assetType, p.sector, `seit ${fmtDay(p.openedAt)}`].filter(Boolean).join(' · ')}
+              {[p.symbol, TYPE_LABEL[p.assetType] ?? p.assetType, p.sector].filter(Boolean).join(' · ')}
             </div>
           </div>
         </div>
@@ -154,7 +167,7 @@ function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
       <td className="px-2 py-1">
         {p.weight !== null && (
           <div className="flex items-center gap-1.5">
-            <div className="h-1.5 w-16 overflow-hidden rounded bg-ink-800">
+            <div className="h-1.5 w-12 overflow-hidden rounded bg-ink-800">
               <div className={`h-full ${p.concentrated ? 'bg-red-500' : 'bg-accent'}`} style={{ width: `${Math.min(100, p.weight * 100 / (limit * 2))}%` }} />
             </div>
             <span className="whitespace-nowrap font-mono text-xs tabular text-ink-300">{pct(p.weight)}</span>
@@ -162,35 +175,46 @@ function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
         )}
       </td>
       <td className="whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-200">{p.valueEur !== null ? eur(p.valueEur) : '—'}</td>
-      <td className={`whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular ${p.gain === null ? 'text-ink-600' : p.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-        {p.gain !== null ? fmtSignedPct(p.gain) : '—'}
-      </td>
-      <td className={`px-2 py-1 text-right font-mono text-base font-semibold tabular ${scoreColor(p.score)}`}>
-        {p.score !== null ? p.score.toFixed(1) : <span className="text-sm font-normal text-ink-600">—</span>}
+      <td className="whitespace-nowrap px-2 py-1 text-right font-mono tabular">
+        <div className={`text-xs leading-5 ${p.gain === null ? 'text-ink-600' : p.gain >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+          {p.gain !== null ? fmtSignedPct(p.gain) : '—'}
+        </div>
+        <div className="text-2xs leading-4 text-ink-500">{fmtDay(p.openedAt)}</div>
       </td>
       <td className="whitespace-nowrap px-2 py-1">
-        {p.verdict
-          ? <RecommendationBadge rec={p.verdict} size="sm" note={evidence ? evidenceLine(evidence, p.verdict) : null} />
-          : <span className="text-xs text-ink-600">—</span>}
+        {p.verdict || p.score !== null ? (
+          <span className="flex items-center gap-2">
+            <span className={`w-7 text-right font-mono text-base font-semibold tabular ${scoreColor(p.score)}`}>
+              {p.score !== null ? deNumber(p.score, 1) : '—'}
+            </span>
+            {p.verdict && <RecommendationBadge rec={p.verdict} size="sm" note={evidence ? evidenceLine(evidence, p.verdict) : null} />}
+          </span>
+        ) : <span className="pl-3 text-xs text-ink-600">—</span>}
       </td>
-      <td className="max-w-[14rem] px-2 py-1 text-xs">
-        {p.reason
-          ? (
-            <a
-              href="#/journal"
-              onClick={(e) => e.stopPropagation()}
-              className="line-clamp-2 leading-4 text-ink-300 hover:text-ink-100"
-              title={`Journal, ${fmtDay(p.reason.day)}`}
-            >
-              {p.reason.headline}
-            </a>
-          )
-          : <span className="text-ink-600">—</span>}
+      <td className="px-2 py-1 text-center">
+        {trend && p.chart && (
+          <Tip focusable={false} content={`${trend.label} (gelesen bis ${fmtDay(p.chart.asOf)}): ${p.chart.summary}`}>
+            <span className={`font-mono text-base ${trend.cls}`}>{trend.mark}</span>
+          </Tip>
+        )}
       </td>
-      <td className="px-3 py-1 text-xs">
-        <ul className="space-y-0.5 leading-4">
-          {p.flags.map((f) => <li key={f.text} className={FLAG_TONE[f.tone]}>{FLAG_MARK[f.tone]} {f.text}</li>)}
-        </ul>
+      <td className="max-w-[20rem] px-3 py-1 text-xs">
+        <div className="truncate leading-5">
+          {p.reason ? (
+            <Tip focusable={false} content={`Journal, ${fmtDay(p.reason.day)}: ${p.reason.headline}`}>
+              <a href="#/journal" onClick={(e) => e.stopPropagation()} className="text-ink-300 hover:text-ink-100">{p.reason.headline}</a>
+            </Tip>
+          ) : <span className="text-ink-600">{missingReason ? 'keine Begründung' : '—'}</span>}
+        </div>
+        {chips.length > 0 && (
+          <div className="flex gap-1 overflow-hidden leading-4">
+            {chips.map((f) => (
+              <Tip key={f.key} focusable={false} content={f.text}>
+                <span className={`whitespace-nowrap rounded border px-1 text-2xs ${FLAG_TONE[f.tone]}`}>{FLAG_MARK[f.tone]} {f.label}</span>
+              </Tip>
+            ))}
+          </div>
+        )}
       </td>
     </tr>
   );
