@@ -101,3 +101,41 @@ export function bigMoves(bars: { day: string; close: number }[], from: string): 
       detail: `Mehr als das ${Math.round(Math.abs(x.r) / sd)}-Fache der üblichen Tagesbewegung`,
     }));
 }
+
+/** A catalyst's words that say it is the quarter's report, which the calendar already dates. */
+const REPORT_WORDS = /\b(earnings|results|quarter|q[1-4]|quartal|zahlen|report)/i;
+
+/**
+ * What is scheduled: the next report, the next ex-dividend and payment day,
+ * and the dated catalysts the newest research brief named — each from today
+ * on. A catalyst that is the report itself, within a day of the calendar's
+ * date, lends the report what to watch instead of standing twice. `money`
+ * writes an amount in the stock's currency.
+ */
+export function upcomingOf(
+  f: { nextEarningsDate: string | null; exDividendDate: string | null; dividendPayDate: string | null; nextDividendAmount: number | null } | null,
+  catalysts: readonly { date: string | null; event: string; watch: string }[],
+  today: string,
+  money: (n: number) => string,
+): TimelineEvent[] {
+  const out: TimelineEvent[] = [];
+  const near = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) <= 86_400_000;
+  const report = f?.nextEarningsDate && f.nextEarningsDate >= today ? f.nextEarningsDate : null;
+  let reportWatch: string | null = null;
+  for (const c of catalysts) {
+    if (!c.date || !/^\d{4}-\d{2}-\d{2}$/.test(c.date) || c.date < today) continue;
+    if (report && near(c.date, report) && REPORT_WORDS.test(c.event)) { reportWatch ??= c.watch || null; continue; }
+    out.push({ day: c.date, kind: 'event', tone: 'neutral', title: c.event, detail: c.watch || null });
+  }
+  if (report) out.push({ day: report, kind: 'earnings', tone: 'neutral', title: 'Quartalszahlen', detail: reportWatch });
+  if (f?.exDividendDate && f.exDividendDate >= today) {
+    out.push({
+      day: f.exDividendDate, kind: 'dividend', tone: 'neutral', title: 'Ex-Dividende',
+      detail: f.nextDividendAmount ? `${money(f.nextDividendAmount)} je Aktie` : null,
+    });
+  }
+  if (f?.dividendPayDate && f.dividendPayDate >= today && f.dividendPayDate !== f.exDividendDate) {
+    out.push({ day: f.dividendPayDate, kind: 'dividend', tone: 'neutral', title: 'Dividendenzahlung', detail: null });
+  }
+  return out.sort((a, b) => a.day.localeCompare(b.day));
+}

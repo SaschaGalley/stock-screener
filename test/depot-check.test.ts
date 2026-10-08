@@ -64,10 +64,13 @@ describe('what the depot manager is told', () => {
     concentrated: false, gain: 0.1296, openedAt: '2024-03-15', lastTradeAt: '2025-11-02', tradeIds: [41, 42],
     tracked: true, score: 4.1, verdict: 'HOLD', sector: 'Technology',
     reason: { entryId: 7, day: '2024-03-15', headline: 'Meine geheime These' }, thesis: null, flags: [],
+    viaFunds: 0.0123, scoreBefore: { score: 5.3, at: '2026-09-10T22:00:00.000Z' },
+    upcoming: [{ day: '2026-10-28', kind: 'earnings', title: 'Nächste Quartalszahlen', detail: null }],
   };
   const fund = {
     ...position, isin: 'IE0000000002', symbol: 'FUND', name: 'Made Up World ETF', assetType: 'etf',
     quantity: 321.5, valueEur: 45_678.9, weight: 0.4567, gain: 0.3141, sector: null, score: null, verdict: null,
+    viaFunds: null, scoreBefore: null, upcoming: [],
   };
   const protection = {
     asOf: '2026-10-07', close: 214.37, currency: 'USD', dailyMove: 0.0213, rsi: 71.6, overSma200: 0.183, channel: 'oben' as const,
@@ -91,6 +94,9 @@ describe('what the depot manager is told', () => {
     assert.equal(made.technik?.stopProzent, -7.6);
     assert.equal(made.technik?.trailingProzent, 8.8);
     assert.equal(made.technik?.rsi, 72);
+    assert.equal(made.ueberFondsProzent, 1.2);
+    assert.equal(made.scoreVor4Wochen, 5.3);
+    assert.deepEqual(made.termine, [{ datum: '2026-10-28', was: 'Nächste Quartalszahlen' }]);
   });
 
   it('carries a fund by name, kind and weight alone', () => {
@@ -100,7 +106,7 @@ describe('what the depot manager is told', () => {
   it('never quantities, prices, values, dates, trades, the journal, or a fund\'s gain', () => {
     for (const leak of [
       '123.45', '321.5', '87.65', '99.01', '12222', '45678', '0.1296', '31.4', '2024-03-15', '2025-11-02', 'geheime',
-      'isin', 'US0000000001', '214.37', '198.11', '203.25', '222.9', '201.5',
+      'isin', 'US0000000001', '214.37', '198.11', '203.25', '222.9', '201.5', '2026-09-10',
     ]) {
       assert.ok(!text.includes(leak), `${leak} reached the prompt`);
     }

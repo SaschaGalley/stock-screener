@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import Page, { HeaderButton } from '../components/Page';
 import DepotCheck from '../components/DepotCheck';
+import Upcoming from '../components/Upcoming';
 import RecommendationBadge from '../components/RecommendationBadge';
 import StockLogo, { initialsFromName } from '../components/StockLogo';
 import { HEADER_HEIGHT, HEADER_RULE, ROW_HEIGHT, ROW_RULE } from '../components/StockRowCells';
@@ -9,7 +10,7 @@ import Tip from '../components/Tip';
 import { scoreColor } from '../components/stockList';
 import { evidenceLine, useVerdictEvidence } from '../components/VerdictEvidence';
 import { deNumber, fmtSignedPct } from '../format';
-import type { DepotFlag, DepotPosition, DepotResponse, VerdictRecord } from '../../../src/analysis/depot';
+import type { DepotFlag, DepotPosition, DepotResponse, DepotView, VerdictRecord } from '../../../src/analysis/depot';
 import { RECOMMENDATIONS } from '../../../src/verdict';
 
 const eur = (n: number) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
@@ -28,8 +29,9 @@ const FLAG_TONE: Record<DepotFlag['tone'], string> = {
   reduce: 'border-red-500/40 text-red-400',
   add:    'border-emerald-500/40 text-emerald-400',
   ask:    'border-ink-700 text-ink-400',
+  note:   'border-sky-500/40 text-sky-300',
 };
-const FLAG_MARK: Record<DepotFlag['tone'], string> = { reduce: '▼', add: '▲', ask: '?' };
+const FLAG_MARK: Record<DepotFlag['tone'], string> = { reduce: '▼', add: '▲', ask: '?', note: '◷' };
 /** Said elsewhere in the row: the sell verdict by its chip, the missing reason in the reason's place. */
 const SAID_ELSEWHERE = new Set<DepotFlag['key']>(['sell', 'reason']);
 const TREND: Record<NonNullable<DepotPosition['chart']>['trend'], { mark: string; label: string; cls: string }> = {
@@ -96,7 +98,8 @@ export default function DepotPage() {
             </ul>
             <p className="mt-2 text-2xs text-ink-500">
               Keine Zielgewichte: Der Score hat als Portfolio-Regel den vorab festgelegten Test nicht bestanden. Die
-              Hinweise sind Prüfpunkte — ▼ spricht dafür, weniger zu halten, ▲ für mehr, ? fehlt etwas —, keine Aufträge.
+              Hinweise sind Prüfpunkte — ▼ spricht dafür, weniger zu halten, ▲ für mehr, ? fehlt etwas, ◷ ein Termin —,
+              keine Aufträge.
             </p>
           </section>
 
@@ -119,9 +122,12 @@ export default function DepotPage() {
             </table>
           </section>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <Shares title="Aktien nach Sektor" rows={view.sectors.map((s) => ({ label: s.sector, weight: s.weight }))} limit={view.limits.maxSector} />
+          {/* `grid-cols-1`, not the implicit track: that one is as wide as the widest card's content on a phone. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <LookThroughSectors view={view} />
+            <LookThroughStocks view={view} />
             <Shares title="Depot nach Anlageart" rows={view.byType.map((t) => ({ label: TYPE_LABEL[t.assetType] ?? t.assetType, weight: t.weight }))} />
+            <Dates view={view} />
           </div>
 
           <DepotCheck onOpen={openStock} sectors={view.sectors} />
@@ -171,6 +177,11 @@ function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
               <div className={`h-full ${p.concentrated ? 'bg-red-500' : 'bg-accent'}`} style={{ width: `${Math.min(100, p.weight * 100 / (limit * 2))}%` }} />
             </div>
             <span className="whitespace-nowrap font-mono text-xs tabular text-ink-300">{pct(p.weight)}</span>
+            {p.viaFunds !== null && (
+              <Tip focusable={false} content={`Über die Fonds hältst du zusätzlich ${pct(p.viaFunds)} des Depots, zusammen ${pct(p.weight + p.viaFunds)}.`}>
+                <span className="whitespace-nowrap font-mono text-2xs tabular text-ink-500">+{deNumber(p.viaFunds * 100, 1)}</span>
+              </Tip>
+            )}
           </div>
         )}
       </td>
@@ -184,6 +195,7 @@ function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
       <td className="whitespace-nowrap px-2 py-1">
         {p.verdict || p.score !== null ? (
           <span className="flex items-center gap-2">
+            <ScoreTrend p={p} />
             <span className={`w-7 text-right font-mono text-base font-semibold tabular ${scoreColor(p.score)}`}>
               {p.score !== null ? deNumber(p.score, 1) : '—'}
             </span>
@@ -210,13 +222,112 @@ function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
           <div className="flex gap-1 overflow-hidden leading-4">
             {chips.map((f) => (
               <Tip key={f.key} focusable={false} content={f.text}>
-                <span className={`whitespace-nowrap rounded border px-1 text-2xs ${FLAG_TONE[f.tone]}`}>{FLAG_MARK[f.tone]} {f.label}</span>
+                <span className={`whitespace-nowrap rounded border px-1 text-2xs leading-[14px] ${FLAG_TONE[f.tone]}`}>{FLAG_MARK[f.tone]} {f.label}</span>
               </Tip>
             ))}
           </div>
         )}
       </td>
     </tr>
+  );
+}
+
+/** The score against four weeks ago: a falling score says more than where it stands. */
+function ScoreTrend({ p }: { p: DepotPosition }) {
+  const d = p.score !== null && p.scoreBefore ? p.score - p.scoreBefore.score : null;
+  return (
+    <Tip
+      focusable={false}
+      content={p.scoreBefore && d !== null ? `Am ${fmtDay(p.scoreBefore.at.slice(0, 10))} ${deNumber(p.scoreBefore.score, 1)}, heute ${deNumber(p.score!, 1)}` : null}
+    >
+      <span className={`w-8 text-right text-2xs tabular ${d === null || Math.abs(d) < 0.05 ? 'text-ink-600' : d > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+        {d === null || Math.abs(d) < 0.05 ? '' : `${d > 0 ? '▲' : '▼'}${deNumber(Math.abs(d), 1)}`}
+      </span>
+    </Tip>
+  );
+}
+
+/**
+ * The sectors over the whole depot, the funds read as what they hold: each bar
+ * the sector's share, its darker part what the single stocks hold directly.
+ */
+function LookThroughSectors({ view }: { view: DepotView }) {
+  const lt = view.lookThrough;
+  const max = Math.max(...lt.sectors.map((s) => s.total), 0.01);
+  const amongStocks = new Map(view.sectors.map((s) => [s.sector, s.weight]));
+  if (lt.sectors.length === 0) return null;
+  return (
+    <section className="rounded-lg border border-ink-800 px-4 py-3">
+      <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
+        <Tip content={`Jeder Fonds gelesen als die Sektoren, die er hält (laut Yahoo); der dunkle Teil des Balkens sind deine Einzelaktien.${lt.unknown.length ? ` Ohne Angaben: ${lt.unknown.join(', ')}.` : ''}`}>
+          <span>Sektoren, Fonds durchgerechnet</span>
+        </Tip>
+      </h3>
+      <ul className="space-y-1 text-xs">
+        {lt.sectors.map((r) => (
+          <li key={r.sector} className="flex items-center gap-2">
+            <span className="w-36 truncate text-ink-300">{r.sector}</span>
+            <Tip
+              focusable={false}
+              className="flex h-1.5 flex-1 overflow-hidden rounded bg-ink-800"
+              content={`direkt ${pct(r.direct)}, über Fonds ${pct(r.viaFunds)}${amongStocks.has(r.sector) ? ` · unter den Einzelaktien ${pct(amongStocks.get(r.sector)!)}` : ''}`}
+            >
+              <span className="block h-full bg-accent" style={{ width: `${(r.direct / max) * 100}%` }} />
+              <span className="block h-full bg-accent/40" style={{ width: `${(r.viaFunds / max) * 100}%` }} />
+            </Tip>
+            <span className="w-12 text-right font-mono text-ink-400">{pct(r.total)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The largest companies once the funds' largest holdings are counted in. */
+function LookThroughStocks({ view }: { view: DepotView }) {
+  const lt = view.lookThrough;
+  if (lt.stocks.length === 0) return null;
+  return (
+    <section className="rounded-lg border border-ink-800 px-4 py-3">
+      <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
+        <Tip content={`Deine Einzelaktien und die zehn größten Werte jedes Fonds (laut Yahoo), zusammengezählt. Von den Fonds (${pct(lt.funds.weight)} des Depots) sind ${pct(lt.funds.known)} so beschrieben; jenseits der zehn größten ist ein Weltfonds breit gestreut.`}>
+          <span>Größte Einzelwerte, Fonds durchgerechnet</span>
+        </Tip>
+      </h3>
+      <ul className="space-y-1 text-xs">
+        {lt.stocks.map((r) => (
+          <li key={`${r.symbol}-${r.name}`} className="flex items-center gap-2">
+            <span className={`min-w-0 flex-1 truncate ${r.held ? 'text-ink-100' : 'text-ink-400'}`}>
+              {r.name} {r.symbol && <span className="font-mono text-2xs text-ink-500">{r.symbol}</span>}
+            </span>
+            <span className="w-14 text-right font-mono text-ink-500">{r.direct > 0 ? pct(r.direct) : ''}</span>
+            <span className="w-14 text-right font-mono text-ink-500">{r.viaFunds > 0 ? `+${pct(r.viaFunds)}` : ''}</span>
+            <span className="w-14 text-right font-mono text-ink-200">{pct(r.total)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-2xs text-ink-500">direkt · über Fonds · zusammen, in Prozent des Depots</p>
+    </section>
+  );
+}
+
+/** What is scheduled for the stocks held and for the market, the next thirty days. */
+function Dates({ view }: { view: DepotView }) {
+  const items = [
+    ...view.positions.flatMap((p) => (p.symbol ? p.upcoming.map((e) => ({ ...e, symbol: p.symbol, name: p.name })) : [])),
+    ...view.market.map((m) => ({ day: m.day, symbol: null, kind: 'market' as const, title: m.event, detail: m.watch || null })),
+  ];
+  return (
+    <section className="rounded-lg border border-ink-800 px-4 py-3">
+      <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
+        <Tip content="Quartalszahlen, Ex-Tage und Dividendenzahlungen aus Yahoo, die datierten Katalysatoren der neuesten Recherche zu jeder Aktie und die Markttermine aus der Marktlage des Depot-Checks.">
+          <span>Termine · 30 Tage</span>
+        </Tip>
+      </h3>
+      {items.length === 0
+        ? <p className="text-xs text-ink-500">Nichts angesetzt.</p>
+        : <Upcoming items={items} onSelect={openStock} first={10} />}
+    </section>
   );
 }
 

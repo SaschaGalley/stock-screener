@@ -3,6 +3,7 @@ import { api } from '../api';
 import Page from '../components/Page';
 import Tip from '../components/Tip';
 import EventDays, { groupByDay } from '../components/EventDays';
+import Upcoming from '../components/Upcoming';
 import ReactECharts from '../components/charts/ECharts';
 import { CHART_COLORS, baseTextStyle } from '../components/charts/chartTheme';
 import { KIND_DOT, KIND_HEX, KIND_SHORT } from '../components/timelineStyle';
@@ -28,8 +29,8 @@ const shortDay = (day: string) => {
 /**
  * What happened across the watchlist: every stock's timeline over the last
  * days on one axis — rating changes, insider trades, the quarter's numbers,
- * our own verdict changes, the days a price jumped — and the reports due in
- * the next two weeks. The question the list raises each morning.
+ * our own verdict changes, the days a price jumped — and what is due in the
+ * next month: reports, dividends, catalysts, the market's own dates. The question the list raises each morning.
  *
  * It read like a log: one line per event, a dot, a ticker, a title and its
  * detail run together, and the whole window at once — thirty days with the
@@ -136,21 +137,20 @@ export default function FeedPage({ onSelect }: { onSelect: (symbol: string) => v
       {error && <div className="rounded border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-400">⚠ {error}</div>}
       {!page && !error && <div className="p-8 text-center text-sm text-ink-500">Lese die Zeitleisten der Watchlist …</div>}
 
-      {page && page.upcoming.length > 0 && (
+      {page && (page.upcoming.length > 0 || page.market.length > 0) && (
         <section className="rounded-lg border border-ink-700 bg-ink-900 px-4 py-3">
-          <h3 className="mb-2 text-xs font-semibold text-ink-300">Quartalszahlen in den nächsten zwei Wochen</h3>
-          <div className="flex flex-wrap gap-1.5">
-            {page.upcoming.map((e) => (
-              <Tip key={`${e.symbol}-${e.day}`} focusable={false} content={e.name ?? e.symbol}>
-                <button
-                  onClick={() => onSelect(e.symbol)}
-                  className="rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-xs text-ink-300 transition hover:border-accent hover:text-ink-100"
-                >
-                  <span className="text-ink-500">{shortDay(e.day)}</span> <span className="font-mono text-ink-100">{e.symbol}</span>
-                </button>
-              </Tip>
-            ))}
-          </div>
+          <h3 className="mb-2 text-xs font-semibold text-ink-300">
+            <Tip content="Quartalszahlen, Ex-Tage und Dividendenzahlungen aus Yahoo, die datierten Katalysatoren der jeweils neuesten Recherche und die Markttermine der Marktlage des Depot-Checks.">
+              <span>Was ansteht · 30 Tage</span>
+            </Tip>
+          </h3>
+          <Upcoming
+            onSelect={onSelect}
+            items={[
+              ...page.upcoming.map((e) => ({ day: e.day, symbol: e.symbol, name: e.name, kind: e.kind, title: e.title, detail: e.detail })),
+              ...page.market.map((m) => ({ day: m.day, symbol: null, kind: 'market' as const, title: m.event, detail: m.watch || null })),
+            ]}
+          />
         </section>
       )}
 

@@ -33,7 +33,8 @@ import type { SectorTrend } from './analysis/sector-rotation.js';
 import { protectionOf } from './analysis/stops.js';
 import { readChart, runChartRead } from './chart-service.js';
 import { runAnalysis } from './cli.js';
-import { readAppState, writeAppState } from './db/admin.js';
+import { writeAppState } from './db/admin.js';
+import { CHECK_RESULT_KEY, CHECK_STATUS_KEY, readStateJson } from './depot-check-state.js';
 import { latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
 import { readDepot } from './depot-service.js';
 import { invalidateDiscover } from './discover-service.js';
@@ -42,12 +43,11 @@ import { interactive, NoWorkerError, viaHatchet } from './hatchet/via.js';
 import { marketBrief, sectorTrendsNow } from './market-service.js';
 import { createProviderForModel } from './providers/factory.js';
 import { refreshStockData } from './refresh.js';
-import { tradesSource } from './trades-service.js';
 import { logger } from './utils/logger.js';
 import { settledPool } from './utils/pool.js';
 
-const STATUS_KEY = () => `depot.check.${tradesSource()}.status`;
-const RESULT_KEY = () => `depot.check.${tradesSource()}.result`;
+const STATUS_KEY = CHECK_STATUS_KEY;
+const RESULT_KEY = CHECK_RESULT_KEY;
 
 /** Stocks worked on at once: each holds an analysis in a worker or an LLM call here. */
 const CONCURRENCY = 3;
@@ -60,26 +60,17 @@ const VERDICT = 'score.final.verdict';
 
 let running = false;
 
-async function readJson<T>(key: string): Promise<T | null> {
-  try {
-    const raw = await readAppState(key);
-    return raw ? JSON.parse(raw) as T : null;
-  } catch {
-    return null;
-  }
-}
-
 /** `GET /api/depot/check` */
 export async function readDepotCheck(): Promise<DepotCheckResponse> {
   const [status, result, config] = await Promise.all([
-    readJson<DepotCheckStatus>(STATUS_KEY()), readJson<DepotCheckResult>(RESULT_KEY()), readAppConfig(),
+    readStateJson<DepotCheckStatus>(STATUS_KEY()), readStateJson<DepotCheckResult>(RESULT_KEY()), readAppConfig(),
   ]);
   return { status, result, settings: config.depotCheck };
 }
 
 /** At boot: a run that was going when the process died is not going any more. */
 export async function reconcileDepotCheck(): Promise<void> {
-  const s = await readJson<DepotCheckStatus>(STATUS_KEY());
+  const s = await readStateJson<DepotCheckStatus>(STATUS_KEY());
   if (s?.state !== 'running' || running) return;
   await writeAppState(STATUS_KEY(), JSON.stringify({ ...s, state: 'interrupted', finishedAt: new Date().toISOString() }));
 }
@@ -210,7 +201,7 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
       positions: view.positions, sectors: view.sectors, lists,
       holdings: new Map(holdings.map((h) => [h.symbol, h])),
       limits: { maxPosition: view.limits.maxPosition, maxSector: view.limits.maxSector },
-      market: brief, sectorTrends,
+      market: brief, sectorTrends, lookThrough: view.lookThrough,
     });
     manager = await createProviderForModel(flags.model).complete({
       label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 10_000,

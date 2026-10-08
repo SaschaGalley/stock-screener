@@ -30,6 +30,7 @@ import {
 } from '../../pipeline/steps.js';
 import { syncWatchlistDossiers } from '../../distill-dossiers.js';
 import { sendDigest } from '../../digest.js';
+import { watchDepot } from '../../depot-watch-service.js';
 import { referenceBatch } from '../../universe.js';
 import { logger } from '../../utils/logger.js';
 import { settledPool } from '../../utils/pool.js';
@@ -320,6 +321,7 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
       // watchlist, and the universe behind it takes hours.
       if (!input.symbols.length) {
         await sendDigest().catch((e) => logger.warn(`Digest failed: ${(e as Error).message}`));
+        await watchDepot().catch((e) => logger.warn(`Depot watch failed: ${(e as Error).message}`));
       }
 
       // The universe after the watchlist has settled, never beside it: the

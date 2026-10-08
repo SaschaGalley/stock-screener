@@ -86,7 +86,7 @@ export async function sendDigest(opts: { test?: boolean } = {}): Promise<{ ok: b
   const since = isoDay(Date.now() - DAY_MS);
   const fresh = feed.events.filter((e) => DIGEST_KINDS.includes(e.kind)
     && (opts.test || first ? e.day >= since : !sent[eventKey(e)]));
-  const soon = feed.upcoming.filter((e) => e.day <= isoDay(Date.now() + UPCOMING_DAYS * DAY_MS));
+  const soon = feed.upcoming.filter((e) => e.kind === 'earnings' && e.day <= isoDay(Date.now() + UPCOMING_DAYS * DAY_MS));
 
   const alert = digestAlert(fresh, soon);
   if (!alert) return { ok: true, events: 0, reason: null };

@@ -16,7 +16,7 @@ import { fxTicker, majorCurrency } from './currencies.js';
 import { BENCHMARK_CURRENCY } from './data/macro.js';
 import { flowFromRow, ttmFlow, type IncomeFlow } from './analysis/income-flow.js';
 import { tradeKind, type Holder, type Holders } from './analysis/holders.js';
-import { analystEvent, bigMoves, type Timeline, type TimelineEvent, type TimelineKind } from './analysis/timeline.js';
+import { analystEvent, bigMoves, upcomingOf, type Timeline, type TimelineEvent, type TimelineKind } from './analysis/timeline.js';
 import type { PerplexityContext } from './data/perplexity.js';
 import {
   readAnalystActions, readInsiderTransactions, readPriceBars, readPriceBarsMany, readPriceEvents, readVerdictChanges,
@@ -26,6 +26,7 @@ import {
   snapshotHistory, symbolFacts, type Series,
 } from './db/store.js';
 import { journalForSymbols } from './db/journal-store.js';
+import { newestMarketBrief } from './db/market-store.js';
 import { deNumber, fmtBigDe, fmtPriceDe } from './format.js';
 import { JOURNAL_LABEL, journalHeadline } from './journal.js';
 import type { NewsItem } from './types.js';
@@ -404,9 +405,7 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
     }
   }
 
-  const upcoming: TimelineEvent[] = f?.nextEarningsDate && f.nextEarningsDate >= new Date().toISOString().slice(0, 10)
-    ? [{ day: f.nextEarningsDate, kind: 'earnings', tone: 'neutral', title: 'Nächste Quartalszahlen' }]
-    : [];
+  const upcoming = upcomingOf(f, briefs[0]?.data?.findings?.catalysts ?? [], new Date().toISOString().slice(0, 10), money);
 
   return {
     events: events.filter((e) => e.day >= from).sort((a, b) => b.day.localeCompare(a.day)),
@@ -414,21 +413,43 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
   };
 }
 
+/** A market brief younger than this still has its calendar ahead of it. */
+const BRIEF_CALENDAR_MS = 7 * DAY_MS;
+
+/** The market's dates between `from` and `to`, from the newest brief of the last week. */
+export async function marketDates(from: string, to: string): Promise<MarketDate[]> {
+  const brief = await newestMarketBrief(BRIEF_CALENDAR_MS).catch(() => null);
+  return (brief?.calendar ?? [])
+    .flatMap((c) => (c.date && /^\d{4}-\d{2}-\d{2}$/.test(c.date) && c.date >= from && c.date <= to ? [{ day: c.date, event: c.event, watch: c.watch }] : []))
+    .sort((a, b) => a.day.localeCompare(b.day));
+}
+
+/** What is scheduled for one stock, without reading its whole timeline: the depot's dates. */
+export async function stockUpcoming(symbol: string): Promise<TimelineEvent[]> {
+  const [f, briefs] = await Promise.all([readFinancialsLax(symbol), listDocuments<PerplexityContext>(symbol, 'perplexity', { limit: 1 })]);
+  return upcomingOf(f, briefs[0]?.data?.findings?.catalysts ?? [], new Date().toISOString().slice(0, 10), (n) => fmtPriceDe(n, f?.tradingCurrency));
+}
+
 // ── What happened across the watchlist ──────────────────────────────────────
 
 /** One stock's event, with the stock it belongs to. */
 export type FeedEvent = TimelineEvent & { symbol: string; name: string | null };
 
+/** A date for the whole market — a central bank, an inflation print — from the newest market brief. */
+export interface MarketDate { day: string; event: string; watch: string }
+
 export interface Feed {
   events:   FeedEvent[];
-  /** Reports scheduled within `UPCOMING_DAYS`, soonest first. */
+  /** What is scheduled within `UPCOMING_DAYS` — reports, dividends, catalysts — soonest first. */
   upcoming: FeedEvent[];
+  /** The market's own dates over the same days, from the newest market brief of the last week. */
+  market:   MarketDate[];
   from:     string;
   symbols:  number;
 }
 
-/** How far ahead the feed lists scheduled reports. */
-const UPCOMING_DAYS = 14;
+/** How far ahead the feed lists what is scheduled. */
+const UPCOMING_DAYS = 30;
 /** Timelines read at once: each is a handful of indexed queries. */
 const FEED_CONCURRENCY = 6;
 /** The feed is read when the list opens; the archive changes once a night. */
@@ -477,6 +498,7 @@ async function buildFeed(days: number): Promise<Feed> {
   return {
     events: events.sort((a, b) => b.day.localeCompare(a.day) || a.symbol.localeCompare(b.symbol)),
     upcoming: upcoming.sort((a, b) => a.day.localeCompare(b.day)),
+    market: await marketDates(today, horizon),
     from: new Date(Date.now() - days * DAY_MS).toISOString().slice(0, 10),
     symbols: symbols.length,
   };
@@ -506,6 +528,7 @@ export interface FeedPage {
   /** Per day and kind, over everything the filter lets through, oldest first — for the chart. */
   perDay:   { day: string; counts: Partial<Record<TimelineKind, number>> }[];
   upcoming: FeedEvent[];
+  market:   MarketDate[];
   from:     string;
   symbols:  number;
 }
@@ -547,6 +570,7 @@ export function pageFeed(feed: Feed, query: FeedQuery): FeedPage {
     counts,
     perDay:   [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, c]) => ({ day, counts: c })),
     upcoming: feed.upcoming.filter(matches),
+    market:   q ? feed.market.filter((m) => `${m.event} ${m.watch}`.toLowerCase().includes(q)) : feed.market,
     from:     feed.from,
     symbols:  feed.symbols,
   };

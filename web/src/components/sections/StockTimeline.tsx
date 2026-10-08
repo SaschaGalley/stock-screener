@@ -94,8 +94,15 @@ export default function StockTimeline({ symbol }: { symbol: string }) {
       {data === undefined && <p className="text-xs text-ink-500">Lade Zeitleiste …</p>}
       {data && data.upcoming.length > 0 && (
         <div className="rounded border border-ink-800 bg-ink-950 px-3 py-2 text-sm text-ink-300">
-          <span className="text-xs font-semibold text-ink-400">Demnächst: </span>
-          {data.upcoming.map((e) => `${e.title} am ${fmtDay(e.day)}`).join(' · ')}
+          <div className="mb-1 text-xs font-semibold text-ink-400">Demnächst</div>
+          <ul className="space-y-0.5">
+            {data.upcoming.map((e) => (
+              <li key={`${e.day}-${e.title}`} className="flex gap-2">
+                <span className="w-20 shrink-0 font-mono text-xs leading-5 text-ink-500">{fmtDay(e.day)}</span>
+                <span className="min-w-0">{e.title}{e.detail && <span className="text-ink-500"> — {e.detail}</span>}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

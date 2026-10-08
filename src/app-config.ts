@@ -169,6 +169,13 @@ export const AppConfigSchema = z.object({
      * jumps (`src/digest.ts`). Off, only the verdict changes are sent.
      */
     digest:     z.boolean().default(true),
+    /**
+     * After the same pass, the depot's night watch (`src/depot-watch-service.ts`):
+     * a stock held whose close fell under its trailing stop or the last
+     * depot check's stop, or whose score fell under the reduce bar while its
+     * chart turned down — each announced once, the night it appears.
+     */
+    depotWatch: z.boolean().default(true),
   }).prefault({}),
 });
 

@@ -33,3 +33,12 @@ export async function latestMarketBrief(model: string, promptHash: string, maxAg
   );
   return res.rows[0]?.data ?? null;
 }
+
+/** The newest brief from any model or question, if it is younger than `maxAgeMs`: its calendar for the pages. */
+export async function newestMarketBrief(maxAgeMs: number): Promise<MarketBrief | null> {
+  const res = await query<{ data: MarketBrief }>(
+    `SELECT data FROM market_briefs WHERE fetched_at > now() - make_interval(secs => $1) ORDER BY fetched_at DESC LIMIT 1`,
+    [maxAgeMs / 1000],
+  );
+  return res.rows[0]?.data ?? null;
+}

@@ -597,6 +597,21 @@ export default function AdminPage() {
             Überblick testen
           </button>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-ink-300">
+            <input
+              type="checkbox"
+              checked={config.alerts.depotWatch}
+              onChange={(e) => patch((d) => { d.alerts.depotWatch = e.target.checked; })}
+            />
+            Depot-Wächter nach dem Nachtlauf
+          </label>
+          <span className="text-xs text-ink-500">
+            Meldet eine Aktie im Depot, deren Schlusskurs unter den Trailing-Stop oder den Stop des letzten Depot-Checks fällt,
+            oder deren Score unter die Reduzieren-Schwelle fällt, während der Chart nach unten zeigt — jeden Hinweis einmal,
+            in der Nacht, in der er auftaucht. Die Nachricht nennt Aktie und Kurse, keine Stückzahlen oder Beträge.
+          </span>
+        </div>
         <p className="text-xs leading-relaxed text-ink-500">
           {config.alerts.format === 'ntfy'
             ? <>Leer = aus. Die URL des ntfy-Topics, auf ntfy.sh oder einem eigenen Server; die ntfy-App abonniert dasselbe

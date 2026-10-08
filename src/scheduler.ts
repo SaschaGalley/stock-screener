@@ -39,6 +39,7 @@ import {
 } from './pipeline/steps.js';
 import { syncWatchlistDossiers } from './distill-dossiers.js';
 import { sendDigest } from './digest.js';
+import { watchDepot } from './depot-watch-service.js';
 import { referenceBatch } from './universe.js';
 
 export type { JobRun, JobRunStatus, JobStep, JobStepResult, JobSymbolResult, StepStatus };
@@ -160,6 +161,7 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
     // the universe: it is about the watchlist, and the universe takes hours.
     if (!explicit && run.status !== 'stopped') {
       await sendDigest().catch((e) => logger.warn(`Digest failed: ${(e as Error).message}`));
+      await watchDepot().catch((e) => logger.warn(`Depot watch failed: ${(e as Error).message}`));
     }
 
     // What is left of the night goes to the universe; the watchlist is what

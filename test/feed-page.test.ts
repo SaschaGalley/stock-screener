@@ -20,6 +20,7 @@ const feed: Feed = {
     ev('2026-03-03', 'BBB', 'move', 'Kurssprung +9 %'),
   ],
   upcoming: [ev('2026-03-12', 'CCC', 'earnings', 'Nächste Quartalszahlen')],
+  market: [{ day: '2026-03-18', event: 'Zinsentscheid', watch: 'Zinspfad' }],
   from: '2026-02-27',
   symbols: 3,
 };

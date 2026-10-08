@@ -14,13 +14,15 @@
  *
  * The depot manager's text is the one place holdings reach a model, and
  * `managerInput` is the one place that decides what of them does: names,
- * sectors, weights and — for single stocks — the gain since purchase, in per
- * cent; never quantities, prices paid, values or dates (CLAUDE.md).
+ * sectors, weights — the funds' too, read as what they hold — and, for single
+ * stocks, the gain since purchase in per cent; never quantities, prices paid,
+ * values or the dates of trades (CLAUDE.md).
  *
  * Pure and dependency-free: the web app imports the types.
  */
 
 import { SCORE_BANDS } from '../verdict.js';
+import type { LookThrough } from './look-through.js';
 import type { MarketBrief } from './market-brief.js';
 import type { SectorTrend } from './sector-rotation.js';
 import type { Protection } from './stops.js';
@@ -168,6 +170,12 @@ export interface HeldForManager {
   gain:      number | null;
   score:     number | null;
   verdict:   string | null;
+  /** What the funds add to its weight. */
+  viaFunds?:    number | null;
+  /** The score about four weeks ago. */
+  scoreBefore?: { score: number; at: string } | null;
+  /** What is scheduled for it. */
+  upcoming?:    { day: string; title: string; detail: string | null }[];
 }
 
 /** Single stocks are judged one by one; funds, coins and metals are the depot's mix. */
@@ -222,17 +230,26 @@ export function managerInput(input: {
   limits:       { maxPosition: number; maxSector: number };
   market:       MarketBrief | null;
   sectorTrends: readonly SectorTrend[];
+  lookThrough?: LookThrough | null;
 }) {
+  const lt = input.lookThrough;
   return {
     depot: input.positions.map((p) => {
       const base = { name: p.name, symbol: p.symbol, art: p.assetType, gewichtProzent: pct(p.weight) };
       if (!isSingleStock(p)) return base;
       const h = p.symbol ? input.holdings.get(p.symbol) : undefined;
       return {
-        ...base, sector: p.sector, seitKaufProzent: pct(p.gain), score: p.score, urteil: p.verdict,
+        ...base, ueberFondsProzent: pct(p.viaFunds), sector: p.sector, seitKaufProzent: pct(p.gain),
+        score: p.score, scoreVor4Wochen: p.scoreBefore?.score ?? null, urteil: p.verdict,
         chart: chartLine(h?.chart ?? null), technik: technik(h?.protection),
+        termine: (p.upcoming ?? []).map((e) => ({ datum: e.day, was: e.detail ? `${e.title} — ${e.detail}` : e.title })),
       };
     }),
+    durchgerechnet: lt ? {
+      sektorenProzent: lt.sectors.map((x) => ({ sector: x.sector, gesamt: pct(x.total), direkt: pct(x.direct) })),
+      groessteWerte: lt.stocks.map((x) => ({ name: x.name, symbol: x.symbol, direkt: pct(x.direct), ueberFonds: pct(x.viaFunds) })),
+      fondsBeschriebenProzent: pct(lt.funds.known),
+    } : null,
     sektorenProzent: input.sectors.map((s) => ({ sector: s.sector, gewichtProzent: pct(s.weight) })),
     grenzen: { positionProzent: pct(input.limits.maxPosition), sektorProzent: pct(input.limits.maxSector) },
     kaufenAnsehen:          input.lists.buy.map(candidateLine),
@@ -267,7 +284,9 @@ export const MANAGER_SYSTEM = [
   'Was die Daten bedeuten:',
   '- depot: jede Position mit ihrem Anteil am Depotwert (gewichtProzent). Fonds, ETFs, Krypto und Metalle stehen nur mit',
   '  Gewicht darin: Sie sind die Mischung des Depots, nicht Gegenstand einzelner Schritte.',
-  '- Bei Aktien: seitKaufProzent ist, wo der Anleger mit der Position steht.',
+  '- Bei Aktien: seitKaufProzent ist, wo der Anleger mit der Position steht. ueberFondsProzent: was seine Fonds an derselben',
+  '  Aktie zusätzlich halten. scoreVor4Wochen: der Score vor etwa vier Wochen; ein fallender Score sagt mehr als sein Stand.',
+  '  termine: Quartalszahlen, Dividenden und Katalysatoren der nächsten Wochen.',
   `  score: 0 bis 10, aus Kennzahlen und Analysetext; urteil: ${bandsDe}. Im Backtest sagt der Score die Rendite des`,
   '  nächsten Monats nur schwach voraus (Rangkorrelation 0,014). Stütze dich nicht auf kleine Unterschiede.',
   '- chart: Trend und Phase laut Chart-Lesung, lesart ihre Zusammenfassung.',
@@ -279,6 +298,8 @@ export const MANAGER_SYSTEM = [
   '- kaufenAnsehen: außerhalb des Depots, hoch bewertet, Chart aufwärts; hochBewertetChartNicht: hoch bewertet, Chart (noch) nicht.',
   '- markt: aktuelle Recherche zu Lage, Rotation, Sektoren, Treibern, Problemen und Terminen.',
   '  sektorTrendUSA: eigene Messung der US-Sektorfonds gegen den S&P 500 (führt, verliert Schwung, hinkt, holt auf).',
+  '- durchgerechnet: Sektoren und größte Einzelwerte des ganzen Depots, die Fonds als das gelesen, was sie halten (ihre',
+  '  zehn größten Werte und ihre Sektoren); fondsBeschriebenProzent: wie viel des Depots in so beschriebenen Fonds liegt.',
   '- grenzen: ab dieser Positions- bzw. Sektorgröße ist es ein Klumpen.',
   '',
   'Wie du vorgehst:',
@@ -292,6 +313,8 @@ export const MANAGER_SYSTEM = [
   '  Trend abzuschneiden); „stop“ für Positionen im Abwärtstrend oder mit schwachem Score (die Marke, an der die Lesart',
   '  widerlegt ist); „keiner“, wo eine Marke nur das Rauschen träfe. Nenne den Abstand aus technik, erfinde keinen.',
   '  Ein Stop begrenzt Verluste, er bringt keine Rendite: Er lohnt, wo Trends laufen, und kostet, wo der Kurs nur pendelt.',
+  '- Termine: Vor Quartalszahlen nicht ohne Grund nachkaufen; ein Stop schützt nicht vor einer Kurslücke am Tag danach.',
+  '- Klumpen nach durchgerechnet beurteilen: eine Aktie, die die Fonds schon groß halten, ist doppelt im Depot.',
   '- Denk an das ganze Depot und an den Markt: Klumpen, Sektoren, ob der Markt den Sektoren der Positionen Rückenwind',
   '  oder Gegenwind gibt, welche Termine anstehen. Ein Kauf, der einen Sektor über die Grenze bringt, ist eher keiner.',
   '- Wenige, begründete Schritte statt Aktionismus. Lieber „beobachten“ als ein schwach begründeter Kauf oder Verkauf.',
