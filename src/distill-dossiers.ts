@@ -31,7 +31,7 @@
  */
 
 import { getConfig } from './config.js';
-import { AppConfig, isWatched, readAppConfig, scheduledSymbols } from './app-config.js';
+import { AppConfig, readAppConfig, scheduledSymbols } from './app-config.js';
 import {
   clearDistillEntity,
   DossierKind,
@@ -47,7 +47,7 @@ import {
   retireDossiers,
   subjectKey,
 } from './db/admin.js';
-import { latestSnapshotForAll, listSymbols, readFinancialsLax } from './db/store.js';
+import { latestSnapshotForAll, readFinancialsLax } from './db/store.js';
 import { StockFinancials } from './types.js';
 import { distillHintsFor, resolveDistillEntityCached } from './distill-service.js';
 import { getDistillEntity } from './data/distill-entities.js';
@@ -158,7 +158,7 @@ export async function setDossier(entityId: string, enabled: boolean): Promise<bo
 export async function desiredSubjects(
   config: AppConfig, apiKey: string, baseUrl: string,
 ): Promise<DossierSubject[]> {
-  const symbols = await scheduledSymbols(config);
+  const symbols = await scheduledSymbols();
   const out: DossierSubject[] = symbols.map(company);
 
   const vocabulary = await loadSectorVocabulary(apiKey, baseUrl);
@@ -581,20 +581,4 @@ export async function syncWatchlistDossiers(config?: AppConfig): Promise<Dossier
 
   logger.info(`Distill dossier sync — ${describeDossierSync(summary)}`);
   return summary;
-}
-
-/**
- * Which stocks changed sides between two configs.
- *
- * Derived from `listSymbols()` rather than from the watchlist record's keys:
- * the record is an *opt-out*, so an absent key means watched, and diffing the
- * keys alone would miss every stock that was never toggled.
- */
-export async function watchlistDelta(
-  before: AppConfig, after: AppConfig,
-): Promise<{ symbol: string; enabled: boolean }[]> {
-  const symbols = await listSymbols();
-  return symbols
-    .filter((s) => isWatched(before, s) !== isWatched(after, s))
-    .map((s) => ({ symbol: s, enabled: isWatched(after, s) }));
 }

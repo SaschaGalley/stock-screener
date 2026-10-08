@@ -265,7 +265,7 @@ export const pipeline = hatchet.task<PipelineInput, PipelineOutput>({
 
     const symbols = input.symbols.length
       ? input.symbols.map((s) => s.toUpperCase())
-      : await scheduledSymbols(config);
+      : await scheduledSymbols();
     // Only after a full run, as in the in-process scheduler.
     const reference = input.symbols.length ? [] : await referenceBatch(config).catch((e) => {
       logger.warn(`Reference universe unavailable: ${(e as Error).message}`);

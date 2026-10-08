@@ -87,15 +87,6 @@ export function StockIdentity({ row, active, stages = [] }: IdentityProps) {
           <span className={`truncate text-sm font-medium leading-5 ${active ? 'text-ink-50' : 'text-ink-100'}`}>
             {row.companyName}
           </span>
-          {!row.watched && (
-            <Tip
-              focusable={false}
-              className="shrink-0 rounded border border-ink-700 px-1 text-3xs uppercase leading-3.5 text-ink-500"
-              content="Nicht in der Watchlist — wird vom nächtlichen Lauf übersprungen"
-            >
-              pausiert
-            </Tip>
-          )}
         </div>
         {stages.length > 0 ? (
           // Takes the lower line rather than sitting beside the ticker: while
@@ -191,6 +182,5 @@ export function rowTitle(row: OverviewRow, fmtBig: (n: number | null, c: string 
     row.sector ?? '—',
     fmtBig(row.marketCap, row.currency),
     row.score === null ? 'nicht bewertet' : `Score ${deNumber(row.score, 1)}`,
-    row.watched ? null : 'nicht in der Watchlist',
   ].filter(Boolean).join(' · ');
 }

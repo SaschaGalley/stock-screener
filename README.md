@@ -78,7 +78,7 @@ pnpm run serve           # API only — serve dist/ behind your own reverse prox
 
 There is one list of stocks, shown at two densities. There are no tabs and no toolbar above it: the list *is* the app, and whether a stock or the administration is open on top of it is a fact about state rather than a place you navigate to.
 
-**Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label, the factor score's rank among every stored stock (the reference universe included) and the model, price, analyst mean target, composite fair value, both upside percentages, where the price stands on its chart (see *When to buy* under [The backtest](#the-backtest)), the dividend yield, market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, six other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
+**Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label, the factor score's rank among every stored stock (the reference universe included) and the model, price, analyst mean target, composite fair value, both upside percentages, where the price stands on its chart (see *When to buy* under [The backtest](#the-backtest)), the dividend yield, market cap and how old the data and the verdict are. Sorted by score descending by default; search, six other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
 
 **Was ist passiert** (the pulse icon beside the chart icon, `#/feed`, `GET /api/feed?days=7`) — every watchlist stock's timeline over the last day, week or month on one axis: rating changes and target moves, insider trades, the quarter's numbers, our own verdict changes, dated research findings, the days a price jumped, headlines on request — and the reports due in the next two weeks above them. Built from the same per-stock timelines (`watchlistFeed` in `src/stock-history-service.ts`), so an event reads the same in the feed as on its stock's page. The strip of verdict changes above the list links to it.
 
@@ -96,7 +96,7 @@ The list does not move when any of that happens. The two densities share the row
 
 Measured across the list, the stock you clicked lands on the pixel it was on, going in and coming back. Where the browser supports view transitions the columns fade rather than vanish between frames.
 
-- **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and the watchlist filter belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
+- **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and grouping belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
 - **Center pane**: full analysis — verdict card with the score's composition underneath, composite fair value (primary + conservative tiers), bull and bear case, valuation over five years, valuation models, fundamentals (history, margin trend and today's figures in one section), peer comparison, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
 
   **Wie der Score entsteht** is a strip under the three verdict cards rather than a section of its own: the blend as one line (Zahlen × weight + Text × weight → score), the six pillars with their weights, and the five narrative dimensions. Findings, method and the two prose reads sit behind *Befunde & Begründung*, which remembers being opened; the two prose reads are also a hover on their half of the formula.
@@ -122,7 +122,7 @@ Measured across the list, the stock you clicked lands on the pixel it was on, go
 
 Adding a stock (`+ Hinzufügen` at the bottom of the window, under either density) resolves the ticker or company name and fetches the data layer — **no LLM call**. The verdict is a separate, explicit run from the Analyse dialog, so looking a company up never costs an API bill.
 
-**⚙ Administration** — schedule, pipeline steps, watchlist and run log; closed by the same ✕, in the same corner. See [Nightly pipeline](#nightly-pipeline) below.
+**⚙ Administration** — schedule, pipeline steps, reference universe and run log; closed by the same ✕, in the same corner. See [Nightly pipeline](#nightly-pipeline) below.
 
 **URLs**: `#/stock/AAPL`, `#/overview`, `#/admin`, `#/feed`, `#/evaluation`, `#/journal`, `#/depot`, `#/review` — reload and browser back/forward work everywhere. No hash is the list. Old `#AAPL` links still resolve to a stock.
 
@@ -1434,7 +1434,7 @@ differs is where it shows up:
 
 | | Watchlist stock | Reference symbol |
 |---|---|---|
-| List, overview, admin watchlist, Distill | yes | never |
+| List, overview, Distill | yes | never |
 | LLM analysis, news, options chain | yes | never |
 | Peer medians | daily | monthly (`REFERENCE_PEER_TTL_MS`) |
 | Factor score, score series | yes | yes |
@@ -2457,11 +2457,12 @@ A failing step is recorded and the run continues: one dead ticker must not cost
 the other forty their nightly update. The run finishes as `partial` and the admin
 page shows exactly which step failed and why.
 
-The **watchlist** decides coverage. Symbols are opted in by default — only an
-explicit *off* is stored — so a stock you analyse today joins tonight's run
-without anyone remembering to enable it. `▶` next to a symbol runs the pipeline
-for that one stock, `▶ Jetzt laufen` runs the whole watchlist, `■ Stoppen` ends
-the run after the symbol it is on.
+The **watchlist** is the list: every stock on it is in tonight's run, and a
+stock you analyse today joins it without anyone remembering to enable it. There
+used to be a per-stock opt-out in the administration; nobody used it, and an
+unticked stock kept its place in the list with a verdict that had silently
+stopped moving. `▶ Jetzt laufen` runs the whole watchlist, `■ Stoppen` ends the
+run after the symbol it is on; one stock is re-run from its own page.
 
 ### Recorded history
 

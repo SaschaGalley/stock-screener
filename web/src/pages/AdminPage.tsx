@@ -236,7 +236,6 @@ export default function AdminPage() {
   }
 
   const analysis = config.steps.analysis;
-  const watchedCount = meta.symbols.filter((s) => config.watchlist[s.symbol] !== false).length;
 
   return (
     <Page
@@ -560,59 +559,6 @@ export default function AdminPage() {
             : <>Leer = aus. Gesendet wird ein JSON-POST mit <span className="font-mono">text</span> (Slack) und{' '}
                 <span className="font-mono">content</span> (Discord) sowie Symbol, altem und neuem Urteil und Score.</>}
         </p>
-      </Card>
-
-      {/* ── Watchlist ──────────────────────────────────────────────────── */}
-      <Card
-        title={`Watchlist (${watchedCount}/${meta.symbols.length})`}
-        hint="Nur aktivierte Aktien laufen im Zeitplan. Neue Aktien sind automatisch dabei."
-      >
-        <div className="flex gap-2">
-          <button
-            onClick={() => patch((d) => { d.watchlist = {}; })}
-            className="rounded border border-ink-700 px-2 py-1 text-xs text-ink-300 hover:bg-ink-800"
-          >
-            alle aktivieren
-          </button>
-          <button
-            onClick={() => patch((d) => {
-              d.watchlist = Object.fromEntries(meta.symbols.map((s) => [s.symbol, false]));
-            })}
-            className="rounded border border-ink-700 px-2 py-1 text-xs text-ink-300 hover:bg-ink-800"
-          >
-            alle deaktivieren
-          </button>
-        </div>
-        <div className="grid max-h-72 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto md:grid-cols-3">
-          {meta.symbols.map((s) => {
-            const on = config.watchlist[s.symbol] !== false;
-            return (
-              <label key={s.symbol} className="flex items-center gap-2 truncate">
-                <input
-                  type="checkbox"
-                  checked={on}
-                  onChange={(e) => patch((d) => {
-                    // Absent means "watched", so only an explicit false is stored —
-                    // that keeps new symbols opted in by default.
-                    if (e.target.checked) delete d.watchlist[s.symbol];
-                    else d.watchlist[s.symbol] = false;
-                  })}
-                  className="accent-[var(--color-accent)]"
-                />
-                <span className="truncate text-xs text-ink-200">{s.companyName}</span>
-                <span className="ml-auto shrink-0 font-mono text-2xs text-ink-500">{s.symbol}</span>
-                <button
-                  onClick={(e) => { e.preventDefault(); runNow([s.symbol]); }}
-                  disabled={jobs?.running}
-                  title={`Nur ${s.symbol} jetzt laufen lassen`}
-                  className="shrink-0 rounded px-1 text-2xs text-ink-600 hover:bg-ink-800 hover:text-ink-200 disabled:opacity-30"
-                >
-                  ▶
-                </button>
-              </label>
-            );
-          })}
-        </div>
       </Card>
 
       {/* ── Läufe ──────────────────────────────────────────────────────── */}

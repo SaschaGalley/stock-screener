@@ -51,7 +51,7 @@ import {
 } from './data/distill.js';
 import { distillHintsFor } from './distill-service.js';
 import { syncDistillDossiers } from './distill-content.js';
-import { dossiersFollowStocks, noteDossierIntent, watchlistDelta } from './distill-dossiers.js';
+import { dossiersFollowStocks, noteDossierIntent } from './distill-dossiers.js';
 import { getMarketRates } from './data/fred.js';
 import { computeAllMetrics } from './analysis/computeMetrics.js';
 import { deriveTechnicalSignals } from './analysis/signals.js';
@@ -77,7 +77,7 @@ import { TIMELINE_KINDS, type TimelineKind } from './analysis/timeline.js';
 import { QuoteBrief, quoteBriefs, searchByQuery } from './data/yfinance.js';
 import { yahooTicker } from './data/universe.js';
 import { lastGoodSectorMedians } from './sector-medians.js';
-import { AppConfigSchema, readAppConfig, writeAppConfig, isWatched } from './app-config.js';
+import { AppConfigSchema, readAppConfig, writeAppConfig } from './app-config.js';
 import {
   applySchedule,
   getSchedulerStatus,
@@ -409,10 +409,8 @@ export function createApp(): express.Express {
       // way, and a Distill outage must not hold the request open for the length
       // of a retry budget. `dossiersFollow` records its own failures, and the
       // next run's full sync repairs whatever this misses.
-      void (async () => {
-        const config = await readAppConfig();
-        await dossiersFollowStocks([{ symbol: resolved, enabled: isWatched(config, resolved) }]);
-      })().catch((e) => logger.warn(`Distill dossier switch for ${resolved} failed: ${(e as Error).message}`));
+      void dossiersFollowStocks([{ symbol: resolved, enabled: true }])
+        .catch((e) => logger.warn(`Distill dossier switch for ${resolved} failed: ${(e as Error).message}`));
     } catch (e) {
       next(e);
     }
@@ -696,7 +694,6 @@ export function createApp(): express.Express {
         symbols: [...financials.entries()]
           .map(([symbol, snap]) => ({
             symbol,
-            watched: isWatched(config, symbol),
             companyName: snap.data.companyName ?? symbol,
           }))
           .sort((a, b) => a.symbol.localeCompare(b.symbol)),
@@ -741,19 +738,10 @@ export function createApp(): express.Express {
         });
         return;
       }
-      const before = await readAppConfig();
       const config = await writeAppConfig(parsed.data);
       await applySchedule();
       await applyBacktestSchedule().catch((e) => logger.error(`Could not install backtest schedule: ${(e as Error).message}`));
       res.json({ ok: true, config, scheduler: await getSchedulerStatus() });
-
-      // Unticking a stock here is the other way it leaves the watchlist, and it
-      // costs money for as long as Distill keeps building for it. Only the
-      // symbols that actually changed sides are sent.
-      void (async () => {
-        const changes = await watchlistDelta(before, config);
-        await dossiersFollowStocks(changes);
-      })().catch((e) => logger.warn(`Distill dossier switch after a config change failed: ${(e as Error).message}`));
     } catch (e) {
       next(e);
     }
@@ -940,7 +928,6 @@ export function createApp(): express.Express {
             : null,
           analysisCount: entries.length,
           dataAgeHours:  (Date.now() - new Date(snap.lastSeenAt).getTime()) / 3_600_000,
-          watched:       isWatched(config, symbol),
           consensus:     computeConsensus(f, entries),
           timing:        timingFromPoints((k) => timings.get(symbol)?.get(k)),
           universeRank:  rank(num('score.factor.score') ?? stored?.factor.score ?? null),

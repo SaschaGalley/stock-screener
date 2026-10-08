@@ -123,12 +123,6 @@ export const AppConfigSchema = z.object({
   }).prefault({}),
 
   /**
-   * Per-symbol opt-out. Absent means "included" — a newly analysed stock joins
-   * the nightly run without anyone having to remember to enable it.
-   */
-  watchlist: z.record(z.string(), z.boolean()).default({}),
-
-  /**
    * The reference universe (`src/universe.ts`): the S&P 500, refreshed on a
    * rotation after the watchlist and scored on the numbers alone, so that the
    * calibration and the evaluation have a population to read the score against.
@@ -184,7 +178,7 @@ export async function readAppConfig(): Promise<AppConfig> {
 /**
  * Field-wise fallback for a config that failed whole-object validation. Each
  * top-level section is parsed on its own, so one bad cron string can't reset
- * the watchlist.
+ * the alerts.
  */
 function repair(raw: unknown): AppConfig {
   const obj = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
@@ -206,11 +200,6 @@ export async function writeAppConfig(next: AppConfig): Promise<AppConfig> {
   return validated;
 }
 
-/** Is this symbol covered by the nightly run? Unknown symbols default to yes. */
-export function isWatched(config: AppConfig, symbol: string): boolean {
-  return config.watchlist[symbol.toUpperCase()] !== false;
-}
-
 /** The analysis step's flags, normalised the way the cache key expects them. */
 export function analysisFlagsFor(config: AppConfig): {
   model: string;
@@ -226,13 +215,16 @@ export function analysisFlagsFor(config: AppConfig): {
 }
 
 /**
- * The watchlist: symbols the nightly run covers, in the order it walks them.
+ * The watchlist: symbols the nightly run covers, in the order it walks them —
+ * every stock on the list. There was a per-stock opt-out in the administration;
+ * nobody used it, and a stock left unticked there was a stock the list showed
+ * with a verdict that silently stopped moving.
  *
- * Lives beside `isWatched` rather than in `pipeline/steps.ts` because it is the
- * *definition* of the watchlist, and more than the pipeline needs it — the
- * Distill dossier sync mirrors exactly this set. Keeping it in the pipeline
- * module made that sync import the pipeline, which imported it back.
+ * Lives here rather than in `pipeline/steps.ts` because it is the *definition*
+ * of the watchlist, and more than the pipeline needs it — the Distill dossier
+ * sync mirrors exactly this set. Keeping it in the pipeline module made that
+ * sync import the pipeline, which imported it back.
  */
-export async function scheduledSymbols(config: AppConfig): Promise<string[]> {
-  return (await listSymbols()).filter((s) => isWatched(config, s)).sort();
+export async function scheduledSymbols(): Promise<string[]> {
+  return (await listSymbols()).sort();
 }

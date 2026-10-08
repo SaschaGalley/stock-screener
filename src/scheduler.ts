@@ -106,7 +106,7 @@ export async function runPipeline(opts: RunOptions): Promise<JobRun> {
   const explicit = !!opts.symbols?.length;
   const symbols = explicit
     ? opts.symbols!.map((s) => s.toUpperCase())
-    : await scheduledSymbols(config);
+    : await scheduledSymbols();
   // A run over a hand-picked subset is someone checking on those stocks, not
   // the night's pass, so the universe only follows a full run.
   const reference = explicit ? [] : await referenceBatch(config).catch((e) => {
@@ -322,7 +322,7 @@ export interface SchedulerStatus {
 export async function getSchedulerStatus(): Promise<SchedulerStatus> {
   const config = await readAppConfig();
   const next = task?.getNextRun() ?? null;
-  const [runs, watched] = await Promise.all([listRuns(), scheduledSymbols(config)]);
+  const [runs, watched] = await Promise.all([listRuns(), scheduledSymbols()]);
 
   // Under Hatchet the run lives in the worker process, so the stored row is the
   // only thing this process can see — and it is the better answer anyway, since

@@ -174,7 +174,6 @@ export interface OverviewRow {
   scoreDelta:    number | null;
   analysisCount: number;
   dataAgeHours:  number | null;
-  watched:       boolean;
   /** Combined AI + analyst buy/hold/sell band, for the list's consensus stripe. */
   consensus:     ConsensusBand | null;
   /**
@@ -207,7 +206,7 @@ export interface AnalysisListEntry extends AnalysisManifestEntry {
 /** `GET /api/config` — settings plus the read-only facts needed to edit them. */
 export interface ConfigResponse {
   config:  AppConfig;
-  symbols: { symbol: string; watched: boolean; companyName: string }[];
+  symbols: { symbol: string; companyName: string }[];
   /** Presence only — key values never leave the server. */
   keys:    Record<string, boolean>;
   /** Where the file-shaped leftovers live (EDGAR filings, generated reports). */
