@@ -623,8 +623,9 @@ export const DDMResultSchema = z.object({
   fairValue:           z.number().nullable().describe('Two-stage dividend discount value per share: five years at the dividend\'s own growth, five fading to stable growth, Gordon\'s formula after; null without a dividend'),
   dividendPerShare:    z.number().nullable().describe('Annual dividend per share: price × dividendYield'),
   dividendGrowthRate:  z.number().nullable().describe('Dividend growth for the first five years (decimal): 5y dividend CAGR, else consensus EPS growth, else stable growth; bounded to 0–15 %. Fades to terminal growth over the next five'),
-  terminalGrowthRate:  z.number().describe('Stable dividend growth after year ten (decimal), capped at the risk-free rate'),
+  terminalGrowthRate:  z.number().describe("Stable dividend growth after year ten (decimal): the DCF's rule — the firm's own second-year revenue growth, between half the risk-free rate and the risk-free rate, two points under the terminal required return"),
   requiredReturn:      z.number().nullable().describe("CAPM required return: riskFreeRate + beta × Damodaran's implied equity risk premium (decimal)"),
+  terminalRequiredReturn: z.number().nullable().describe('Required return the rate moves to over years six to ten and capitalises the perpetuity at: the same CAPM at beta 1 — a mature firm (decimal)'),
   isApplicable:        z.boolean().describe('False when the stock pays no dividend'),
 });
 export type DDMResult = z.infer<typeof DDMResultSchema>;

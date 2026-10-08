@@ -229,7 +229,7 @@ Pass `--search` without a value to auto-select the native search for the active 
 | 4 | **Graham Revised (V\*)** | `EPS × (8.5 + 2g) × 4.4 / Y` — Y the AAA spread over Treasuries on top of the stock's own currency's government yield; g the 3-year EPS CAGR, capped at 15 % |
 | 5 | **Peter Lynch** | `EPS × (g + dividend yield)` in percent, g the next-year consensus EPS growth (else the 3-year CAGR), capped at 25 %, abstaining below 5 % or on a falling consensus |
 | 6 | **EPV (Greenwald)** | Average operating margin of the last five fiscal years × trailing revenue, after the marginal tax rate, capitalised at WACC, plus the equity bridge; not applied to lenders |
-| 7 | **DDM (two-stage)** | Dividend grows at its own five-year rate (≤ 15 %) for five years, fades to stable growth over five, Gordon after; CAPM required return |
+| 7 | **DDM (two-stage)** | Dividend grows at its own five-year rate (≤ 15 %) for five years, fades over five to the firm's stable growth — the DCF's rule — Gordon after; CAPM required return, moving over the fade to a mature firm's at beta 1 |
 | 8 | **Excess Return (RIM)** | Book value + PV of returns above the cost of equity, ROE fading over ten years to the cost of equity plus half of today's excess, then a perpetuity. The headline model for banks, insurers and lenders |
 | 9 | **NCAV (Graham Net-Net)** | Current assets − total liabilities, ⅔ × NCAV buy threshold |
 | 10 | **Peer Multiples** | P/E, EV/EBITDA, EV/Revenue, P/FCF, P/B, P/S vs Finnhub sub-industry medians (industry where the sub-industry is thin, except for financials); peers a fiftieth of the company's size, its own other share classes and negative multiples are left out; lenders are priced on P/E and P/B only. The median gives each fundamental one vote |
@@ -312,7 +312,7 @@ The rest of the discounting follows from the same review:
 | Local risk-free rate | The currency's ten-year yield less its government's default spread over the US | A Mexican or Indian yield prices that government's credit risk too |
 | Cost of debt | Risk-free + rating spread + the country's default spread | — |
 | Terminal WACC | Beta 1, debt capped at 30 % of capital (`MATURE_MAX_DEBT_SHARE`) | Fresenius Medical's 50 % debt put its terminal WACC at 6.8 % against 5.2 % growth, a perpetuity worth 60 years of profit |
-| Stable growth | The second-year growth rate, held between half and all of the risk-free rate, and two points under the terminal WACC | No firm outgrows the economy for ever, and one the consensus has growing at 3 % does not accelerate into perpetuity |
+| Stable growth | The second-year growth rate, held between half and all of the risk-free rate, and two points under the terminal WACC (`stableGrowth`); the dividend model's perpetuity follows the same rule, under its cost of equity at beta 1 | No firm outgrows the economy for ever, and one the consensus has growing at 3 % does not accelerate into perpetuity. The dividend model used to grow every payer's dividend at the risk-free rate for ever: at a 5 % Treasury yield and a low beta the perpetuity was worth thirty years of the dividend |
 
 The model answers with a distribution. Five inputs are uncertain: growth
 (±25 % of the rate + 3 points), the target margin (±20 %), sales-to-capital

@@ -395,6 +395,38 @@ function consensusRevenueGrowth(f: StockFinancials, period: '0y' | '+1y'): numbe
   return toFiniteNumber(e?.revenueGrowth);
 }
 
+/**
+ * Revenue growth this year and next: the consensus where analysts publish one,
+ * else the trailing twelve months, else steady state at the risk-free rate.
+ */
+export function revenueGrowthAhead(f: StockFinancials, b: ValuationBasis, rf: number): [number, number, GrowthSource] {
+  const c0 = consensusRevenueGrowth(f, '0y');
+  const c1 = consensusRevenueGrowth(f, '+1y');
+  const trailing = b.revenueGrowth;
+  return c0 !== null || c1 !== null ? [c0 ?? (c1 as number), c1 ?? (c0 as number), 'analyst consensus']
+    : trailing !== null ? [trailing, trailing, 'trailing twelve months']
+    : [rf, rf, 'steady state'];
+}
+
+/**
+ * The rate a firm grows at for ever, for every model with a perpetuity in it:
+ * its own second-year growth, held between half the risk-free rate and the
+ * risk-free rate (`TERMINAL_GROWTH_FLOOR`), and far enough below the rate the
+ * perpetuity is discounted at (`MIN_TERMINAL_SPREAD`).
+ *
+ * One rule because it is one company. The dividend model used to take the
+ * risk-free rate for every payer, so a firm whose consensus had revenue growing
+ * under 3 % was valued by the DCF at that and by the dividend model as if its
+ * dividend grew at a 5 % Treasury yield for ever.
+ */
+export function stableGrowth(rf: number, ownGrowth: number, terminalRate: number): number {
+  return Math.min(
+    rf,
+    Math.max(clamp(ownGrowth, GROWTH_BOUNDS.min, GROWTH_BOUNDS.max), TERMINAL_GROWTH_FLOOR * rf),
+    terminalRate - MIN_TERMINAL_SPREAD,
+  );
+}
+
 function mean(xs: number[]): number | null {
   return xs.length > 0 ? xs.reduce((s, x) => s + x, 0) / xs.length : null;
 }
@@ -496,13 +528,7 @@ export function dcfInputs(
   if (b.operatingIncome === null) return { skip: 'DCF nicht anwendbar — kein operatives Ergebnis.' };
 
   const rf = terminalGrowth(rates);
-  const c0 = consensusRevenueGrowth(f, '0y');
-  const c1 = consensusRevenueGrowth(f, '+1y');
-  const trailing = b.revenueGrowth;
-  const [g1, g2, growthSource]: [number, number, GrowthSource] =
-    c0 !== null || c1 !== null ? [c0 ?? (c1 as number), c1 ?? (c0 as number), 'analyst consensus']
-    : trailing !== null ? [trailing, trailing, 'trailing twelve months']
-    : [rf, rf, 'steady state'];
+  const [g1, g2, growthSource] = revenueGrowthAhead(f, b, rf);
 
   const marginNow = b.operatingIncome / b.revenue;
   const recent = b.operatingMargins.slice(-3);
@@ -535,7 +561,7 @@ export function dcfInputs(
   const beta = adjustedBeta(f.beta, betaPrior(peers));
   const r = wacc(f, b, rates, beta);
   const rT = wacc(f, b, rates, 1, MATURE_MAX_DEBT_SHARE);
-  const gT = Math.min(rf, Math.max(clamp(g2, GROWTH_BOUNDS.min, GROWTH_BOUNDS.max), TERMINAL_GROWTH_FLOOR * rf), rT - MIN_TERMINAL_SPREAD);
+  const gT = stableGrowth(rf, g2, rT);
   const s2c = salesToCapital(f, b);
   const ownRoic = toFiniteNumber(f.roic);
   const peerRoic = toFiniteNumber(peers?.roic);

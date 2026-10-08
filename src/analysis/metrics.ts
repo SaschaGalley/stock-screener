@@ -31,7 +31,7 @@ import { consecutiveQuarters, latestValue, YearPoint } from './trailing.js';
 import { ValuationBasis, equityPerShare, valuationBasis } from './basis.js';
 import { adjustedBeta, betaPrior, costOfEquity, terminalGrowth, wacc } from './cost-of-capital.js';
 import { deNumber } from '../format.js';
-import { borrowsToLend, isPlausibleFairValue, LENDER_NOTE } from './dcf.js';
+import { borrowsToLend, isPlausibleFairValue, LENDER_NOTE, revenueGrowthAhead, stableGrowth } from './dcf.js';
 import { quantileSorted } from './sampling.js';
 import { toFiniteNumber } from '../utils/num.js';
 
@@ -529,6 +529,13 @@ const DDM_MAX_GROWTH = 0.15;
  * formula. A single-stage Gordon model capped every payer at the risk-free rate
  * from year one, which priced a company raising its dividend 10 % a year as if
  * it were a bond.
+ *
+ * The perpetuity follows the DCF's rules, because it is the same company's:
+ * stable growth is the firm's own (`stableGrowth`), not the risk-free rate for
+ * every payer, and the rate moves over the fade years to a mature firm's cost
+ * of equity at beta 1. Gordon's formula is one difference — at a low beta's
+ * three-point spread a dividend was worth thirty years of itself, and a small
+ * change in either rate moved the value by a third.
  */
 export function calculateDDM(
   financials: StockFinancials, marketRates?: MarketRates, peers: SectorMedians | null = null,
@@ -537,31 +544,39 @@ export function calculateDDM(
   const dy = toFiniteNumber(financials.dividendYield);
   const price = financials.price;
   const requiredReturn = costOfEquity(financials, rates, adjustedBeta(financials.beta, betaPrior(peers)));
-  const gT = Math.max(0, terminalGrowth(rates));
+  const terminalRequiredReturn = costOfEquity(financials, rates, 1);
+  const rf = terminalGrowth(rates);
+  const [, ownGrowth] = revenueGrowthAhead(financials, valuationBasis(financials), rf);
+  const gT = Math.max(0, stableGrowth(rf, ownGrowth, terminalRequiredReturn));
   const none = (isApplicable: boolean, dps: number | null = null, g: number | null = null): DDMResult => ({
-    fairValue: null, dividendPerShare: dps, dividendGrowthRate: g, terminalGrowthRate: gT, requiredReturn, isApplicable,
+    fairValue: null, dividendPerShare: dps, dividendGrowthRate: g, terminalGrowthRate: gT,
+    requiredReturn, terminalRequiredReturn, isApplicable,
   });
 
   if (dy === null || dy <= 0 || dy > 0.15) return none(false);
   const dps = price * dy;
   const own = toFiniteNumber(financials.dividendGrowthRate5Y) ?? forwardEpsGrowth(financials) ?? gT;
   const g = clamp(own, 0, DDM_MAX_GROWTH);
-  if (requiredReturn <= gT + 0.01) return none(true, dps, g);
+  if (terminalRequiredReturn <= gT + 0.01) return none(true, dps, g);
 
   let d = dps;
   let pv = 0;
+  let factor = 1;
   const years = DDM_HIGH_GROWTH_YEARS + DDM_FADE_YEARS;
   for (let t = 1; t <= years; t++) {
-    const growth = t <= DDM_HIGH_GROWTH_YEARS ? g
-      : g + (gT - g) * ((t - DDM_HIGH_GROWTH_YEARS) / DDM_FADE_YEARS);
-    d *= 1 + growth;
-    pv += d / Math.pow(1 + requiredReturn, t);
+    const fade = t <= DDM_HIGH_GROWTH_YEARS ? 0 : (t - DDM_HIGH_GROWTH_YEARS) / DDM_FADE_YEARS;
+    d *= 1 + g + (gT - g) * fade;
+    factor *= 1 + requiredReturn + (terminalRequiredReturn - requiredReturn) * fade;
+    pv += d / factor;
   }
-  const terminal = (d * (1 + gT)) / (requiredReturn - gT);
-  const fairValue = pv + terminal / Math.pow(1 + requiredReturn, years);
+  const terminal = (d * (1 + gT)) / (terminalRequiredReturn - gT);
+  const fairValue = pv + terminal / factor;
 
   if (!isPlausibleFairValue(fairValue, price)) return none(true, dps, g);
-  return { fairValue, dividendPerShare: dps, dividendGrowthRate: g, terminalGrowthRate: gT, requiredReturn, isApplicable: true };
+  return {
+    fairValue, dividendPerShare: dps, dividendGrowthRate: g, terminalGrowthRate: gT,
+    requiredReturn, terminalRequiredReturn, isApplicable: true,
+  };
 }
 
 // ─── Earnings Power Value (Greenwald) ────────────────────────────────────────

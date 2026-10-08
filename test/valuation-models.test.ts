@@ -49,6 +49,9 @@ function financials(over: Partial<StockFinancials> = {}): StockFinancials {
   } as unknown as StockFinancials;
 }
 
+/** Next year's consensus revenue growth, and nothing else. */
+const consensus = (revenueGrowth: number) => [{ period: '+1y', revenueGrowth }] as unknown as StockFinancials['earningsEstimates'];
+
 describe('dividend discount model', () => {
   it('grows the dividend at its own rate for five years, then at no more than the economy', () => {
     const ddm = calculateDDM(financials({ dividendYield: 0.03, dividendGrowthRate5Y: 0.08 }), rates);
@@ -67,6 +70,28 @@ describe('dividend discount model', () => {
     const slow = calculateDDM(financials({ dividendYield: 0.03, dividendGrowthRate5Y: 0.02 }), rates);
     const fast = calculateDDM(financials({ dividendYield: 0.03, dividendGrowthRate5Y: 0.10 }), rates);
     assert.ok(fast.fairValue! > slow.fairValue!);
+  });
+
+  it('grows for ever at the firm\'s own pace, as the DCF does, not at the risk-free rate', () => {
+    // A long record of raises, on a business the consensus has growing 3 % next year.
+    const f = financials({ dividendYield: 0.04, dividendGrowthRate5Y: 0.07, earningsEstimates: consensus(0.03) });
+    const ddm = calculateDDM(f, rates);
+    assert.equal(ddm.dividendGrowthRate, 0.07);
+    assert.ok(Math.abs(ddm.terminalGrowthRate - 0.03) < 1e-12);
+    assert.ok(Math.abs(ddm.terminalGrowthRate - calculateDCF(f, rates).terminalGrowthRate) < 1e-12);
+  });
+
+  it('does not let a shrinking year set a shrinking perpetuity', () => {
+    const ddm = calculateDDM(financials({ dividendYield: 0.04, dividendGrowthRate5Y: 0.05, earningsEstimates: consensus(-0.10) }), rates);
+    assert.ok(Math.abs(ddm.terminalGrowthRate - rates.riskFreeRate / 2) < 1e-12);
+  });
+
+  it('capitalises the perpetuity at a mature firm\'s cost of equity, whatever the beta today', () => {
+    const calm = calculateDDM(financials({ dividendYield: 0.04, dividendGrowthRate5Y: 0.05, beta: 0.4 }), rates);
+    const wild = calculateDDM(financials({ dividendYield: 0.04, dividendGrowthRate5Y: 0.05, beta: 1.8 }), rates);
+    assert.ok(calm.requiredReturn! < wild.requiredReturn!);
+    assert.ok(Math.abs(calm.terminalRequiredReturn! - (rates.riskFreeRate + rates.equityRiskPremium)) < 1e-12);
+    assert.equal(calm.terminalRequiredReturn, wild.terminalRequiredReturn);
   });
 });
 

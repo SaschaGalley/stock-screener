@@ -20,7 +20,7 @@
     "grahamNumber": 23.6871,
     "grahamRevised": 100.263,
     "lynch": null,
-    "ddm": 102.981,
+    "ddm": 57.4361,
     "epv": 43.4428,
     "rim": 101.493,
     "peers": null
@@ -40,7 +40,7 @@
       }
     },
     "conservative": {
-      "median": 100.263,
+      "median": 57.4361,
       "models": {
         "Graham Revised V*": {
           "value": 100.263,
@@ -51,7 +51,7 @@
           "weight": 1
         },
         "DDM (Two-Stage)": {
-          "value": 102.981,
+          "value": 57.4361,
           "weight": 1
         }
       }
@@ -64,13 +64,13 @@
     "coverage": 30.3442
   },
   "factor": {
-    "score": 7.2,
-    "raw": 6.5747,
+    "score": 7.1,
+    "raw": 6.54492,
     "verdict": "BUY",
     "confidence": 0.888,
-    "agreement": 0.81,
+    "agreement": 0.807,
     "pillars": {
-      "valuation": 6.90874,
+      "valuation": 6.80948,
       "quality": 6.52948,
       "health": 9.06083,
       "consensus": 4.86075,

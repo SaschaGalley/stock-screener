@@ -122,7 +122,7 @@ export const GLOSSARY = {
   'metrics.epv.fairValue':
     'Earnings Power Value nach Greenwald: Was das Geschäft wert ist, wenn es nie mehr wächst. Nachhaltiger operativer Gewinn (Durchschnittsmarge der letzten Jahre) nach Steuern, geteilt durch die Kapitalkosten, plus Cash minus Schulden. Liegt der Kurs darunter, bezahlt man kein Wachstum.',
   'metrics.ddm.fairValue':
-    'Dividendendiskontierungsmodell, zweistufig: fünf Jahre Wachstum der Dividende, dann Übergang zu stabilem Wachstum, abgezinst mit den Eigenkapitalkosten. Nur sinnvoll, wo die Dividende der Hauptweg ist, Wert auszuschütten.',
+    'Dividendendiskontierungsmodell, zweistufig: fünf Jahre wächst die Dividende wie bisher, dann läuft sie über fünf Jahre auf das Wachstum aus, das die Firma auf Dauer hat. Dafür gilt dieselbe Regel wie im DCF: ihr eigenes Umsatzwachstum, mindestens der halbe und höchstens der ganze Anleihezins. Abgezinst wird mit den Eigenkapitalkosten, die bis Jahr zehn auf die einer reifen Firma (Beta 1) zulaufen. Nur sinnvoll, wo die Dividende der Hauptweg ist, Wert auszuschütten.',
   'metrics.rim.fairValue':
     'Residual Income bzw. Excess Return: Buchwert plus Barwert der Gewinne, die über den Eigenkapitalkosten liegen. Das passende Modell für Banken und Versicherer, deren Eigenkapital ihr Betriebskapital ist.',
   'metrics.ncav.ncavPerShare':
