@@ -6,9 +6,11 @@ import { GLOSSARY, type GlossaryKey } from '../../glossary';
 
 interface Props {
   metrics: ComputedMetrics;
+  /** The regression beta against the S&P 500, beside the downside it is the other half of. */
+  beta?: number | null;
 }
 
-export default function QualityScores({ metrics }: Props) {
+export default function QualityScores({ metrics, beta = null }: Props) {
   const { piotroski, altmanZ, beneish, sortino, ruleOf40, interestCoverage } = metrics;
 
   return (
@@ -16,7 +18,7 @@ export default function QualityScores({ metrics }: Props) {
       <PiotroskiCard p={piotroski} />
       <AltmanCard a={altmanZ} />
       <BeneishCard b={beneish} />
-      <SortinoCard s={sortino} />
+      <SortinoCard s={sortino} beta={beta} />
       <RuleOf40Card r={ruleOf40} />
       <InterestCard ic={interestCoverage} />
     </div>
@@ -123,8 +125,14 @@ function BeneishCard({ b }: { b: any }) {
   );
 }
 
-function SortinoCard({ s }: { s: any }) {
-  if (s.ratio === null) return <ScoreCard title="Sortino-Ratio" term="metrics.sortino.ratio" value="—" color="text-ink-500" body="braucht mindestens 6 Monate Kursdaten" />;
+function SortinoCard({ s, beta }: { s: any; beta: number | null }) {
+  // How far it swings with the market, beside how far it falls on its own.
+  const swing = beta !== null && Number.isFinite(beta)
+    ? <> · <Term k="financials.beta">Beta</Term> {deNumber(beta, 2)}</>
+    : null;
+  if (s.ratio === null) {
+    return <ScoreCard title="Sortino-Ratio" term="metrics.sortino.ratio" value="—" color="text-ink-500" body={<>braucht mindestens 6 Monate Kursdaten{swing}</>} />;
+  }
   const color = s.ratio >= 2 ? 'text-emerald-400' : s.ratio >= 1 ? 'text-emerald-500'
               : s.ratio >= 0.5 ? 'text-amber-400' : 'text-red-400';
   return (
@@ -133,7 +141,7 @@ function SortinoCard({ s }: { s: any }) {
       value={deNumber(s.ratio, 2)}
       subtitle={label(RATING_LABEL, s.interpretation)}
       color={color}
-      body={`Rendite p. a. ${fmtPct(s.annualReturn)} · Abwärtsvolatilität ${fmtPct(s.downsideDeviation)}`}
+      body={<>Rendite p. a. {fmtPct(s.annualReturn)} · Abwärtsvolatilität {fmtPct(s.downsideDeviation)}{swing}</>}
     />
   );
 }

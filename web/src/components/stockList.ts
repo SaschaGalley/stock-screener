@@ -11,12 +11,13 @@ import { RECOMMENDATIONS, recommendationTone, verdictForScore } from '../format'
  * instead of a second implementation that drifts from the first.
  */
 
-export type SortKey = 'score' | 'target' | 'composite' | 'marketCap' | 'name' | 'symbol';
+export type SortKey = 'score' | 'target' | 'composite' | 'dividend' | 'marketCap' | 'name' | 'symbol';
 
 export const SORTS: { key: SortKey; label: string }[] = [
   { key: 'score',      label: 'Score' },
   { key: 'target',     label: 'Analysten-Potenzial' },
   { key: 'composite',  label: 'Modell-Potenzial' },
+  { key: 'dividend',   label: 'Dividendenrendite' },
   { key: 'marketCap',  label: 'Marktkapitalisierung' },
   { key: 'name',       label: 'Name A–Z' },
   { key: 'symbol',     label: 'Symbol A–Z' },
@@ -114,6 +115,7 @@ export function applyListView(rows: OverviewRow[], view: ListView): OverviewRow[
     case 'score':     sorted.sort(byNumber((r) => r.score)); break;
     case 'target':    sorted.sort(byNumber((r) => r.targetUpsidePct)); break;
     case 'composite': sorted.sort(byNumber((r) => r.compositeUpsidePct)); break;
+    case 'dividend':  sorted.sort(byNumber((r) => r.dividendYield)); break;
     case 'marketCap': sorted.sort(byNumber((r) => r.marketCap)); break;
     case 'name':      sorted.sort((a, b) => a.companyName.localeCompare(b.companyName) || bySymbol(a, b)); break;
     case 'symbol':    sorted.sort(bySymbol); break;

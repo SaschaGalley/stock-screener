@@ -50,6 +50,7 @@ export default function FundamentalsGrid({ financials: f, ratios, evMultiples: e
       </Block>
 
       <Block title="Bewertungsmultiples">
+        <Row label="Unternehmenswert" term="financials.enterpriseValue" value={fmtBig(f.enterpriseValue)} />
         <Row label="KGV TTM" term="metrics.ratios.pe"       value={fmt(ratios.pe, 'x')} />
         <Row label="Forward-KGV" term="metrics.ratios.forwardPE"   value={fmt(ratios.forwardPE, 'x')} />
         <Row label="Ø-KGV (5 J.)" term="financials.avgPE5Y"  value={fmt(f.avgPE5Y, 'x')} />

@@ -128,6 +128,8 @@ export interface OverviewRow {
   price:        number | null;
   marketCap:    number | null;
   currency:     string | null;
+  /** Trailing twelve months' dividends over the price (decimal); null for a stock that paid none. */
+  dividendYield: number | null;
   /**
    * Headline score: the deterministic factor score blended with the prose-only
    * narrative score by their two confidences, plus the synthesis model's

@@ -10,7 +10,7 @@ import {
 } from './StockRowCells';
 import { useListScroll, type ListScrollAnchor } from './useListScroll';
 import { groupRows, toggleGroup, type ListView } from './stockList';
-import { fmtBig, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
+import { fmtBig, fmtPct, fmtPercentPoints, fmtPrice, relativeTime, upsideColor } from '../format';
 import Term from './Term';
 
 interface Props {
@@ -43,6 +43,7 @@ const COL = {
   price:   'hidden sm:table-cell',
   target:  'hidden md:table-cell',
   model:   'hidden lg:table-cell',
+  yield:   'hidden lg:table-cell',
   mcap:    'hidden lg:table-cell',
   age:     'hidden xl:table-cell',
 } as const;
@@ -65,7 +66,7 @@ const NAME_CELL = 'w-full max-w-0 xl:w-auto xl:max-w-none';
 const GROUP_CELL = `sticky top-8 z-[5] ${CELL_RULE} bg-ink-900 py-0 transition group-hover:bg-ink-800`;
 
 /** Every column after name and score — what the heading's last cell spans. */
-const TRAILING_COLUMNS = 7;
+const TRAILING_COLUMNS = 8;
 
 /**
  * The stock list at full width: every column the overview has room for.
@@ -153,6 +154,10 @@ export default function StockTable({
         </Tip>
       </td>
 
+      <td className={`${COL.yield} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-200`}>
+        {r.dividendYield === null ? <span className="text-ink-600">—</span> : fmtPct(r.dividendYield)}
+      </td>
+
       <td className={`${COL.mcap} whitespace-nowrap px-2 py-1 text-right font-mono text-xs tabular text-ink-400`}>
         {fmtBig(r.marketCap, r.currency)}
       </td>
@@ -191,6 +196,7 @@ export default function StockTable({
                 <th className={`${COL.price} px-2 py-0 text-right font-semibold`}><Term k="list.price">Kurs</Term></th>
                 <th className={`${COL.target} px-2 py-0 text-right font-semibold`}><Term k="list.target">Kursziel</Term></th>
                 <th className={`${COL.model} px-2 py-0 text-right font-semibold`}><Term k="list.modelFv">Fairer Wert</Term></th>
+                <th className={`${COL.yield} px-2 py-0 text-right font-semibold`}><Term k="list.dividend">Dividende</Term></th>
                 <th className={`${COL.mcap} px-2 py-0 text-right font-semibold`}><Term k="list.mcap">Börsenwert</Term></th>
                 <th className={`${COL.age} px-3 py-0 text-right font-semibold`}><Term k="list.age">Analyse</Term></th>
               </tr>

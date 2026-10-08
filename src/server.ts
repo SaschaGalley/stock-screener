@@ -914,6 +914,7 @@ export function createApp(): express.Express {
           price,
           marketCap:   typeof f.marketCap === 'number' ? f.marketCap : null,
           currency:    f.tradingCurrency ?? null,
+          dividendYield: typeof f.dividendYield === 'number' && f.dividendYield > 0 ? f.dividendYield : null,
           score:           score ?? null,
           factorScore:     num('score.factor.score')      ?? stored?.factor.score      ?? null,
           narrativeScore:  num('score.narrative.score')   ?? stored?.narrative?.score  ?? null,

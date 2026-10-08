@@ -42,6 +42,8 @@ export const GLOSSARY = {
   'list.target': 'Abstand des mittleren Analysten-Kursziels (Yahoo-Konsens) zum Kurs; das Kursziel selbst auf Hover.',
   'list.modelFv':
     'Fairer Wert laut Bewertungsmodellen: der Primary-Composite aus DCF, Peer-Multiples, Peter Lynch und Analystenziel. Gezeigt ist sein Abstand zum Kurs, der Wert selbst auf Hover. Im Backtest (S&P 1500 seit 2013, Stand Oktober 2026) hat dieser Abstand keine Rendite vorhergesagt, und der Kurs hat sich dem Wert nicht genähert: Er beschreibt die Modelle, er ist keine erwartete Rendite.',
+  'list.dividend':
+    'Dividenden der letzten zwölf Monate geteilt durch den Kurs; „—“ für eine Aktie ohne Dividende. In Score und Urteil fließt sie nur über das Dividendenmodell in der Value-Lens ein: Im Backtest (S&P 1500 seit 2013, Stand Oktober 2026) hat eine höhere Dividendenrendite keine höhere Rendite gebracht, auch nicht innerhalb der Branche. Was dort trägt, sind Rückkäufe, und die liest der Score schon (Netto-Aktienausgabe).',
   'list.mcap': 'Börsenwert: Kurs mal alle ausstehenden Aktien.',
   'list.age':
     'Wann zuletzt eine Textanalyse lief; wie alt die Marktdaten sind, steht auf Hover. Der Score selbst wird bei jeder Datenaktualisierung neu gerechnet.',
@@ -181,7 +183,8 @@ export const GLOSSARY = {
   'metrics.evMultiples.evToFCF': 'Unternehmenswert durch Free Cashflow.',
   'metrics.evMultiples.priceToFCF':
     'Börsenwert durch Free Cashflow (operativer Cashflow minus Investitionen). Der Kehrwert ist die FCF-Rendite. Robuster als das KGV, weil Cash schwerer zu gestalten ist als Gewinn.',
-  'metrics.ratios.dividendYield': 'Dividenden der letzten zwölf Monate geteilt durch den Kurs.',
+  'metrics.ratios.dividendYield':
+    'Dividenden der letzten zwölf Monate geteilt durch den Kurs. Zu lesen gegen die Rendite zehnjähriger Staatsanleihen derselben Währung, also gegen das, was es ohne Risiko gibt: Die Anleihe zahlt sicher und am Ende alles zurück, die Dividende kann gekürzt werden und der Kurs schwankt. Was eine Aktie auf Dauer bringt, ist Dividende plus Wachstum. Unter dem Wert im Kopf der Aktie steht die Anleihe, oder gelb der Anteil am Gewinn, wenn mehr ausgeschüttet wird als verdient.',
 
   // ── Fundamentals grid ────────────────────────────────────────────────────
   'financials.revenue': 'Umsatz der letzten zwölf Monate (vier Quartale).',

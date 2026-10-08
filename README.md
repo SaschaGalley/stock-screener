@@ -78,7 +78,7 @@ pnpm run serve           # API only — serve dist/ behind your own reverse prox
 
 There is one list of stocks, shown at two densities. There are no tabs and no toolbar above it: the list *is* the app, and whether a stock or the administration is open on top of it is a fact about state rather than a place you navigate to.
 
-**Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label, the factor score's rank among every stored stock (the reference universe included) and the model, price, analyst mean target, composite fair value, both upside percentages, where the price stands on its chart (see *When to buy* under [The backtest](#the-backtest)), market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, five other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
+**Übersicht** — the list at full width, and the resting state: the headline score with its change since the first recorded point and, underneath, the two halves it was blended from (see [Score and verdict](#score-and-verdict)), a sparkline of the score over time, the verdict label, the factor score's rank among every stored stock (the reference universe included) and the model, price, analyst mean target, composite fair value, both upside percentages, where the price stands on its chart (see *When to buy* under [The backtest](#the-backtest)), the dividend yield, market cap and how old the data and the verdict are. Sorted by score descending by default; search, a watchlist-only filter, six other orderings and the ⚙ share one header row — the table's own, so the window spends no line on chrome that only navigates.
 
 **Was ist passiert** (the pulse icon beside the chart icon, `#/feed`, `GET /api/feed?days=7`) — every watchlist stock's timeline over the last day, week or month on one axis: rating changes and target moves, insider trades, the quarter's numbers, our own verdict changes, dated research findings, the days a price jumped, headlines on request — and the reports due in the next two weeks above them. Built from the same per-stock timelines (`watchlistFeed` in `src/stock-history-service.ts`), so an event reads the same in the feed as on its stock's page. The strip of verdict changes above the list links to it.
 
@@ -2285,7 +2285,7 @@ web/
 │       ├── ScoreSplit.tsx         The two halves behind one headline, per list row
 │       ├── BullBearRisks.tsx      bull and bear case, each in theses / figures / triggers
 │       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per rail item
-│       ├── StockHeader.tsx        Logo, price, refresh — and the ✕ / ⚙ chrome
+│       ├── StockHeader.tsx        Logo, price, P/E, dividend against the bond, refresh — and the ✕ / ⚙ chrome
 │       ├── StockLogo.tsx          Multi-source logo cascade (TradingView → Logo.dev → …)
 │       ├── ProgressBanner.tsx     SSE progress events while a run is in flight
 │       ├── AnalyzeForm.tsx        Bottom "analyze a new symbol" input

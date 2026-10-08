@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { StockSummary } from "../types";
-import { fmt, relativeTime } from "../format";
+import type { ComputedMetrics, StockSummary } from "../types";
+import { deNumber, fmtPct, relativeTime } from "../format";
 import { useMoney } from "../currency";
 import { api } from "../api"; // refresh endpoint (PDF/MD endpoints unused since report generation is skipped)
 import StockLogo, { initialsFromName } from "./StockLogo";
@@ -12,6 +12,10 @@ import type { GlossaryKey } from "../glossary";
 interface Props {
   summary: StockSummary;
   financials: any;
+  /** For the P/E and the government yield the dividend is read against. */
+  metrics: ComputedMetrics;
+  /** The peers' median P/E, beside the stock's own on hover. */
+  peerPe?: number | null;
   onRefreshed?: () => void;
   /** Stages the queue has in flight for this symbol, from GET /api/activity. */
   activity?: string[];
@@ -46,6 +50,8 @@ interface Props {
 export default function StockHeader({
   summary,
   financials: f,
+  metrics: m,
+  peerPe = null,
   onRefreshed,
   activity = [],
   onActivityChanged,
@@ -159,6 +165,11 @@ export default function StockHeader({
                 <span className="hidden truncate sm:inline">· {summary.industry}</span>
               )}
               {f.headquarters && <span className="hidden truncate md:inline">· {f.headquarters}</span>}
+              {/* The size of the company, said once in passing: it places the
+                  firm, but it is not a figure anybody weighs a purchase on. */}
+              {typeof f.marketCap === 'number' && f.marketCap > 0 && (
+                <span className="whitespace-nowrap">· <Term k="financials.marketCap">Börsenwert</Term> {fmtBig(f.marketCap)}</span>
+              )}
             </div>
           </div>
         </div>
@@ -209,6 +220,7 @@ export default function StockHeader({
       <div className="mt-3 flex gap-x-6 overflow-x-auto [scrollbar-width:none] sm:mt-4 sm:flex-wrap sm:gap-x-8 sm:gap-y-3 sm:overflow-visible">
         <KV
           label="Kurs" term="financials.price" value={fmtPrice(f.price)} bigValue
+          subtle={summary.cachedAt ? `Daten ${relativeTime(summary.cachedAt)}` : ''}
           extra={typeof dayChange === 'number' && Number.isFinite(dayChange) && (
             <Tip focusable={false} content="Veränderung zum vorigen Schlusskurs">
               <span className={`ml-2 text-xs font-semibold ${dayChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -217,23 +229,30 @@ export default function StockHeader({
             </Tip>
           )}
         />
-        <KV label="Börsenwert" term="financials.marketCap" value={fmtBig(f.marketCap)} />
-        <KV label="Unternehmenswert" term="financials.enterpriseValue" value={fmtBig(f.enterpriseValue)} />
+        {/* Before the range, which is the widest: on a phone what is left of
+            the first screen after the price goes to the two figures a
+            purchase is weighed on. */}
+        <KV label="KGV" term="metrics.ratios.pe" {...peFigure(f, m, peerPe)} />
+        <KV label="Dividende" term="metrics.ratios.dividendYield" {...dividendFigure(f, m, fmtPrice)} />
         <KV
           label="52 Wochen"
           term="concept.range52w"
           value={`${fmtPrice(f.fiftyTwoWeekLow)} – ${fmtPrice(f.fiftyTwoWeekHigh)}`}
           below={<RangePosition low={f.fiftyTwoWeekLow} high={f.fiftyTwoWeekHigh} price={f.price} />}
         />
-        <KV
-          label="Beta"
-          term="financials.beta"
-          value={fmt(f.beta)}
-          subtle={summary.cachedAt ? `Daten ${relativeTime(summary.cachedAt)}` : ''}
-        />
       </div>
     </header>
   );
+}
+
+interface Figure {
+  value: string;
+  /** Under the value, in small type: what it is read against. */
+  subtle?: string;
+  /** The small line is a warning, not context. */
+  warn?: boolean;
+  /** On hover over the value: this stock's details behind the figure. */
+  hint?: ReactNode;
 }
 
 function KV({
@@ -242,19 +261,20 @@ function KV({
   value,
   bigValue,
   subtle,
+  warn,
+  hint,
   extra,
   below,
-}: {
+}: Figure & {
   label: string;
   term?: GlossaryKey;
-  value: string;
   bigValue?: boolean;
-  subtle?: string;
   /** Beside the value, on its line — the day's move beside the price. */
   extra?: ReactNode;
   /** Under the value — the price's place in its 52-week range. */
   below?: ReactNode;
 }) {
+  const shown = hint ? <Tip focusable={false} content={hint}>{value}</Tip> : value;
   return (
     <div className="shrink-0">
       <div className="whitespace-nowrap text-2xs uppercase tracking-wider text-ink-500">
@@ -263,12 +283,73 @@ function KV({
       <div
         className={`flex items-baseline whitespace-nowrap font-mono tabular ${bigValue ? "text-lg font-bold text-ink-50" : "text-sm text-ink-100"}`}
       >
-        {value}{extra}
+        {shown}{extra}
       </div>
       {below}
-      {subtle && <div className="whitespace-nowrap text-2xs text-ink-500">{subtle}</div>}
+      {subtle && <div className={`whitespace-nowrap text-2xs ${warn ? 'text-amber-400' : 'text-ink-500'}`}>{subtle}</div>}
     </div>
   );
+}
+
+const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/**
+ * The P/E on the trailing year, the forward one under it, and on hover what
+ * makes either readable: the stock's own recent average and its peers'.
+ */
+function peFigure(f: any, m: ComputedMetrics, peerPe: number | null): Figure {
+  const pe = finite(m.ratios.pe);
+  const forward = finite(m.ratios.forwardPE);
+  const avg = finite(f.avgPE5Y);
+  const peer = finite(peerPe);
+  const loss = (finite(f.netIncome) ?? 0) < 0;
+  const hint = [
+    avg !== null && avg > 0 ? `Ø der letzten Geschäftsjahre ${deNumber(avg, 1)}` : null,
+    peer !== null && peer > 0 ? `Median der Peers ${deNumber(peer, 1)}` : null,
+  ].filter(Boolean).join(' · ');
+  return {
+    value: pe !== null && pe > 0 ? deNumber(pe, 1) : loss ? 'Verlust' : '—',
+    subtle: forward !== null && forward > 0 ? `erwartet ${deNumber(forward, 1)}` : undefined,
+    hint: hint || undefined,
+  };
+}
+
+/**
+ * The trailing yield, read against what the same money earns without risk:
+ * the ten-year government bond of the currency the stock trades in. Unless the
+ * dividend is paid out of more than the year earned — then that is what the
+ * small line says, because it is the first thing to know about such a yield.
+ */
+function dividendFigure(f: any, m: ComputedMetrics, fmtPrice: (n: number | null | undefined) => string): Figure {
+  const dy = finite(f.dividendYield);
+  if (dy === null || dy <= 0) return { value: 'keine', hint: 'Keine Dividende in den letzten zwölf Monaten.' };
+  const rf = finite(m.dcf.riskFreeRate);
+  const payout = finite(f.payoutRatio);
+  const growth = finite(f.dividendGrowthRate5Y);
+  const price = finite(f.price);
+  const exDay = typeof f.exDividendDate === 'string' && f.exDividendDate >= new Date().toISOString().slice(0, 10)
+    ? f.exDividendDate : null;
+  const uncovered = payout !== null && payout > 1;
+  const hint = (
+    <span className="block space-y-0.5">
+      {price !== null && <span className="block">{fmtPrice(dy * price)} je Aktie im Jahr</span>}
+      {payout !== null && <span className="block">Ausgeschüttet: {fmtPct(payout, 0)} des Gewinns</span>}
+      {growth !== null && <span className="block">In fünf Jahren um {fmtPct(growth)} im Jahr gewachsen</span>}
+      {exDay && <span className="block">Nächster Ex-Tag {new Date(`${exDay}T12:00:00Z`).toLocaleDateString('de-DE')}</span>}
+      {rf !== null && (
+        <span className="block text-ink-400">
+          Zehnjährige Staatsanleihe in {f.tradingCurrency ?? 'der Handelswährung'}: {fmtPct(rf)}, sicher bis zur Fälligkeit.
+          Die Dividende kann gekürzt werden, und der Kurs schwankt.
+        </span>
+      )}
+    </span>
+  );
+  return {
+    value: fmtPct(dy),
+    subtle: uncovered ? `${fmtPct(payout, 0)} vom Gewinn` : rf !== null ? `Anleihe ${fmtPct(rf)}` : undefined,
+    warn: uncovered,
+    hint,
+  };
 }
 
 /** Where the price stands between the year's low and high, as a tick on a line. */

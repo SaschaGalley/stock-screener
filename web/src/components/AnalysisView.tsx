@@ -264,6 +264,8 @@ function AnalysisView({
         <StockHeader
           summary={summary}
           financials={f}
+          metrics={m}
+          peerPe={bundle.sectorMedians?.pe ?? null}
           onRefreshed={() => setLocalRefresh((x) => x + 1)}
           activity={activity}
           onActivityChanged={onActivityChanged}
@@ -478,7 +480,7 @@ function AnalysisView({
               {/* TIER 5: QUALITY & RISK */}
               <Section fixed title="Qualität & Risiko" finding={qualityFinding(m)} info="section.quality">
                 <BalanceChecks health={m.health} />
-                <QualityScores metrics={m} />
+                <QualityScores metrics={m} beta={f.beta ?? null} />
               </Section>
             </TabPane>
 
