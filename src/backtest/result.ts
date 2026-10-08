@@ -70,6 +70,12 @@ export interface BacktestResult {
   premium:     { median: number; min: number; max: number };
   evaluation:  Evaluation;
   /**
+   * Each candidate over one month in the first half of the months and in the
+   * second, split as the weight check splits them (`WEIGHT_SPLIT`): a signal
+   * must hold in both. Absent in older results.
+   */
+  candidateHalves?: CandidateHalves[];
+  /**
    * The factor score's IC by calendar year, at one month, and the share of the
    * year's company-months with a rebuilt consensus target (absent in results
    * from before it was rebuilt, null in a run without it).
@@ -80,6 +86,12 @@ export interface BacktestResult {
   /** The weights fitted to it, and how the fit did on the months it had not seen. */
   fit:         WeightValidation;
   caveats:     string[];
+}
+
+export interface CandidateHalves {
+  key:    string;
+  /** The first half, then the second. */
+  halves: { months: number; ic: number | null; tStat: number | null; neutralIc: number | null; neutralTStat: number | null }[];
 }
 
 /** The score cut up, each part against the average stock of the same months (`bucketReturns`). */

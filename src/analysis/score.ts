@@ -53,6 +53,7 @@ import { adjustedCurrentRatio } from './health.js';
 import { calibrated } from './calibration.js';
 import { valuationBasis } from './basis.js';
 import { worstSeverity } from './data-quality.js';
+import { netIssuance } from './payout.js';
 // The notes are German sentences, so their numbers are German too: "0,1x", "12,5 %".
 import {
   deNumber, fmtDe as fmt, fmtBigDe as fmtBig, fmtPctDe as fmtPct, fmtPriceDe as fmtPrice, fmtSignedPctDe as fmtSignedPct,
@@ -862,9 +863,7 @@ function qualityPillar(
   const ni = toFiniteNumber(f.netIncome);
   const ocf = toFiniteNumber(f.operatingCashFlow);
   const accruals = !lender && ni !== null && ocf !== null && avgAssets !== null ? (ni - ocf) / avgAssets : null;
-  const sharesNow = toFiniteNumber(f.sharesOutstandingAnnual);
-  const sharesBefore = toFiniteNumber(f.prevYear?.sharesOutstanding);
-  const issuance = sharesNow !== null && sharesBefore !== null && sharesBefore > 0 ? sharesNow / sharesBefore - 1 : null;
+  const issuance = netIssuance(f);
 
   return [
     criterion('piotroski', 'Piotroski F-Score',

@@ -45,7 +45,9 @@
  * Beside the score it measures candidates — signals no pillar reads yet, put
  * to the same test before anyone proposes a weight for them: the insiders'
  * open-market buying and selling, from their Form 4 filings as Finnhub keeps
- * them (`insiders.ts`, `analysis/insider-signals.ts`).
+ * them (`insiders.ts`, `analysis/insider-signals.ts`), and the dividend and
+ * buyback yields (`analysis/payout.ts`). Each is also measured in either half
+ * of the months (`candidateHalves`).
  *
  * It also fits the weights to what it measured and checks the fit on the half
  * of the months it did not see (`weights.ts`).
@@ -65,7 +67,7 @@ import { sectorToEtf } from '../data/macro.js';
 import { collectCalibrated, useCalibrationTable, usePremiumAdjustment } from '../analysis/calibration.js';
 import { trustOf } from '../analysis/score.js';
 import { FITTED_WEIGHTS_META } from '../analysis/weight-table.js';
-import { bucketReturns, evaluate, scoreStep, type Close, type SignalPoint } from '../analysis/evaluate.js';
+import { bucketReturns, evaluate, meanTest, scoreStep, type Close, type SignalPoint } from '../analysis/evaluate.js';
 import { PILLAR_KEYS } from '../types.js';
 import { insiderHistory } from './insiders.js';
 import { VARIANTS, variantSignals } from './variants.js';
@@ -74,6 +76,7 @@ import { FAIR_LENSES, fairRecord, fairValueStudy, type FairRecord } from './fair
 import { TIMING_GROUPS, TIMING_HORIZONS, timingArray, timingGroup, timingStudy, type TimingRecord } from './timing.js';
 import { TIMING_CANDIDATES } from '../analysis/timing.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
+import { PAYOUT_CANDIDATES } from '../analysis/payout.js';
 import { payloadAt, yahooSector } from './payload.js';
 import {
   BACKTEST_CAVEATS, BacktestResult, departedCaveat, NO_ANALYSTS_CAVEAT, saveBacktestRun, writeBacktestStatus,
@@ -278,6 +281,11 @@ export async function runBacktest(
           }
         }
 
+        for (const cand of PAYOUT_CANDIDATES) {
+          const value = cand.read(e.financials);
+          if (value !== null) push(`${CANDIDATE_PREFIX}${cand.key}`, e.c.symbol, { at, value });
+        }
+
         const trades = insiders.get(e.c.symbol);
         if (trades) {
           const a = insiderActivity(trades, day);
@@ -322,6 +330,26 @@ export async function runBacktest(
     years.set(y, entry);
   }
   const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+
+  // Each candidate over one month in either half of the months, split where the
+  // weight check splits them: a signal must hold in both before it is one. The
+  // month-end on the line, whose month ahead lies in the second half, belongs
+  // to neither. Over one month every formation day is its own window.
+  const half = (daily: { ic: number; neutralIc: number | null }[]) => {
+    const neutral = daily.flatMap((d) => (d.neutralIc === null ? [] : [d.neutralIc]));
+    return {
+      months: daily.length,
+      ic: mean(daily.map((d) => d.ic)), tStat: meanTest(daily.map((d) => d.ic)).t,
+      neutralIc: mean(neutral), neutralTStat: meanTest(neutral).t,
+    };
+  };
+  const candidateHalves = evaluation.ics
+    .filter((r) => r.key.startsWith(CANDIDATE_PREFIX) && r.horizon === 1)
+    .map((r) => {
+      const daily = r.daily ?? [];
+      return { key: r.key, halves: [half(daily.filter((d) => d.day < WEIGHT_SPLIT).slice(0, -1)), half(daily.filter((d) => d.day >= WEIGHT_SPLIT))] };
+    });
+
   // The daily series served their purpose; the stored result keeps the aggregates.
   for (const r of evaluation.ics) delete r.daily;
 
@@ -448,6 +476,7 @@ export async function runBacktest(
       max: sortedPremiums[sortedPremiums.length - 1] ?? 0,
     },
     evaluation,
+    candidateHalves,
     byYear: [...years.entries()].sort(([a], [b]) => a - b).map(([year, v]) => {
       const c = coverage.get(year);
       return {
@@ -507,6 +536,18 @@ export function renderBacktest(r: BacktestResult): string {
         + `${(s.hitRate === null ? '—' : `${Math.round(s.hitRate * 100)}%`).padStart(5)} `
         + `${(s.spread === null ? '—' : `${(s.spread * 100).toFixed(2)}%`).padStart(8)} ${fmt(s.meanCrossSection, 0).padStart(5)}`,
       );
+    }
+  }
+  if (r.candidateHalves?.length) {
+    lines.push('', `── Candidates over 1 month in either half (split ${WEIGHT_SPLIT}; ✓ = sector |t| ≥ 2 overall and both halves agree) ──`);
+    for (const c of r.candidateHalves) {
+      const all = r.evaluation.ics.find((x) => x.key === c.key && x.horizon === 1);
+      const sign = (v: number | null | undefined) => (v == null ? 0 : Math.sign(v));
+      const holds = Math.abs(all?.neutralTStat ?? 0) >= 2
+        && c.halves.every((h) => sign(h.neutralIc) === sign(all?.neutralIc));
+      lines.push(`  ${c.key.replace(CANDIDATE_PREFIX, '').padEnd(28)} `
+        + c.halves.map((h) => `IC ${fmt(h.ic).padStart(7)} (t ${fmt(h.tStat, 1).padStart(5)})  sector ${fmt(h.neutralIc).padStart(7)} (t ${fmt(h.neutralTStat, 1).padStart(5)})`).join('  |  ')
+        + (holds ? '  ✓' : ''));
     }
   }
   for (const seg of r.segments ?? []) {

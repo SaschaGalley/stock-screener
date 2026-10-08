@@ -1542,7 +1542,16 @@ insiders who bought on the open market in the half year before, buyers against
 sellers, and what the buying cost against the company's size. Purchases rather
 than sales, because selling has many reasons and buying one (Lakonishok and
 Lee 2001; Cohen, Malloy and Pomorski 2012); grants, exercises, gifts and
-derivative trades are left out.
+derivative trades are left out. Then the payout (`analysis/payout.ts`): the
+dividend yield with non-payers at zero, the yield among payers alone, and the
+shareholder yield — dividend plus the year's fall in the share count
+(Boudoukh, Michaely, Richardson and Roberts 2007). The score reads the
+dividend only inside the dividend model's fair value.
+
+A candidate carries when its rank IC over one month, within the sector, clears
+|t| ≥ 2 over all the months and points the same way in 2013–2019 and in
+2020–2026 — the halves the weight check splits at. Each candidate's halves are
+in the result (`candidateHalves`) and under its table on the page.
 
 ```bash
 pnpm run backtest                     # S&P 1500, month-ends since 2013
@@ -1721,6 +1730,19 @@ below the 600 and in years before 2008; in these stocks and these years it
 does not show, and no pillar will read it. The tercile spread is no help
 for a signal that is zero for most stocks: with that many ties there is a
 bottom third only in months when a third of the index had buyers.
+
+**The payout (8 October 2026, same downloads).** The dividend yield ranks
+nothing. Over one month it is −0.002 (t −0.2) across the S&P 1500 and 0.004
+(t 0.6) within the sector; among payers alone 0.002 (t 0.2); in the large caps
+the higher yields lagged a little (−0.016, t −1.3). The shareholder yield passes
+the rule — 0.012 within the sector (t 2.1), positive in both halves (0.007 and
+0.018) — but the share count's change on its own, which the quality pillar
+reads already, does better at every horizon: 0.012 (t 2.7) within the sector
+at one month, 0.028 (t 3.1) at six, against 0.012 (t 2.1) and 0.026 (t 2.0).
+What carries in the shareholder yield is the buybacks; the dividend added to
+them dilutes the signal. No criterion is added. The dividend model's new
+perpetuity left the score where it was, 0.014 (t 2.3) at one month before and
+after, and the value lens at 0.010 (t 1.0).
 
 **At longer horizons, and cut up (3 October 2026).** The factor score's IC
 stays about the same as the horizon grows — 0.014 at one month, 0.011 at
@@ -2221,6 +2243,7 @@ src/
 │   ├── analyst-history.ts The analyst consensus of a past day, rebuilt from the rating actions
 │   ├── verdict-record.ts  Our verdicts as calls, against the index after 1, 3, 6 and 12 months
 │   ├── insider-signals.ts The insiders' open-market buying and selling before a day
+│   ├── payout.ts          Dividend and buyback yields: the share count's change, and the yields as candidates
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation

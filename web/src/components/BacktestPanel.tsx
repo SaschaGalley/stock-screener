@@ -14,13 +14,16 @@ import BacktestTiming from './BacktestTiming';
 import BacktestPortfolios from './BacktestPortfolios';
 import BacktestSetups from './BacktestSetups';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
+import { PAYOUT_CANDIDATES } from '../../../src/analysis/payout';
+import { TIMING_CANDIDATES } from '../../../src/analysis/timing';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
 
 /** How the backtest names a criterion's own signal, and a candidate's (`backtest/run.ts`). */
 const CRITERION_PREFIX = 'criterion.';
 const CANDIDATE_PREFIX = 'candidate.';
-const CANDIDATE_TITLE = new Map(INSIDER_CANDIDATES.map((c) => [`${CANDIDATE_PREFIX}${c.key}`, c.title]));
+const CANDIDATE_TITLE = new Map([...TIMING_CANDIDATES, ...PAYOUT_CANDIDATES, ...INSIDER_CANDIDATES]
+  .map((c) => [`${CANDIDATE_PREFIX}${c.key}`, c.title]));
 
 /**
  * The factor score rebuilt at every month-end since 2013 from the SEC's filings
@@ -117,12 +120,17 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
             <h3 className="text-xs font-semibold text-ink-300">Kandidaten — noch nicht im Score</h3>
             <p className="mt-0.5 text-xs text-ink-500">
               Signale, die keine Säule liest, auf dieselbe Probe gestellt, bevor jemand ein Gewicht für sie vorschlägt: die
-              Käufe und Verkäufe der Insider am offenen Markt aus ihren Form-4-Meldungen, ab dem Tag der Meldung. Die
-              meisten Werte haben in einem halben Jahr keinen Insider-Kauf; bei so vielen Gleichständen gibt es ein unteres
-              Drittel nur in Monaten mit sehr vielen Käufern, und „Oben−Unten“ sagt nichts — maßgeblich ist der Rang-IC.
+              Dividende und die Rückkäufe, je Börsenwert, und die Käufe und Verkäufe der Insider am offenen Markt aus ihren
+              Form-4-Meldungen, ab dem Tag der Meldung. Die meisten Werte haben in einem halben Jahr keinen Insider-Kauf; bei
+              so vielen Gleichständen gibt es ein unteres Drittel nur in Monaten mit sehr vielen Käufern, und „Oben−Unten“
+              sagt dort nichts — maßgeblich ist der Rang-IC. Ein Kandidat trägt, wenn er über einen Monat im Sektor |t| ≥ 2
+              erreicht und in beiden Hälften der Jahre in dieselbe Richtung zeigt.
             </p>
           </header>
           <IcTable signals={candidateSignals} rows={candidateRows} periodLabel="Monate" />
+          {(bt.candidateHalves?.length ?? 0) > 0 && (
+            <CandidateHalvesTable halves={bt.candidateHalves!} signals={candidateSignals} all={bt.evaluation.ics} />
+          )}
         </section>
       )}
 
@@ -242,5 +250,55 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
         {bt.caveats.map((c) => <li key={c}>{c}</li>)}
       </ul>
     </>
+  );
+}
+
+/**
+ * Each candidate over one month, within sectors, in either half of the years —
+ * the rule's second half. Fixed at one month whatever horizon is picked above:
+ * the rule was set on it.
+ */
+function CandidateHalvesTable({ halves, signals, all }: {
+  halves: NonNullable<Backtest['candidateHalves']>;
+  signals: { key: string; title: string }[];
+  all: Backtest['evaluation']['ics'];
+}) {
+  const byKey = new Map(halves.map((h) => [h.key, h.halves]));
+  const sign = (v: number | null | undefined) => (v == null ? 0 : Math.sign(v));
+  return (
+    <div className="overflow-x-auto border-t border-ink-800">
+      <table className="w-full min-w-[560px] text-sm">
+        <thead className="text-xs text-ink-400">
+          <tr className="border-b border-ink-800">
+            <th className="px-4 py-2 text-left font-normal">Über 1 Monat im Sektor</th>
+            <th className="px-2 py-2 text-right font-normal">2013–2019 (t)</th>
+            <th className="px-2 py-2 text-right font-normal">2020–2026 (t)</th>
+            <th className="px-4 py-2 text-left font-normal">Regel</th>
+          </tr>
+        </thead>
+        <tbody>
+          {signals.map((s) => {
+            const h = byKey.get(s.key);
+            const total = all.find((r) => r.key === s.key && r.horizon === 1);
+            if (!h || !total) return null;
+            const held = Math.abs(total.neutralTStat ?? 0) >= 2 && h.every((x) => sign(x.neutralIc) === sign(total.neutralIc));
+            return (
+              <tr key={s.key} className="border-b border-ink-800/60 last:border-0">
+                <td className="px-4 py-1.5 text-ink-100">{s.title}</td>
+                {h.map((x, i) => (
+                  <td key={i} className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-ink-300">
+                    {fmt(x.neutralIc, '', 3)}
+                    {x.neutralTStat !== null && <span className="text-ink-500"> ({deNumber(x.neutralTStat, 1)})</span>}
+                  </td>
+                ))}
+                <td className={`px-4 py-1.5 text-xs ${held ? 'text-emerald-400' : 'text-ink-500'}`}>
+                  {held ? 'trägt' : 'trägt nicht'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
