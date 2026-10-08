@@ -247,6 +247,8 @@ export interface DepotCheckResponse {
   status:   import('./analysis/depot-check.js').DepotCheckStatus | null;
   result:   import('./analysis/depot-check.js').DepotCheckResult | null;
   settings: import('./analysis/depot-check.js').DepotCheckSettings;
+  /** Every check kept, and what came of their steps; null while none is kept. */
+  history:  import('./analysis/depot-check-record.js').DepotCheckHistory | null;
 }
 
 /** `GET /api/verdict-changes` */

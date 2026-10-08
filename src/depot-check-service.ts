@@ -35,6 +35,12 @@ import { readChart, runChartRead } from './chart-service.js';
 import { runAnalysis } from './cli.js';
 import { writeAppState } from './db/admin.js';
 import { CHECK_RESULT_KEY, CHECK_STATUS_KEY, readStateJson } from './depot-check-state.js';
+import {
+  changesSince, checkSteps, groupRecord, stepHit, type DepotCheckHistory, type StepOutcome,
+} from './analysis/depot-check-record.js';
+import { listDepotChecks, saveDepotCheck } from './db/depot-check-store.js';
+import { decisionOutcomes } from './stock-history-service.js';
+import { tradesSource } from './trades-service.js';
 import { latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
 import { readDepot } from './depot-service.js';
 import { invalidateDiscover } from './discover-service.js';
@@ -65,11 +71,53 @@ export async function readDepotCheck(): Promise<DepotCheckResponse> {
   const [status, result, config] = await Promise.all([
     readStateJson<DepotCheckStatus>(STATUS_KEY()), readStateJson<DepotCheckResult>(RESULT_KEY()), readAppConfig(),
   ]);
-  return { status, result, settings: config.depotCheck };
+  // Polled every few seconds while a check runs; the history is only read when one is not.
+  const history = status?.state === 'running' ? null : await checkHistory().catch((e) => {
+    logger.warn(`Depot check history: ${(e as Error).message}`);
+    return null;
+  });
+  return { status, result, settings: config.depotCheck, history };
 }
 
-/** At boot: a run that was going when the process died is not going any more. */
+/** The measured history changes with a new check or a new trading day; read at most every ten minutes. */
+const HISTORY_TTL_MS = 10 * 60_000;
+let historyMemo: { at: number; key: string; value: DepotCheckHistory | null } | null = null;
+
+/**
+ * Every check kept and what came of its steps: each measured from the check's
+ * day against the S&P 500, in dollars, as the review measures a purchase.
+ */
+async function checkHistory(): Promise<DepotCheckHistory | null> {
+  const checks = await listDepotChecks(tradesSource());
+  if (checks.length === 0) return null;
+  const key = `${tradesSource()}|${checks[0].id}|${checks.length}`;
+  if (historyMemo && historyMemo.key === key && Date.now() - historyMemo.at < HISTORY_TTL_MS) return historyMemo.value;
+
+  const steps = checkSteps(checks);
+  const from = new Date(Date.parse(steps.reduce((a, s) => (s.day < a ? s.day : a), steps[0]?.day ?? new Date().toISOString())) - 10 * 86_400_000)
+    .toISOString().slice(0, 10);
+  const { outcomes } = await decisionOutcomes(steps.map((s) => ({ key: s.key, symbol: s.symbol, day: s.day, side: 'buy' as const })), from);
+  const measured: StepOutcome[] = steps.map((s) => {
+    const held = outcomes.get(s.key)?.held ?? null;
+    return { ...s, stock: held?.stock ?? null, excess: held?.excess ?? null, hit: stepHit(s.group, held?.excess ?? null) };
+  });
+  const value: DepotCheckHistory = {
+    checks: checks.map((c) => ({ id: c.id, generatedAt: c.result.generatedAt, moves: c.result.manager?.moves.length ?? 0, model: c.result.model })),
+    record: groupRecord(measured, new Date().toISOString().slice(0, 10)),
+    changes: changesSince(checks[1]?.result ?? null, checks[0].result),
+    outcomes: measured,
+  };
+  historyMemo = { at: Date.now(), key, value };
+  return value;
+}
+
+/**
+ * At boot: a run that was going when the process died is not going any more,
+ * and a result from before the checks were kept is kept now.
+ */
 export async function reconcileDepotCheck(): Promise<void> {
+  const result = await readStateJson<DepotCheckResult>(RESULT_KEY());
+  if (result) await saveDepotCheck(tradesSource(), result).catch((e) => logger.warn(`Depot check not kept: ${(e as Error).message}`));
   const s = await readStateJson<DepotCheckStatus>(STATUS_KEY());
   if (s?.state !== 'running' || running) return;
   await writeAppState(STATUS_KEY(), JSON.stringify({ ...s, state: 'interrupted', finishedAt: new Date().toISOString() }));
@@ -218,6 +266,7 @@ async function runCheck(save: (patch: Partial<DepotCheckStatus>) => Promise<void
     manager, managerError,
   };
   await writeAppState(RESULT_KEY(), JSON.stringify(result));
+  await saveDepotCheck(tradesSource(), result);
 }
 
 const ManagerSchema = z.object({

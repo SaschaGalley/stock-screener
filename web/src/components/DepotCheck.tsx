@@ -10,6 +10,7 @@ import type {
   CheckedStock, DepotCheckResult, ManagerAction, ManagerMove, ProtectionChoice,
 } from '../../../src/analysis/depot-check';
 import { SECTOR_DIRECTION_LABEL, type MarketBrief, type SectorDirection } from '../../../src/analysis/market-brief';
+import { GROUP_SIDE, type DepotCheckHistory, type RecordGroup } from '../../../src/analysis/depot-check-record';
 import type { SectorPhase, SectorTrend } from '../../../src/analysis/sector-rotation';
 import type { Protection } from '../../../src/analysis/stops';
 
@@ -114,12 +115,16 @@ export default function DepotCheck({ onOpen, sectors }: {
         </p>
       )}
 
-      {r && <Result r={r} onOpen={onOpen} sectors={sectors} />}
+      {r && <Result r={r} onOpen={onOpen} sectors={sectors} changes={data?.history?.changes ?? []} />}
+      {data?.history && <History h={data.history} onOpen={onOpen} />}
     </section>
   );
 }
 
-function Result({ r, onOpen, sectors }: { r: DepotCheckResult; onOpen: (symbol: string) => void; sectors: { sector: string; weight: number }[] }) {
+function Result({ r, onOpen, sectors, changes }: {
+  r: DepotCheckResult; onOpen: (symbol: string) => void; sectors: { sector: string; weight: number }[];
+  changes: DepotCheckHistory['changes'];
+}) {
   const moves = new Map((r.manager?.moves ?? []).map((m) => [m.symbol, m]));
   const order = new Map((r.manager?.moves ?? []).map((m, i) => [m.symbol, i]));
   const holdings = [...r.holdings].sort((a, b) =>
@@ -137,6 +142,18 @@ function Result({ r, onOpen, sectors }: { r: DepotCheckResult; onOpen: (symbol: 
         {r.manager
           ? <p className="text-sm leading-relaxed text-ink-100">{r.manager.summary}</p>
           : <p className="text-xs text-ink-500">Kein Text{r.managerError ? `: ${r.managerError}` : '.'}</p>}
+        {changes.length > 0 && (
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-400">
+            <span className="text-ink-500">Seit dem letzten Check: </span>
+            {changes.map((c, i) => (
+              <span key={c.symbol}>
+                {i > 0 && ' · '}
+                <button onClick={() => onOpen(c.symbol)} className="text-ink-200 hover:text-ink-50">{c.name ?? c.symbol}</button>{' '}
+                {c.from ? <span className={ACTION[c.from]}>{c.from}</span> : 'neu'} → {c.to ? <span className={ACTION[c.to]}>{c.to}</span> : 'nicht mehr genannt'}
+              </span>
+            ))}
+          </p>
+        )}
       </div>
 
       {holdings.length > 0 && (
@@ -462,4 +479,91 @@ function Points({ title, items }: { title: string; items: { text: ReactNode; sou
 
 function hostOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+}
+
+const GROUP_LABEL = (g: RecordGroup) => (g.startsWith('liste: ') ? `Liste: ${g.slice(7)}` : g);
+const GROUP_CLS = (g: RecordGroup) => (g.startsWith('liste: ') ? 'text-ink-300' : ACTION[g as ManagerAction]);
+
+/**
+ * What came of the checks kept: per kind of step, how the stocks did against
+ * the S&P 500 since the check's day, and how often they went the way the
+ * step bet. Every step below, by check. Little to go on for months, said as
+ * such.
+ */
+function History({ h, onOpen }: { h: DepotCheckHistory; onOpen: (symbol: string) => void }) {
+  const byCheck = h.checks.map((c) => ({ c, steps: h.outcomes.filter((o) => o.checkAt === c.generatedAt) }));
+  const steps = h.outcomes.filter((o) => o.excess !== null).length;
+  const thin = steps < 30 || (h.record[0]?.medianDays ?? 0) < 60;
+  return (
+    <div className="mt-5 space-y-2 border-t border-ink-800 pt-3">
+      <h4 className="text-xs font-semibold text-ink-300">
+        <Tip content="Jeder Schritt eines gespeicherten Checks, gemessen vom Tag des Checks bis heute gegen den S&P 500 (in Dollar, Dividenden eingerechnet), wie der Rückblick Käufe misst. Ein Kauf traf, wenn die Aktie den Index schlug; Reduzieren, Verkaufen und Gewinne mitnehmen, wenn sie zurückblieb; Halten und Beobachten werden nur gemessen. Dazu die beiden Listen des Checks für sich.">
+          <span>Was aus den Checks wurde</span>
+        </Tip>
+        <span className="ml-1 font-normal text-ink-500">· {h.checks.length} {h.checks.length === 1 ? 'Check' : 'Checks'} seit {fmtTime(h.checks.at(-1)!.generatedAt)}</span>
+      </h4>
+      {h.record.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[30rem] text-xs">
+            <thead className="text-2xs uppercase tracking-wider text-ink-500">
+              <tr>
+                <th className="py-1 pr-2 text-left font-semibold">Schritt</th>
+                <th className="px-2 py-1 text-right font-semibold">Anzahl</th>
+                <th className="px-2 py-1 text-right font-semibold"><Tip content="Median der Mehrrendite gegen den S&P 500 seit dem Check"><span>gegen S&P</span></Tip></th>
+                <th className="px-2 py-1 text-right font-semibold"><Tip content="Wie oft die Aktie in die Richtung lief, auf die der Schritt setzte"><span>getroffen</span></Tip></th>
+                <th className="py-1 pl-2 text-right font-semibold"><Tip content="Median der Tage seit dem Check"><span>Tage</span></Tip></th>
+              </tr>
+            </thead>
+            <tbody>
+              {h.record.map((g) => (
+                <tr key={g.group} className="border-t border-ink-800/60">
+                  <td className={`py-1 pr-2 ${GROUP_CLS(g.group)}`}>{GROUP_LABEL(g.group)}</td>
+                  <td className="px-2 py-1 text-right font-mono tabular text-ink-300">{g.n}</td>
+                  <td className={`px-2 py-1 text-right font-mono tabular ${g.medianExcess === null ? 'text-ink-600' : g.medianExcess >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {g.medianExcess === null ? '—' : fmtSignedPct(g.medianExcess)}
+                  </td>
+                  <td className="px-2 py-1 text-right font-mono tabular text-ink-300">
+                    {GROUP_SIDE[g.group] === null || g.scored === 0 ? '—' : `${g.hits}/${g.scored}`}
+                  </td>
+                  <td className="py-1 pl-2 text-right font-mono tabular text-ink-500">{g.medianDays === null ? '—' : Math.round(g.medianDays)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {thin && (
+        <p className="text-2xs text-ink-500">
+          Noch wenig, worauf das ruht: {steps} gemessene Schritte. Wochen sind Rauschen; erst über Monate und viele Schritte
+          sagt das etwas.
+        </p>
+      )}
+      <details className="text-xs">
+        <summary className="cursor-pointer text-ink-400 hover:text-ink-200">Jeder Schritt</summary>
+        <div className="mt-2 space-y-3">
+          {byCheck.map(({ c, steps: xs }) => (
+            <div key={c.id}>
+              <div className="mb-0.5 text-2xs text-ink-500">{fmtTime(c.generatedAt)} · {c.model}</div>
+              <ul className="space-y-0.5">
+                {xs.map((o) => (
+                  <li key={o.key} className="flex items-center gap-2">
+                    <span className={`w-36 shrink-0 truncate ${GROUP_CLS(o.group)}`}>{GROUP_LABEL(o.group)}</span>
+                    <button onClick={() => onOpen(o.symbol)} className="min-w-0 flex-1 truncate text-left text-ink-200 hover:text-ink-50">
+                      {o.name ?? o.symbol} <span className="font-mono text-2xs text-ink-500">{o.symbol}</span>
+                    </button>
+                    <span className="w-14 text-right font-mono tabular text-ink-400">{o.stock === null ? '—' : fmtSignedPct(o.stock)}</span>
+                    <span className={`w-14 text-right font-mono tabular ${o.excess === null ? 'text-ink-600' : o.excess >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {o.excess === null ? '—' : fmtSignedPct(o.excess)}
+                    </span>
+                    <span className="w-3 text-center">{o.hit === null ? '' : o.hit ? '✓' : '✗'}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          <p className="text-2xs text-ink-500">Aktie seit dem Check · gegen den S&amp;P 500 · in die Richtung des Schritts</p>
+        </div>
+      </details>
+    </div>
+  );
 }
