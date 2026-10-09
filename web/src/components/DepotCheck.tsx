@@ -8,7 +8,7 @@ import { deNumber, fmtPrice, fmtSignedPct } from '../format';
 import type { DepotCheckResponse } from '../../../src/api-types';
 import {
   shareWords, stepSize, type CheckedStock, type DepotCheckResult, type DepotNote, type ManagerAction, type ManagerMove,
-  type ProtectionChoice,
+  type ProtectionChoice, type StopEvidence,
 } from '../../../src/analysis/depot-check';
 import { SECTOR_DIRECTION_LABEL, type MarketBrief, type SectorDirection } from '../../../src/analysis/market-brief';
 import { GROUP_SIDE, type DepotCheckHistory, type RecordGroup } from '../../../src/analysis/depot-check-record';
@@ -141,6 +141,7 @@ export default function DepotCheck({ onOpen, sectors, totalEur, cashEur, held }:
         <Result
           r={r} onOpen={onOpen} sectors={sectors} changes={data?.history?.changes ?? []} totalEur={totalEur} held={held}
           notes={notes} onNotes={setNotes} onAskAgain={running ? null : () => void askAgain()}
+          evidence={data?.stopEvidence ?? null}
         />
       )}
       {data?.history && <History h={data.history} onOpen={onOpen} />}
@@ -148,12 +149,13 @@ export default function DepotCheck({ onOpen, sectors, totalEur, cashEur, held }:
   );
 }
 
-function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, onAskAgain }: {
+function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, onAskAgain, evidence }: {
   r: DepotCheckResult; onOpen: (symbol: string) => void; sectors: { sector: string; weight: number }[];
   changes: DepotCheckHistory['changes']; totalEur: number; held: Map<string, Held>;
   notes: Record<string, DepotNote>; onNotes: (notes: Record<string, DepotNote>) => void;
   /** Null while a run is going. */
   onAskAgain: (() => void) | null;
+  evidence: StopEvidence | null;
 }) {
   // Notes written or changed since the manager last answered.
   const answered = r.notes ?? {};
@@ -217,6 +219,7 @@ function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, o
                 key={h.symbol} h={h} move={moves.get(h.symbol) ?? null} weak={reduce.has(h.symbol)} onOpen={onOpen}
                 totalEur={totalEur} now={held.get(h.symbol) ?? null}
                 note={notes[h.symbol] ?? null} answered={answered[h.symbol] ?? null} onNotes={onNotes}
+                evidence={evidence}
               />
             ))}
           </ul>
@@ -266,7 +269,7 @@ function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, o
         {r.holdings.length} Aktien im Depot. Das Modell bekommt je Position Name, Anlageart und Gewicht, bei Aktien dazu
         Sektor, „seit Kauf“ in Prozent, Haltedauer in Monaten, das Ergebnis des Thesen-Checks, Score, Chart und die Abstände
         zu Stop und Trailing, dazu das verfügbare Geld als Anteil am Depot — keine Stückzahlen, Kaufkurse, Beträge oder Daten. Perplexity bekommt nur die Frage nach dem Markt. Stops begrenzen Verluste, sie bringen keine
-        Rendite und sind nicht im Backtest geprüft. Keine Anlageberatung.
+        Rendite; was sie im Backtest kosteten und schützten, steht beim Schutz unter „Backtest“ und auf der Auswertung. Keine Anlageberatung.
       </p>
     </div>
   );
@@ -285,11 +288,12 @@ const roundEur = (n: number) => eur(Math.round(n / 10) * 10);
  * many shares, how many euros, worked out here from today's position — the
  * protection said as an order to place, and the manager's reason.
  */
-function HoldingRow({ h, move, weak, onOpen, totalEur, now, note, answered, onNotes }: {
+function HoldingRow({ h, move, weak, onOpen, totalEur, now, note, answered, onNotes, evidence }: {
   h: CheckedStock; move: ManagerMove | null; weak: boolean; onOpen: (symbol: string) => void;
   totalEur: number; now: Held | null;
   /** The owner's note as it stands, and as the manager read it. */
   note: DepotNote | null; answered: string | null; onNotes: (notes: Record<string, DepotNote>) => void;
+  evidence: StopEvidence | null;
 }) {
   const t = h.chart ? TREND[h.chart.trend] : null;
   const p = h.protection ?? null;
@@ -331,7 +335,10 @@ function HoldingRow({ h, move, weak, onOpen, totalEur, now, note, answered, onNo
           {p && move.protect && (
             <>
               <dt className="text-ink-500">{move.action === 'verkaufen' ? 'bis zum Verkauf' : 'Schutz'}</dt>
-              <dd><ProtectionWords p={p} choice={move.protect} own={move.stopPrice ?? null} /></dd>
+              <dd>
+                <ProtectionWords p={p} choice={move.protect} own={move.stopPrice ?? null} />
+                {move.protect !== 'keiner' && <EvidenceNote evidence={evidence} rule={move.protect} />}
+              </dd>
             </>
           )}
           <dt className="text-ink-500">warum</dt>
@@ -371,6 +378,29 @@ function stepWords(move: ManagerMove, h: CheckedStock | null, now: Held | null, 
     <>
       {before > 0 ? 'Nachkaufen' : 'Kaufen'} für ≈ {roundEur(size.euros)}{size.shares !== null ? ` (≈ ${qty(size.shares, !!now && Number.isInteger(now.quantity))} Stück)` : ''}{span}
     </>
+  );
+}
+
+/**
+ * What a stop of this kind did in the backtest, on hover: how often it fired,
+ * what it cost against holding, what it spared at the bad end. A stop is an
+ * insurance with a premium, and this is the premium.
+ */
+function EvidenceNote({ evidence, rule }: { evidence: StopEvidence | null; rule: 'stop' | 'trailing' }) {
+  if (!evidence) return null;
+  const at = (h: number) => evidence.rows.find((r) => r.rule === rule && r.group === 'all' && r.horizon === h);
+  const q = at(3), h = at(6);
+  if (!q || !h) return null;
+  const pp = (x: number | null | undefined) => (x == null ? '—' : `${deNumber(Math.abs(x) * 100, 1)} Prozentpunkte`);
+  const text = `Im Backtest (S&P 1500, ${evidence.from.slice(0, 4)}–${evidence.to.slice(0, 4)}) löste ein solcher Stop bei ${pct(q.stopped)} der Positionen `
+    + `binnen drei Monaten aus, bei ${pct(h.stopped)} binnen sechs. Gegenüber Halten ${(h.diff.mean ?? 0) < 0 ? 'kostete' : 'brachte'} er über sechs Monate `
+    + `im Schnitt ${pp(h.diff.mean)}${h.diffIndex?.mean != null ? `, mit dem Geld danach im Index ${pp(h.diffIndex.mean)}` : ''}. `
+    + `Dafür das schlechteste Zwanzigstel: ohne Stop ${fmtSignedPct(h.p05Hold ?? 0)}, mit ${fmtSignedPct(h.p05Rule ?? 0)}; `
+    + `Verluste ab 20 % bei ${pct(h.deepRule)} statt ${pct(h.deepHold)} der Positionen.`;
+  return (
+    <Tip content={text}>
+      <span className="ml-2 cursor-help text-2xs text-ink-500 underline decoration-dotted">Backtest</span>
+    </Tip>
   );
 }
 

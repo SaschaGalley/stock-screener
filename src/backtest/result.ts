@@ -17,6 +17,8 @@ import type { FairValueStudy } from './fair-value.js';
 import type { TimingStudy } from './timing.js';
 import type { PortfolioStudy } from './portfolio.js';
 import type { SetupStudy } from './setups.js';
+import type { StopEvidence } from '../analysis/depot-check.js';
+import type { StopStudy } from './stops.js';
 
 export const RESULT_KEY = 'backtest.result';
 
@@ -54,6 +56,8 @@ export interface BacktestResult {
   portfolios?: PortfolioStudy;
   /** Trade setups against a random entry with the same stop and target (`setups.ts`); every run, absent in older results. */
   setups?:     SetupStudy;
+  /** The depot check's stops against holding, and its two lists' rules (`stops.ts`); every run, absent in older results. */
+  stops?:      StopStudy;
   /**
    * When the studies above were computed, where that was an earlier run than
    * this one: they are run with `--studies` only, and carried to the page
@@ -336,3 +340,15 @@ export async function writeBacktestStatus(s: BacktestStatus): Promise<void> {
   await writeAppState(STATUS_KEY, JSON.stringify(s));
 }
 
+
+/** What the newest backtest found the depot check's stops and lists to do (`stops.ts`): for the check's page and its manager. */
+export type { StopEvidence } from '../analysis/depot-check.js';
+
+export async function stopEvidence(): Promise<StopEvidence | null> {
+  const row = await queryOne<{ generated_at: Date; from: string; to: string; stops: StopStudy | null }>(
+    `SELECT generated_at, result ->> 'from' AS "from", result ->> 'to' AS "to", result -> 'stops' AS stops
+       FROM backtest_runs WHERE result ? 'stops' ORDER BY generated_at DESC LIMIT 1`,
+  );
+  if (!row?.stops) return null;
+  return { generatedAt: row.generated_at.toISOString(), from: row.from, to: row.to, rows: row.stops.rows, lists: row.stops.lists };
+}

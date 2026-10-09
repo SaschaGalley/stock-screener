@@ -13,6 +13,7 @@ import BacktestFairValue from './BacktestFairValue';
 import BacktestTiming from './BacktestTiming';
 import BacktestPortfolios from './BacktestPortfolios';
 import BacktestSetups from './BacktestSetups';
+import BacktestStops from './BacktestStops';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
 import { PAYOUT_CANDIDATES } from '../../../src/analysis/payout';
 import { TIMING_CANDIDATES } from '../../../src/analysis/timing';
@@ -113,6 +114,7 @@ export default function BacktestPanel({ data }: { data: BacktestResponse }) {
       <BacktestFairValue bt={bt} />
       <BacktestTiming bt={bt} horizon={horizon} monthName={monthName} />
       <BacktestSetups bt={bt} />
+      <BacktestStops bt={bt} />
       <BacktestVariants bt={bt} horizon={horizon} monthName={monthName} />
 
       {candidateSignals.length > 0 && (

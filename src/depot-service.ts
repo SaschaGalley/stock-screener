@@ -37,6 +37,13 @@ const TREND_DAYS = 28;
 const AHEAD_DAYS = 30;
 const FUND_TYPES = new Set(['etf', 'fund']);
 
+/** The trailing stop the check named, as a broker runs it: its width under the highest close since the check's day. */
+export function trailingSinceCheck(bars: readonly { day: string; close: number }[], day: string | null, width: number | null): number | null {
+  if (!day || width === null) return null;
+  const since = bars.filter((b) => b.day >= day);
+  return since.length ? Math.max(...since.map((b) => b.close)) * (1 - width) : null;
+}
+
 /** Money ready to invest, entered on the depot page: private like the trades, kept under their source. */
 const CASH_KEY = () => `depot.cash.${tradesSource()}`;
 
@@ -113,7 +120,24 @@ export async function readDepot(force = false): Promise<DepotResponse> {
     marketDates(today, ahead),
     readDepotCash(),
   ]);
-  const lastStops = new Map((lastCheck?.holdings ?? []).flatMap((h) => (h.protection?.stop ? [[h.symbol, h.protection.stop.price] as const] : [])));
+  // The levels the last check named, as a broker would hold them: the stop where it was set, the
+  // trailing stop under the highest close since that day. The chandelier, recomputed nightly, closed
+  // nearly every position within weeks in the backtest (`backtest/stops.ts`) — a signal for everything.
+  // Only the protection the manager chose for the stock is watched — its own stop level, where it took
+  // one from the owner's note; a check from before the choice existed watches both.
+  const checkDay = lastCheck?.generatedAt.slice(0, 10) ?? null;
+  const chosen = new Map((lastCheck?.manager?.moves ?? []).map((m) => [m.symbol, m] as const));
+  const watches = (symbol: string, kind: 'stop' | 'trailing') => {
+    const protect = chosen.get(symbol)?.protect;
+    return protect === undefined || protect === null || protect === kind;
+  };
+  const lastStops = new Map((lastCheck?.holdings ?? []).flatMap((h) => {
+    const own = chosen.get(h.symbol)?.stopPrice;
+    const level = own != null && h.protection && own < h.protection.close ? own : h.protection?.stop?.price;
+    return level != null && watches(h.symbol, 'stop') ? [[h.symbol, level] as const] : [];
+  }));
+  const lastWidths = new Map((lastCheck?.holdings ?? []).flatMap((h) =>
+    (h.protection?.trailing && watches(h.symbol, 'trailing') ? [[h.symbol, h.protection.trailing.width] as const] : [])));
 
   // Each stock held: its chart (the model's last reading, tonight's arithmetic), its dates.
   const charts = new Map<string, NonNullable<DepotPosition['chart']>>();
@@ -129,7 +153,8 @@ export async function readDepot(force = false): Promise<DepotResponse> {
     if (!c?.analysis) return;
     const p = protectionOf(c.bars, c.analysis, c.currency);
     signals.set(s, watchSignals({
-      close: p.close, currency: p.currency, trailing: p.trailing?.price ?? null, stop: lastStops.get(s) ?? null,
+      close: p.close, currency: p.currency, trailing: trailingSinceCheck(c.bars, checkDay, lastWidths.get(s) ?? null),
+      stop: lastStops.get(s) ?? null,
       score: model.get(s)?.score ?? null, falling: trendAnswer(c.analysis).tone === 'bear',
       reduceBelow: config.depotCheck.reduceBelow, price: fmtPriceDe,
     }));

@@ -830,9 +830,11 @@ function findingsOf(a: Omit<ChartAnalysis, 'findings'>): ChartFinding[] {
 
 /**
  * The chart read from its bars, oldest first. Null with fewer than sixty
- * sessions — not enough for a swing, let alone a level.
+ * sessions — not enough for a swing, let alone a level. `lean` leaves out what
+ * only the chart section shows: trend lines, Fibonacci, squeeze, divergences,
+ * breakouts, gaps and the findings.
  */
-export function chartAnalysis(bars: readonly ChartBar[]): ChartAnalysis | null {
+export function chartAnalysis(bars: readonly ChartBar[], opts: { lean?: boolean } = {}): ChartAnalysis | null {
   const xs = bars.filter((b) => b.close > 0);
   if (xs.length < 60) return null;
   const last = xs.length - 1;
@@ -847,6 +849,17 @@ export function chartAnalysis(bars: readonly ChartBar[]): ChartAnalysis | null {
   const profile = volumeProfile(xs);
   const levels = levelsOf(xs, pivots, atr, profile);
   const rsi = rsiSeries(closes);
+  // Lean: what the stops and the trend read (`stops.ts`, `trendAnswer`) and
+  // nothing else — for the backtest, which reads a chart for every stock at
+  // every month-end, inside a heap of gigabytes where each allocation costs.
+  if (opts.lean) {
+    return {
+      asOf: days[last], close, atr, pivots, structure: structureOf(pivots, band), levels,
+      channels: CHANNELS.map((c) => regressionChannel(xs, c.sessions, c.label)).filter((c): c is Channel => c !== null),
+      trendlines: [], profile, fibonacci: null, ma: movingAverages(closes, days), rsi14: rsi[last],
+      squeeze: null, divergences: [], breakouts: [], gaps: [], findings: [],
+    };
+  }
   const partial: Omit<ChartAnalysis, 'findings'> = {
     asOf: days[last], close, atr,
     pivots,

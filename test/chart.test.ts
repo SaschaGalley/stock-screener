@@ -144,3 +144,16 @@ describe('averages and momentum', () => {
     assert.equal(chartAnalysis(bars(walk(1, 2, 59))), null);
   });
 });
+
+describe('the lean reading', () => {
+  it('gives the stops and the trend the full reading gives', async () => {
+    const { protectionOf } = await import('../src/analysis/stops.js');
+    const { trendAnswer } = await import('../src/analysis/chart-reading.js');
+    const closes = [100, ...walk(100, 130, 60), ...walk(130, 112, 40), ...walk(112, 145, 60), ...walk(145, 124, 50), ...walk(124, 150, 90)];
+    const b = bars(closes, (k) => 1_000_000 + (k % 7) * 50_000);
+    const full = chartAnalysis(b)!, lean = chartAnalysis(b, { lean: true })!;
+    assert.deepEqual(protectionOf(b, lean), protectionOf(b, full));
+    assert.deepEqual(trendAnswer(lean), trendAnswer(full));
+    assert.deepEqual(lean.findings, []);
+  });
+});

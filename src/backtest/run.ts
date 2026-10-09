@@ -88,6 +88,10 @@ import { loadBacktestData, pooled, type BacktestUniverse } from './load.js';
 import { closedMonthEnds, indexAtOrBefore, priceHistory, type PriceHistory } from './prices.js';
 import { PORTFOLIO_BENCHMARKS, PORTFOLIO_SIGNALS, portfolioStudy, type PortfolioRecord } from './portfolio.js';
 import { setupStudy, type SetupRecord } from './setups.js';
+import { stopStudy, type StopRecord } from './stops.js';
+import { chartAnalysis, type ChartBar } from '../analysis/chart.js';
+import { trendAnswer } from '../analysis/chart-reading.js';
+import { protectionOf } from '../analysis/stops.js';
 import { SETUPS } from '../analysis/setups.js';
 import { rateHistory } from './rates.js';
 import { renderWeightTable, scoredRow, WEIGHT_SPLIT, weightLab, type ScoredRow, type WeightValidation } from './weights.js';
@@ -115,6 +119,11 @@ const LABEL_KEY = 'score.factor.verdict';
 // Lives beside the other calendar helpers now, so a single stock's history can
 // use it without importing the whole backtest; re-exported for existing callers.
 export { monthEnds } from './prices.js';
+
+/** Sessions of chart the depot check's reading is given: a year and a quarter, for the 200-day line and the year's channel. */
+const CHART_BARS = 300;
+/** The stop study's month-ends: every third, from the first. */
+const STOP_EVERY = 3;
 
 export async function runBacktest(
   opts: {
@@ -193,6 +202,8 @@ export async function runBacktest(
   const portfolioRecords: PortfolioRecord[] = [];
   // And which setups fired on it, for the trades (`setups.ts`).
   const setupRecords: SetupRecord[] = [];
+  // And the stops and the chart trend the depot check would have read, for the stop study (`stops.ts`).
+  const stopRecords: StopRecord[] = [];
   const labels = new Map<string, string>();
   // Company-months scored, and how many of them had a rebuilt consensus target.
   const coverage = new Map<number, { stocks: number; covered: number }>();
@@ -281,6 +292,32 @@ export async function runBacktest(
             setupRecords.push({
               day, symbol: e.c.symbol, atr: timing.atr14,
               fires: SETUPS.reduce((bits, s, j) => (s.fires(inputs) ? bits | (1 << j) : bits), 0),
+            });
+          }
+        }
+
+        // The depot check's reading of the chart that day: its trend, its stop
+        // and its trailing width. Every third month only: the study counts no
+        // more (its windows must not overlap), and each reading allocates.
+        const px = m % STOP_EVERY === 0 ? prices.get(e.c.symbol) : undefined;
+        const i = px ? indexAtOrBefore(px.dates, day) : -1;
+        if (px && i >= CHART_BARS) {
+          const bars: ChartBar[] = [];
+          for (let k = i - CHART_BARS + 1; k <= i; k++) {
+            const hi = px.high?.[k], lo = px.low?.[k];
+            bars.push({
+              day: px.dates[k], open: null, close: px.close[k], volume: null,
+              high: hi != null && Number.isFinite(hi) ? hi : null, low: lo != null && Number.isFinite(lo) ? lo : null,
+            });
+          }
+          const a = chartAnalysis(bars, { lean: true });
+          if (a) {
+            const prot = protectionOf(bars, a);
+            const tone = trendAnswer(a).tone;
+            stopRecords.push({
+              day, symbol: e.c.symbol, i, group: timingGroup(f.verdict), score: f.score,
+              trend: tone === 'bull' ? 1 : tone === 'bear' ? -1 : 0,
+              mom12: finite(tech?.returns?.y1), stop: prot.stop?.price ?? null, width: prot.trailing?.width ?? null,
             });
           }
         }
@@ -447,6 +484,12 @@ export async function runBacktest(
   const timing = timingStudy(timingRecords, priceMap, calendar.map((c) => c.date));
   timingRecords.length = 0;
 
+  progress('Stops gegen Halten');
+  // SPY rather than the price index: the proceeds of a stop earn the dividends too.
+  const spy = await priceHistory('SPY', data.priceFrom, join(dir, 'prices'));
+  const stops = stopStudy(stopRecords, prices, priceMap, calendar.map((c) => c.date), spy);
+  stopRecords.length = 0;
+
   progress('Setups gegen den Zufallseinstieg');
   const setups = setupStudy(setupRecords, priceMap);
   setupRecords.length = 0;
@@ -503,6 +546,7 @@ export async function runBacktest(
     timing,
     portfolios,
     setups,
+    stops,
     fidelity: fidelity ?? undefined,
     caveats: [
       withAnalysts ? BACKTEST_CAVEATS[0] : NO_ANALYSTS_CAVEAT,
@@ -684,6 +728,20 @@ export function renderBacktest(r: BacktestResult): string {
         lines.push(line(s.title, s) + `  per month ${s.perMonth.toFixed(1)}`
           + `  vs random ${pc(s.excess.mean)} (t ${fmt(s.excess.t, 1)}; ${pc(s.first.mean)} / ${pc(s.second.mean)})  ${s.verdict}`);
       }
+    }
+  }
+  if (r.stops) {
+    const pc = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`);
+    lines.push('', `Stops against holding: ${r.stops.records} company-months, ${r.stops.withStop} with a stop, ${r.stops.withWidth} with a trailing width`);
+    for (const x of r.stops.rows) {
+      lines.push(`  ${x.rule.padEnd(10)} ${x.group.padEnd(13)} ${x.horizon}M  n ${String(x.trades).padStart(7)}  out ${Math.round(x.stopped * 100)}% after ${x.sessions?.toFixed(0) ?? '—'}d`
+        + `  hold ${pc(x.hold)} rule ${pc(x.ruled)}  p05 ${pc(x.p05Hold)} → ${pc(x.p05Rule)}  ≤−20% ${Math.round(x.deepHold * 100)}% → ${Math.round(x.deepRule * 100)}%`
+        + `  diff ${pc(x.diff.mean)} (t ${fmt(x.diff.t, 1)}; ${pc(x.first.mean)} / ${pc(x.second.mean)})  ${x.verdict}`
+        + (x.diffIndex ? `  then index ${pc(x.diffIndex.mean)} (t ${fmt(x.diffIndex.t, 1)})` : ''));
+    }
+    lines.push('', 'The depot check\'s lists, the chosen half against the rest:');
+    for (const x of r.stops.lists) {
+      lines.push(`  ${x.rule.padEnd(7)} ${x.horizon}M  chosen ${pc(x.chosen.mean)} rest ${pc(x.rest.mean)}  diff ${pc(x.diff.mean)} (t ${fmt(x.diff.t, 1)}; ${pc(x.first.mean)} / ${pc(x.second.mean)}, ${x.diff.months} months)  ${x.verdict}`);
     }
   }
   lines.push('', 'Factor score IC at one month, by year:');

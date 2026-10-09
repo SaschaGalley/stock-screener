@@ -5,12 +5,15 @@
  * what a depot manager would make of it all, the market included.
  *
  * Two readings must agree before a stock is listed for acting on: the score,
- * which is the numbers and the analysis text, and the chart. The backtest gives
- * the pairing some support where it gives the score alone little: among the
- * top tenth by score, the half the price had confirmed beat the half it had not
- * by 2.5 % over six months (t 2.0, in both halves of the years), while the
- * score by itself ranks the next month at 0.014. What comes out are
- * possibilities to look at, not orders, and the page says so.
+ * which is the numbers and the analysis text, and the chart. Whether the chart
+ * adds anything, the backtest says (`backtest/stops.ts`, S&P 1500 since 2013,
+ * the computed trend standing in for the model's reading): among the buys, the
+ * half whose chart rose did no better than the rest (t 0.6 at six months);
+ * among the weak, the half whose chart fell did 1.5 % worse over six months, in
+ * both halves of the years but at t −1.3. Neither holds by the rule, so the
+ * lists are a place to start looking, the page and the manager are told so,
+ * and the stops' own record goes with them. What comes out are possibilities
+ * to look at, not orders.
  *
  * The depot manager's text is the one place holdings reach a model, and
  * `managerInput` is the one place that decides what of them does: names,
@@ -25,6 +28,7 @@
 import { SCORE_BANDS } from '../verdict.js';
 import type { LookThrough } from './look-through.js';
 import type { MarketBrief } from './market-brief.js';
+import type { ListRuleRow, StopRow } from './stop-study.js';
 import type { SectorTrend } from './sector-rotation.js';
 import type { Protection } from './stops.js';
 
@@ -131,6 +135,15 @@ export interface DepotCheckResult {
   managerAt?:   string;
   /** The owner's notes the manager answered, by ticker. */
   notes?:       Record<string, string>;
+}
+
+/** What the newest backtest found the stops and the lists to do (`backtest/stops.ts`). */
+export interface StopEvidence {
+  generatedAt: string;
+  from:        string;
+  to:          string;
+  rows:        StopRow[];
+  lists:       ListRuleRow[];
 }
 
 /** The owner's note on a stock, for the depot manager (CLAUDE.md). */
@@ -304,6 +317,8 @@ export function managerInput(input: {
   cashShare?:   number | null;
   /** The owner's notes, by ticker: his own words, sent as he wrote them for the manager. */
   notes?:       ReadonlyMap<string, string>;
+  /** What the backtest found the stops and the lists to do; public research, nothing of the depot. */
+  evidence?:    StopEvidence | null;
   today?:       string;
 }) {
   const lt = input.lookThrough;
@@ -344,9 +359,35 @@ export function managerInput(input: {
       probleme: input.market.problems.map((x) => x.what),
       termine: input.market.calendar.map((c) => ({ datum: c.date, ereignis: c.event, worauf: c.watch })),
     } : null,
+    belegeStops: input.evidence ? stopBelege(input.evidence) : null,
+    belegeListen: input.evidence ? input.evidence.lists.map((x) => ({
+      liste: x.rule === 'reduce' ? 'reduzierenAnsehen (Score unter 5, Chart abwärts)' : 'kaufenAnsehen (BUY, Chart aufwärts)',
+      monate: x.horizon, unterschiedProzent: pct(x.diff.mean), t: x.diff.t === null ? null : Math.round(x.diff.t * 10) / 10, urteil: x.verdict,
+    })) : null,
     sektorTrendUSA: input.sectorTrends.map((t) => ({
       sector: t.sector, phase: t.phase,
       gegenIndex1MProzent: pct(t.rel1m), gegenIndex3MProzent: pct(t.rel3m), gegenIndex6MProzent: pct(t.rel6m),
+    })),
+  };
+}
+
+/**
+ * The stops' record, as the manager reads it: for the two exits it picks
+ * from, over all stocks and the two groups its rules name, how often they
+ * fired, what they cost against holding — with the proceeds in cash and in the
+ * index — and what they did to the worst outcomes.
+ */
+function stopBelege(e: StopEvidence) {
+  const groups: Record<string, string> = { all: 'alle Aktien', 'weak-falling': 'schwach, Chart abwärts', winners: 'Gewinner (+50 % in 12 Monaten)' };
+  return {
+    zeitraum: `S&P 1500, ${e.from.slice(0, 4)} bis ${e.to.slice(0, 4)}`,
+    regeln: e.rows.filter((r) => r.rule !== 'chandelier' && groups[r.group]).map((r) => ({
+      regel: r.rule, gruppe: groups[r.group], monate: r.horizon,
+      ausgeloestProzent: pct(r.stopped),
+      kostetGegenHaltenProzent: pct(r.diff.mean), t: r.diff.t === null ? null : Math.round(r.diff.t * 10) / 10,
+      kostetMitGeldImIndexProzent: pct(r.diffIndex?.mean ?? null),
+      schlechteste5ProzentHalten: pct(r.p05Hold), schlechteste5ProzentMitStop: pct(r.p05Rule),
+      verlustAb20ProzentHalten: pct(r.deepHold), verlustAb20ProzentMitStop: pct(r.deepRule),
     })),
   };
 }
@@ -397,8 +438,16 @@ export const MANAGER_SYSTEM = [
   '  über dem Kanal) oder der Score nachlässt — dann einen Teil, nicht alles.',
   '- Schutz für jede Aktie im Depot: „trailing“ für Gewinner, deren Trend noch läuft (sichert den Gewinn, ohne den',
   '  Trend abzuschneiden); „stop“ für Positionen im Abwärtstrend oder mit schwachem Score (die Marke, an der die Lesart',
-  '  widerlegt ist); „keiner“, wo eine Marke nur das Rauschen träfe. Nenne den Abstand aus technik, erfinde keinen.',
-  '  Ein Stop begrenzt Verluste, er bringt keine Rendite: Er lohnt, wo Trends laufen, und kostet, wo der Kurs nur pendelt.',
+  '  widerlegt ist); „keiner“, wo eine Marke nur das Rauschen träfe oder der Schutz seinen Preis nicht wert ist.',
+  '- belegeStops sagt, was diese Stops im Backtest taten: wie oft sie auslösten, was sie gegenüber Halten kosteten (das',
+  '  Geld danach bar, und danach im Index) und wie sie die schlimmsten Verluste begrenzten. Ein Stop ist eine Versicherung',
+  '  mit Prämie, kein Renditebringer. Die Prämie ist vor allem der Markt, den das Geld nach dem Stop verpasst:',
+  '  kostetGegenHaltenProzent gilt, wenn es bar liegt, kostetMitGeldImIndexProzent, wenn es gleich wieder angelegt wird.',
+  '  Empfiehl einen Stop, wo ein großer Verlust nicht tragbar wäre — großes Gewicht, widerlegte oder schwache These, starke',
+  '  Schwankung, ein Verlust, den der Anleger nicht weiter laufen lassen will —, nicht für jede Aktie, und sag dazu, dass',
+  '  das Geld nach einem Stop wieder angelegt werden sollte. Bei Gewinnern kostet er laut belegeStops auch dann.',
+  '- belegeListen sagt, ob die Chart-Bedingung der beiden Listen im Backtest trug; „nicht belegt“ heißt: Der Chart allein',
+  '  trennt dort nicht, stütze dich nicht auf ihn.',
   '- Termine: Vor Quartalszahlen nicht ohne Grund nachkaufen; ein Stop schützt nicht vor einer Kurslücke am Tag danach.',
   '- Eine widerlegte Kaufthese wiegt schwer: Der Grund, aus dem gekauft wurde, gilt nicht mehr. Eine junge Position',
   '  (wenige Monate) nicht wegen kurzer Schwankungen aufgeben, eine alte nicht aus Gewohnheit halten.',

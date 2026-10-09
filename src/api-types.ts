@@ -251,6 +251,8 @@ export interface DepotCheckResponse {
   history:  import('./analysis/depot-check-record.js').DepotCheckHistory | null;
   /** The owner's notes for the manager, by ticker. */
   notes:    Record<string, import('./analysis/depot-check.js').DepotNote>;
+  /** What the newest backtest found the stops and the lists to do; null before one measured it. */
+  stopEvidence: import('./analysis/depot-check.js').StopEvidence | null;
 }
 
 /** `GET /api/verdict-changes` */

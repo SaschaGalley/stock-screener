@@ -2,14 +2,21 @@
  * The depot's night watch: after the nightly refresh, each stock held is
  * checked against three things, all arithmetic, none a model's reading —
  *
- * - the close under the trailing stop (the chandelier, `stops.ts`, as of
- *   tonight's bars: three daily moves under the 22-day high);
+ * - the close under the trailing stop the last depot check named, as a broker
+ *   runs it: its width under the highest close since the check. Not the
+ *   chandelier recomputed every night — in the backtest that closed nearly
+ *   every position within a few weeks (`backtest/stops.ts`), which makes it a
+ *   signal for everything;
  * - the close under the stop the last depot check worked out — a stop is set
  *   once and stays, so it is the check's, not one recomputed under tonight's
  *   price;
  * - a score under the depot check's reduce bar while the chart's trend reads
  *   down (`chart-reading.ts`), the check's „Reduzieren ansehen“ without the
  *   model's chart reading.
+ *
+ * Of the two levels, only the one the depot manager chose for the stock is
+ * watched — the stop or the trailing stop, its own stop level where it took
+ * one from the owner's note; none where it chose none.
  *
  * A signal is announced the night it appears, not every night it lasts: what
  * was announced is remembered, and a signal that clears is forgotten, so it
@@ -33,7 +40,7 @@ export interface WatchSignal {
 export interface WatchInput {
   close:       number | null;
   currency:    string | null;
-  /** Tonight's chandelier. */
+  /** The last check's trailing stop under the highest close since. */
   trailing:    number | null;
   /** The last depot check's stop. */
   stop:        number | null;
@@ -54,7 +61,7 @@ export function watchSignals(w: WatchInput): WatchSignal[] {
   if (close !== null && w.trailing !== null && close < w.trailing) {
     out.push({
       kind: 'trailing', label: 'unter Trailing',
-      text: `Schluss ${w.price(close, w.currency)} unter dem Trailing-Stop bei ${w.price(w.trailing, w.currency)} (drei Tagesschwankungen unter dem Hoch der letzten 22 Tage)`,
+      text: `Schluss ${w.price(close, w.currency)} unter dem Trailing-Stop des letzten Depot-Checks, der jetzt bei ${w.price(w.trailing, w.currency)} steht (sein Abstand unter dem höchsten Schluss seither)`,
     });
   }
   if (close !== null && w.stop !== null && close < w.stop) {

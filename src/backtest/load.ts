@@ -121,10 +121,17 @@ export async function loadBacktestData(opts: {
   done = 0;
   await pooled([...companies.map((c) => c.symbol), BENCHMARK, ...etfs], 4, async (symbol) => {
     const p = await priceHistory(symbol, priceFrom, join(dir, 'prices'));
-    // The closes, the adjusted closes and the splits are all the run reads;
-    // the rest of each bar stays in the cache file, not in memory sixteen
-    // hundred times over.
-    if (p) prices.set(symbol, { dates: p.dates, close: p.close, adj: p.adj, splits: p.splits });
+    // The closes, the adjusted closes and the splits, and the highs and lows
+    // the stop study's daily moves are measured on — a range from closes alone
+    // is a good third narrower, and every stop with it. Open and volume stay
+    // in the cache file, not in memory sixteen hundred times over; a missing
+    // high or low is NaN, which keeps the arrays plain doubles.
+    if (p) {
+      prices.set(symbol, {
+        dates: p.dates, close: p.close, adj: p.adj, splits: p.splits,
+        ...(p.high && p.low ? { high: p.high.map((x) => x ?? NaN), low: p.low.map((x) => x ?? NaN) } : {}),
+      });
+    }
     if (++done % 50 === 0) {
       logger.info(`  Prices: ${done}/${companies.length + etfs.length + 1}`);
       progress(`Kurse ${done}/${companies.length + etfs.length + 1}`);

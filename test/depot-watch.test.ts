@@ -19,7 +19,7 @@ describe('the night watch', () => {
   it('signals a close under the trailing stop, the check\'s stop, and a weak score on a falling chart', () => {
     const s = watchSignals({ ...base, close: 89, score: 4.2, falling: true });
     assert.deepEqual(s.map((x) => x.kind), ['trailing', 'stop', 'reduce']);
-    assert.match(s[0].text, /89\.00 USD unter dem Trailing-Stop bei 95\.00 USD/);
+    assert.match(s[0].text, /89\.00 USD unter dem Trailing-Stop des letzten Depot-Checks, der jetzt bei 95\.00 USD steht/);
     assert.match(s[2].text, /Score 4,2 unter 5,0/);
   });
 
@@ -37,5 +37,15 @@ describe('the night watch', () => {
     const a = watchAlert([{ symbol: 'MADE', name: 'Made Up', signal: watchSignals({ ...base, close: 94 })[0] }])!;
     assert.match(a.title, /1 Hinweis/);
     assert.match(a.text, /MADE · unter Trailing/);
+  });
+});
+
+describe('the trailing stop the watch reads', () => {
+  it('trails the highest close since the check by the check\'s width', async () => {
+    const { trailingSinceCheck } = await import('../src/depot-service.js');
+    const bars = [{ day: '2026-09-30', close: 120 }, { day: '2026-10-01', close: 100 }, { day: '2026-10-05', close: 110 }, { day: '2026-10-08', close: 104 }];
+    assert.equal(trailingSinceCheck(bars, '2026-10-01', 0.1), 99);
+    assert.equal(trailingSinceCheck(bars, null, 0.1), null);
+    assert.equal(trailingSinceCheck(bars, '2026-10-01', null), null);
   });
 });

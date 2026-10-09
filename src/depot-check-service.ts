@@ -39,6 +39,7 @@ import {
   changesSince, checkSteps, groupRecord, stepHit, type DepotCheckHistory, type StepOutcome,
 } from './analysis/depot-check-record.js';
 import { listDepotChecks, saveDepotCheck } from './db/depot-check-store.js';
+import { stopEvidence } from './backtest/result.js';
 import { decisionOutcomes } from './stock-history-service.js';
 import { tradesSource } from './trades-service.js';
 import { latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
@@ -76,7 +77,10 @@ export async function readDepotCheck(): Promise<DepotCheckResponse> {
     logger.warn(`Depot check history: ${(e as Error).message}`);
     return null;
   });
-  return { status, result, settings: config.depotCheck, history, notes: await readDepotNotes() };
+  return {
+    status, result, settings: config.depotCheck, history, notes: await readDepotNotes(),
+    stopEvidence: await stopEvidence().catch(() => null),
+  };
 }
 
 /** The measured history changes with a new check or a new trading day; read at most every ten minutes. */
@@ -288,6 +292,7 @@ async function askManager(
       market: check.market, sectorTrends: check.sectorTrends ?? [], lookThrough: view.lookThrough,
       cashShare: view.cashEur !== null && view.totalEur > 0 ? view.cashEur / view.totalEur : null,
       notes: new Map(Object.entries(notes)),
+      evidence: await stopEvidence().catch(() => null),
     });
     const manager = await createProviderForModel(model).complete({
       label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 10_000,

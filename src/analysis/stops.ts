@@ -3,12 +3,17 @@
  * support the price stands on, and a trailing stop that follows the high — in
  * the stock's own currency and as distances from today's close.
  *
- * Neither is a forecast, and neither went through the backtest. A stop limits
- * what a position can lose; it adds no return. Kaminski and Lo (2014) show a
- * stop rule pays only where prices trend — under a random walk it sells into
- * the rebounds and costs what it saves — and Han, Zhou and Zhu (2016) found the
- * trending case in momentum, where a stop took the worst months out of the
- * strategy. So these are levels to look at, said in the chart's own terms:
+ * Neither is a forecast. A stop limits what a position can lose; it adds no
+ * return. Kaminski and Lo (2014) show a stop rule pays only where prices trend
+ * — under a random walk it sells into the rebounds and costs what it saves —
+ * and Han, Zhou and Zhu (2016) found the trending case in momentum. The
+ * backtest (`backtest/stops.ts`, S&P 1500 since 2013) put both levels to the
+ * test against holding: the stop fired on half the positions within three
+ * months, the trailing stop on four in five, and with the money left in cash
+ * they cost 3.8 and 6.1 points over six months, in both halves of the years;
+ * with the money put into the index at once they cost nothing measurable,
+ * except on the big winners. The worst twentieth went from −30 % to −17 % and
+ * −13 %. So these are levels to look at, said in the chart's own terms:
  *
  * - The stop goes half a daily move (ATR) under the nearest support at least
  *   1½ daily moves below the close. Nearer, an ordinary day would take it out;
