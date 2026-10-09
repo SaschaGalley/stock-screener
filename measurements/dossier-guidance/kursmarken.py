@@ -25,15 +25,18 @@ SUFFIXED = re.compile(
 
 CHART = re.compile(
     r"support|resistance|break(?:s|ing)?\s*(?:out|down|above|below|through)|breakout|breakdown|"
-    r"target|channel|trend\s?line|uptrend|downtrend|\blevel|zone|floor|ceiling|re-?test|\btest|pullback|"
+    r"target|channel|\bareas?\b|(?:up|down)side (?:target|area|zone|level|risk to|toward)|trend\s?line|uptrend|downtrend|\blevel|zone|floor|ceiling|re-?test|\b(?:back)?test|pullback|"
     r"moving average|\d+-(?:day|week)|fibonacci|\bgap\b|neckline|pivot|stop|buy area|entry|bounce|"
     r"reclaim|close[sd]? (?:above|below)|hold(?:s|ing)? (?:above|at|the)?|toward|upside to|downside to|"
     r"wedge|triangle|flag|head and shoulders|double (?:top|bottom)|cup and handle|swing|"
-    r"unterstützung|widerstand|kursziel|ausbruch|marke|"
+    r"unterstützung|widerstand|kursziel|ausbruch|\bmarken?\b|"
     # Ziele und abgeleitete Kurse ohne Chartwort: »projecting $300–350«, »DCF estimate was $527«
     r"project(?:s|ed|ing)?|forecast|price objective|fair value|\bdcf\b|impl(?:y|ies|ied)|valuation of|"
     # Eine Marke als Schwelle: »fall below $227«, »recover above $229«
-    r"(?:above|below|under|over|beneath)\s+(?:roughly\s+|about\s+|around\s+)?(?:US|HK|C|A)?\$",
+    r"(?:fall|falls|fell|falling|drop|drops|dropped|slip|slips|break|breaks|broke|move|moves|moved|rise|rises|rose|"
+    r"climb|climbs|close|closes|closed|stay|stays|stayed|hold|holds|held|recover|recovers|recovered|push|pushes|"
+    r"trade|trades|traded|trading|remain|remains|remained|back|rally|decline|dip|sustained|buy|buying|sell|selling)\s+(?:\w+\s+){0,2}?"
+    rf"(?:above|below|under|over|beneath)\s+(?:roughly\s+|about\s+|around\s+)?{CURRENCY}",
     re.IGNORECASE,
 )
 # Kennzahlen, die wie Kurse aussehen: unmittelbar davor genannt
@@ -51,9 +54,31 @@ METRIC_AFTER = re.compile(
 HISTORY_BEFORE = re.compile(
     r"(?:peaked|bottomed|topped|closed|opened|traded|ended|finished|settled|plunged|soared|jumped|fell|rose)"
     r"\s+(?:at|near|around|to)\s+(?:about\s+|roughly\s+|around\s+)?$|"
-    r"(?:all-time|record|52-week|intraday)\s+(?:high|low|close)\s+(?:of|at|near)\s+(?:about\s+|roughly\s+)?$",
+    r"(?:all-time|record|52-week|intraday)\s+(?:high|low|close)\s+(?:of|at|near)\s+(?:about\s+|roughly\s+)?$|"
+    r"(?:rise|rose|rallied|climbed|surged|jumped|fell|dropped|declined|slid)\s+from\s+[^.]{0,60}?\bto\s+"
+    r"(?:almost\s+|nearly\s+|about\s+|around\s+)?$|"
+    # »rallied to $18.83«, »has fallen … to $12.61«, »rose sharply from €66 to a peak of €71«
+    r"(?:rallied|risen|fallen|dropped|declined|climbed|surged|plunged|tumbled|slumped|slid)\s+(?:[\w’'-]+\s+){0,5}?to\s+$|"
+    r"(?:rose|rallied|climbed|surged|jumped|fell|dropped|declined|slid|risen|fallen)\s+(?:\w+\s+)?from\s+$|"
+    r"\bto a (?:peak|high|record) of\s+$",
     re.IGNORECASE,
 )
+# Der Kurs selbst statt einer Marke: »shares were about $350«, »AbbVie’s $260 share price«
+PRICE_BEFORE = re.compile(
+    r"(?:shares?|stock|ADRs?|(?<!dcf )(?<!fair )(?<!target )(?<!implied )price)\s+"
+    r"(?:were|was|is|are|stood|sat|traded|trading|trade)\s+"
+    r"(?:at\s+|near\s+|around\s+|about\s+|roughly\s+|approximately\s+)*$|"
+    r"(?:trading|traded|trades)\s+(?:at|around|near|about)\s+$|"
+    r"share price\s+(?:of|at)\s+(?:about\s+|around\s+|roughly\s+)?$",
+    re.IGNORECASE,
+)
+PRICE_AFTER = re.compile(r"\s*(?:share price|(?:per share|a share)\s*,?\s*(?:with|giving|for) a market)", re.IGNORECASE)
+# Beträge je Einheit: »$17 per active customer«, »$20 to $100 per month«
+UNIT_AFTER = re.compile(
+    r"\s*(?:per|a|each)\s+(?:month|year|quarter|customer|active customer|user|subscriber|unit|seat|ton|tonne|barrel|"
+    r"ounce|kwh|mwh|gpu|chip|vehicle|car|square)", re.IGNORECASE)
+# Das Chartwort muss nah am Betrag stehen, nicht irgendwo im Satz.
+NEAR_BEFORE, NEAR_AFTER = 110, 70
 
 
 def _num(s: str) -> float:
@@ -81,9 +106,12 @@ def extract(text: str) -> list[dict]:
                 if re.match(r"\s*(?:%|percent|per cent|x\b|times)", tail, re.IGNORECASE):
                     continue
                 before = sent[max(0, m.start() - 80):m.start()]
-                if METRIC_BEFORE.search(before) or HISTORY_BEFORE.search(before):
+                if METRIC_BEFORE.search(before) or HISTORY_BEFORE.search(before) or PRICE_BEFORE.search(before):
                     continue
-                if METRIC_AFTER.match(sent[m.end():m.end() + 24]):
+                after = sent[m.end():m.end() + 40]
+                if METRIC_AFTER.match(after) or PRICE_AFTER.match(after) or UNIT_AFTER.match(after):
+                    continue
+                if not CHART.search(sent[max(0, m.start() - NEAR_BEFORE):m.end() + NEAR_AFTER]):
                     continue
                 spans.append((m.start(), m.end()))
                 a = _num(m.group("a"))
@@ -92,6 +120,9 @@ def extract(text: str) -> list[dict]:
                 if b is not None and b < a and len(m.group("b").replace(",", "")) < len(m.group("a").replace(",", "")):
                     digits = len(str(int(a))) - len(str(int(b)))
                     b = float(str(int(a))[:digits] + str(int(b)))
+                # »cut its target from $20 to $18« ist ein neues Ziel, keine Zone
+                if b is not None and re.search(r"\bfrom\s+$", before, re.IGNORECASE) and re.search(r"\bto\b", m.group(0)):
+                    a, b = b, None
                 lo, hi = (a, b) if b is None or a <= b else (b, a)
                 out.append({"low": lo, "high": hi if b is not None else lo, "text": m.group(0), "sentence": sent})
     return out
