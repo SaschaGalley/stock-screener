@@ -1,0 +1,187 @@
+<title>Dossier-Blindtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<style>
+/* Layout: je Aktie ein Blatt, darin Zeile für Zeile A neben B, damit Gleiches neben Gleichem steht. */
+:root {
+  --bg: #f3f5f8;
+  --sheet: #ffffff;
+  --fg: #18202b;
+  --muted: #5a6574;
+  --line: #d9dfe7;
+  --accent: #2c5a86;
+  --accent-soft: #e3ecf6;
+  --pos: #2b7a4b;
+  --pos-soft: #e2f1e8;
+  --neg: #b0413a;
+  --neg-soft: #f7e4e2;
+  --zero: #6b7584;
+  --zero-soft: #eceff3;
+  --serif: "Literata", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151b; --sheet: #181e26; --fg: #e4e9ef; --muted: #98a3b1; --line: #2a333e;
+    --accent: #86afd9; --accent-soft: #1e2d3d; --pos: #6cc391; --pos-soft: #19301f;
+    --neg: #e5847b; --neg-soft: #3a1f1c; --zero: #9aa4b1; --zero-soft: #232b35; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151b; --sheet: #181e26; --fg: #e4e9ef; --muted: #98a3b1; --line: #2a333e;
+  --accent: #86afd9; --accent-soft: #1e2d3d; --pos: #6cc391; --pos-soft: #19301f;
+  --neg: #e5847b; --neg-soft: #3a1f1c; --zero: #9aa4b1; --zero-soft: #232b35; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--sans); }
+main { max-width: 1120px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 120px; display: grid; gap: 28px; }
+header.intro { display: grid; gap: 10px; max-width: 68ch; }
+h1 { font: 600 1.6rem/1.2 var(--sans); margin: 0; text-wrap: balance; }
+.intro p { margin: 0; color: var(--muted); }
+.intro strong { color: var(--fg); font-weight: 600; }
+
+.sheet { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 14px; }
+.sheet-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.sheet-head h2 { font: 600 1.15rem/1.2 var(--sans); margin: 0; }
+.sheet-head .name { color: var(--muted); }
+.sheet-head .nr { margin-left: auto; font: 500 .8rem var(--mono); color: var(--muted); }
+
+.pair { display: grid; grid-template-columns: 9rem 1fr 1fr; column-gap: 20px; }
+.pair > * { min-width: 0; padding-block: 12px; border-top: 1px solid var(--line); }
+.pair .lbl { font: 500 .72rem/1.4 var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding-top: 15px; }
+.pair .colhead { border-top: 0; padding-block: 0 6px; font: 600 1rem var(--mono); color: var(--accent); }
+.pair .colhead.empty { visibility: hidden; }
+
+.score { font: 500 1.6rem/1 var(--mono); font-variant-numeric: tabular-nums; }
+.score small { font: 400 .8rem var(--sans); color: var(--muted); margin-left: 6px; }
+.prose { font: 400 .98rem/1.6 var(--serif); }
+ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; font: 400 .93rem/1.55 var(--serif); }
+.none { color: var(--muted); font-style: italic; font-size: .9rem; }
+
+.dims { display: grid; gap: 7px; }
+.dim { display: grid; grid-template-columns: 6.6rem 2.6rem 1fr; gap: 8px; align-items: baseline; font-size: .88rem; }
+.dim .k { color: var(--muted); }
+.pill { font: 500 .8rem/1.6 var(--mono); text-align: center; border-radius: 5px; font-variant-numeric: tabular-nums; }
+.pill.p { color: var(--pos); background: var(--pos-soft); }
+.pill.n { color: var(--neg); background: var(--neg-soft); }
+.pill.z { color: var(--zero); background: var(--zero-soft); }
+.pill.x { color: var(--muted); background: transparent; border: 1px dashed var(--line); }
+.dim .note { min-width: 0; }
+
+.choose { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 6px; }
+.choose span { color: var(--muted); font-size: .9rem; margin-right: 4px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: 500 .92rem var(--sans); padding: 8px 18px; border: 0; background: transparent; color: var(--fg); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button:hover { background: var(--accent-soft); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--sheet); }
+.seg button:focus-visible, .copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--sheet); border-top: 1px solid var(--line);
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+.bar-in { max-width: 1120px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.progress { font: 500 .9rem var(--mono); font-variant-numeric: tabular-nums; }
+.answer { flex: 1 1 18rem; min-width: 0; font: 400 .82rem/1.4 var(--mono); color: var(--muted); overflow-wrap: anywhere; user-select: all; }
+.copy { font: 600 .9rem var(--sans); padding: 9px 16px; border-radius: 8px; border: 0; background: var(--accent); color: var(--sheet); cursor: pointer; }
+.copy[disabled] { opacity: .45; cursor: default; }
+
+@media (max-width: 760px) {
+  .pair { grid-template-columns: 1fr; }
+  .pair .lbl { border-top: 1px solid var(--line); padding-bottom: 0; }
+  .pair .colhead { display: none; }
+  .pair .cell { border-top: 0; padding-top: 6px; }
+  .pair .cell::before { content: attr(data-side); font: 600 .78rem var(--mono); color: var(--accent); display: block; margin-bottom: 4px; }
+}
+@media (prefers-reduced-motion: no-preference) { .seg button { transition: background .12s; } }
+</style>
+
+<main>
+  <header class="intro">
+    <h1>Welche Lesung trägt die Entscheidung besser?</h1>
+    <p>Je Aktie stehen zwei Lesungen derselben Narrative-Stufe nebeneinander, einmal aus dem distill-Paket vor der neuen Dossier-Vorgabe, einmal danach. Welche welche ist, verraten die Etiketten nicht; A und B sind je Aktie neu ausgelost.</p>
+    <p><strong>Die Frage:</strong> Auf welcher Lesung würdest du lieber entscheiden? Wenn keine besser ist, wähle „gleich“. Unten steht deine Antwort zum Kopieren für den Chat.</p>
+  </header>
+  <div id="sheets" style="display:grid;gap:28px"></div>
+</main>
+
+<div class="bar">
+  <div class="bar-in">
+    <span class="progress" id="progress">0 von __COUNT__ entschieden</span>
+    <span class="answer" id="answer">Noch nichts gewählt.</span>
+    <button class="copy" id="copy" type="button" disabled>Antwort kopieren</button>
+  </div>
+</div>
+
+<script>
+const STOCKS = __DATA__;
+const KEY = 'dossier-blindtest-v1';
+let picks = {};
+try { picks = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { picks = {}; }
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmtScore = (v) => v === null || v === undefined ? 'Enthaltung' : v.toFixed(1).replace('.', ',');
+const pill = (r) => {
+  if (r === null || r === undefined) return '<span class="pill x" title="Die Quellen sagen dazu nichts">–</span>';
+  const cls = r > 0 ? 'p' : r < 0 ? 'n' : 'z';
+  return `<span class="pill ${cls}">${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r)}</span>`;
+};
+const list = (xs) => xs.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<span class="none">keine</span>';
+
+function sheet(s, i) {
+  const [a, b] = s.sides;
+  const row = (label, fn) => `<div class="lbl">${label}</div><div class="cell" data-side="A">${fn(a)}</div><div class="cell" data-side="B">${fn(b)}</div>`;
+  return `<section class="sheet" id="s-${esc(s.symbol)}">
+    <div class="sheet-head"><h2>${esc(s.symbol)}</h2><span class="name">${esc(s.name)}</span><span class="nr">${i + 1} / ${STOCKS.length}</span></div>
+    <div class="pair">
+      <div class="colhead empty">.</div><div class="colhead">A</div><div class="colhead">B</div>
+      ${row('Narrativ-Score', (x) => `<span class="score">${fmtScore(x.score)}<small>${x.score === null ? '' : 'von 10'}</small></span>`)}
+      ${row('Dimensionen', (x) => `<div class="dims">${x.dims.map((d) => `<div class="dim"><span class="k">${esc(d.label)}</span>${pill(d.rating)}<span class="note">${esc(d.note)}</span></div>`).join('')}</div>`)}
+      ${row('Zusammenfassung', (x) => `<div class="prose">${esc(x.summary)}</div>`)}
+      ${row('Ereignisse', (x) => list(x.events))}
+      ${row('Thesen dafür', (x) => list(x.bull))}
+      ${row('Thesen dagegen', (x) => list(x.bear))}
+    </div>
+    <div class="choose" role="group" aria-label="Wahl für ${esc(s.symbol)}">
+      <span>Lieber entscheiden auf</span>
+      <div class="seg">
+        ${['A', 'gleich', 'B'].map((v) => `<button type="button" id="pick-${esc(s.symbol)}-${v}" data-sym="${esc(s.symbol)}" data-v="${v}" aria-pressed="${picks[s.symbol] === v}">${v}</button>`).join('')}
+      </div>
+    </div>
+  </section>`;
+}
+
+const root = document.getElementById('sheets');
+root.innerHTML = STOCKS.map(sheet).join('');
+
+function answerText() {
+  return STOCKS.filter((s) => picks[s.symbol]).map((s) => `${s.symbol} ${picks[s.symbol]}`).join(', ');
+}
+function refresh() {
+  const n = STOCKS.filter((s) => picks[s.symbol]).length;
+  document.getElementById('progress').textContent = `${n} von ${STOCKS.length} entschieden`;
+  document.getElementById('answer').textContent = n ? `Blindtest: ${answerText()}` : 'Noch nichts gewählt.';
+  document.getElementById('copy').disabled = n === 0;
+  document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(picks[b.dataset.sym] === b.dataset.v)));
+}
+root.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg button');
+  if (!b) return;
+  picks[b.dataset.sym] = picks[b.dataset.sym] === b.dataset.v ? undefined : b.dataset.v;
+  if (!picks[b.dataset.sym]) delete picks[b.dataset.sym];
+  try { localStorage.setItem(KEY, JSON.stringify(picks)); } catch (err) { /* nur Bequemlichkeit */ }
+  refresh();
+});
+document.getElementById('copy').addEventListener('click', async () => {
+  const text = document.getElementById('answer').textContent;
+  const btn = document.getElementById('copy');
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Kopiert'; }
+  catch (err) {
+    const r = document.createRange(); r.selectNodeContents(document.getElementById('answer'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = 'Markiert, jetzt kopieren';
+  }
+  setTimeout(() => { btn.textContent = 'Antwort kopieren'; }, 2500);
+});
+refresh();
+</script>

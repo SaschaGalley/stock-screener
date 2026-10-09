@@ -2,3 +2,4 @@
 .charts/
 .probe.jsonl
 warten.log
+__pycache__/

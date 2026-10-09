@@ -192,8 +192,8 @@ def table_arm(group, title):
     fail = {a: sum(cell[(s, a)]["reads"] - cell[(s, a)]["ok"] for s in group) for a in ARMS}
     print(f"| gescheiterte Lesungen | {fail['alt']} | {fail['neu']} | |")
     spread_all = {a: Counter(cell[(s, a)]["spread"] for s in group) for a in ARMS}
-    print(f"| Spanne 0 / >0 / ≥1 / ohne | "
-          + " | ".join(f"{spread_all[a][0.0]} / {sum(v for k, v in spread_all[a].items() if k)} / "
+    print(f"| Spanne 0 / unter 1 / ab 1 / ohne (Symbole) | "
+          + " | ".join(f"{spread_all[a][0.0]} / {sum(v for k, v in spread_all[a].items() if k is not None and 0 < k < 1)} / "
                        f"{sum(v for k, v in spread_all[a].items() if k is not None and k >= 1)} / {spread_all[a][None]}"
                        for a in ARMS) + " | |")
     lk = {a: sum(cell[(s, a)]["leaked_any"] for s in group) for a in ARMS}
@@ -306,5 +306,6 @@ print(f"- **L3 Stabilität:** Median der Spanne alt {f(ms['alt'], 2)}, neu {f(ms
 print("\n## Tokens\n")
 for a in ARMS:
     us = [u for s in symbols for u in cell[(s, a)]["usage"]]
-    print(f"- {a}: {len(us)} Lesungen, {sum(u.get('prompt_tokens', 0) for u in us):,} Eingabe- und "
-          f"{sum(u.get('completion_tokens', 0) for u in us):,} Ausgabe-Tokens".replace(",", "."))
+    tin = f"{sum(u.get('prompt_tokens', 0) for u in us):,}".replace(",", ".")
+    tout = f"{sum(u.get('completion_tokens', 0) for u in us):,}".replace(",", ".")
+    print(f"- {a}: {len(us)} Lesungen, {tin} Eingabe- und {tout} Ausgabe-Tokens")
