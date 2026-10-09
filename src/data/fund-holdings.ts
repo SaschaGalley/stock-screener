@@ -36,7 +36,7 @@ export function parseTopHoldings(symbol: string, th: any, asOf = new Date().toIS
       return sector && weight !== null && weight > 0 ? [{ sector, weight }] : [];
     }));
   if (holdings.length === 0 && sectors.length === 0) return null;
-  return { symbol, asOf, holdings, sectors, equity: share(th.stockPosition), bonds: share(th.bondPosition), cash: share(th.cashPosition) };
+  return { symbol, asOf, holdings, full: null, sectors, equity: share(th.stockPosition), bonds: share(th.bondPosition), cash: share(th.cashPosition) };
 }
 
 /** Fetch a fund's holdings: the module as Yahoo sent it, to keep, and what it says. */

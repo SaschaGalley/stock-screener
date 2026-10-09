@@ -76,7 +76,7 @@ export interface DepotPosition {
   thesis:      { contradicted: number; total: number; at: string } | null;
   /** The newest model reading of its chart: the trend, the session it saw last, the summary. */
   chart:       { trend: 'up' | 'down' | 'sideways'; asOf: string; summary: string } | null;
-  /** The share of the depot the funds add to it, where they hold it among their largest. */
+  /** The share of the depot the funds add to it: all they hold of it where the issuer lists every holding, else what is among their ten largest. */
   viaFunds:    number | null;
   /** The score about four weeks ago, against which today's is a trend. */
   scoreBefore: { score: number; at: string } | null;
@@ -168,6 +168,7 @@ export function depotView(input: {
   reasons:   (p: HeldPosition) => DepotPosition['reason'];
   theses:    Map<string, NonNullable<DepotPosition['thesis']>>;
   charts?:   Map<string, NonNullable<DepotPosition['chart']>>;
+  /** The funds' holdings, by the fund's ISIN. */
   funds?:    Map<string, FundHoldings>;
   /** Scores about four weeks ago, by ticker. */
   scoresBefore?: Map<string, NonNullable<DepotPosition['scoreBefore']>>;
@@ -251,7 +252,7 @@ export function depotView(input: {
 
   // The funds read as what they hold; each stock held learns what they add to it.
   const lt = lookThrough(positions, input.funds ?? new Map());
-  for (const p of positions) p.viaFunds = (p.symbol && lt.heldViaFunds[p.symbol]) || null;
+  for (const p of positions) p.viaFunds = lt.heldViaFunds[p.isin] ?? null;
 
   const findings: string[] = [];
   const top = positions[0];

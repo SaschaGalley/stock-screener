@@ -110,7 +110,7 @@ export async function readDepot(force = false): Promise<DepotResponse> {
 
   const held = positionsFromTrades(trades);
   const listed = held.flatMap((p) => (p.symbol && model.has(p.symbol) ? [p.symbol] : []));
-  const funds = held.flatMap((p) => (p.symbol && FUND_TYPES.has(p.assetType) ? [p.symbol] : []));
+  const funds = held.filter((p) => FUND_TYPES.has(p.assetType)).map((p) => ({ isin: p.isin, symbol: p.symbol }));
   const today = new Date().toISOString().slice(0, 10);
   const ahead = new Date(Date.now() + AHEAD_DAYS * DAY_MS).toISOString().slice(0, 10);
   const [config, lastCheck, fundMap, scoreSeries, market, cashEur] = await Promise.all([

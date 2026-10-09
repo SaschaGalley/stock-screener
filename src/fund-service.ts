@@ -1,18 +1,45 @@
 /**
- * The funds' holdings for the depot's look-through: the stored answer while it
- * is less than a week old, else Yahoo's, kept. A fund Yahoo cannot describe is
- * left out and the page says so; a failed fetch falls back to an older answer.
+ * The funds' holdings for the depot's look-through: Yahoo's sector split and
+ * ten largest holdings, and where Amundi, iShares or SPDR list the fund, its
+ * every holding in place of the ten. Each answer is the stored one while it
+ * is less than a week old, else asked again and kept. A fund nobody describes
+ * is left out and the page says so; a failed fetch falls back to an older answer.
  */
 
 import type { FundHoldings } from './analysis/look-through.js';
+import { fetchComposition, ISSUER_NAMES, parseComposition, type Composition } from './data/fund-composition.js';
 import { fetchFundHoldings, parseTopHoldings } from './data/fund-holdings.js';
-import { latestFundHoldings, saveFundHoldings } from './db/fund-store.js';
+import { latestFundCompositions, latestFundHoldings, saveFundComposition, saveFundHoldings } from './db/fund-store.js';
 import { logger } from './utils/logger.js';
 
-/** A fund's ten largest positions move slowly: a week-old answer is today's. */
+/** A fund's holdings move slowly: a week-old answer is today's. */
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Kept when no issuer knows the fund, so that it is asked again only after a week. */
+const NONE = 'none';
 
-export async function fundHoldings(symbols: readonly string[]): Promise<Map<string, FundHoldings>> {
+/** The funds by ISIN. */
+export async function fundHoldings(funds: readonly { isin: string; symbol: string | null }[]): Promise<Map<string, FundHoldings>> {
+  const [yahoo, lists] = await Promise.all([
+    yahooHoldings(funds.flatMap((f) => (f.symbol ? [f.symbol] : []))),
+    compositions(funds.map((f) => f.isin)),
+  ]);
+  const out = new Map<string, FundHoldings>();
+  for (const f of funds) {
+    const y = f.symbol ? yahoo.get(f.symbol) : undefined;
+    const c = lists.get(f.isin);
+    if (!y && !c) continue;
+    out.set(f.isin, {
+      symbol: f.symbol,
+      asOf: c?.asOf ?? y?.asOf ?? new Date().toISOString(),
+      holdings: c?.holdings ?? y!.holdings,
+      full: c ? ISSUER_NAMES[c.issuer] : null,
+      sectors: y?.sectors ?? [], equity: y?.equity ?? null, bonds: y?.bonds ?? null, cash: y?.cash ?? null,
+    });
+  }
+  return out;
+}
+
+async function yahooHoldings(symbols: readonly string[]): Promise<Map<string, FundHoldings>> {
   const stored = await latestFundHoldings(symbols);
   const out = new Map<string, FundHoldings>();
   await Promise.all(symbols.map(async (symbol) => {
@@ -31,6 +58,30 @@ export async function fundHoldings(symbols: readonly string[]): Promise<Map<stri
     }
     const old = s ? parseTopHoldings(symbol, s.raw, s.seenAt.toISOString()) : null;
     if (old) out.set(symbol, old);
+  }));
+  return out;
+}
+
+async function compositions(isins: readonly string[]): Promise<Map<string, Composition>> {
+  const stored = await latestFundCompositions(isins);
+  const out = new Map<string, Composition>();
+  await Promise.all(isins.map(async (isin) => {
+    const s = stored.get(isin);
+    const old = s && s.issuer !== NONE ? parseComposition(s.issuer, s.raw) : null;
+    if (s && Date.now() - s.seenAt.getTime() < MAX_AGE_MS) {
+      if (old) out.set(isin, old);
+      return;
+    }
+    try {
+      const got = await fetchComposition(isin);
+      await saveFundComposition(isin, got?.issuer ?? NONE, got?.raw ?? {});
+      const c = got ? parseComposition(got.issuer, got.raw) : null;
+      if (c) out.set(isin, c);
+      return;
+    } catch (e) {
+      logger.warn(`Fund composition ${isin}: ${(e as Error).message}`);
+    }
+    if (old) out.set(isin, old);
   }));
   return out;
 }

@@ -29,6 +29,9 @@ importers:
       express:
         specifier: ^5.2.1
         version: 5.2.1(supports-color@10.2.2)
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
       marked:
         specifier: ^18.0.3
         version: 18.0.9
@@ -1144,6 +1147,9 @@ packages:
   fetch-mock-cache@3.1.0:
     resolution: {integrity: sha512-VxdIstx7qhqW9+9AOjYAlxEguX9HnBFdSaydlwLiZR+xAldGdZMLmSn8pYLd6hNh3vjcIcqUkgFgcdcPomctFg==}
     engines: {node: '>=22.0.0'}
+
+  fflate@0.8.2:
+    resolution: {integrity: sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==}
 
   filename-reserved-regex@4.0.0:
     resolution: {integrity: sha512-9ZT504KxEQDamsOogZImAWGEN24R1uFAxU3ZS4AZqn2ooidmN68Olh7n4/RcA4lLatZztjA0ZSuxeLHVoCc8JA==}
@@ -3047,6 +3053,8 @@ snapshots:
       filenamify-url: 4.0.0
     transitivePeerDependencies:
       - supports-color
+
+  fflate@0.8.2: {}
 
   filename-reserved-regex@4.0.0: {}
 

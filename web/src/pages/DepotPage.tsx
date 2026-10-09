@@ -117,7 +117,7 @@ export default function DepotPage() {
                 </tr>
               </thead>
               <tbody>
-                {view.positions.map((p) => <PositionRow key={p.isin} p={p} limit={view.limits.maxPosition} />)}
+                {view.positions.map((p) => <PositionRow key={p.isin} p={p} limit={view.limits.maxPosition} counted={fundsCounted(view)} />)}
               </tbody>
             </table>
           </section>
@@ -125,7 +125,6 @@ export default function DepotPage() {
           {/* `grid-cols-1`, not the implicit track: that one is as wide as the widest card's content on a phone. */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <LookThroughSectors view={view} />
-            <LookThroughStocks view={view} />
             <Shares title="Depot nach Anlageart" rows={view.byType.map((t) => ({ label: TYPE_LABEL[t.assetType] ?? t.assetType, weight: t.weight }))} />
             <Dates view={view} />
           </div>
@@ -150,7 +149,7 @@ export default function DepotPage() {
  * on hover. A stock the model scores opens its analysis; the rest have nothing
  * to open.
  */
-function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
+function PositionRow({ p, limit, counted }: { p: DepotPosition; limit: number; counted: string }) {
   const evidence = useVerdictEvidence();
   const open = p.symbol && p.tracked ? p.symbol : null;
   const missingReason = p.flags.some((f) => f.key === 'reason');
@@ -181,7 +180,7 @@ function PositionRow({ p, limit }: { p: DepotPosition; limit: number }) {
             </div>
             <span className="whitespace-nowrap font-mono text-xs tabular text-ink-300">{pct(p.weight)}</span>
             {p.viaFunds !== null && (
-              <Tip focusable={false} content={`Über die Fonds hältst du zusätzlich ${pct(p.viaFunds)} des Depots, zusammen ${pct(p.weight + p.viaFunds)}.`}>
+              <Tip focusable={false} content={`Über die Fonds hältst du zusätzlich ${pct(p.viaFunds)} des Depots, zusammen ${pct(p.weight + p.viaFunds)}. ${counted}`}>
                 <span className="whitespace-nowrap font-mono text-2xs tabular text-ink-500">+{deNumber(p.viaFunds * 100, 1)}</span>
               </Tip>
             )}
@@ -286,32 +285,13 @@ function LookThroughSectors({ view }: { view: DepotView }) {
   );
 }
 
-/** The largest companies once the funds' largest holdings are counted in. */
-function LookThroughStocks({ view }: { view: DepotView }) {
-  const lt = view.lookThrough;
-  if (lt.stocks.length === 0) return null;
-  return (
-    <section className="rounded-lg border border-ink-800 px-4 py-3">
-      <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
-        <Tip content={`Deine Einzelaktien und die zehn größten Werte jedes Fonds (laut Yahoo), zusammengezählt. Von den Fonds (${pct(lt.funds.weight)} des Depots) sind ${pct(lt.funds.known)} so beschrieben; jenseits der zehn größten ist ein Weltfonds breit gestreut.`}>
-          <span>Größte Einzelwerte, Fonds durchgerechnet</span>
-        </Tip>
-      </h3>
-      <ul className="space-y-1 text-xs">
-        {lt.stocks.map((r) => (
-          <li key={`${r.symbol}-${r.name}`} className="flex items-center gap-2">
-            <span className={`min-w-0 flex-1 truncate ${r.held ? 'text-ink-100' : 'text-ink-400'}`}>
-              {r.name} {r.symbol && <span className="font-mono text-2xs text-ink-500">{r.symbol}</span>}
-            </span>
-            <span className="w-14 text-right font-mono text-ink-500">{r.direct > 0 ? pct(r.direct) : ''}</span>
-            <span className="w-14 text-right font-mono text-ink-500">{r.viaFunds > 0 ? `+${pct(r.viaFunds)}` : ''}</span>
-            <span className="w-14 text-right font-mono text-ink-200">{pct(r.total)}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-1.5 text-2xs text-ink-500">direkt · über Fonds · zusammen, in Prozent des Depots</p>
-    </section>
-  );
+/** How the funds' part of a stock was counted: from the issuers' full lists, or only from the ten largest. */
+function fundsCounted(view: DepotView): string {
+  const f = view.lookThrough.funds;
+  if (f.known <= 0) return '';
+  if (f.full >= f.known - 0.0005) return 'Gezählt aus den vollständigen Positionslisten der Fondsanbieter.';
+  return `Gezählt aus den vollständigen Positionslisten der Anbieter für ${pct(f.full)} des Depots in Fonds; `
+    + `bei den übrigen ${pct(f.known - f.full)} nur aus ihren zehn größten Werten (laut Yahoo).`;
 }
 
 /** What is scheduled for the stocks held and for the market, the next thirty days. */
@@ -321,7 +301,7 @@ function Dates({ view }: { view: DepotView }) {
     ...view.market.map((m) => ({ day: m.day, symbol: null, kind: 'market' as const, title: m.event, detail: m.watch || null })),
   ];
   return (
-    <section className="rounded-lg border border-ink-800 px-4 py-3">
+    <section className="rounded-lg border border-ink-800 px-4 py-3 md:col-span-2">
       <h3 className="mb-1.5 text-xs font-semibold text-ink-300">
         <Tip content="Quartalszahlen, Ex-Tage und Dividendenzahlungen aus Yahoo, die datierten Katalysatoren der neuesten Recherche zu jeder Aktie und die Markttermine aus der Marktlage des Depot-Checks.">
           <span>Termine · 30 Tage</span>
