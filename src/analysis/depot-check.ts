@@ -20,7 +20,8 @@
  * sectors, weights — the funds' too, read as what they hold — and, for single
  * stocks, the gain since purchase in per cent, the months held, the thesis
  * check's counts, the purchases and sales of the position (day, price, size
- * against the position) and the reasons the owner wrote for them; the money
+ * against the position), the reasons the owner wrote for them and the
+ * manager's own last step on the stock; the money
  * ready to invest as a share of the depot; never quantities, values, amounts
  * or fees (CLAUDE.md).
  *
@@ -266,6 +267,20 @@ export interface TradeForManager { id: number; day: string; kind: string; quanti
 /** A journal entry giving the reason for a purchase or a sale: its words go out as he wrote them. */
 export interface ReasonForManager { day: string; kind: 'buy' | 'sell'; body: string }
 
+/** The manager's last answer, so that it reads its own earlier step on a stock against what the owner did since. */
+export interface PreviousAdvice { at: string; moves: readonly ManagerMove[] }
+
+/** The manager's last step on a stock: when, what, to which weight, with which protection, and why. */
+function lastStep(prev: PreviousAdvice | null | undefined, symbol: string | null, days: (from: string) => number) {
+  const m = prev && symbol ? prev.moves.find((x) => x.symbol === symbol) : undefined;
+  if (!prev || !m) return null;
+  const day = prev.at.slice(0, 10);
+  return {
+    datum: day, vorTagen: days(day), schritt: m.action, zielGewichtProzent: m.targetPct ?? null,
+    schutz: m.protect ?? null, stopKurs: m.stopPrice ?? null, warum: m.reason,
+  };
+}
+
 /** The newest trades of a position the manager reads; the rest only counted. */
 const MAX_TRADES = 12;
 const MAX_REASONS = 5;
@@ -332,10 +347,11 @@ function technik(p: Protection | null | undefined) {
 }
 
 /** A stock off the depot as the manager reads it. */
-function candidateLine(c: CheckedStock, notes?: ReadonlyMap<string, string>) {
+function candidateLine(c: CheckedStock, notes: ReadonlyMap<string, string> | undefined, last: ReturnType<typeof lastStep>) {
   return {
     symbol: c.symbol, name: c.name ?? c.symbol, sector: c.sector, score: c.score, urteil: c.verdict,
     chart: chartLine(c.chart), technik: technik(c.protection), notizDesAnlegers: notes?.get(c.symbol) ?? null,
+    letzterVorschlag: last,
   };
 }
 
@@ -367,6 +383,8 @@ export function managerInput(input: {
   trades?:      ReadonlyMap<string, readonly TradeForManager[]>;
   /** The journal's reasons for each stock's purchases and sales, by ticker, newest first. */
   reasons?:     ReadonlyMap<string, readonly ReasonForManager[]>;
+  /** The manager's answer before this one. */
+  previous?:    PreviousAdvice | null;
   /** What the backtest found the stops and the lists to do; public research, nothing of the depot. */
   evidence?:    StopEvidence | null;
   today?:       string;
@@ -397,6 +415,7 @@ export function managerInput(input: {
           datum: r.day, zu: r.kind === 'buy' ? 'Kauf' : 'Verkauf',
           text: r.body.length > MAX_REASON_CHARS ? `${r.body.slice(0, MAX_REASON_CHARS)} …` : r.body,
         })),
+        letzterVorschlag: lastStep(input.previous, p.symbol, days),
       };
     }),
     durchgerechnet: lt ? {
@@ -407,8 +426,8 @@ export function managerInput(input: {
     liquiditaetProzent: pct(input.cashShare),
     sektorenProzent: input.sectors.map((s) => ({ sector: s.sector, gewichtProzent: pct(s.weight) })),
     grenzen: { positionProzent: pct(input.limits.maxPosition), sektorProzent: pct(input.limits.maxSector) },
-    kaufenAnsehen:          input.lists.buy.map((c) => candidateLine(c, input.notes)),
-    hochBewertetChartNicht: input.lists.waitForChart.map((c) => candidateLine(c, input.notes)),
+    kaufenAnsehen:          input.lists.buy.map((c) => candidateLine(c, input.notes, lastStep(input.previous, c.symbol, days))),
+    hochBewertetChartNicht: input.lists.waitForChart.map((c) => candidateLine(c, input.notes, lastStep(input.previous, c.symbol, days))),
     markt: input.market ? {
       stand: input.market.fetchedAt.slice(0, 10),
       lage: input.market.state,
@@ -473,6 +492,8 @@ export const MANAGER_SYSTEM = [
   '  transaktionen: die Käufe und Verkäufe der laufenden Position, neueste zuerst (aeltereTransaktionen zählt, was davor',
   '  liegt): datum, vorTagen, art, kurs je Aktie in waehrung, umfang gegen die Position davor, kursSeitdemProzent.',
   '  begruendungen: was der Anleger zu seinen Käufen und Verkäufen ins Journal schrieb, im Wortlaut.',
+  '- letzterVorschlag (bei Aktien im Depot und in den Listen): dein Schritt zu der Aktie beim letzten Lauf — datum, vorTagen,',
+  '  schritt, zielGewichtProzent (gemessen am damaligen Depot), schutz, stopKurs, warum; null, wenn es keinen gab.',
   '- liquiditaetProzent: Geld, das der Anleger bereitliegen hat, in Prozent des Depotwerts; null, wenn er keines angab.',
   '- notizDesAnlegers: was der Anleger selbst zu der Aktie schreibt — eine Marke, die er sieht, ein Plan, ein Zweifel.',
   `  score: 0 bis 10, aus Kennzahlen und Analysetext; urteil: ${bandsDe}. Im Backtest sagt der Score die Rendite des`,
@@ -506,6 +527,9 @@ export const MANAGER_SYSTEM = [
   '  das Gewicht nach dem Schritt, vom heutigen Depot aus). Reicht, was er getan hat, sag das, und der Schritt ist halten.',
   '  Ein frischer Kauf oder Nachkauf ist seine Entscheidung: dagegen nur mit einem Grund, der neu ist oder den er',
   '  übersehen hat. Prüfe begruendungen an den Daten von heute und sag im reason, wenn ein Grund nicht mehr trägt.',
+  '- Vergleiche letzterVorschlag mit den transaktionen seit seinem datum: umgesetzt, zum Teil oder nicht. Hat sich seither',
+  '  nichts geändert, bleib bei deiner Linie und rechne vom heutigen Gewicht aus weiter; weichst du ab, sag warum. Was er',
+  '  nicht umgesetzt hat, ist seine Entscheidung: wiederhole es nur, wenn es noch gilt, und dann knapp.',
   '- Schutz für jede Aktie im Depot: „trailing“ für Gewinner, deren Trend noch läuft (sichert den Gewinn, ohne den',
   '  Trend abzuschneiden); „stop“ für Positionen im Abwärtstrend oder mit schwachem Score (die Marke, an der die Lesart',
   '  widerlegt ist); „keiner“, wo eine Marke nur das Rauschen träfe oder der Schutz seinen Preis nicht wert ist.',

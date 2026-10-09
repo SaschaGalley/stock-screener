@@ -93,6 +93,10 @@ describe('what the depot manager is told', () => {
       ['FUND', [{ id: 43, day: '2025-01-10', kind: 'buy', quantity: 321.5, price: 77.77, currency: 'EUR' }]],
     ]),
     reasons: new Map([['MADE', [{ day: '2026-09-24', kind: 'sell' as const, body: 'Teilverkauf nach dem Lauf, der Rest läuft weiter.' }]]]),
+    previous: {
+      at: '2026-09-29T10:00:00.000Z',
+      moves: [{ action: 'reduzieren' as const, symbol: 'MADE', protect: 'stop' as const, targetPct: 8, stopPrice: null, reason: 'Klumpen abbauen.' }],
+    },
   });
   const text = JSON.stringify(input);
 
@@ -130,6 +134,13 @@ describe('what the depot manager is told', () => {
       { datum: '2024-03-15', vorTagen: 937, art: 'Kauf', kurs: 80, waehrung: 'EUR', umfang: 'Position eröffnet', kursSeitdemProzent: 23.8 },
     ]);
     assert.deepEqual(made.begruendungen, [{ datum: '2026-09-24', zu: 'Verkauf', text: 'Teilverkauf nach dem Lauf, der Rest läuft weiter.' }]);
+  });
+
+  it('carries its own last step on the stock, to read against what was done since', () => {
+    const made = input.depot[0] as Extract<(typeof input.depot)[number], { seitKaufProzent: unknown }>;
+    assert.deepEqual(made.letzterVorschlag, {
+      datum: '2026-09-29', vorTagen: 9, schritt: 'reduzieren', zielGewichtProzent: 8, schutz: 'stop', stopKurs: null, warum: 'Klumpen abbauen.',
+    });
   });
 
   it('carries a fund by name, kind and weight alone', () => {

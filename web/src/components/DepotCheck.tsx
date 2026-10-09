@@ -269,7 +269,7 @@ function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, o
         {r.holdings.length} Aktien im Depot. Das Modell bekommt je Position Name, Anlageart und Gewicht, bei Aktien dazu
         Sektor, „seit Kauf“ in Prozent, Haltedauer in Monaten, das Ergebnis des Thesen-Checks, Score, Chart und die Abstände
         zu Stop und Trailing, deine Notiz, die Käufe und Verkäufe der Position (Tag, Kurs, Umfang in Prozent) mit deinen
-        Begründungen aus dem Journal, dazu das verfügbare Geld als Anteil am Depot — keine Stückzahlen, Beträge oder Gebühren
+        Begründungen aus dem Journal, seinen eigenen letzten Vorschlag zur Aktie, dazu das verfügbare Geld als Anteil am Depot — keine Stückzahlen, Beträge oder Gebühren
         und nichts aus deinen Konten. Perplexity bekommt nur die Frage nach dem Markt. Stops begrenzen Verluste, sie bringen keine
         Rendite; was sie im Backtest kosteten und schützten, steht beim Schutz unter „Backtest“ und auf der Auswertung. Keine Anlageberatung.
       </p>

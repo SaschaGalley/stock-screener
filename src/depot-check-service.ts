@@ -25,7 +25,7 @@ import type { DepotCheckResponse } from './api-types.js';
 import { analysisFlagsFor, readAppConfig } from './app-config.js';
 import {
   classifyDepotCheck, isSingleStock, managerInput, MANAGER_ACTIONS, MANAGER_SYSTEM, managerUser, PROTECTIONS,
-  selectCandidates, type CheckedStock, type DepotCheckResult, type DepotCheckStatus, type ReasonForManager,
+  selectCandidates, type CheckedStock, type DepotCheckResult, type DepotCheckStatus, type PreviousAdvice, type ReasonForManager,
   type ScoredStock, type TradeForManager,
 } from './analysis/depot-check.js';
 import type { DepotPosition } from './analysis/depot.js';
@@ -300,6 +300,17 @@ async function tradeHistory(positions: readonly DepotPosition[]) {
 }
 
 /**
+ * The manager's answer before the one about to be asked: the kept result's —
+ * a new check has not replaced it yet, nor has asking again — else, where that
+ * run failed, the newest kept check that has one.
+ */
+async function previousAdvice(): Promise<PreviousAdvice | null> {
+  const last = await readStateJson<DepotCheckResult>(RESULT_KEY());
+  const r = last?.manager ? last : (await listDepotChecks(tradesSource())).find((c) => c.result.manager)?.result;
+  return r?.manager ? { at: r.managerAt ?? r.generatedAt, moves: r.manager.moves } : null;
+}
+
+/**
  * The manager asked: the one model call that sees the depot, through
  * `managerInput`, with the owner's notes as he wrote them for it.
  */
@@ -310,7 +321,7 @@ async function askManager(
 ): Promise<Pick<DepotCheckResult, 'manager' | 'managerError' | 'managerAt' | 'notes'>> {
   const notes = Object.fromEntries(Object.entries(await readDepotNotes()).map(([k, n]) => [k, n.text]));
   try {
-    const history = await tradeHistory(view.positions);
+    const [history, previous] = await Promise.all([tradeHistory(view.positions), previousAdvice()]);
     const input = managerInput({
       positions: view.positions, sectors: view.sectors, lists: check.lists,
       holdings: new Map(check.holdings.map((h) => [h.symbol, h])),
@@ -318,7 +329,7 @@ async function askManager(
       market: check.market, sectorTrends: check.sectorTrends ?? [], lookThrough: view.lookThrough,
       cashShare: view.cashEur !== null && view.totalEur > 0 ? view.cashEur / view.totalEur : null,
       notes: new Map(Object.entries(notes)),
-      trades: history.trades, reasons: history.reasons,
+      trades: history.trades, reasons: history.reasons, previous,
       evidence: await stopEvidence().catch(() => null),
     });
     const manager = await createProviderForModel(model).complete({
