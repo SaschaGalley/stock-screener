@@ -1,16 +1,17 @@
 #!/bin/sh
-# Wartet auf den nächtlichen distill-Abruf (01:30 Wien) und startet dann den Lauf.
+# Wartet, bis der nächtliche Lauf der Produktion (01:30 Berlin) fertig ist, und startet dann die Messung.
+# Fragt nur /api/jobs ab, damit die Produktion während ihres Laufs nicht belastet wird.
 cd "$(dirname "$0")/../.."
-start=$(date -j -u -f "%Y-%m-%dT%H:%M:%S" "2026-10-09T23:52:00" +%s)
-latest=$(date -j -u -f "%Y-%m-%dT%H:%M:%S" "2026-10-10T01:00:00" +%s)
-while [ "$(date -u +%s)" -lt "$start" ]; do sleep 60; done
+latest=$(date -j -u -f "%Y-%m-%dT%H:%M:%S" "2026-10-10T02:00:00" +%s)
 while :; do
-  line=$(npx tsx measurements/dossier-guidance/lauf.ts --eignung 2>/dev/null | grep '^Eignung:')
-  echo "$(date -u +%H:%M) $line"
-  case "$line" in
-    *"kein neues Paket"*) [ "$(date -u +%s)" -ge "$latest" ] && break ;;
-    *) break ;;
+  state=$(curl -s https://stockcli.troop.at/api/jobs | jq -r '.runs[0] | "\(.startedAt) \(.status)"')
+  echo "$(date -u +%H:%M) $state"
+  case "$state" in
+    2026-10-09T23:*" running"|2026-10-10T*" running") ;;
+    2026-10-09T23:*|2026-10-10T*) break ;;
   esac
-  sleep 300
+  [ "$(date -u +%s)" -ge "$latest" ] && { echo "kein fertiger Lauf bis 02:00 UTC, starte trotzdem"; break; }
+  sleep 120
 done
+sleep 120
 npx tsx measurements/dossier-guidance/lauf.ts --parallel 4 2>&1 | grep -v '^→\|^◇'

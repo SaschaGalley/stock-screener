@@ -84,7 +84,7 @@ interface Eignung {
 }
 
 async function eignung(symbol: string): Promise<{ e: Eignung; alt: Doc | null; neu: Doc | null }> {
-  const { documents } = await getJson(`/api/stocks/${encodeURIComponent(symbol)}/documents/distill?limit=30`);
+  const { documents } = await getJson(`/api/stocks/${encodeURIComponent(symbol)}/documents/distill?limit=10`);
   const { alt, neu } = pick(documents as Doc[]);
   const e: Eignung = {
     symbol, geeignet: false, grund: null, schicht: null,
@@ -209,7 +209,7 @@ if (flag('--probe')) {
 const only = value('--symbols')?.split(',');
 const symbols = only ?? all;
 const checks: { e: Eignung; alt: Doc | null; neu: Doc | null }[] = [];
-await pool(symbols, 8, async (s) => { checks.push(await eignung(s)); });
+await pool(symbols, 4, async (s) => { checks.push(await eignung(s)); });
 checks.sort((a, b) => a.e.symbol.localeCompare(b.e.symbol));
 writeFileSync(join(rohDir, 'eignung.jsonl'), checks.map((c) => JSON.stringify(c.e)).join('\n') + '\n');
 const tally = (k: (c: typeof checks[number]) => string) =>
