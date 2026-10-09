@@ -25,9 +25,10 @@ import type { DepotCheckResponse } from './api-types.js';
 import { analysisFlagsFor, readAppConfig } from './app-config.js';
 import {
   classifyDepotCheck, isSingleStock, managerInput, MANAGER_ACTIONS, MANAGER_SYSTEM, managerUser, PROTECTIONS,
-  selectCandidates, type CheckedStock, type DepotCheckResult, type DepotCheckStatus,
-  type ScoredStock,
+  selectCandidates, type CheckedStock, type DepotCheckResult, type DepotCheckStatus, type ReasonForManager,
+  type ScoredStock, type TradeForManager,
 } from './analysis/depot-check.js';
+import type { DepotPosition } from './analysis/depot.js';
 import type { MarketBrief } from './analysis/market-brief.js';
 import type { SectorTrend } from './analysis/sector-rotation.js';
 import { protectionOf } from './analysis/stops.js';
@@ -39,6 +40,8 @@ import {
   changesSince, checkSteps, groupRecord, stepHit, type DepotCheckHistory, type StepOutcome,
 } from './analysis/depot-check-record.js';
 import { listDepotChecks, saveDepotCheck } from './db/depot-check-store.js';
+import { listJournal } from './db/journal-store.js';
+import { allTrades } from './db/trades-store.js';
 import { stopEvidence } from './backtest/result.js';
 import { decisionOutcomes } from './stock-history-service.js';
 import { tradesSource } from './trades-service.js';
@@ -275,6 +278,28 @@ async function runCheck(save: Save): Promise<void> {
 }
 
 /**
+ * Each stock's open position as the manager reads it: its trades, and the
+ * journal's reasons for them — the purchase and sale entries linked to one of
+ * them or naming the stock since the position was opened. The journal's other
+ * notes stay here.
+ */
+async function tradeHistory(positions: readonly DepotPosition[]) {
+  const [trades, journal] = await Promise.all([allTrades(tradesSource()), listJournal()]);
+  const byId = new Map(trades.map((t) => [t.id, t]));
+  const out = { trades: new Map<string, TradeForManager[]>(), reasons: new Map<string, ReasonForManager[]>() };
+  for (const p of positions) {
+    if (!p.symbol || !isSingleStock(p)) continue;
+    const symbol = p.symbol;
+    const ids = new Set(p.tradeIds);
+    out.trades.set(symbol, p.tradeIds.flatMap((id) => byId.get(id) ?? []));
+    out.reasons.set(symbol, journal.flatMap((j) => ((j.kind === 'buy' || j.kind === 'sell')
+      && (j.tradeIds.some((id) => ids.has(id)) || (j.symbols.includes(symbol) && j.day >= p.openedAt))
+      ? [{ day: j.day, kind: j.kind, body: j.body }] : [])));
+  }
+  return out;
+}
+
+/**
  * The manager asked: the one model call that sees the depot, through
  * `managerInput`, with the owner's notes as he wrote them for it.
  */
@@ -285,6 +310,7 @@ async function askManager(
 ): Promise<Pick<DepotCheckResult, 'manager' | 'managerError' | 'managerAt' | 'notes'>> {
   const notes = Object.fromEntries(Object.entries(await readDepotNotes()).map(([k, n]) => [k, n.text]));
   try {
+    const history = await tradeHistory(view.positions);
     const input = managerInput({
       positions: view.positions, sectors: view.sectors, lists: check.lists,
       holdings: new Map(check.holdings.map((h) => [h.symbol, h])),
@@ -292,6 +318,7 @@ async function askManager(
       market: check.market, sectorTrends: check.sectorTrends ?? [], lookThrough: view.lookThrough,
       cashShare: view.cashEur !== null && view.totalEur > 0 ? view.cashEur / view.totalEur : null,
       notes: new Map(Object.entries(notes)),
+      trades: history.trades, reasons: history.reasons,
       evidence: await stopEvidence().catch(() => null),
     });
     const manager = await createProviderForModel(model).complete({

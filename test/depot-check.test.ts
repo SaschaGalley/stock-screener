@@ -85,6 +85,14 @@ describe('what the depot manager is told', () => {
     holdings: new Map([['MADE', held]]), lists, limits: { maxPosition: 0.15, maxSector: 0.35 },
     market: null, sectorTrends: [], cashShare: 0.0825, today: '2026-10-08',
     notes: new Map([['MADE', 'Starker Support bei 200 $, Stop eher bei 197 $.']]),
+    trades: new Map([
+      ['MADE', [
+        { id: 42, day: '2026-09-24', kind: 'sell', quantity: 60.25, price: 95.5, currency: 'EUR' },
+        { id: 41, day: '2024-03-15', kind: 'buy', quantity: 150.5, price: 80, currency: 'EUR' },
+      ]],
+      ['FUND', [{ id: 43, day: '2025-01-10', kind: 'buy', quantity: 321.5, price: 77.77, currency: 'EUR' }]],
+    ]),
+    reasons: new Map([['MADE', [{ day: '2026-09-24', kind: 'sell' as const, body: 'Teilverkauf nach dem Lauf, der Rest läuft weiter.' }]]]),
   });
   const text = JSON.stringify(input);
 
@@ -115,14 +123,23 @@ describe('what the depot manager is told', () => {
     assert.equal(input.liquiditaetProzent, 8.3);
   });
 
+  it('carries a stock\'s trades by day, price and size against the position, and the reasons he wrote, as he allowed', () => {
+    const made = input.depot[0] as Extract<(typeof input.depot)[number], { seitKaufProzent: unknown }>;
+    assert.deepEqual(made.transaktionen, [
+      { datum: '2026-09-24', vorTagen: 14, art: 'Verkauf', kurs: 95.5, waehrung: 'EUR', umfang: '40 % der Position verkauft', kursSeitdemProzent: 3.7 },
+      { datum: '2024-03-15', vorTagen: 937, art: 'Kauf', kurs: 80, waehrung: 'EUR', umfang: 'Position eröffnet', kursSeitdemProzent: 23.8 },
+    ]);
+    assert.deepEqual(made.begruendungen, [{ datum: '2026-09-24', zu: 'Verkauf', text: 'Teilverkauf nach dem Lauf, der Rest läuft weiter.' }]);
+  });
+
   it('carries a fund by name, kind and weight alone', () => {
     assert.deepEqual(input.depot[1], { name: 'Made Up World ETF', symbol: 'FUND', art: 'etf', gewichtProzent: 45.7 });
   });
 
-  it('never quantities, prices paid, values, dates, trades, the journal, a fund\'s gain, or the computed stops', () => {
+  it('never quantities, average cost, values, a fund\'s gain or trades, the journal\'s other words, or the computed stops', () => {
     for (const leak of [
-      '123.45', '321.5', '87.65', '99.01', '12222', '45678', '0.1296', '31.4', '2024-03-15', '2025-11-02', 'geheime',
-      'isin', 'US0000000001', '198.11', '203.25', '222.9', '201.5', '2026-09-10', '2026-09-20',
+      '123.45', '321.5', '150.5', '60.25', '87.65', '99.01', '12222', '45678', '0.1296', '31.4', '77.77', '2025-01-10',
+      '2025-11-02', 'geheime', 'isin', 'US0000000001', '198.11', '203.25', '222.9', '201.5', '2026-09-10', '2026-09-20',
     ]) {
       assert.ok(!text.includes(leak), `${leak} reached the prompt`);
     }

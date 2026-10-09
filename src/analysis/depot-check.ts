@@ -18,9 +18,11 @@
  * The depot manager's text is the one place holdings reach a model, and
  * `managerInput` is the one place that decides what of them does: names,
  * sectors, weights — the funds' too, read as what they hold — and, for single
- * stocks, the gain since purchase in per cent, the months held and the thesis
- * check's counts; the money ready to invest as a share of the depot; never
- * quantities, prices paid, values, amounts or the dates of trades (CLAUDE.md).
+ * stocks, the gain since purchase in per cent, the months held, the thesis
+ * check's counts, the purchases and sales of the position (day, price, size
+ * against the position) and the reasons the owner wrote for them; the money
+ * ready to invest as a share of the depot; never quantities, values, amounts
+ * or fees (CLAUDE.md).
  *
  * Pure and dependency-free: the web app imports the types.
  */
@@ -254,6 +256,49 @@ export interface HeldForManager {
   openedAt?:    string;
   /** The newest thesis check: only its counts and age go out, never the theses. */
   thesis?:      { contradicted: number; total: number; at: string } | null;
+  /** Today's euro price, to say how far a trade in euros has moved since; it does not go out. */
+  priceEur?:    number | null;
+}
+
+/** A purchase or sale of a stock held, as the service hands it over: the quantity only sizes it against the position. */
+export interface TradeForManager { id: number; day: string; kind: string; quantity: number; price: number; currency: string }
+
+/** A journal entry giving the reason for a purchase or a sale: its words go out as he wrote them. */
+export interface ReasonForManager { day: string; kind: 'buy' | 'sell'; body: string }
+
+/** The newest trades of a position the manager reads; the rest only counted. */
+const MAX_TRADES = 12;
+const MAX_REASONS = 5;
+const MAX_REASON_CHARS = 1500;
+const TRADE_KIND_DE: Record<string, string> = { buy: 'Kauf', sell: 'Verkauf', 'savings-plan': 'Sparplan', 'spin-off': 'Abspaltung' };
+
+/**
+ * A position's trades, newest first: the day, the kind, the price, the size
+ * against the position before it — never the quantity — and how far the price
+ * has moved since, where today's price is in the trade's currency.
+ */
+function tradeLines(trades: readonly TradeForManager[], now: { priceEur: number | null; close: number | null; currency: string | null },
+  days: (from: string) => number) {
+  let held = 0;
+  const lines = [...trades].sort((a, b) => a.day.localeCompare(b.day) || a.id - b.id).map((t) => {
+    const before = held;
+    let umfang: string | null;
+    if (t.kind === 'sell') {
+      const sold = Math.min(t.quantity, before);
+      held -= sold;
+      umfang = before > 0 ? `${Math.round((sold / before) * 100)} % der Position verkauft` : null;
+    } else {
+      held += t.quantity;
+      umfang = before > 1e-9 ? `Position um ${Math.round((t.quantity / before) * 100)} % aufgestockt` : 'Position eröffnet';
+    }
+    const today = t.currency === 'EUR' && now.priceEur ? now.priceEur : now.currency === t.currency ? now.close : null;
+    return {
+      datum: t.day, vorTagen: days(t.day), art: TRADE_KIND_DE[t.kind] ?? t.kind,
+      kurs: t.price > 0 ? Math.round(t.price * 100) / 100 : null, waehrung: t.currency, umfang,
+      kursSeitdemProzent: t.price > 0 && today ? pct(today / t.price - 1) : null,
+    };
+  });
+  return lines.reverse();
 }
 
 /** Single stocks are judged one by one; funds, coins and metals are the depot's mix. */
@@ -297,11 +342,12 @@ function candidateLine(c: CheckedStock, notes?: ReadonlyMap<string, string>) {
 /**
  * Everything the model is told, and nothing more. Per position its name,
  * ticker, kind and weight in per cent; for a single stock also its sector, its
- * gain since purchase in per cent, and the app's own score, verdict, chart
- * reading and chart levels — the levels as distances, never as prices. Then the
- * sectors' weights, the candidates, the market brief and the sector funds.
- * Quantities, prices paid, values, dates, trades and the journal stay here; so
- * does the gain of a fund, a coin or a metal.
+ * gain since purchase in per cent, the app's own score, verdict, chart reading
+ * and levels, the owner's note, the position's purchases and sales (day, kind,
+ * price, size against the position) and the reasons he gave for them in the
+ * journal. Then the sectors' weights, the candidates, the market brief and the
+ * sector funds. Quantities, values, amounts, fees, the journal's other notes
+ * and the trades of funds, coins and metals stay here; so does their gain.
  */
 export function managerInput(input: {
   positions:    readonly HeldForManager[];
@@ -317,6 +363,10 @@ export function managerInput(input: {
   cashShare?:   number | null;
   /** The owner's notes, by ticker: his own words, sent as he wrote them for the manager. */
   notes?:       ReadonlyMap<string, string>;
+  /** The trades of each stock's open position, by ticker. */
+  trades?:      ReadonlyMap<string, readonly TradeForManager[]>;
+  /** The journal's reasons for each stock's purchases and sales, by ticker, newest first. */
+  reasons?:     ReadonlyMap<string, readonly ReasonForManager[]>;
   /** What the backtest found the stops and the lists to do; public research, nothing of the depot. */
   evidence?:    StopEvidence | null;
   today?:       string;
@@ -330,6 +380,9 @@ export function managerInput(input: {
       const base = { name: p.name, symbol: p.symbol, art: p.assetType, gewichtProzent: pct(p.weight) };
       if (!isSingleStock(p)) return base;
       const h = p.symbol ? input.holdings.get(p.symbol) : undefined;
+      const trades = (p.symbol && input.trades?.get(p.symbol)) || [];
+      const lines = tradeLines(trades, { priceEur: p.priceEur ?? null, close: h?.protection?.close ?? null, currency: h?.protection?.currency ?? null }, days);
+      const reasons = (p.symbol && input.reasons?.get(p.symbol)) || [];
       return {
         ...base, ueberFondsProzent: pct(p.viaFunds), sector: p.sector, seitKaufProzent: pct(p.gain),
         gehaltenMonate: p.openedAt ? months(p.openedAt) : null,
@@ -338,6 +391,12 @@ export function managerInput(input: {
         chart: chartLine(h?.chart ?? null), technik: technik(h?.protection),
         termine: (p.upcoming ?? []).map((e) => ({ datum: e.day, was: e.detail ? `${e.title} — ${e.detail}` : e.title })),
         notizDesAnlegers: (p.symbol && input.notes?.get(p.symbol)) || null,
+        transaktionen: lines.slice(0, MAX_TRADES),
+        ...(lines.length > MAX_TRADES ? { aeltereTransaktionen: lines.length - MAX_TRADES } : {}),
+        begruendungen: reasons.slice(0, MAX_REASONS).map((r) => ({
+          datum: r.day, zu: r.kind === 'buy' ? 'Kauf' : 'Verkauf',
+          text: r.body.length > MAX_REASON_CHARS ? `${r.body.slice(0, MAX_REASON_CHARS)} …` : r.body,
+        })),
       };
     }),
     durchgerechnet: lt ? {
@@ -411,6 +470,9 @@ export const MANAGER_SYSTEM = [
   '  termine: Quartalszahlen, Dividenden und Katalysatoren der nächsten Wochen. gehaltenMonate: wie lange die Position',
   '  schon läuft. thesenCheck: wie viele der Kaufthesen des Anlegers ein Abgleich mit der aktuellen Lage widerlegt sah,',
   '  vor wie vielen Tagen.',
+  '  transaktionen: die Käufe und Verkäufe der laufenden Position, neueste zuerst (aeltereTransaktionen zählt, was davor',
+  '  liegt): datum, vorTagen, art, kurs je Aktie in waehrung, umfang gegen die Position davor, kursSeitdemProzent.',
+  '  begruendungen: was der Anleger zu seinen Käufen und Verkäufen ins Journal schrieb, im Wortlaut.',
   '- liquiditaetProzent: Geld, das der Anleger bereitliegen hat, in Prozent des Depotwerts; null, wenn er keines angab.',
   '- notizDesAnlegers: was der Anleger selbst zu der Aktie schreibt — eine Marke, die er sieht, ein Plan, ein Zweifel.',
   `  score: 0 bis 10, aus Kennzahlen und Analysetext; urteil: ${bandsDe}. Im Backtest sagt der Score die Rendite des`,
@@ -437,6 +499,12 @@ export const MANAGER_SYSTEM = [
   '  zu verkaufen; entscheidend sind Score, Chart und Markt von heute. Sag offen, wenn Halten nur am Einstand hängt.',
   '- Gewinne mitnehmen: bei großem Gewinn, wenn der Chart heiß gelaufen ist (rsi über 70, weit über der 200-Tage-Linie,',
   '  über dem Kanal) oder der Score nachlässt — dann einen Teil, nicht alles.',
+  '- Lies transaktionen, bevor du einen Schritt nennst. Hat der Anleger in den letzten Wochen schon einen Teil verkauft, hat',
+  '  er Gewinne gerade mitgenommen: dann nicht noch einmal „gewinne mitnehmen“ oder „reduzieren“, es sei denn, seither hat',
+  '  sich etwas geändert (Kurs seit dem Verkauf deutlich höher, Chart heiß gelaufen, Score gefallen, These widerlegt) —',
+  '  dann sag, was. Hat er gerade gekauft oder aufgestockt, hat er sich eben dafür entschieden: dagegen nur mit einem',
+  '  Grund, der neu ist oder den er übersehen hat. Prüfe begruendungen an den Daten von heute und sag im reason, wenn',
+  '  der Grund nicht mehr trägt.',
   '- Schutz für jede Aktie im Depot: „trailing“ für Gewinner, deren Trend noch läuft (sichert den Gewinn, ohne den',
   '  Trend abzuschneiden); „stop“ für Positionen im Abwärtstrend oder mit schwachem Score (die Marke, an der die Lesart',
   '  widerlegt ist); „keiner“, wo eine Marke nur das Rauschen träfe oder der Schutz seinen Preis nicht wert ist.',
