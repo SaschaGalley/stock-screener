@@ -1,5 +1,6 @@
--- What the funds hold in full: the issuer's own list of every position — Amundi,
--- iShares and SPDR publish it daily — as it came, once per distinct answer.
+-- What the funds hold in full: the issuer's own list of every position (Amundi,
+-- iShares, SPDR, Vanguard, Xtrackers; `src/data/fund-composition.ts`) as it
+-- came, once per distinct answer.
 -- Yahoo's `topHoldings` (`fund_holdings`) stops at the ten largest, which in a
 -- broad fund leaves out nearly every stock a depot holds besides. Keyed by the
 -- fund's ISIN, which every issuer files under; `issuer` 'none' records that

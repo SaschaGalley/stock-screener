@@ -34,12 +34,17 @@ export async function saveFundComposition(isin: string, issuer: string, raw: unk
   );
 }
 
-/** The newest list per fund, from whichever issuer, with when it was last confirmed. */
-export async function latestFundCompositions(isins: readonly string[]): Promise<Map<string, { issuer: string; raw: unknown; seenAt: Date }>> {
-  const res = await query<{ isin: string; issuer: string; data: unknown; last_seen_at: Date }>(
-    `SELECT DISTINCT ON (isin) isin, issuer, data, last_seen_at FROM fund_compositions
-      WHERE isin = ANY($1) ORDER BY isin, last_seen_at DESC`,
+/**
+ * The newest list per fund, from whichever issuer — a list over a later answer
+ * that no issuer knew the fund, which may only mean one was down — with when
+ * the fund was last asked about.
+ */
+export async function latestFundCompositions(isins: readonly string[]): Promise<Map<string, { issuer: string; raw: unknown; askedAt: Date }>> {
+  const res = await query<{ isin: string; issuer: string; data: unknown; asked_at: Date }>(
+    `SELECT DISTINCT ON (isin) isin, issuer, data, max(last_seen_at) OVER (PARTITION BY isin) AS asked_at
+       FROM fund_compositions WHERE isin = ANY($1)
+      ORDER BY isin, issuer = 'none', last_seen_at DESC`,
     [isins],
   );
-  return new Map(res.rows.map((r) => [r.isin, { issuer: r.issuer, raw: r.data, seenAt: r.last_seen_at }]));
+  return new Map(res.rows.map((r) => [r.isin, { issuer: r.issuer, raw: r.data, askedAt: r.asked_at }]));
 }

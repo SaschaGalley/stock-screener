@@ -1,20 +1,25 @@
 /**
  * A fund's every position, from its issuer: Amundi's product API, iShares'
- * holdings file and SPDR's daily holdings workbook, each found by the fund's
- * ISIN. Yahoo (`fund-holdings.ts`) gives only the ten largest, and a broad
- * fund holds most stocks a depot holds besides well past its tenth: a Stoxx
- * Europe 600 fund has its European large caps at around one per cent each.
+ * holdings file, SPDR's daily holdings workbook, Vanguard's holdings API and
+ * Xtrackers' constituents workbook, each found by the fund's ISIN. Yahoo
+ * (`fund-holdings.ts`) gives only the ten largest, and a broad fund holds most
+ * stocks a depot holds besides well past its tenth: a Stoxx Europe 600 fund
+ * has its European large caps at around one per cent each.
  *
- * Amundi and SPDR name each position's ISIN; iShares gives its ticker and
- * exchange, read here as the Yahoo symbol the depot's stocks carry.
+ * All but iShares name each position's ISIN; iShares gives its ticker and
+ * exchange, read here as the Yahoo symbol the depot's stocks carry. Vanguard
+ * publishes its funds' holdings monthly, a few weeks behind; the others daily.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { sheetRows } from './xlsx.js';
 
-export const ISSUERS = ['amundi', 'ishares', 'spdr'] as const;
+/** In the order they are asked: Xtrackers last, since it answers a fund it does not know with a server error. */
+export const ISSUERS = ['amundi', 'ishares', 'spdr', 'vanguard', 'xtrackers'] as const;
 export type Issuer = (typeof ISSUERS)[number];
-export const ISSUER_NAMES: Record<Issuer, string> = { amundi: 'Amundi', ishares: 'iShares', spdr: 'SPDR' };
+export const ISSUER_NAMES: Record<Issuer, string> = {
+  amundi: 'Amundi', ishares: 'iShares', spdr: 'SPDR', vanguard: 'Vanguard', xtrackers: 'Xtrackers',
+};
 
 export interface Composition {
   issuer:   Issuer;
@@ -88,7 +93,7 @@ function table(rows: string[][], columns: string[]): Record<string, string>[] {
   return rows.slice(at + 1).map((r) => Object.fromEntries(header.map((h, i) => [h, (r[i] ?? '').trim()])));
 }
 
-/** What the issuer sent, as it is kept: Amundi's composition, iShares' CSV, SPDR's sheet as rows. */
+/** What the issuer sent, as it is kept: Amundi's composition, iShares' CSV, the workbooks as rows, Vanguard's items. */
 export function parseComposition(issuer: string, raw: any): Composition | null {
   let holdings: Composition['holdings'] = [];
   let asOf: string | null = null;
@@ -103,7 +108,7 @@ export function parseComposition(issuer: string, raw: any): Composition | null {
         ? [{ isin: ISIN.test(c.isin ?? '') ? c.isin : null, symbol: null, name, weight }] : [];
     });
   } else if (issuer === 'ishares') {
-    const rows = csvRows(String(raw?.csv ?? '').replace(/^﻿/, ''));
+    const rows = csvRows(String(raw?.csv ?? '').replace(/^\uFEFF/, ''));
     asOf = issuerDay(rows[0]?.[1]);
     holdings = table(rows, ['Emittententicker', 'Name', 'Anlageklasse', 'Gewichtung (%)', 'Börse']).flatMap((r) => {
       const weight = deNumber(r['Gewichtung (%)']) / 100;
@@ -116,6 +121,23 @@ export function parseComposition(issuer: string, raw: any): Composition | null {
     holdings = table(rows, ['ISIN', 'Security Name', 'Percent of Fund']).flatMap((r) => {
       const weight = Number(r['Percent of Fund']) / 100;
       return ISIN.test(r.ISIN) && r['Security Name'] && weight > 0 ? [{ isin: r.ISIN, symbol: null, name: r['Security Name'], weight }] : [];
+    });
+  } else if (issuer === 'vanguard') {
+    const items: any[] = Array.isArray(raw?.items) ? raw.items : [];
+    asOf = typeof raw?.asOf === 'string' ? raw.asOf : null;
+    holdings = items.flatMap((x) => {
+      const weight = Number(x?.marketValuePercentage) / 100;
+      // The issuer's name, not the line's: a company's loyalty-share lines carry their own description.
+      const name = String(x?.issuerName || x?.securityLongDescription || '').trim();
+      return /^EQ\./.test(x?.securityType ?? '') && name && weight > 0
+        ? [{ isin: ISIN.test(x.isin ?? '') ? x.isin : null, symbol: null, name, weight }] : [];
+    });
+  } else if (issuer === 'xtrackers') {
+    const rows: string[][] = Array.isArray(raw?.rows) ? raw.rows : [];
+    holdings = table(rows, ['Name', 'ISIN', 'Type of Security', 'Weighting']).flatMap((r) => {
+      const weight = Number(r.Weighting);
+      return /^(aktien|equity|depository receipts)$/i.test(r['Type of Security']) && ISIN.test(r.ISIN) && r.Name && weight > 0
+        ? [{ isin: r.ISIN, symbol: null, name: r.Name, weight }] : [];
     });
   } else return null;
   return holdings.length ? { issuer: issuer as Issuer, asOf, holdings } : null;
@@ -177,7 +199,52 @@ async function spdr(isin: string): Promise<unknown | null> {
   return rows.length ? { ticker, rows } : null;
 }
 
-const FETCH: Record<Issuer, (isin: string) => Promise<unknown | null>> = { amundi, ishares, spdr };
+const VANGUARD = 'https://www.vanguard.co.uk/gpx/graphql';
+const VANGUARD_PAGE = 1500;
+const VANGUARD_PAGES = 20;
+
+async function vanguardQuery(query: string, variables: Record<string, unknown>): Promise<any> {
+  const res = await get(VANGUARD, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-consumer-id': 'uk0' },
+    body: JSON.stringify({ query, variables }),
+  });
+  const j = (await res.json()) as any;
+  if (j?.errors?.length) throw new Error(`Vanguard: ${String(j.errors[0]?.message ?? 'error').slice(0, 200)}`);
+  return j?.data;
+}
+
+async function vanguard(isin: string): Promise<unknown | null> {
+  const found = await vanguardQuery('query($isins:[String!]){funds(isins:$isins){profile{portId}}}', { isins: [isin] });
+  const portId = found?.funds?.[0]?.profile?.portId;
+  if (!portId) return null;
+  // A page at a time; the key to a next page, where there is one, names the day the holdings are of.
+  const items: unknown[] = [];
+  let key: string | null = null, asOf: string | null = null;
+  for (let page = 0; page < VANGUARD_PAGES; page++) {
+    const d = await vanguardQuery(
+      `query($p:[String!],$k:String){borHoldings(portIds:$p){holdings(limit:${VANGUARD_PAGE},lastItemKey:$k){lastItemKey`
+        + ' items{issuerName securityLongDescription isin ticker securityType marketValuePercentage}}}}',
+      { p: [String(portId)], k: key },
+    );
+    const h = d?.borHoldings?.[0]?.holdings;
+    items.push(...(h?.items ?? []));
+    key = h?.lastItemKey ?? null;
+    asOf ??= key?.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
+    if (!key || !h?.items?.length) break;
+  }
+  return items.length ? { portId: String(portId), asOf, items } : null;
+}
+
+async function xtrackers(isin: string): Promise<unknown | null> {
+  const res = await fetch(`https://etf.dws.com/etfdata/export/DEU/DEU/excel/product/constituent/${isin}/`,
+    { headers: HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  // Its answer to a fund it does not know is a server error page; a workbook is the answer to one it does.
+  if (!res.ok || !/spreadsheetml/.test(res.headers.get('content-type') ?? '')) return null;
+  const rows = sheetRows(new Uint8Array(await res.arrayBuffer())).filter((r) => r.every((c) => c.length < 500));
+  return rows.length ? { rows } : null;
+}
+
+const FETCH: Record<Issuer, (isin: string) => Promise<unknown | null>> = { amundi, ishares, spdr, vanguard, xtrackers };
 
 /**
  * Ask each issuer for the fund in turn; the first that knows it answers. Null

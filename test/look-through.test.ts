@@ -94,6 +94,7 @@ describe('the look-through', () => {
     assert.equal(companyKey('Made Up Corp'), 'made up');
     assert.equal(companyKey("L'Air Thing S.A."), 'air thing');
     assert.equal(companyKey('AIR THING PRIME DE FIDELITE 2027'), 'air thing');
+    assert.equal(companyKey('L AIR THING'), 'air thing');
     assert.equal(companyKey('Société Générée SA'), companyKey('SOCIETE GENEREE'));
   });
 });
@@ -149,6 +150,32 @@ describe("the issuers' full lists", () => {
     const c = parseComposition('spdr', { ticker: 'made-gy', rows });
     assert.equal(c?.asOf, '2026-10-07');
     assert.deepEqual(c?.holdings, [{ isin: 'XX0000000030', symbol: null, name: 'Made Up Corporation', weight: 0.025 }]);
+  });
+
+  it("reads Vanguard's items: shares by the issuer's name, in per cent", () => {
+    const c = parseComposition('vanguard', {
+      portId: '1', asOf: '2026-08-31',
+      items: [
+        { issuerName: 'Air Thing SA', securityLongDescription: 'AIR THING SA - PF - 2028', isin: 'XX0000000090', securityType: 'EQ.STOCK', marketValuePercentage: 0.02 },
+        { issuerName: 'Made Up REIT', securityLongDescription: 'Made Up REIT', isin: 'XX0000000100', securityType: 'EQ.REIT', marketValuePercentage: 0.5 },
+        { issuerName: 'US Dollar', securityLongDescription: 'USD', isin: null, securityType: 'CRNY', marketValuePercentage: 0.1 },
+      ],
+    });
+    assert.equal(c?.asOf, '2026-08-31');
+    assert.deepEqual(c?.holdings.map((h) => [h.name, h.isin, h.weight]), [['Air Thing SA', 'XX0000000090', 0.0002], ['Made Up REIT', 'XX0000000100', 0.005]]);
+  });
+
+  it("reads Xtrackers' sheet: shares and receipts by ISIN, weights as fractions", () => {
+    const rows = [
+      ['A disclaimer'],
+      ['', 'Name', 'ISIN', 'Country', 'Currency', 'Exchange', 'Type of Security', 'Rating', 'Primary Listing', 'Industry Classification', 'Weighting'],
+      ['1', 'MADE UP CORP', 'XX0000000030', 'USA', 'USD', 'NASDAQ', 'Aktien', '-', '-', 'IT', '0.0123'],
+      ['2', 'MADE UP ADR', 'XX0000000110', 'USA', 'USD', 'NYSE', 'Depository Receipts', '-', '-', 'IT', '0.001'],
+      ['3', 'SOME INDEX DEC26', '___ADI2VD0J5', 'Deutschland', 'USD', '-', 'Future', '-', '-', 'unbekannt', 'N/A'],
+      ['4', 'US DOLLAR', '_CURRENCYUSD', 'USA', 'USD', '-', 'Cash', '-', '-', 'unbekannt', '0.002'],
+    ];
+    const c = parseComposition('xtrackers', { rows });
+    assert.deepEqual(c?.holdings.map((h) => [h.isin, h.weight]), [['XX0000000030', 0.0123], ['XX0000000110', 0.001]]);
   });
 
   it('reads a workbook by its cells, shared and inline strings and numbers', () => {

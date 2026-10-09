@@ -6,8 +6,8 @@
  * few per cent each, so a depot of funds and a few single stocks can hold one
  * company twice and a sector three times over without any line saying so.
  * Yahoo gives each fund's sector split and its ten largest holdings; Amundi,
- * iShares and SPDR list every holding of theirs (`data/fund-composition.ts`),
- * and where they do, that list counts instead. The ten largest are a fifth to
+ * iShares, SPDR, Vanguard and Xtrackers list every holding of theirs
+ * (`data/fund-composition.ts`), and where they do, that list counts instead. The ten largest are a fifth to
  * a third of a world fund and leave out nearly every European stock of a
  * Europe fund, so the page says how much of the funds is fully known.
  *
@@ -74,7 +74,7 @@ const TOP_STOCKS = 12;
 /**
  * A company's name without its legal form and share class, to match a fund's
  * "Alphabet Inc Class C" to the "Alphabet Inc." held directly — and without
- * accents, a French article and the loyalty-share lines ("… prime de fidélité
+ * accents, a French article (also as the bare "L AIR …" some lists print) and the loyalty-share lines ("… prime de fidélité
  * 2027") a French company's shares are split into in some funds' lists.
  */
 export function companyKey(name: string): string {
@@ -84,7 +84,8 @@ export function companyKey(name: string): string {
     .replace(/\b(class [a-z]|cl [a-z]|ordinary shares?|shares?|new|registered|reg|adr|ads|sponsored|common stock)\b/g, ' ')
     .replace(/\b(incorporated|inc|corporation|corp|company|co|plc|ag|se|sa|s\.a|nv|n\.v|ab|asa|oyj|spa|s\.p\.a|holdings?|group|ltd|limited|the)\b\.?/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+    .trim()
+    .replace(/^l /, '');
 }
 
 /** `funds` by the fund's ISIN. */
