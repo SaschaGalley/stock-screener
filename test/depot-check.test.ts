@@ -165,22 +165,33 @@ describe('what the depot manager is told', () => {
 describe('a step\'s size', () => {
   const now = { quantity: 15, valueEur: 2_580 };
 
-  it('turns a lower target into the share of the position to sell, in today\'s shares and euros', () => {
-    const s = stepSize(0.8, 0.016, now, 160_000);
+  it('turns a lower target into whole shares to sell, and the euros and the weight after into those shares\'', () => {
+    // 10 shares at 468 € in a depot of 156.000 €: from 3,0 % to 2,5 % is 1,67 shares, so two — 936 €, and 2,4 % after.
+    const s = stepSize(2.5, 0.03, { quantity: 10, valueEur: 4_680 }, 156_000);
     assert.equal(s?.kind, 'sell');
     if (s?.kind !== 'sell') return;
-    assert.ok(Math.abs(s.fraction - 0.5) < 1e-9);
-    assert.ok(Math.abs(s.shares! - 7.5) < 1e-9);
-    assert.ok(Math.abs(s.euros! - 1_290) < 1e-9);
+    assert.equal(s.shares, 2);
+    assert.ok(Math.abs(s.fraction - 0.2) < 1e-9);
+    assert.ok(Math.abs(s.euros! - 936) < 1e-9);
+    assert.ok(Math.abs(s.after - 0.024) < 1e-9);
     assert.equal(stepSize(0, 0.016, now, 160_000)?.kind, 'sell');
+    const little = stepSize(2.9, 0.03, { quantity: 10, valueEur: 4_680 }, 156_000);
+    assert.equal(little?.kind === 'sell' && little.shares, 0);
   });
 
-  it('turns a higher target into euros at today\'s depot value, and shares at today\'s price', () => {
+  it('keeps a fractional position\'s share as it is', () => {
+    const s = stepSize(0.8, 0.016, { quantity: 15.5, valueEur: 2_666 }, 160_000);
+    assert.ok(s?.kind === 'sell' && Math.abs(s.shares! - 7.75) < 1e-9 && Math.abs(s.euros! - 1_333) < 1e-9);
+  });
+
+  it('turns a higher target into whole shares at today\'s price, and the euros they cost', () => {
     const s = stepSize(2.5, 0.016, now, 100_000);
     assert.equal(s?.kind, 'buy');
     if (s?.kind !== 'buy') return;
-    assert.ok(Math.abs(s.euros - 900) < 1e-9);
-    assert.ok(Math.abs(s.shares! - 900 / 172) < 1e-9);
+    // 900 € at 172 € a share is 5,2 shares: five, 860 €.
+    assert.equal(s.shares, 5);
+    assert.ok(Math.abs(s.euros - 860) < 1e-9);
+    assert.ok(Math.abs(s.after - 0.0246) < 1e-9);
     assert.equal(stepSize(2, null, null, 100_000)?.kind, 'buy');
     assert.equal(stepSize(null, 0.016, now, 100_000), null);
   });
@@ -190,6 +201,10 @@ describe('a step\'s size', () => {
     assert.equal(shareWords(0.36), 'gut ein Drittel');
     assert.equal(shareWords(0.3), 'knapp ein Drittel');
     assert.equal(shareWords(0.42), '42 %');
+    assert.equal(shareWords(0.2), 'ein Fünftel');
+    assert.equal(shareWords(0.17), 'knapp ein Fünftel');
+    assert.equal(shareWords(0.1), 'ein Zehntel');
+    assert.equal(shareWords(0.15), '15 %');
     assert.equal(shareWords(1), 'alles');
   });
 });

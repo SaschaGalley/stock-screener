@@ -253,6 +253,8 @@ export interface DepotCheckResponse {
   notes:    Record<string, import('./analysis/depot-check.js').DepotNote>;
   /** What the newest backtest found the stops and the lists to do; null before one measured it. */
   stopEvidence: import('./analysis/depot-check.js').StopEvidence | null;
+  /** Euros per unit of each currency the checked stocks are quoted in, at the newest rate on file. */
+  eurPer: Record<string, number>;
 }
 
 /** `GET /api/verdict-changes` */

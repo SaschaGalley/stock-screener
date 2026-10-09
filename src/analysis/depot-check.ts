@@ -201,10 +201,16 @@ export function classifyDepotCheck(
  * today — and a purchase the euros the weight adds at today's depot value.
  * Counted here, on the page, because the model never sees a quantity or an
  * amount.
+ *
+ * A position of whole shares trades in whole shares: the count is rounded
+ * first, and the share, the euros and the weight after are the rounded
+ * count's, so that „2 von 10 Stück“ comes with the euros of two shares.
+ * `after` is that weight; it can sit off the manager's target by the
+ * rounding, and below one share there is nothing to trade (`shares` 0).
  */
 export type StepSize =
-  | { kind: 'sell'; fraction: number; shares: number | null; euros: number | null }
-  | { kind: 'buy'; euros: number; shares: number | null };
+  | { kind: 'sell'; fraction: number; shares: number | null; euros: number | null; after: number }
+  | { kind: 'buy'; euros: number; shares: number | null; after: number };
 
 export function stepSize(
   targetPct: number | null | undefined, weightAtCheck: number | null,
@@ -213,25 +219,40 @@ export function stepSize(
   if (targetPct == null) return null;
   const target = targetPct / 100;
   const before = weightAtCheck ?? 0;
+  const whole = now !== null && Number.isInteger(now.quantity);
+  const price = now && now.valueEur != null && now.quantity > 0 ? now.valueEur / now.quantity : null;
   if (target < before - 1e-9) {
-    const fraction = Math.min(1, 1 - target / before);
-    return { kind: 'sell', fraction, shares: now ? now.quantity * fraction : null, euros: now?.valueEur != null ? now.valueEur * fraction : null };
+    let fraction = Math.min(1, 1 - target / before);
+    if (now && whole) fraction = Math.round(now.quantity * fraction) / now.quantity;
+    return {
+      kind: 'sell', fraction, shares: now ? now.quantity * fraction : null,
+      euros: now?.valueEur != null ? now.valueEur * fraction : null, after: before * (1 - fraction),
+    };
   }
   if (target > before + 1e-9) {
-    const euros = (target - before) * totalEur;
-    const price = now && now.valueEur != null && now.quantity > 0 ? now.valueEur / now.quantity : null;
-    return { kind: 'buy', euros, shares: price ? euros / price : null };
+    let euros = (target - before) * totalEur;
+    let shares = price ? euros / price : null;
+    if (shares !== null && whole) { shares = Math.round(shares); euros = shares * price!; }
+    return { kind: 'buy', euros, shares, after: totalEur > 0 ? before + euros / totalEur : target };
   }
   return null;
 }
 
-/** A share of a position in words: „die Hälfte“, „gut ein Drittel“, „alles“; else in per cent. */
+/**
+ * A share of a position in words: „ein Fünftel“, „gut ein Drittel“, „alles“;
+ * else in per cent. Near a small share the margin narrows with it: 15 % is
+ * not „gut ein Zehntel“.
+ */
 export function shareWords(f: number): string {
   if (f >= 0.97) return 'alles';
-  const words: [number, string][] = [[1 / 4, 'ein Viertel'], [1 / 3, 'ein Drittel'], [1 / 2, 'die Hälfte'], [2 / 3, 'zwei Drittel'], [3 / 4, 'drei Viertel']];
+  const words: [number, string][] = [
+    [1 / 10, 'ein Zehntel'], [1 / 5, 'ein Fünftel'], [1 / 4, 'ein Viertel'], [1 / 3, 'ein Drittel'],
+    [1 / 2, 'die Hälfte'], [2 / 3, 'zwei Drittel'], [3 / 4, 'drei Viertel'],
+  ];
   const [x, w] = words.reduce((a, b) => (Math.abs(b[0] - f) < Math.abs(a[0] - f) ? b : a));
-  if (Math.abs(x - f) <= 0.015) return w;
-  if (Math.abs(x - f) <= 0.05) return `${f > x ? 'gut' : 'knapp'} ${w}`;
+  const off = Math.abs(x - f);
+  if (off <= Math.min(0.015, x * 0.1)) return w;
+  if (off <= Math.min(0.05, x * 0.25)) return `${f > x ? 'gut' : 'knapp'} ${w}`;
   return `${Math.round(f * 100)} %`;
 }
 

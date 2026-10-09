@@ -141,7 +141,7 @@ export default function DepotCheck({ onOpen, sectors, totalEur, cashEur, held }:
         <Result
           r={r} onOpen={onOpen} sectors={sectors} changes={data?.history?.changes ?? []} totalEur={totalEur} held={held}
           notes={notes} onNotes={setNotes} onAskAgain={running ? null : () => void askAgain()}
-          evidence={data?.stopEvidence ?? null}
+          evidence={data?.stopEvidence ?? null} eurPer={data?.eurPer ?? {}}
         />
       )}
       {data?.history && <History h={data.history} onOpen={onOpen} />}
@@ -149,13 +149,15 @@ export default function DepotCheck({ onOpen, sectors, totalEur, cashEur, held }:
   );
 }
 
-function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, onAskAgain, evidence }: {
+function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, onAskAgain, evidence, eurPer }: {
   r: DepotCheckResult; onOpen: (symbol: string) => void; sectors: { sector: string; weight: number }[];
   changes: DepotCheckHistory['changes']; totalEur: number; held: Map<string, Held>;
   notes: Record<string, DepotNote>; onNotes: (notes: Record<string, DepotNote>) => void;
   /** Null while a run is going. */
   onAskAgain: (() => void) | null;
   evidence: StopEvidence | null;
+  /** Euros per unit of a quote currency, for the levels in euros beside the stock's own. */
+  eurPer: Record<string, number>;
 }) {
   // Notes written or changed since the manager last answered.
   const answered = r.notes ?? {};
@@ -219,7 +221,7 @@ function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, o
                 key={h.symbol} h={h} move={moves.get(h.symbol) ?? null} weak={reduce.has(h.symbol)} onOpen={onOpen}
                 totalEur={totalEur} now={held.get(h.symbol) ?? null}
                 note={notes[h.symbol] ?? null} answered={answered[h.symbol] ?? null} onNotes={onNotes}
-                evidence={evidence}
+                evidence={evidence} eurPer={eurPer}
               />
             ))}
           </ul>
@@ -282,7 +284,8 @@ export interface Held { quantity: number; valueEur: number | null }
 
 /** Shares as the position counts them: whole where it holds whole shares, else to the hundredth. */
 const qty = (n: number, whole = false) => deNumber(whole ? Math.round(n) : n, whole || Number.isInteger(n) ? 0 : 2).replace(/,00$/, '');
-const roundEur = (n: number) => eur(Math.round(n / 10) * 10);
+/** Whole euros: the count is whole shares, so the sum is too, give or take the day's price. */
+const roundEur = (n: number) => eur(Math.round(n));
 
 /**
  * A stock held: what it is and where the investor stands with it on the
@@ -290,15 +293,19 @@ const roundEur = (n: number) => eur(Math.round(n / 10) * 10);
  * many shares, how many euros, worked out here from today's position — the
  * protection said as an order to place, and the manager's reason.
  */
-function HoldingRow({ h, move, weak, onOpen, totalEur, now, note, answered, onNotes, evidence }: {
+function HoldingRow({ h, move, weak, onOpen, totalEur, now, note, answered, onNotes, evidence, eurPer }: {
   h: CheckedStock; move: ManagerMove | null; weak: boolean; onOpen: (symbol: string) => void;
   totalEur: number; now: Held | null;
   /** The owner's note as it stands, and as the manager read it. */
   note: DepotNote | null; answered: string | null; onNotes: (notes: Record<string, DepotNote>) => void;
   evidence: StopEvidence | null;
+  eurPer: Record<string, number>;
 }) {
   const t = h.chart ? TREND[h.chart.trend] : null;
   const p = h.protection ?? null;
+  // The rate on file, else the position's own: its euro price in the depot over the chart's close.
+  const rate = !p?.currency ? null : eurPer[p.currency]
+    ?? (now?.valueEur && now.quantity > 0 && p.close > 0 ? now.valueEur / now.quantity / p.close : null);
   const label = 'text-2xs text-ink-500';
   return (
     <li className={`py-2.5 ${weak ? 'border-l-2 border-red-500/60 pl-2' : ''}`}>
@@ -338,7 +345,7 @@ function HoldingRow({ h, move, weak, onOpen, totalEur, now, note, answered, onNo
             <>
               <dt className="text-ink-500">{move.action === 'verkaufen' ? 'bis zum Verkauf' : 'Schutz'}</dt>
               <dd>
-                <ProtectionWords p={p} choice={move.protect} own={move.stopPrice ?? null} />
+                <ProtectionWords p={p} choice={move.protect} own={move.stopPrice ?? null} rate={rate} />
                 {move.protect !== 'keiner' && <EvidenceNote evidence={evidence} rule={move.protect} />}
               </dd>
             </>
@@ -359,26 +366,39 @@ function HoldingRow({ h, move, weak, onOpen, totalEur, now, note, answered, onNo
   );
 }
 
-/** The step as what to do: how much of the position, in shares and euros (`stepSize`). */
+/**
+ * The step as what to do: how much of the position, in shares and euros, and
+ * the weight that leaves (`stepSize`) — the manager's target beside it where
+ * whole shares land off it.
+ */
 function stepWords(move: ManagerMove, h: CheckedStock | null, now: Held | null, totalEur: number): ReactNode {
   const size = stepSize(move.targetPct, h?.weight ?? null, now, totalEur);
   if (!size || move.targetPct == null) return null;
   const before = h?.weight ?? 0;
-  const span = <span className="text-ink-500"> · {before > 0 ? `${pct(before)} → ` : ''}{pct(move.targetPct / 100)} des Depots</span>;
+  const target = move.targetPct / 100;
+  const off = Math.abs(size.after - target) >= 0.0005;
+  const span = (
+    <span className="text-ink-500">
+      {' '}· {before > 0 ? `${pct(before)} → ` : ''}{pct(size.after)} des Depots{off && ` (Ziel ${pct(target)}, auf ganze Stück gerundet)`}
+    </span>
+  );
+  if (size.shares === 0) {
+    return <><span className="text-ink-400">Weniger als ein Stück — nichts zu tun</span><span className="text-ink-500"> · Ziel {pct(target)} des Depots</span></>;
+  }
   if (size.kind === 'sell') {
     const words = shareWords(size.fraction);
     const what = words === 'alles' ? 'Alles verkaufen' : `${words.charAt(0).toUpperCase()}${words.slice(1)} verkaufen`;
     if (!now || size.shares === null) return <>{what}{span}</>;
     return (
       <>
-        {what}: {words === 'alles' ? `${qty(now.quantity)} Stück` : `${qty(size.shares, Number.isInteger(now.quantity))} von ${qty(now.quantity)} Stück`}
+        {what}: {words === 'alles' ? `${qty(now.quantity)} Stück` : `${qty(size.shares)} von ${qty(now.quantity)} Stück`}
         {size.euros !== null && <>, ≈ {roundEur(size.euros)}</>}{span}
       </>
     );
   }
   return (
     <>
-      {before > 0 ? 'Nachkaufen' : 'Kaufen'} für ≈ {roundEur(size.euros)}{size.shares !== null ? ` (≈ ${qty(size.shares, !!now && Number.isInteger(now.quantity))} Stück)` : ''}{span}
+      {before > 0 ? 'Nachkaufen' : 'Kaufen'}{size.shares !== null ? `: ${qty(size.shares)} Stück` : ''} für ≈ {roundEur(size.euros)}{span}
     </>
   );
 }
@@ -406,17 +426,22 @@ function EvidenceNote({ evidence, rule }: { evidence: StopEvidence | null; rule:
   );
 }
 
-/** The protection as an order to place, with where its level comes from. */
-function ProtectionWords({ p, choice, own }: { p: Protection; choice: ProtectionChoice; own: number | null }) {
+/**
+ * The protection as an order to place, with where its level comes from; each
+ * price in the stock's currency, as a chart shows it, and in euros beside it,
+ * as Trade Republic takes the order.
+ */
+function ProtectionWords({ p, choice, own, rate }: { p: Protection; choice: ProtectionChoice; own: number | null; rate: number | null }) {
   if (choice === 'keiner') return <span className="text-ink-400">kein Stop</span>;
+  const px = (v: number) => `${fmtPrice(v, p.currency)}${rate && p.currency !== 'EUR' ? ` (≈ ${fmtPrice(v * rate, 'EUR')})` : ''}`;
   // A level from the owner's note the manager took: below the close, and not absurdly far.
   if (choice === 'stop' && own !== null && own < p.close && own > p.close * 0.5) {
     return (
       <span className="text-ink-100">
-        Stop-Loss bei {fmtPrice(own, p.currency)} setzen
+        Stop-Loss bei {px(own)} setzen
         <span className="text-ink-500">
-          {' '}· {pct(1 - own / p.close)} unter dem Kurs von {fmtPrice(p.close, p.currency)} am {fmtDay(p.asOf)}, deine Marke
-          {p.stop && ` (berechnet: ${fmtPrice(p.stop.price, p.currency)})`}
+          {' '}· {pct(1 - own / p.close)} unter dem Kurs von {px(p.close)} am {fmtDay(p.asOf)}, deine Marke
+          {p.stop && ` (berechnet: ${px(p.stop.price)})`}
         </span>
       </span>
     );
@@ -424,11 +449,11 @@ function ProtectionWords({ p, choice, own }: { p: Protection; choice: Protection
   if (choice === 'stop' && p.stop) {
     return (
       <span className="text-ink-100">
-        Stop-Loss bei {fmtPrice(p.stop.price, p.currency)} setzen
+        Stop-Loss bei {px(p.stop.price)} setzen
         <span className="text-ink-500">
-          {' '}· {pct(-p.stop.distance)} unter dem Kurs von {fmtPrice(p.close, p.currency)} am {fmtDay(p.asOf)}
+          {' '}· {pct(-p.stop.distance)} unter dem Kurs von {px(p.close)} am {fmtDay(p.asOf)}
           {p.stop.basis === 'support' && p.stop.level !== null
-            ? `, knapp unter der Unterstützung bei ${fmtPrice(p.stop.level, p.currency)}`
+            ? `, knapp unter der Unterstützung bei ${px(p.stop.level)}`
             : ', drei Tagesschwankungen tiefer — keine Unterstützung in Reichweite'}
         </span>
       </span>
@@ -439,7 +464,7 @@ function ProtectionWords({ p, choice, own }: { p: Protection; choice: Protection
       <span className="text-ink-100">
         Trailing-Stop mit {pct(p.trailing.width)} Abstand setzen
         <span className="text-ink-500">
-          {' '}· beginnt bei ≈ {fmtPrice(p.close * (1 - p.trailing.width), p.currency)} und zieht mit jedem neuen Hoch nach;
+          {' '}· beginnt bei ≈ {px(p.close * (1 - p.trailing.width))} und zieht mit jedem neuen Hoch nach;
           {' '}der Abstand sind drei übliche Tagesschwankungen
         </span>
       </span>

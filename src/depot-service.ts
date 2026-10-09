@@ -24,6 +24,7 @@ import { allTrades, latestPrices } from './db/trades-store.js';
 import { readCheckResult } from './depot-check-state.js';
 import { fmtPriceDe } from './format.js';
 import { fundHoldings } from './fund-service.js';
+import { euroRates } from './fx-service.js';
 import { journalHeadline } from './journal.js';
 import { listResearch } from './research/research.js';
 import { marketDates, stockUpcoming } from './stock-history-service.js';
@@ -113,13 +114,19 @@ export async function readDepot(force = false): Promise<DepotResponse> {
   const funds = held.filter((p) => FUND_TYPES.has(p.assetType)).map((p) => ({ isin: p.isin, symbol: p.symbol }));
   const today = new Date().toISOString().slice(0, 10);
   const ahead = new Date(Date.now() + AHEAD_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const [config, lastCheck, fundMap, scoreSeries, market, cashEur] = await Promise.all([
+  const [config, lastCheck, fundMap, scoreSeries, market, cashEur, eurPer] = await Promise.all([
     readAppConfig(), readCheckResult(),
     fundHoldings(funds).catch((e) => { logger.warn(`Fund holdings: ${(e as Error).message}`); return new Map(); }),
     seriesForAll('score.final.score', { since: new Date(Date.now() - (TREND_DAYS + 10) * DAY_MS) }),
     marketDates(today, ahead),
     readDepotCash(),
+    euroRates(listed.map((s) => facts.get(s)?.currency)).catch((): Record<string, number> => ({})),
   ]);
+  // A level in the stock's currency, as a chart shows it, and in euros beside it, as Trade Republic takes the order.
+  const priceWithEuro = (n: number, currency: string | null) => {
+    const rate = currency && currency !== 'EUR' ? eurPer[currency] : undefined;
+    return rate ? `${fmtPriceDe(n, currency)} (≈ ${fmtPriceDe(n * rate, 'EUR')})` : fmtPriceDe(n, currency);
+  };
   // The levels the last check named, as a broker would hold them: the stop where it was set, the
   // trailing stop under the highest close since that day. The chandelier, recomputed nightly, closed
   // nearly every position within weeks in the backtest (`backtest/stops.ts`) — a signal for everything.
@@ -156,7 +163,7 @@ export async function readDepot(force = false): Promise<DepotResponse> {
       close: p.close, currency: p.currency, trailing: trailingSinceCheck(c.bars, checkDay, lastWidths.get(s) ?? null),
       stop: lastStops.get(s) ?? null,
       score: model.get(s)?.score ?? null, falling: trendAnswer(c.analysis).tone === 'bear',
-      reduceBelow: config.depotCheck.reduceBelow, price: fmtPriceDe,
+      reduceBelow: config.depotCheck.reduceBelow, price: priceWithEuro,
     }));
   }));
 

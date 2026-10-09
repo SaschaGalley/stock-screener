@@ -43,6 +43,7 @@ import { listDepotChecks, saveDepotCheck } from './db/depot-check-store.js';
 import { listJournal } from './db/journal-store.js';
 import { allTrades } from './db/trades-store.js';
 import { stopEvidence } from './backtest/result.js';
+import { euroRates } from './fx-service.js';
 import { decisionOutcomes } from './stock-history-service.js';
 import { tradesSource } from './trades-service.js';
 import { latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
@@ -80,9 +81,11 @@ export async function readDepotCheck(): Promise<DepotCheckResponse> {
     logger.warn(`Depot check history: ${(e as Error).message}`);
     return null;
   });
+  const currencies = [...(result?.holdings ?? []), ...(result?.candidates ?? [])].map((h) => h.protection?.currency);
   return {
     status, result, settings: config.depotCheck, history, notes: await readDepotNotes(),
     stopEvidence: await stopEvidence().catch(() => null),
+    eurPer: await euroRates(currencies).catch(() => ({})),
   };
 }
 
