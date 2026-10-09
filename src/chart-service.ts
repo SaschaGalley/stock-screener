@@ -22,7 +22,8 @@ import {
 } from './analysis/chart.js';
 import { readPriceBarsOhlc } from './db/history-store.js';
 import { latestDocument, readFinancialsLax, saveDocument } from './db/store.js';
-import { DEFAULT_MODEL_ID, resolveModelId } from './models.js';
+import { modelFor, readAppConfig } from './app-config.js';
+import { resolveModelId } from './models.js';
 import { createProviderForModel } from './providers/factory.js';
 import { logger } from './utils/logger.js';
 
@@ -215,12 +216,13 @@ function readAsText(r: ChartRead): string {
 export class ChartReadInputError extends Error {}
 
 /**
- * Ask `model` to read the chart, keep the answer and return it. Prices far
- * outside anything the chart traded at are dropped: a level at ten times the
- * high is a typo, not a reading.
+ * Ask `model` to read the chart — without one, the chart reading's model from
+ * the administration — keep the answer and return it. Prices far outside
+ * anything the chart traded at are dropped: a level at ten times the high is
+ * a typo, not a reading.
  */
 export async function runChartRead(symbol: string, model?: string | null): Promise<ChartReadDoc> {
-  const modelId = resolveModelId(model || DEFAULT_MODEL_ID);
+  const modelId = model ? resolveModelId(model) : modelFor(await readAppConfig(), 'chart');
   const [all, f] = await Promise.all([bars(symbol), readFinancialsLax(symbol)]);
   const a = chartAnalysis(all);
   if (!a) throw new ChartReadInputError(`Zu wenige Kursdaten für ${symbol}, um den Chart zu lesen.`);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { CHART_PATTERN_STATUS_LABEL, type ChartRead, type ChartReadDoc } from '../../../../src/analysis/chart';
 import { MODELS } from '../../../../src/models';
@@ -40,23 +40,32 @@ function readMarks(r: ChartRead): LadderMark[] {
   return marks;
 }
 
+/** The chart reading's model as the administration sets it, asked once for every chart tab. */
+let standardModel: Promise<string | null> | null = null;
+const chartModel = () => (standardModel ??= api.getConfig()
+  .then(({ config }) => config.chartRead.model ?? config.steps.analysis.model)
+  .catch(() => { standardModel = null; return null; }));
+
 /**
  * A language model's reading of the chart: what it sees in a paragraph, the
  * three ways it can go — each with its trigger and where it would lead — and
  * the model's own levels on the same ladder as the computed ones. The
  * comments that made the table of levels a wall of text are on hover.
  */
-export default function ChartReadBlock({ symbol, model, read, price, asOf, fmtPrice, onRead }: {
-  symbol: string; model: string; read: ChartReadDoc | null; price: number; asOf: string | null;
+export default function ChartReadBlock({ symbol, read, price, asOf, fmtPrice, onRead }: {
+  symbol: string; read: ChartReadDoc | null; price: number; asOf: string | null;
   fmtPrice: (n: number) => string; onRead: (r: ChartReadDoc) => void;
 }) {
-  const [pick, setPick] = useState(() => (MODELS.some((m) => m.id === model) ? model : MODELS[0].id));
+  // '' is the administration's model; another is picked for one reading.
+  const [pick, setPick] = useState('');
+  const [standard, setStandard] = useState<string | null>(null);
+  useEffect(() => { void chartModel().then(setStandard); }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async () => {
     setBusy(true);
     setError(null);
-    try { onRead(await api.runChartRead(symbol, pick)); }
+    try { onRead(await api.runChartRead(symbol, pick || null)); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -80,6 +89,7 @@ export default function ChartReadBlock({ symbol, model, read, price, asOf, fmtPr
             disabled={busy}
             className="rounded border border-ink-700 bg-ink-900 px-1.5 py-0.5 text-xs text-ink-200"
           >
+            <option value="">Vorgabe{standard ? ` (${label(standard)})` : ''}</option>
             {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
           <button

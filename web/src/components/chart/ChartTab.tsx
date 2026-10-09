@@ -21,8 +21,6 @@ interface Props {
   /** From the stored market signals, for a stock the list has no row for. */
   timing:   TimingReadings | null;
   signals:  TechnicalSignals | null;
-  /** The model picked for analyses, offered first for the chart reading. */
-  model:    string;
   /** CSS height of the price chart. */
   chartHeight?: number | string;
   marketSignals?: MarketSignals | null;
@@ -60,7 +58,7 @@ function chartFinding(a: ChartAnalysis): string {
  * The readings sat behind six tabs under the chart, each a table of numbers —
  * a click and a jump for every question, and no answer at the end of it.
  */
-export default function ChartTab({ symbol, row, timing, signals, model, chartHeight, marketSignals = null }: Props) {
+export default function ChartTab({ symbol, row, timing, signals, chartHeight, marketSignals = null }: Props) {
   const money = useMoney();
   const [data, setData] = useState<ChartResponse | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +97,7 @@ export default function ChartTab({ symbol, row, timing, signals, model, chartHei
       {hasBars && (
         <Section fixed title="KI-Chartlesung" info="tech.chartRead" finding={read ? readFinding(read.read) : null} subtitle="Ein Sprachmodell liest Muster, Marken und Szenarien">
           <ChartReadBlock
-            symbol={symbol} model={model} read={read} price={a?.close ?? data!.bars.at(-1)!.close} asOf={a?.asOf ?? null}
+            symbol={symbol} read={read} price={a?.close ?? data!.bars.at(-1)!.close} asOf={a?.asOf ?? null}
             fmtPrice={money.fmtPrice} onRead={setRead}
           />
         </Section>

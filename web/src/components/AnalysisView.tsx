@@ -371,7 +371,6 @@ function AnalysisView({
                 row={row ?? null}
                 timing={bundle.marketSignals?.technicals?.timing ?? null}
                 signals={bundle.technicalSignals}
-                model={flags.model}
                 chartHeight="clamp(420px, 62vh, 760px)"
                 marketSignals={bundle.marketSignals}
               />

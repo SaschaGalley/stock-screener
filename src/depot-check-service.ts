@@ -22,7 +22,7 @@
 import { z } from 'zod';
 
 import type { DepotCheckResponse } from './api-types.js';
-import { analysisFlagsFor, readAppConfig } from './app-config.js';
+import { analysisFlagsFor, modelFor, readAppConfig } from './app-config.js';
 import {
   classifyDepotCheck, isSingleStock, managerInput, MANAGER_ACTIONS, MANAGER_SYSTEM, managerUser, PROTECTIONS,
   selectCandidates, type CheckedStock, type DepotCheckResult, type DepotCheckStatus, type PreviousAdvice, type ReasonForManager,
@@ -175,6 +175,7 @@ async function runCheck(save: Save): Promise<void> {
   const config = await readAppConfig();
   const settings = config.depotCheck;
   const flags = analysisFlagsFor(config);
+  const chartModel = modelFor(config, 'chart');
 
   // Checked once, up front: without a worker every analysis would fail alike.
   if (isHatchetConfigured()) {
@@ -232,7 +233,7 @@ async function runCheck(save: Save): Promise<void> {
     } catch (e) {
       error = `Analyse: ${(e as Error).message}`;
     }
-    const seen = await look(c.symbol, flags.model);
+    const seen = await look(c.symbol, chartModel);
     await step(`Analyse ${done + 1}/${candidates.length}: ${c.symbol}`);
     return { ...c, scoreBefore: c.score, ...seen, error: error ?? seen.error, weight: null };
   });
@@ -240,7 +241,7 @@ async function runCheck(save: Save): Promise<void> {
 
   // The stocks held: their charts and stops; the analysis they have is the night's.
   const checkedHoldings = await settledPool(stocks, CONCURRENCY, async (p): Promise<CheckedStock> => {
-    const seen = await look(p.symbol!, flags.model);
+    const seen = await look(p.symbol!, chartModel);
     await step(`Chart ${p.symbol}`);
     return {
       symbol: p.symbol!, name: p.name, sector: p.sector, score: p.score, verdict: p.verdict,
@@ -268,10 +269,10 @@ async function runCheck(save: Save): Promise<void> {
   // The manager: the one model call that sees the depot, through `managerInput`.
   await save({ phase: 'Marktlage und Depotmanager' });
   const [{ brief, error: marketError }, sectorTrends] = await Promise.all([market, trends]);
-  const asked = await askManager(view, { holdings, lists, market: brief, sectorTrends }, flags.model);
+  const asked = await askManager(view, { holdings, lists, market: brief, sectorTrends }, modelFor(config, 'manager'));
 
   const result: DepotCheckResult = {
-    generatedAt: new Date().toISOString(), settings, model: flags.model,
+    generatedAt: new Date().toISOString(), settings, model: flags.model, chartModel,
     candidates: checkedCandidates, holdings, lists,
     market: brief, marketError, sectorTrends,
     ...asked,
@@ -321,7 +322,7 @@ async function askManager(
   view: NonNullable<Awaited<ReturnType<typeof readDepot>>['view']>,
   check: Pick<DepotCheckResult, 'holdings' | 'lists' | 'sectorTrends'> & { market: MarketBrief | null },
   model: string,
-): Promise<Pick<DepotCheckResult, 'manager' | 'managerError' | 'managerAt' | 'notes'>> {
+): Promise<Pick<DepotCheckResult, 'manager' | 'managerError' | 'managerAt' | 'managerModel' | 'notes'>> {
   const notes = Object.fromEntries(Object.entries(await readDepotNotes()).map(([k, n]) => [k, n.text]));
   try {
     const [history, previous] = await Promise.all([tradeHistory(view.positions), previousAdvice()]);
@@ -338,11 +339,11 @@ async function askManager(
     const manager = await createProviderForModel(model).complete({
       label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 10_000,
     });
-    return { manager, managerError: null, managerAt: new Date().toISOString(), notes };
+    return { manager, managerError: null, managerAt: new Date().toISOString(), managerModel: model, notes };
   } catch (e) {
     const managerError = (e as Error).message;
     logger.warn(`Depot manager: ${managerError}`);
-    return { manager: null, managerError, managerAt: new Date().toISOString(), notes };
+    return { manager: null, managerError, managerAt: new Date().toISOString(), managerModel: model, notes };
   }
 }
 
@@ -361,7 +362,7 @@ async function runManagerAgain(save: Save): Promise<void> {
     return { ...h, protection: protectionOf(c.bars, c.analysis, c.currency), chart: h.chart ? { ...h.chart, levels: h.chart.levels ?? levels } : h.chart };
   }));
   // The model set today, not the last run's: the setting may have changed since.
-  const model = analysisFlagsFor(await readAppConfig()).model;
+  const model = modelFor(await readAppConfig(), 'manager');
   const asked = await askManager(depot.view, { ...last, holdings, market: last.market ?? null }, model);
   const result: DepotCheckResult = { ...last, holdings, ...asked };
   await writeAppState(RESULT_KEY(), JSON.stringify(result));

@@ -198,7 +198,8 @@ export const api = {
   getChart: (symbol: string) =>
     jsonFetch<ChartResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/chart`),
   /** A model reads the chart — one call, up to a minute or two on a reasoning model. */
-  runChartRead: (symbol: string, model: string) =>
+  /** Without a model, the server reads with the chart reading's model from the administration. */
+  runChartRead: (symbol: string, model: string | null) =>
     jsonFetch<ChartReadDoc>(`${BASE}/stocks/${encodeURIComponent(symbol)}/chart-read`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }),
     }),

@@ -105,6 +105,33 @@ function DaysInput({ value, onChange }: { value: number; onChange: (v: number) =
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+/**
+ * One task's model: the registry's models, a stored id outside it as its own
+ * option, and — where the task may follow the analysis — „wie Analyse“ for null.
+ */
+function ModelRow({ label, value, inherit, onChange, hint }: {
+  label: string; value: string | null; onChange: (v: string | null) => void; hint: string;
+  /** The analysis model, where null follows it. */
+  inherit?: string;
+}) {
+  const name = (id: string) => MODELS.find((m) => m.id === id)?.label ?? id;
+  return (
+    <>
+      <label className="text-xs text-ink-400">{label}</label>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value || null)}
+        className={`${inputCls} w-full min-w-0`}
+      >
+        {inherit !== undefined && <option value="">wie Analyse ({name(inherit)})</option>}
+        {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        {value && !MODELS.some((m) => m.id === value) && <option value={value}>{value} (eigenes)</option>}
+      </select>
+      <p className="text-2xs text-ink-500">{hint}</p>
+    </>
+  );
+}
+
 export default function AdminPage() {
   const [meta, setMeta] = useState<ConfigResponse | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -312,6 +339,43 @@ export default function AdminPage() {
         </div>
       </Card>
 
+      {/* ── Modelle ────────────────────────────────────────────────────── */}
+      <Card title="Modelle" hint="Welches Modell welche Aufgabe übernimmt. „wie Analyse“ folgt dem Analysemodell.">
+        <div className="grid grid-cols-1 items-center gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,16rem)_minmax(0,1fr)]">
+          <ModelRow
+            label="Analyse" value={analysis.model} onChange={(v) => patch((d) => { d.steps.analysis.model = v ?? d.steps.analysis.model; })}
+            hint="Jede Aktienanalyse, nachts und per Klick, samt der Synthese, die den Score setzt."
+          />
+          <ModelRow
+            label="Zusammenfassungen" value={config.scoring.summaryModel} onChange={(v) => patch((d) => { d.scoring.summaryModel = v ?? d.scoring.summaryModel; })}
+            hint="Die zwei Stufen vor der Synthese, die Berichte und Recherche verdichten: ein günstiges Modell reicht."
+          />
+          <ModelRow
+            label="Chartlesung" value={config.chartRead.model} inherit={analysis.model} onChange={(v) => patch((d) => { d.chartRead.model = v; })}
+            hint="Im Depot-Check und als Vorgabe im Chart-Tab einer Aktie, wo man einmalig ein anderes wählen kann."
+          />
+          <ModelRow
+            label="Depotmanager" value={config.depotCheck.managerModel} inherit={analysis.model} onChange={(v) => patch((d) => { d.depotCheck.managerModel = v; })}
+            hint="Ein Aufruf je Depot-Check, der das ganze Depot abwägt: der Platz für das stärkste Modell."
+          />
+          <label className="text-xs text-ink-400">Marktlage</label>
+          <select
+            value={config.depotCheck.marketModel ?? 'none'}
+            onChange={(e) => patch((d) => {
+              const v = e.target.value;
+              d.depotCheck.marketModel = v === 'none' ? null : (v as PerplexityModelId);
+            })}
+            className={`${inputCls} w-full min-w-0`}
+          >
+            <option value="none">keine</option>
+            {PERPLEXITY_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>{perplexityLabel(m.id)}</option>
+            ))}
+          </select>
+          <p className="text-2xs text-ink-500">Perplexity, für den Depot-Check: Lage, Rotation, Sektoren, Termine. Zwölf Stunden wiederverwendet.</p>
+        </div>
+      </Card>
+
       {/* ── Schritte ───────────────────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="1 · Marktdaten" hint="Yahoo, Finnhub, FRED, Makro + Charttechnik">
@@ -352,18 +416,6 @@ export default function AdminPage() {
               value={analysis.maxAgeDays}
               onChange={(v) => patch((d) => { d.steps.analysis.maxAgeDays = v; })}
             />
-
-            <label className="text-xs text-ink-400">Modell</label>
-            <select
-              value={analysis.model}
-              onChange={(e) => patch((d) => { d.steps.analysis.model = e.target.value; })}
-              className={`${inputCls} w-full min-w-0`}
-            >
-              {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-              {!MODELS.some((m) => m.id === analysis.model) && (
-                <option value={analysis.model}>{analysis.model} (eigenes)</option>
-              )}
-            </select>
 
             <span className="self-start pt-0.5 text-xs text-ink-400">Websuche</span>
             <div className="flex flex-wrap gap-1.5">
@@ -467,7 +519,7 @@ export default function AdminPage() {
       {/* ── Depot-Check ────────────────────────────────────────────────── */}
       <Card
         title="Depot-Check"
-        hint="Der Button auf der Depot-Seite: welche Aktien außerhalb des Depots er analysiert (samt Chart), ab wann ein Depotwert zum Reduzieren angesehen wird, und mit welchem Perplexity-Modell er die Marktlage holt. Jeder Kandidat kostet eine Analyse und eine Chart-Lesung mit dem Analysemodell, jede Aktie im Depot eine Chart-Lesung (eine jüngere als 24 Stunden wird wiederverwendet), die Marktlage einen Perplexity-Aufruf (zwölf Stunden wiederverwendet)."
+        hint="Der Button auf der Depot-Seite: welche Aktien außerhalb des Depots er analysiert (samt Chart) und ab wann ein Depotwert zum Reduzieren angesehen wird. Jeder Kandidat kostet eine Analyse und eine Chart-Lesung, jede Aktie im Depot eine Chart-Lesung (eine jüngere als 24 Stunden wird wiederverwendet), die Marktlage einen Perplexity-Aufruf (zwölf Stunden wiederverwendet), dazu ein Aufruf des Depotmanagers. Welche Modelle das sind, steht unter Modelle."
       >
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           {([
@@ -491,22 +543,6 @@ export default function AdminPage() {
               />
             </label>
           ))}
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-ink-400">Marktlage</span>
-            <select
-              value={config.depotCheck.marketModel ?? 'none'}
-              onChange={(e) => patch((d) => {
-                const v = e.target.value;
-                d.depotCheck.marketModel = v === 'none' ? null : (v as PerplexityModelId);
-              })}
-              className={inputCls}
-            >
-              <option value="none">keine</option>
-              {PERPLEXITY_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>{perplexityLabel(m.id)}</option>
-              ))}
-            </select>
-          </label>
         </div>
       </Card>
 

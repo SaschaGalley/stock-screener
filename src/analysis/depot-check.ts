@@ -121,8 +121,12 @@ export interface ManagerView {
 export interface DepotCheckResult {
   generatedAt:  string;
   settings:     DepotCheckSettings;
-  /** The model the analyses, chart readings and the manager's text were asked of. */
+  /** The analyses' model; before 9.10.2026 also the chart readings' and the manager's. */
   model:        string;
+  /** The chart readings' model, where it was not the analyses'. Absent before 9.10.2026. */
+  chartModel?:  string;
+  /** The model the manager's text was last asked of. Absent before 9.10.2026. */
+  managerModel?: string;
   candidates:   CheckedStock[];
   /** Every single stock held, its chart read. Before 8.10.2026 only those under `reduceBelow`. */
   holdings:     CheckedStock[];

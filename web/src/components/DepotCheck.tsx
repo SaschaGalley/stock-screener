@@ -14,6 +14,7 @@ import { SECTOR_DIRECTION_LABEL, type MarketBrief, type SectorDirection } from '
 import { GROUP_SIDE, type DepotCheckHistory, type RecordGroup } from '../../../src/analysis/depot-check-record';
 import type { SectorPhase, SectorTrend } from '../../../src/analysis/sector-rotation';
 import type { Protection } from '../../../src/analysis/stops';
+import { MODELS } from '../../../src/models';
 
 const eur = (n: number) => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const fmtTime = (iso: string) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
@@ -267,7 +268,7 @@ function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, o
       )}
 
       <p className="text-2xs leading-relaxed text-ink-500">
-        Geprüft {fmtTime(r.generatedAt)} mit {r.model} · {r.candidates.length} Kandidaten ab {score(r.settings.minScore)},{' '}
+        Geprüft {fmtTime(r.generatedAt)} mit {modelsUsed(r)} · {r.candidates.length} Kandidaten ab {score(r.settings.minScore)},{' '}
         {r.holdings.length} Aktien im Depot. Das Modell bekommt je Position Name, Anlageart und Gewicht, bei Aktien dazu
         Sektor, „seit Kauf“ in Prozent, Haltedauer in Monaten, das Ergebnis des Thesen-Checks, Score, Chart und die Abstände
         zu Stop und Trailing, deine Notiz, die Käufe und Verkäufe der Position (Tag, Kurs, Umfang in Prozent) mit deinen
@@ -277,6 +278,16 @@ function Result({ r, onOpen, sectors, changes, totalEur, held, notes, onNotes, o
       </p>
     </div>
   );
+}
+
+/** Which model did what: one name where one did everything, else each with its task. */
+function modelsUsed(r: DepotCheckResult): string {
+  const name = (id: string) => MODELS.find((m) => m.id === id)?.label ?? id;
+  const chart = r.chartModel ?? r.model;
+  const manager = r.managerModel ?? r.model;
+  return chart === r.model && manager === r.model
+    ? name(r.model)
+    : `${name(r.model)} (Analysen), ${name(chart)} (Charts), ${name(manager)} (Depotmanager)`;
 }
 
 /** A position as the depot holds it today: what a step's size is counted in. */

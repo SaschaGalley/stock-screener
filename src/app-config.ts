@@ -151,6 +151,20 @@ export const AppConfigSchema = z.object({
     reduceBelow:   z.number().min(0).max(10).default(5),
     /** The market brief's model; null asks for none. Reused for twelve hours. */
     marketModel:   z.enum(PERPLEXITY_MODEL_IDS).nullable().default(DEFAULT_PERPLEXITY_MODEL),
+    /**
+     * The depot manager's model; null is the analysis model. One call a check,
+     * the one that weighs the whole depot: the place for the strongest model.
+     */
+    managerModel:  z.string().min(1).nullable().default(null),
+  }).prefault({}),
+
+  /**
+   * The language model's chart reading (`src/chart-service.ts`), in the depot
+   * check and on a stock's chart tab, where a reading can be asked of another
+   * model once; null is the analysis model.
+   */
+  chartRead: z.object({
+    model: z.string().min(1).nullable().default(null),
   }).prefault({}),
 
   /**
@@ -225,6 +239,12 @@ export async function writeAppConfig(next: AppConfig): Promise<AppConfig> {
   await writeSettingsJson(validated);
   logger.info(`Settings updated (schedule ${validated.schedule.enabled ? validated.schedule.cron : 'disabled'})`);
   return validated;
+}
+
+/** The model a task runs on: its own where one is set, else the analysis model. */
+export function modelFor(config: AppConfig, task: 'manager' | 'chart'): string {
+  const own = task === 'manager' ? config.depotCheck.managerModel : config.chartRead.model;
+  return resolveModelId(own || config.steps.analysis.model || DEFAULT_MODEL_ID);
 }
 
 /** The analysis step's flags, normalised the way the cache key expects them. */
