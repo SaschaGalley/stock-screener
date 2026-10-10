@@ -119,8 +119,13 @@ und Bear-Case, ungeordnet und ohne Abgleich.
 - **Leerformeln:** bestätigt; rein leer sind JNJ und PFE, bei BMW, Mastercard und Boeing hängt der Satz
   an einem Fakt. Ursprung ist eine Tageskachel aus einem einzigen Insight über eine andere Firma.
   Vorschlag von distill: ein Satz in der Vorgabe, leer zu antworten statt das Fehlen zu beschreiben;
-  dann meldet die API `state: empty` und liefert die rohen Insights trotzdem. Der Wortlaut wartet auf
-  den Eigentümer.
+  dann meldet die API `state: empty` und liefert die rohen Insights trotzdem. Vom Eigentümer
+  freigegeben und von distill an 60 protokollierten Calls gemessen (ai-troop/distill#412): reine
+  Leerformeln in 97 von 99 Läufen leer (vorher 19), angehängte Leerformeln in allen 45 Läufen weg,
+  normale Dossiers nie leer und im Median 0,94-mal so lang. Bei Sektoren ersetzt dieselbe Regel
+  »keep the dossier short«. Eingeschaltet wird nach Freigabe in der distill-Sitzung. Die 14-Tage-Regel
+  löst das nicht; dafür steht ai-troop/distill#413 und wartet auf die Entscheidung zu strukturierten
+  Kursmarken.
 - **Strukturierte Marken**, Einschätzung von distill:
   - *A, aus dem fertigen Dossiertext:* ein bis zwei Tage, gewinnt gegenüber dem Extraktor nur Art,
     Status und Währung; Datum und Quelle bleiben so lückenhaft wie im Text. Abgeraten.
@@ -130,5 +135,6 @@ und Bear-Case, ungeordnet und ohne Abgleich.
     ausgeschaltet startende Stufe, Tabelle, Nachlauf, Aggregation, API-Feld und Messung: eher eine
     Woche. Empfohlen, falls die Ebene kommt.
   - *C, Text und Marken in einem Call:* abgeraten.
-- Nebenbei: Im Dossier der Bank of America stehen Broadcom-Marken, ein Fehler der Entity-Zuordnung;
-  distill sieht ihn sich an.
+- Nebenbei: Im Dossier der Bank of America stehen Broadcom-Marken. Laut distill kein aktuelles
+  Problem: Das Dossier stammt vom 19.08., noch mit der alten Vorgabe, und wird nicht neu gebaut, weil
+  die Bank of America nicht eingeschaltet ist; stock-cli bekommt dafür `not_enabled` und keinen Text.
