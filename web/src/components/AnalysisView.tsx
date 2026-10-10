@@ -17,6 +17,7 @@ import Section from "./Section";
 import ScoreBreakdown from "./sections/ScoreBreakdown";
 import MarginTrends from "./sections/MarginTrends";
 import DepreciationOutlook from "./sections/DepreciationOutlook";
+import EstimateRevisions from "./sections/EstimateRevisions";
 import BalanceChecks from "./sections/BalanceChecks";
 import AnalystTrackRecord from "./sections/AnalystTrackRecord";
 import VerdictTrackRecord, { VERDICT_RECORD_ID, VerdictRecordLine } from "./sections/VerdictTrackRecord";
@@ -475,7 +476,10 @@ function AnalysisView({
               {(f.earningsSurprises?.length > 0 ||
                 f.earningsEstimates?.length > 0) && (
                 <Section fixed title="Quartalszahlen" finding={earningsFinding(f)} info="section.earnings">
-                  <EarningsBlock financials={f} />
+                  <div className="space-y-6">
+                    <EarningsBlock financials={f} />
+                    <EstimateRevisions symbol={symbol} revisions={bundle.marketSignals?.revisions ?? null} />
+                  </div>
                 </Section>
               )}
               {/* TIER 5: QUALITY & RISK */}

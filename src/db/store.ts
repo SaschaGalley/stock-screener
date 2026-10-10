@@ -17,7 +17,7 @@
 
 import { createHash } from 'crypto';
 import {
-  LLMAnalysis, MarketSignals, NewsItem, ScoreCard, SearchTrace, SectorMedians,
+  EarningsEstimate, LLMAnalysis, MarketSignals, NewsItem, ScoreCard, SearchTrace, SectorMedians,
   StockFinancials, TechnicalSignals,
 } from '../types.js';
 import type { FetchedRates } from '../data/fred.js';
@@ -1678,6 +1678,23 @@ export async function latestPointsForAll(
     out.set(r.symbol, byKey);
   }
   return out;
+}
+
+/**
+ * The consensus estimates as each stored financials payload carried them,
+ * oldest first — only that array, not the payloads it sits in. Every schema
+ * version: the estimates have kept their shape since the first.
+ */
+export async function estimateHistory(symbol: string): Promise<{ at: string; estimates: EarningsEstimate[] }[]> {
+  const id = await symbolId(symbol);
+  if (id === null) return [];
+  const res = await query<{ estimates: EarningsEstimate[] | null; captured_at: Date }>(
+    `SELECT content->'earningsEstimates' AS estimates, captured_at FROM snapshots
+      WHERE symbol_id = $1 AND kind = 'financials'
+      ORDER BY captured_at`,
+    [id],
+  );
+  return res.rows.map((r) => ({ at: r.captured_at.toISOString(), estimates: Array.isArray(r.estimates) ? r.estimates : [] }));
 }
 
 /**
