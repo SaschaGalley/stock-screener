@@ -1,90 +1,92 @@
 # Was trägt welche Quelle? distill, Perplexity-Brief und Tiefenrecherche, 10.10.2026
 
-Sechs Aktien: NU, ARGX und STR.VI, die drei mit einer Tiefenrecherche, dazu ORCL, NKE und CRWV, bei
-denen im Blindvergleich (`../dossier-guidance/BERICHT.md`) die alte distill-Lesung vorn lag. Eine
-Erkundung, keine Messung mit Vorschrift: sechs Aktien, ein Stand, drei Lesungen je Zelle.
+Zehn Aktien, eine Erkundung, keine Messung mit Vorschrift. Zuerst NU, ARGX und STR.VI, die drei mit einer
+Tiefenrecherche, dazu ORCL, NKE und CRWV, bei denen im Blindvergleich (`../dossier-guidance/BERICHT.md`)
+die alte distill-Lesung vorn lag. Danach trug der Eigentümer Tiefenrecherchen für ORCL, NKE, NVDA, MSFT,
+AAPL und SAP nach, ORCL und NKE durch Einfügen aus dem Research-Modus, die übrigen über die API.
 
-**Ergebnis:** Den Narrativ-Score bestimmt im Wesentlichen Perplexity; distill verschiebt ihn um
-höchstens 0,6 Punkte. distill bestimmt aber, wie viel der Score im Gesamturteil wiegt: Mit einem
-Firmendossier steigt die Confidence der Narrative-Stufe von rund 0,27 auf 0,75–0,90, weil jedes nicht
-leere Dossier pauschal 0,5 zählt und Perplexity höchstens 0,3. Inhaltlich trägt in allen sechs
-Vergleichen Perplexity oder die Tiefenrecherche am meisten; distill liefert Ergänzungen der letzten Tage
-und viel Rauschen. Die Gewichte stehen damit umgekehrt zum Beitrag.
-
-## Quellen
-
-| Aktie | distill-Firmendossier (9.10.) | Perplexity sonar-pro | Tiefenrecherche |
-|---|---|---|---|
-| NU | 2.102 Zeichen | 3.10. | 6.10. |
-| ARGX | keins, nur Sektor | 3.10. | 7.10. |
-| STR.VI | keins, nur Sektor | 5.10. | 7.10. |
-| ORCL | 12.890 Zeichen mit Sektor | 3.10. | – |
-| NKE | 6.656 mit Sektor | 3.10. | – |
-| CRWV | 12.923 mit Sektor | 3.10. | – |
+**Ergebnis:** Den Narrativ-Score bestimmen Perplexity-Brief und Tiefenrecherche; distill verschiebt ihn
+um höchstens 0,5 Punkte, so viel wie drei Lesungen derselben Quelle untereinander streuen. Die
+Tiefenrecherche verschiebt ihn um bis zu 1,5 Punkte und war bei acht der neun Aktien, für die es eine
+gibt, die Quelle mit dem meisten Gewicht für eine Entscheidung; bei Apple war es der Brief. distill war
+es bei keiner Aktie. Dafür bestimmt distill allein, wie viel der Narrativ-Score im Gesamturteil wiegt:
+Mit einem Firmendossier liegt die Confidence bei 0,67–0,90, ohne bei 0,20–0,30, auch mit
+Tiefenrecherche. Die Gewichte stehen damit umgekehrt zum Beitrag.
 
 ## Die Narrative-Stufe je Quelle (`lauf.ts`, `roh/lesungen.jsonl`)
 
-Die echte Stufe (`gpt-5.4-mini`, drei Lesungen, Median) mit D = distill, P = Perplexity-Brief,
-R = Tiefenrecherche. Confidence wie in der Produktion (`narrativeMaterial` × Faktor aus der Spanne).
+Die echte Stufe (`gpt-5.4-mini`, drei Lesungen, Median), D = distill, P = Perplexity-Brief,
+R = Tiefenrecherche; Confidence wie in der Produktion. Je Aktie der jüngste Lauf.
 
 | Aktie | D | P | R | DP | PR | DPR |
 |---|---|---|---|---|---|---|
+| ORCL | 5,5 / 0,55 | 6,0 / 0,26 | 6,0 / 0,30 | 5,5 / 0,82 | 6,5 / 0,25 | 6,0 / 0,82 |
+| NKE | 4,0 / 0,60 | 3,0 / 0,26 | 3,5 / 0,27 | 3,0 / 0,90 | 4,0 / 0,25 | 3,5 / 0,67 |
+| NVDA | 6,5 / 0,55 | 7,0 / 0,23 | 6,5 / 0,27 | 6,5 / 0,82 | 6,5 / 0,30 | 6,5 / 0,90 |
+| MSFT | 6,0 / 0,50 | 7,5 / 0,20 | 6,0 / 0,30 | 7,0 / 0,90 | 6,0 / 0,30 | 5,5 / 0,82 |
+| AAPL | 6,5 / 0,60 | 5,5 / 0,21 | 5,0 / 0,25 | 6,0 / 0,82 | 6,0 / 0,27 | 6,0 / 0,90 |
+| SAP | 7,5 / 0,55 | 5,0 / 0,26 | 6,5 / 0,30 | 5,0 / 0,82 | 6,0 / 0,27 | 6,5 / 0,82 |
 | NU | 7,0 / 0,60 | 7,5 / 0,27 | 6,5 / 0,30 | 8,0 / 0,82 | 8,0 / 0,27 | 8,0 / 0,82 |
 | ARGX | – / 0,07 | 7,5 / 0,27 | 6,5 / 0,18 | 7,0 / 0,30 | 8,0 / 0,22 | 7,0 / 0,33 |
 | STR.VI | – / 0,07 | 7,5 / 0,04 | 7,0 / 0,27 | 7,0 / 0,14 | 7,0 / 0,30 | 7,0 / 0,33 |
-| ORCL | 5,0 / 0,55 | 6,0 / 0,25 | | 6,0 / 0,75 | | |
-| NKE | 4,0 / 0,58 | 3,0 / 0,27 | | 3,0 / 0,90 | | |
 | CRWV | 7,5 / 0,54 | 6,3 / 0,27 | | 6,9 / 0,90 | | |
 
-Score / Confidence; – heißt Enthaltung. Jede Kombination mit Perplexity bewertet alle oder fast alle
-fünf Dimensionen. distill allein enthält sich bei den Aktien ohne Firmendossier.
+Score / Confidence; – heißt Enthaltung. Die Spanne zwischen drei Lesungen liegt in jeder Kombination im
+Median bei 0,5.
 
-- **Score:** DP gegen P unterscheidet sich um 0,0 bis 0,6 Punkte. Wo distill allein abweicht (ORCL 5,0,
-  CRWV 7,5), zieht Perplexity das Ergebnis zu sich.
-- **Confidence:** Mit Firmendossier 0,75–0,90, ohne 0,25–0,30. Die Tiefenrecherche hebt sie nicht, weil
-  sie mit dem Brief als *eine* Quelle zählt (das bessere von beiden). STR.VI zeigt die andere Seite: Der
-  Brief findet kaum unabhängige Belege und bringt nur 0,04, die Tiefenrecherche 0,27.
+- **distill:** P gegen DP und PR gegen DPR unterscheiden sich um 0,0 bis 0,5 Punkte. Wo distill allein
+  abweicht (SAP 7,5, CRWV 7,5, NKE 4,0), ziehen die anderen Quellen das Ergebnis zu sich.
+- **Tiefenrecherche:** P gegen PR verschiebt um bis zu 1,5 Punkte (MSFT 7,5 → 6,0, NKE 3,0 → 4,0,
+  SAP 5,0 → 6,0), also über das Rauschen hinaus.
+- **Confidence:** Das Firmendossier zählt pauschal 0,5. Brief und Tiefenrecherche zählen zusammen als
+  *eine* Quelle (die bessere von beiden), höchstens 0,3; die Tiefenrecherche hebt die Confidence daher
+  nicht. STR.VI zeigt die andere Seite: Der Brief findet kaum unabhängige Belege und bringt 0,04.
 
-## Die Quellen im Vergleich
+## Die Quellen nebeneinander (`vergleich/`)
 
-Je Aktie las eine frische Claude-Instanz die drei Texte nebeneinander, nach einem festen Raster
-(Aktualität, Abdeckung der fünf Dimensionen, harte Zahlen, Belegart, Gegenargumente, Exklusives,
-Widersprüche, Rauschen). Im Kern:
+Je Aktie las eine frische Claude-Instanz die drei Texte nach einem festen Raster (Aktualität, fünf
+Dimensionen, harte Zahlen, Belegart, Gegenargumente, Exklusives, Widersprüche, Rauschen). Die Texte der
+zweiten Runde stehen in `vergleich/`, die der ersten im Verlauf dieser Sitzung.
 
-| Aktie | trägt am meisten | was nur distill hat | was ohne distill fehlte |
-|---|---|---|---|
-| ORCL | Perplexity: Q1-Zahlen, Prognose, Finanzierungslücke, Prüftermin 10.12. | die Woche nach dem Brief: OpenAI-Umsatzrate, Anleihe bei 82 Cent, CDS; Oracles Gegendarstellung zur Force Majeure | die jüngste Kreditmarkt-Lage und eine Korrektur an Perplexitys Lesart |
-| NKE | Perplexity: Q1-Zahlen, Prognose, China-Anteil 27 → 16 %, Stornierungen | Nike Mind, Rückkehr in den Handel, Imageschaden in China | wenig; der neuere Stand ist fast nur Chartkommentar |
-| CRWV | Perplexity: Q2-Zahlen, Prognose, Zinslast, Prüfgrößen bis 16.11. | Kunden (OpenAI, Meta mit Zahlungspflicht), Moody's-Investment-Grade, SemiAnalysis-Ranking, 4,2 GW zugesagt gegen 1,5 GW in Betrieb | die einzigen Belege zur Wettbewerbsposition |
-| NU | Tiefenrecherche: Kreditrisiken (98 % unbesichert), Finanzvorstand, Mexiko-Regulierung | US-Start, Nu Global, Umsatz je Kunde gegen etablierte Banken | die Produktseite und eine Gegenprobe zu einer Zahl der Tiefenrecherche |
-| ARGX | Tiefenrecherche: Wettbewerb (EPIC), verfehlte Untergruppe, Kostenträger, Meilensteine | nichts zur Firma | nichts |
-| STR.VI | Tiefenrecherche: S&P zur Marge, Segmentverlust, Kartellstrafe, Rasperia-Klage | nichts zur Firma | nichts |
+| Aktie | trägt am meisten | was nur distill hat |
+|---|---|---|
+| ORCL | Tiefe: alle fünf Dimensionen mit Zahlen, Marge, Rating, Regulierung, ohne die Rechenfehler des Briefs | Anleihe bei 82 Cent und CDS (9.10.), OpenAI-Run-Rate (8.10.) |
+| NKE | Tiefe: Rückgang nach Segment, Kanal und Region, Wirtschaftlichkeit von »Pace« | Dividendenfrage, Ladenschließungen, Markenschaden in China |
+| NVDA | Tiefe: Margenprognose, Kartellverfahren, 105 Mrd. $ Restwertgarantien | die Oktober-Signale: OpenAI-Run-Rate, Beteiligungen, H200-Abgabe |
+| MSFT | Tiefe: Wettbewerb, Regulierung, 45 % des Auftragsbestands von OpenAI | Engpass bis 2027, Strom und Gebäude, E7, Preismodell |
+| AAPL | Brief: Quartal, Patenturteil über 5,7 Mrd. $, Prüftermin 29.10. | Duo-Preis, Preiserhöhungen wegen Speicher, Datenschutzkritik |
+| SAP | Tiefe: Margen, Cashflow, richtige Prognose, Kartellamt, Celonis, Migrationsstand | JPMorgan »KI-gefährdet« (4.10.), Accenture-Partnergeschäft |
+| NU | Tiefe: Kreditrisiken, Finanzvorstand, Mexiko-Regulierung | US-Start, Nu Global, Umsatz je Kunde gegen etablierte Banken |
+| ARGX | Tiefe: Wettbewerb, verfehlte Untergruppe, Kostenträger, Meilensteine | nichts zur Firma |
+| STR.VI | Tiefe: S&P zur Marge, Segmentverlust, Kartellstrafe, Rasperia-Klage | nichts zur Firma |
+| CRWV | Brief: Q2, Prognose, Zinslast, Prüfgrößen | Kunden, Moody's-Rating, SemiAnalysis-Ranking, zugesagte gegen laufende Leistung |
 
-Weitere Befunde aus den Vergleichen:
+**distill** ist die einzige Quelle für die Tage nach dem Brief und hat bei einzelnen Firmen exklusive
+Belege zur Position. Daneben ein Viertel bis die Hälfte Chartmarken und Bewertung, Sektordossiers über
+fremde Branchen (Autos bei Nike, Chips und Hyperscaler bei Apple und SAP) und Zahlen aus zweiter Hand,
+teils falsch datiert (MSFT: RPO vom 29.7. als 24.9.).
 
-- **Rauschen in distill:** ein Viertel bis 40 % Chartmarken bei ORCL, NKE und CRWV, dazu Sektordossiers
-  über andere Branchen (Autos und Restaurants bei Nike, Marktbreite und Micron bei Oracle).
-- **Perplexity etikettiert zu großzügig:** Firmenzahlen stehen als »unabhängig belegt« da, bei ORCL alle
-  sechs Thesen. Dazu Rechenfehler (ORCL: RPO +15 % statt +20 %) und eine zu positive Lesart
-  (ARGX: verfehlte Untergruppe bei Myositis nicht erwähnt).
-- **Die Tiefenrecherche korrigiert den Brief** bei ARGX und STR.VI: Termine, fehlende Zahlen, die
-  Lesart der Marge, die angebliche Prognose von argenx. Aktueller als der Brief ist sie kaum; fast
-  nichts liegt nach Mitte September.
-- **Der Brief ist eine Woche alt** (3.10.), distill vom 9.10. Was in dieser Woche geschah, steht nur in
-  distill (ORCL: Anleihe und OpenAI-Zahlen).
+**Der Perplexity-Brief** liefert die Quartalszahlen und Gegenargumente mit Prüfpunkt, ist aber eine
+Woche alt. Er etikettiert zu großzügig (Firmenzahlen und Management-Deutungen als »unabhängig«), rechnet
+falsch (ORCL: RPO +15 % statt +20 %, OCI-Vorquartal aus dem Vorjahreswachstum abgeleitet) und nennt
+unmögliche Termine (NKE: Q3-Bericht vor Quartalsende).
+
+**Die Tiefenrecherche** ist die breiteste Quelle: Regulierung und Wettbewerb fast nur dort, und sie
+korrigiert den Brief mehrfach (SAP-Prognose, NKE-Prognose, ARGX-Myositis, STR.VI-Termine). Sie ist kaum
+aktueller, viel liegt über 30 Tage zurück, sie überetikettiert ebenfalls und nennt Termine an
+Wochenenden (NVDA, MSFT). Über die API kam sie für AAPL und SAP als Fließtext statt gegliedert zurück;
+SAP bricht mitten im Satz ab, obwohl die API `stop` meldet. Sie kostete über die API 0,59–0,89 $ je Aktie.
 
 ## Was daraus folgt
 
-1. **Ohne distill käme der Screener inhaltlich aus**, verlöre aber die letzten Tage und bei einzelnen
-   Firmen Belege zur Position (CRWV, NU). Der Narrativ-Score bliebe nahezu gleich.
-2. **Die Gewichte stimmen nicht mit dem Beitrag überein.** Das Firmendossier zählt pauschal 0,5, auch
-   als Leerformel; Perplexity zählt nach unabhängigen Belegen bis 0,3, die Tiefenrecherche nicht
-   zusätzlich. Ein Vorschlag, zu messen bevor er gebaut wird: distill nach eigenem Inhalt gewichten
-   (Länge ohne Chartsätze, oder ganz ohne Pauschale), die Tiefenrecherche als eigene Quelle zählen.
-3. **Die Etiketten des Briefs schärfen:** »unabhängig« nur für Belege, die nicht vom Unternehmen
-   stammen. Das ist eine Frage an den Perplexity-Prompt.
-
-## Offen
-
-Der Eigentümer trägt Tiefenrecherchen für bekannte Firmen nach (vorgeschlagen: ORCL, NKE, NVDA, MSFT,
-AAPL, SAP). Dann laufen `lauf.ts` und der Vergleich für diese Aktien noch einmal.
+1. **Ohne distill käme der Screener inhaltlich aus.** Der Narrativ-Score bliebe im Rauschen gleich;
+   verloren gingen die Tage nach dem Brief und bei einzelnen Firmen exklusive Belege.
+2. **Die Gewichte passen nicht zum Beitrag.** Vorschlag, vor dem Bauen zu messen: das Firmendossier nach
+   eigenem Inhalt gewichten statt pauschal 0,5 (ohne Chartsätze, eine Leerformel zählt nichts), und die
+   Tiefenrecherche als eigene Quelle zählen statt im Maximum mit dem Brief.
+3. **»Unabhängig« schärfen,** in Brief und Tiefenrecherche: nur für Belege, die nicht vom Unternehmen
+   stammen. Eine Frage an die Perplexity-Prompts.
+4. **Tiefenrecherche über die API prüfen:** Warum kam sie für AAPL und SAP ungegliedert zurück, und
+   warum endet SAP mitten im Satz? Ungegliedert zählt sie mit dem pauschalen Altgewicht.
+5. **Aktualität ist distills eigentlicher Beitrag.** Ein Brief, der sieben Tage alt sein darf, lässt die
+   Lücke, die distill füllt; ob ein kürzeres Fenster für den Brief distill ersetzt, wäre eine Kostenfrage.

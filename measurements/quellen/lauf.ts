@@ -57,6 +57,8 @@ async function readOnce(prompt: string): Promise<any> {
 const CONFIGS = ['D', 'P', 'R', 'DP', 'PR', 'DPR'] as const;
 
 const out = join(HERE, 'roh/lesungen.jsonl');
+// Ein späterer Lauf für dasselbe Symbol ersetzt in der Auswertung den früheren.
+const LAUF = new Date().toISOString();
 mkdirSync(join(HERE, 'roh'), { recursive: true });
 
 for (const symbol of process.argv.slice(2)) {
@@ -86,13 +88,13 @@ for (const symbol of process.argv.slice(2)) {
     }
   }));
   const docs = Object.fromEntries(Object.entries(src).map(([k, d]) => [k, d && { id: d.id, producedAt: d.producedAt, variant: d.variant }]));
-  for (const r of results) appendFileSync(out, `${JSON.stringify({ kind: 'read', symbol, docs, ...r })}\n`);
+  for (const r of results) appendFileSync(out, `${JSON.stringify({ kind: 'read', lauf: LAUF, symbol, docs, ...r })}\n`);
   for (const c of configs) {
     const reads = results.filter((r) => r.c === c && r.ok).map((r: any) => ({ ...r.output, score: narrativeScoreFrom(r.output.dimensions), read: r.read }));
     const combined = combineNarrativeReads(reads);
     const material = narrativeMaterial(c.includes('D') ? src.D.data : null, c.includes('P') ? src.P.data : null, undefined, c.includes('R') ? src.R.data : null);
     appendFileSync(out, `${JSON.stringify({
-      kind: 'config', symbol, c, docs, ok: reads.length,
+      kind: 'config', lauf: LAUF, symbol, c, docs, ok: reads.length,
       score: combined?.score ?? null, spread: combined?.spread ?? null,
       confidence: combined ? material.confidence * combined.confidenceFactor : null,
       material: { confidence: material.confidence, sources: material.sources },
