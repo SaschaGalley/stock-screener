@@ -90,3 +90,18 @@ SAP bricht mitten im Satz ab, obwohl die API `stop` meldet. Sie kostete über di
    warum endet SAP mitten im Satz? Ungegliedert zählt sie mit dem pauschalen Altgewicht.
 5. **Aktualität ist distills eigentlicher Beitrag.** Ein Brief, der sieben Tage alt sein darf, lässt die
    Lücke, die distill füllt; ob ein kürzeres Fenster für den Brief distill ersetzt, wäre eine Kostenfrage.
+
+## Umgesetzt am 10.10.2026
+
+- **distill aus der Analyse:** `scoring.distill`, ab jetzt aus. Der nächtliche Schritt holt die
+  Dossiers weiter und hebt sie auf; die Analyse liest sie nur, wenn der Schalter in der Verwaltung an
+  ist (Karte »2 · Distill«, »In die Analyse«).
+- **Neue Gewichte** (`SOURCE_WEIGHT` in `src/score-service.ts`): Brief bis 0,6, Tiefenrecherche bis
+  0,3 daneben statt als das bessere von beiden, Firmendossier 0,2, nur Insights 0,1, Sektoren 0,05,
+  Suche 0,1. Ein Bericht als Fließtext bringt die Hälfte seines Gewichts.
+- **Wirkung** (`gewichte.ts`, alle 139 Aktien, gespeicherte Dokumente und jüngstes Urteil, ohne
+  Modell-Call): Der Anteil der Narrative-Stufe am Gesamturteil sinkt im Median von 30 % auf 23 %; mit
+  Tiefenrecherche bleibt er bei 28 % (alt 29 %). Über 30 % lagen 71 Aktien, jetzt 6. Die gespeicherten
+  Briefs tragen noch die alten, zu großzügigen Etiketten; mit der Herkunft statt des Ja oder Nein
+  bleiben im Probelauf (ORCL, NKE, NVDA, AAPL) drei von vier bei vollem Gewicht, Nike bei zwei
+  Dritteln.

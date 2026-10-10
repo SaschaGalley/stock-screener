@@ -120,6 +120,16 @@ export const AppConfigSchema = z.object({
     narrativeMaxWeight: z.number().min(0).max(1).default(NARRATIVE_MAX_WEIGHT),
     /** How far the synthesis model may move the blended score, in points. */
     adjustmentLimit: z.number().min(0).max(3).default(ADJUSTMENT_LIMIT),
+    /**
+     * Whether Distill's dossiers go into the narrative stage. Off since 10
+     * October 2026: read side by side over ten stocks, they moved the narrative
+     * score by no more than three reads of one source spread among themselves,
+     * carried the most for none, and came almost entirely from five YouTube
+     * channels, a quarter to half of it chart levels (`measurements/quellen`).
+     * The nightly step goes on fetching them for the archive; this decides
+     * only whether an analysis reads them.
+     */
+    distill: z.boolean().default(false),
   }).prefault({}),
 
   /**

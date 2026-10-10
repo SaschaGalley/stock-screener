@@ -391,13 +391,21 @@ export default function AdminPage() {
           <Toggle
             checked={config.steps.distill.enabled}
             onChange={(v) => patch((d) => { d.steps.distill.enabled = v; })}
-            label="Distill einbeziehen"
+            label="Dossiers abholen"
             hint={meta.keys.distill ? meta.distillApiUrl : 'DISTILL_API_KEY fehlt — Schritt wird übersprungen'}
+          />
+          <Toggle
+            checked={config.scoring.distill}
+            onChange={(v) => patch((d) => { d.scoring.distill = v; })}
+            label="In die Analyse"
+            hint="Gilt für jede Analyse, nachts wie von Hand."
           />
           <p className="text-xs leading-relaxed text-ink-500">
             Holt das Firmen-Dossier, die Dossiers der Sektoren der Aktie und die rohen
-            Insights, die keines davon wiedergibt. Kostenlos — es gibt nichts mehr
-            einzustellen, weil kein bezahlter Aufruf mehr nötig ist.
+            Insights, die keines davon wiedergibt, und hebt sie auf. Kostenlos. In die
+            Analyse gehen sie seit dem 10.10.2026 nicht mehr: Neben dem Perplexity-Brief
+            und der Tiefenrecherche verschoben sie den Narrativ-Score nicht über das
+            Rauschen hinaus und bestanden zu einem Viertel bis zur Hälfte aus Chartmarken.
           </p>
         </Card>
 

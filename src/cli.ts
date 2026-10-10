@@ -325,10 +325,11 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   // ── 1b. News (cached 30 min) + Rates + Sector Medians + Perplexity ────────
   const usePplx   = input.pplx !== null && input.pplx !== undefined;
   const pplxModel: PerplexityModelId = input.pplx ?? DEFAULT_PERPLEXITY_MODEL;
-  // Distill is always-on when the key is configured — there's no per-run
-  // toggle. Its dossiers cost nothing to read, so they are always included, as
-  // one qualitative source among others (see `distillDossierSection`).
-  const useDistill = !!cfg.distillApiKey;
+  // Distill goes in only when the administration says so (`scoring.distill`),
+  // for every analysis alike; then as one qualitative source among others (see
+  // `distillDossierSection`). The nightly step archives it either way.
+  const scoring = (await readAppConfig()).scoring;
+  const useDistill = !!cfg.distillApiKey && scoring.distill;
   emit({ stage: 'rates', message: 'Fetching macro rates + news + sector medians'
     + (usePplx ? ' + Perplexity' : '')
     + (useDistill ? ' + Distill briefings' : '')
@@ -499,7 +500,6 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   const cachedAnalysis = input.force ? null : await readAnalysis(symbol, flags);
   const llmFromCache = cachedAnalysis !== null;
 
-  const scoring = (await readAppConfig()).scoring;
   const promptData: PromptData = {
     dcf, grahamNumber, ratios, reverseDCF, peterLynch, evMultiples,
     ruleOf40, grahamRevised, piotroski, altmanZ, ddm, epv, interestCoverage,

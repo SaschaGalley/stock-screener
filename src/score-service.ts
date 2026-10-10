@@ -72,16 +72,43 @@ export interface NarrativeMaterial {
   empty:      boolean;
 }
 
-const SOURCE_WEIGHT = {
-  companyDossier: 0.50,
-  companyInsights: 0.30,
-  perplexity:     0.30,
-  sectors:        0.10,
-  search:         0.10,
+/**
+ * What each source may add to the narrative's confidence, at most.
+ *
+ * Set on 10 October 2026 by what each was measured to carry
+ * (`measurements/quellen/BERICHT.md`). Read alone and in combination over ten
+ * stocks, the brief and deep research set the narrative score; deep research
+ * was the source that mattered most for eight of the nine that had one, and
+ * moved the score by up to one and a half points. A Distill dossier moved it by
+ * no more than three reads of one source spread among themselves, and carried
+ * the most for none. Until then a dossier counted 0.5 for being there — a line
+ * saying nothing was reported included — the brief at most 0.3, and deep
+ * research only as the better of the two reports, so the source that carried
+ * least set most of the narrative's weight. Distill reaches the stage only
+ * when the administration lets it (`scoring.distill`).
+ */
+export const SOURCE_WEIGHT = {
+  perplexity:      0.60,
+  deepResearch:    0.30,
+  companyDossier:  0.20,
+  companyInsights: 0.10,
+  sectors:         0.05,
+  search:          0.10,
 } as const;
 
-/** Independent items at which a Perplexity brief earns its full weight. */
+/** Independent items at which a Perplexity report earns its full weight. */
 const PERPLEXITY_FULL_WEIGHT_ITEMS = 6;
+
+/**
+ * A Perplexity report's share of its source weight: by its independent items
+ * when it is structured — six or more earn all of it, none earns nothing — and
+ * half when it is prose, which can be neither counted nor checked. The old
+ * free-text brief counted in full, so a page of press-release paraphrase
+ * bought the same weight as a page of dated contrary evidence.
+ */
+function reportShare(p: PerplexityContext): number {
+  return p.findings ? Math.min(1, independentItems(p.findings) / PERPLEXITY_FULL_WEIGHT_ITEMS) : 0.5;
+}
 
 /**
  * Evidence that does not come from the company's own mouth.
@@ -151,22 +178,17 @@ export function narrativeMaterial(
     sources.push('distill-briefing');
   }
 
-  // Deep research is the same kind of source as the brief, searched harder.
-  // It counts once, as the better of the two — a second report on the same
-  // company is not a second independent voice.
-  const briefs = [perplexity, deepResearch].filter((p): p is PerplexityContext => !!p?.synthesis?.trim());
-  if (briefs.length > 0) {
-    // Weighted by what it found, not by having answered. The old free-text
-    // synthesis always counted in full, so a page of press-release paraphrase
-    // bought the same narrative weight as a page of dated contrary evidence.
-    // A structured answer is weighed by its independent items — six or more
-    // earns the full share, none earns nothing. An old unstructured row keeps
-    // the flat weight until the prompt hash retires it.
-    weight += Math.max(...briefs.map((p) => p.findings
-      ? SOURCE_WEIGHT.perplexity * Math.min(1, independentItems(p.findings) / PERPLEXITY_FULL_WEIGHT_ITEMS)
-      : SOURCE_WEIGHT.perplexity));
-    if (perplexity?.synthesis?.trim()) sources.push('perplexity');
-    if (deepResearch?.synthesis?.trim()) sources.push('perplexity-deep');
+  // Deep research is the same kind of source as the brief, searched harder, and
+  // counts beside it rather than instead of it: side by side it found the
+  // regulation, the competitors and the corrections the brief had missed. It
+  // counts for less, because much of what it holds the brief holds too.
+  if (perplexity?.synthesis?.trim()) {
+    weight += SOURCE_WEIGHT.perplexity * reportShare(perplexity);
+    sources.push('perplexity');
+  }
+  if (deepResearch?.synthesis?.trim()) {
+    weight += SOURCE_WEIGHT.deepResearch * reportShare(deepResearch);
+    sources.push('perplexity-deep');
   }
 
   if ((searchResults?.length ?? 0) > 0) {

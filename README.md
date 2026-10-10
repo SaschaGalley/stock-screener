@@ -1111,13 +1111,26 @@ Mechanics that keep it honest:
   never are, even when a newspaper repeats them) and asks for the proponents by
   name. Items are still capped — 3 / 6 / 4 / 6 / 5 / 5 / 4 — the strongest, not
   all of them.
+- **Where an item comes from, not whether it is independent.** Defined but asked
+  as a yes or no, the label held in no brief read side by side on 10 October
+  2026: Oracle's six theses all came back independent, quarterly results counted
+  as independent once a newspaper had carried them. The fourth version asks for
+  each item's `origin` — the company, an unconfirmed report, or the kind of
+  third party (analyst, regulator, court, customer, competitor, industry data,
+  the press's own reporting, a short seller) — and the code derives
+  independence from it (`ORIGINS` in `data/perplexity.ts`); an origin it does
+  not know is never independent. A bull thesis that only analysts argue is
+  `opinion`, as on the bear side. On four stocks the independent items fell from
+  42 of 44 to 14 of 45.
 - **A truncated answer is salvaged**, not discarded: `salvageTruncatedJson` cuts
   back to the last finished item and closes what is open. Nothing is invented to
   replace the item that was being written.
 - **Weighted by independent evidence.** Narrative confidence counts independent
-  items — six or more earns Perplexity its full share, none earns nothing. The
-  old synthesis always counted in full, so press-release paraphrase bought the
-  same weight as dated contrary evidence.
+  items — six or more earns a report its full share, none earns nothing, and a
+  report that came back as prose earns half. The old synthesis always counted in
+  full, so press-release paraphrase bought the same weight as dated contrary
+  evidence. Since 10 October 2026 the brief may bring up to 0.6, deep research
+  another 0.3 (`SOURCE_WEIGHT` in `score-service.ts`).
 - **The prompt hash is compared.** It existed from the start and was never read,
   so a rewritten brief would have gone on serving answers to the old one for up
   to two weeks. A stored answer from another prompt is now a cache miss.
@@ -1140,8 +1153,17 @@ Deep research is clearly the most thorough, at eight to ten times the price, so
 it is **bought by hand** (Research & News → Deep Research) and **kept beside**
 the regular brief, not in its place: every analysis inside
 `perplexity.deepMaxAgeDays` (60 days by default) reads both. Where they
-disagree the prompt says the newer wins; for the narrative's weight they count
-once, as the better of the two.
+disagree the prompt says the newer wins. For the narrative's weight they count
+side by side since 10 October 2026, deep research for half as much as the brief:
+read next to the brief it found the regulation, the competitors and the
+corrections the brief had missed, and it moved the narrative score where Distill
+did not (`measurements/quellen/BERICHT.md`).
+
+Through the API, deep research wrote a report instead of the JSON on two of six
+calls that day, and one of them broke off mid-sentence under a finish reason of
+`stop`. It is now sent the brief's shape as a JSON schema, derived from the
+example the prompt ends with (`BRIEF_RESPONSE_FORMAT`), and an answer that stops
+before its end is kept and marked `truncated`, whatever the API reports.
 
 Two mechanics the reasoning models need:
 
@@ -2268,7 +2290,7 @@ Three more corrections at the same layer:
 
 The payload marks which basis it carries (`trailingSource`); the models rebuild
 what they can for payloads stored before it.
-| Distill | Optional curated multi-source briefings per ticker (RSS, YouTube, web). Weighted **above** Perplexity / raw search because the editorial filter happens upstream |
+| Distill | Rolling dossiers per company and sector, condensed from the channels and newsletters Distill follows — on 10 October 2026 almost entirely five YouTube channels. Archived nightly; read by the analysis only when `scoring.distill` is on, which it is not since that day |
 | Brave / Tavily / Claude / OpenAI | Optional web search for current events |
 
 ## Project structure
@@ -2512,7 +2534,7 @@ Per symbol, in order:
 | # | Step | What it does | Default |
 | --- | --- | --- | --- |
 | 1 | **Marktdaten** | Yahoo + Finnhub + FRED + macro + technicals, and one recorded history point | on |
-| 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`). Free, with nothing to configure | on |
+| 2 | **Distill** | The rolling dossiers for the company and each sector it sits in, plus the raw insights those dossiers do not reproduce (`GET …/dossier/content?include=insights`). Free. Fetched for the archive; whether an analysis reads them is `scoring.distill` (off since 10 October 2026) | on |
 | 3 | **Analyse** | Only when the newest verdict is older than *max. Alter*; forced past the LLM cache so it produces a genuinely new one | on, 5 days, `gpt-6.1-sol` |
 | 4 | **Referenz** | After the whole watchlist, on full runs only: the next members of the [reference universe](#the-reference-universe) (S&P 1500, EURO STOXX 50, DAX), numbers and factor score only | on, 250 per night |
 
