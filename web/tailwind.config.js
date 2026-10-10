@@ -16,6 +16,7 @@ export default {
         sans:    ['var(--font-sans)'],
         mono:    ['var(--font-mono)'],
         display: ['var(--font-display)'],
+        article: ['var(--font-article)'],
       },
       borderRadius: {
         DEFAULT: 'var(--radius)',

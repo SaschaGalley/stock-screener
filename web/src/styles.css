@@ -68,6 +68,10 @@
         ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Monaco,
         "Cascadia Mono", monospace;
     --font-display: var(--font-sans);
+    /* The report on a stock (ArticleTab): a magazine's serif, from the system. */
+    --font-article:
+        "Iowan Old Style", Charter, "Bitstream Charter", ui-serif, Georgia,
+        Cambria, serif;
 
     /* NB: no --text-* here. In Tailwind v4 that namespace *is* the font-size
        scale, so defining it would silently resize every `text-xs`/`text-sm`

@@ -16,6 +16,14 @@ describe('the report\'s sections', () => {
     assert.match(p, /erfindest du nicht/);
   });
 
+  it('ask for a short, chosen text rather than every figure of the material', () => {
+    const p = sectionPrompt('figures', ctx, 'x');
+    assert.match(p, /110 bis 180 Wörter/);
+    assert.match(p, /Auswählen statt aufzählen/);
+    assert.match(p, /Höchstens eine Zahl je Satz/);
+    assert.match(p, /du schreibst nicht über das\s+Material/);
+  });
+
   it('say so where a section has no material, rather than leave the model to fill it', () => {
     assert.match(sectionPrompt('chart', ctx, '  '), /Kein Material/);
   });
