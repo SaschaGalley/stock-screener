@@ -22,10 +22,13 @@ import {
   readAnalystActions, readInsiderTransactions, readPriceBars, readPriceBarsMany, readPriceEvents, readVerdictChanges,
 } from './db/history-store.js';
 import {
-  estimateHistory, latestSnapshot, listDocuments, listSymbols, readFinancialsLax, readFundamentals, readSeries, readSeriesForAll,
+  estimateHistory, latestSnapshot, latestSnapshotLax, listDocuments, listSymbols, readFinancialsLax, readFundamentals, readSeries, readSeriesForAll,
   snapshotHistory, symbolFacts, type Series,
 } from './db/store.js';
 import { revenueRevisions, type YearRevision } from './analysis/estimate-revisions.js';
+import {
+  marginYearsFrom, marginYearsFromFinnhub, MIN_YEARS, type FinnhubSeries, type MarginHistory,
+} from './analysis/cycle.js';
 import { journalForSymbols } from './db/journal-store.js';
 import { newestMarketBrief } from './db/market-store.js';
 import { deNumber, fmtBigDe, fmtPriceDe } from './format.js';
@@ -55,6 +58,19 @@ export async function analystTrackRecord(symbol: string): Promise<TrackRecordVie
 /** This fiscal year's and the next's revenue consensus against their own past in the archive (`analysis/estimate-revisions.ts`). */
 export async function estimateRevisions(symbol: string): Promise<YearRevision[] | null> {
   return revenueRevisions(await estimateHistory(symbol), new Date().toISOString());
+}
+
+// ── The margins through the cycle ───────────────────────────────────────────
+
+/**
+ * Every fiscal year's margins on record (`analysis/cycle.ts`): Finnhub's
+ * series as the newest refresh archived them, else Yahoo's few years.
+ */
+export async function marginHistory(symbol: string): Promise<MarginHistory | null> {
+  const finnhub = marginYearsFromFinnhub(await latestSnapshotLax<FinnhubSeries>(symbol, 'finnhub_series'));
+  if (finnhub.filter((y) => y.operatingMargin !== null).length >= MIN_YEARS) return { source: 'finnhub', years: finnhub };
+  const f = await readFinancialsLax(symbol);
+  return f?.fundamentalsHistory ? { source: 'yahoo', years: marginYearsFrom(f.fundamentalsHistory) } : null;
 }
 
 // ── Who covers the stock, and what each firm says now ───────────────────────

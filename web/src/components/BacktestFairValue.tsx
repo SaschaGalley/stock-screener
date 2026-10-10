@@ -1,5 +1,6 @@
 import type { BacktestResponse } from '../types';
-import { FAIR_HORIZONS, FAIR_LENSES, FAIR_POSITIONS } from '../../../src/backtest/fair-value';
+import { agreementKey, FAIR_HORIZONS, FAIR_LENSES, FAIR_POSITIONS } from '../../../src/backtest/fair-value';
+import { AGREEMENT_LEVELS } from '../../../src/analysis/fair-agreement';
 
 type Backtest = NonNullable<BacktestResponse['backtest']>;
 
@@ -106,6 +107,41 @@ export default function BacktestFairValue({ bt }: { bt: Backtest }) {
           ))}
         </tbody>
       </table>
+
+      {fv.agreementShare && (
+        <>
+          <div className="border-t border-ink-800 px-4 py-2 text-xs text-ink-400">
+            Die Lücke zum fairen Wert, getrennt danach, wie einig sich die primären Modelle waren (höchstes minus niedrigstes,
+            durch die Mitte: unter 0,5, unter 1, darüber) — taugt der faire Wert mehr, wo sie nah beieinander liegen? IC, in
+            Klammern t und der IC innerhalb des Sektors:
+          </div>
+          <table className="w-full min-w-[640px] text-sm">
+            <thead className="text-xs text-ink-400">
+              <tr className="border-b border-ink-800">
+                <th className="px-4 py-1.5 text-left font-normal">Modelle</th>
+                <th className="px-2 py-1.5 text-right font-normal">Anteil</th>
+                {FAIR_HORIZONS.map((h) => <th key={h} className="px-2 py-1.5 text-right font-normal">IC {months(h)}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {AGREEMENT_LEVELS.map((a) => (
+                <tr key={a.key} className="border-b border-ink-800/60 last:border-0">
+                  <td className="px-4 py-1 text-ink-300">{a.answer} <span className="text-2xs text-ink-500">(Unsicherheit {a.uncertainty})</span></td>
+                  <td className="px-2 py-1 text-right font-mono text-ink-400">{share(fv.agreementShare![a.key] ?? 0)}</td>
+                  {FAIR_HORIZONS.map((h) => {
+                    const r = ic(agreementKey(a.key), h);
+                    return (
+                      <td key={h} className={`whitespace-nowrap px-2 py-1 text-right font-mono ${firm(r?.tStat)}`}>
+                        {num(r?.meanIc, 3)} <span className="text-2xs font-normal text-ink-500">({num(r?.tStat, 1)}, {num(r?.neutralIc, 3)})</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <div className="border-t border-ink-800 px-4 py-2 text-xs text-ink-400">
         Wie oft der Kurs in der Spanne lag, als sie gezogen wurde — und wie oft in derselben Spanne einen Horizont später. Zöge der

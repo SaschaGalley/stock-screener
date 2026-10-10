@@ -3,6 +3,7 @@ import { useMoney } from '../../currency';
 import { AnswerCard, de, pct } from '../chart/shared';
 import type { Tone } from '../../../../src/analysis/chart-reading';
 import More from '../More';
+import { agreementOf, modelSpread } from '../../../../src/analysis/fair-agreement';
 
 /** "34 % über dem Kurs" */
 const vsPrice = (v: number, price: number) => {
@@ -18,9 +19,9 @@ const toneOf = (mos: number | null): Tone => (mos === null ? 'neutral' : mos >= 
 export function FairValueAnswers({ m, price }: { m: ComputedMetrics; price: number }) {
   const { fmtPrice } = useMoney();
   const p = m.composite.primary, c = m.composite.conservative;
-  const spread = p.min !== null && p.max !== null && p.median ? (p.max - p.min) / p.median : null;
-  // The highest model over the lowest, against the middle: half the middle apart is close for valuation models.
-  const agree = spread === null ? null : spread < 0.5 ? 'Ziemlich einig' : spread < 1 ? 'Teils uneins' : 'Weit auseinander';
+  // The highest model less the lowest, against the middle (`analysis/fair-agreement.ts`).
+  const agree = agreementOf(modelSpread(p));
+  const d = m.dcf;
   return (
     <div className="mb-4 grid gap-3 md:grid-cols-3">
       {p.median !== null && (
@@ -34,9 +35,13 @@ export function FairValueAnswers({ m, price }: { m: ComputedMetrics; price: numb
       {agree && p.min !== null && p.max !== null && (
         <AnswerCard
           question="Wie einig sind sie sich?"
-          answer={agree}
+          answer={`${agree.answer} — Unsicherheit ${agree.uncertainty}`}
           tone="neutral"
-          why={[`von ${fmtPrice(p.min)} bis ${fmtPrice(p.max)}`, `Konfidenz ${de(m.composite.confidence, 1)} von 10`]}
+          why={[
+            `von ${fmtPrice(p.min)} bis ${fmtPrice(p.max)}`,
+            ...(d.fairValueBear !== null && d.fairValueBull !== null ? [`DCF allein: ${fmtPrice(d.fairValueBear)} bis ${fmtPrice(d.fairValueBull)} in vier von fünf Szenarien`] : []),
+            `Verlässlichkeit ${de(m.composite.confidence, 1)} von 10 (wie viele Modelle liefern, wie eng ihre mittlere Hälfte liegt)`,
+          ]}
         />
       )}
       {c.median !== null && (

@@ -46,8 +46,9 @@
  * to the same test before anyone proposes a weight for them: the insiders'
  * open-market buying and selling, from their Form 4 filings as Finnhub keeps
  * them (`insiders.ts`, `analysis/insider-signals.ts`), the dividend and
- * buyback yields (`analysis/payout.ts`), and how much a company invests against
- * its depreciation, its own past and its balance sheet (`analysis/investment.ts`).
+ * buyback yields (`analysis/payout.ts`), how much a company invests against
+ * its depreciation, its own past and its balance sheet (`analysis/investment.ts`),
+ * and its margin against its own past (`analysis/cycle.ts`).
  * Each is also measured in either half of the months (`candidateHalves`).
  *
  * It also fits the weights to what it measured and checks the fit on the half
@@ -73,12 +74,14 @@ import { PILLAR_KEYS } from '../types.js';
 import { insiderHistory } from './insiders.js';
 import { VARIANTS, variantSignals } from './variants.js';
 import { featureArray, TOP_FEATURES, topDecileStudy, type TopRecord } from './top-decile.js';
-import { FAIR_LENSES, fairRecord, fairValueStudy, type FairRecord } from './fair-value.js';
+import { agreementKey, FAIR_LENSES, fairRecord, fairValueStudy, type FairRecord } from './fair-value.js';
+import { AGREEMENT_LEVELS } from '../analysis/fair-agreement.js';
 import { TIMING_GROUPS, TIMING_HORIZONS, timingArray, timingGroup, timingStudy, type TimingRecord } from './timing.js';
 import { TIMING_CANDIDATES } from '../analysis/timing.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
 import { PAYOUT_CANDIDATES } from '../analysis/payout.js';
 import { INVESTMENT_CANDIDATES } from '../analysis/investment.js';
+import { CYCLE_CANDIDATES } from '../analysis/cycle.js';
 import { payloadAt, yahooSector } from './payload.js';
 import {
   BACKTEST_CAVEATS, BacktestResult, departedCaveat, NO_ANALYSTS_CAVEAT, saveBacktestRun, writeBacktestStatus,
@@ -324,7 +327,7 @@ export async function runBacktest(
           }
         }
 
-        for (const cand of [...PAYOUT_CANDIDATES, ...INVESTMENT_CANDIDATES]) {
+        for (const cand of [...PAYOUT_CANDIDATES, ...INVESTMENT_CANDIDATES, ...CYCLE_CANDIDATES]) {
           const value = cand.read(e.financials);
           if (value !== null) push(`${CANDIDATE_PREFIX}${cand.key}`, e.c.symbol, { at, value });
         }
@@ -683,6 +686,16 @@ export function renderBacktest(r: BacktestResult): string {
           const b = fv.positions.find((x) => x.bucket === pos && x.horizon === h);
           return `${h}M ${pc(b?.meanExcess).padStart(7)} (${fmt(b?.tStat, 1)})`;
         }).join('  '));
+    }
+    if (fv.agreementShare) {
+      lines.push('  The primary gap by how far the models agree → IC (t, sector IC):');
+      for (const a of AGREEMENT_LEVELS) {
+        lines.push(`    ${a.answer.padEnd(18)} ${String(Math.round((fv.agreementShare[a.key] ?? 0) * 100)).padStart(3)}%  `
+          + [1, 3, 6, 12].map((h) => {
+            const ic = fv.ics.find((x) => x.key === agreementKey(a.key) && x.horizon === h);
+            return `${h}M ${fmt(ic?.meanIc)} (${fmt(ic?.tStat, 1)}, ${fmt(ic?.neutralIc)})`;
+          }).join('  '));
+      }
     }
     lines.push('  Price inside the range when drawn → a horizon later:');
     for (const g of fv.ranges) {

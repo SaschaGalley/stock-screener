@@ -9,6 +9,7 @@ import VerdictEvidence, { FairValueEvidence } from './VerdictEvidence';
 import Term from './Term';
 import Tip from './Tip';
 import { deProse } from './prose';
+import { agreementOf, modelSpread } from '../../../src/analysis/fair-agreement';
 import type { GlossaryKey } from '../glossary';
 
 interface Props {
@@ -81,6 +82,7 @@ export default function VerdictHero({
   const [showFirms, setShowFirms] = useState(false);
   const p = composite.primary;
   const compositeMoS = p.median !== null ? (p.median - price) / price : null;
+  const agree = agreementOf(modelSpread(p));
   const analystMoS = analyst.targetMeanPrice !== null ? (analyst.targetMeanPrice - price) / price : null;
 
   return (
@@ -150,6 +152,7 @@ export default function VerdictHero({
               <p className="mt-1 text-sm text-ink-400">
                 <Term k="concept.modelRange">Mitte aus {p.models.length} marktnahen Modellen</Term>
                 {p.min !== null && p.max !== null && <> — sie reichen von <span className="font-mono text-ink-200">{fmtPrice(p.min)}</span> bis <span className="font-mono text-ink-200">{fmtPrice(p.max)}</span>.</>}
+                {agree && <> <Term k="concept.fairUncertainty">Unsicherheit {agree.uncertainty}</Term>.</>}
               </p>
               <ModelRange price={price} t={p} fmtPrice={fmtPrice} />
               <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">

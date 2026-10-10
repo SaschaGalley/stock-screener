@@ -15,6 +15,7 @@ import BacktestPortfolios from './BacktestPortfolios';
 import BacktestSetups from './BacktestSetups';
 import BacktestStops from './BacktestStops';
 import { INSIDER_CANDIDATES } from '../../../src/analysis/insider-signals';
+import { CYCLE_CANDIDATES } from '../../../src/analysis/cycle';
 import { INVESTMENT_CANDIDATES } from '../../../src/analysis/investment';
 import { PAYOUT_CANDIDATES } from '../../../src/analysis/payout';
 import { TIMING_CANDIDATES } from '../../../src/analysis/timing';
@@ -24,7 +25,7 @@ type Backtest = NonNullable<BacktestResponse['backtest']>;
 /** How the backtest names a criterion's own signal, and a candidate's (`backtest/run.ts`). */
 const CRITERION_PREFIX = 'criterion.';
 const CANDIDATE_PREFIX = 'candidate.';
-const CANDIDATE_TITLE = new Map([...TIMING_CANDIDATES, ...PAYOUT_CANDIDATES, ...INVESTMENT_CANDIDATES, ...INSIDER_CANDIDATES]
+const CANDIDATE_TITLE = new Map([...TIMING_CANDIDATES, ...PAYOUT_CANDIDATES, ...INVESTMENT_CANDIDATES, ...CYCLE_CANDIDATES, ...INSIDER_CANDIDATES]
   .map((c) => [`${CANDIDATE_PREFIX}${c.key}`, c.title]));
 
 /**

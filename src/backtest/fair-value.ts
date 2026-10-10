@@ -25,6 +25,10 @@
  *   4. Range: how often the price stood inside the range when it was drawn,
  *      and how often it stood inside that same range a horizon later. If the
  *      price moved towards value, the second share would be the larger.
+ *   5. Agreement: the primary gap's IC again, within each level of how far
+ *      the models agree (`analysis/fair-agreement.ts`) — whether the fair value
+ *      is worth more where its models are close, as the page's "Wie einig sind
+ *      sie sich?" implies.
  *
  * The fair value here is the backtest's: no consensus estimates, so the DCF
  * starts from trailing growth, and the rebuilt analyst target stands in for
@@ -36,6 +40,7 @@ import {
   bucketReturns, evaluate, meanTest, type BucketReturn, type Close, type Evaluation, type SignalPoint,
 } from '../analysis/evaluate.js';
 import type { ComputedMetrics } from '../analysis/computeMetrics.js';
+import { AGREEMENT_LEVELS, agreementOf, modelSpread } from '../analysis/fair-agreement.js';
 
 /** The values kept per company-month, in this order. */
 export const FAIR_FIELDS = [
@@ -50,6 +55,9 @@ export const FAIR_LENSES: readonly { key: string; field: FairField; label: strin
   { key: 'fair.conservative', field: 'conservative', label: 'Konservative Linse' },
   { key: 'fair.dcf',          field: 'dcf',          label: 'DCF (Basisfall)' },
 ];
+
+/** The primary gap's signal within one level of agreement. */
+export const agreementKey = (level: string) => `fair.primary@${level}`;
 
 /** Where the price stood in the primary range, low to high. */
 export const FAIR_POSITIONS = ['unter der Spanne', 'unteres Viertel', 'mittlere Hälfte', 'oberes Viertel', 'über der Spanne'] as const;
@@ -108,6 +116,8 @@ export interface FairValueStudy {
   /** How often each position held a stock — of the company-months with a range. */
   positionShare: Record<string, number>;
   ranges: RangeHold[];
+  /** Share of the company-months with a primary range at each level of agreement; absent in older results. */
+  agreementShare?: Record<string, number>;
 }
 
 const median = (xs: number[]) => {
@@ -165,7 +175,12 @@ export function fairValueStudy(input: {
   const n = records.length || 1;
 
   // The gaps as signals, dated the day before their month-end as the score is.
-  const signals = new Map<string, Map<string, SignalPoint[]>>(FAIR_LENSES.map((l) => [l.key, new Map()]));
+  const signals = new Map<string, Map<string, SignalPoint[]>>([
+    ...FAIR_LENSES.map((l) => [l.key, new Map()] as const),
+    ...AGREEMENT_LEVELS.map((a) => [agreementKey(a.key), new Map()] as const),
+  ]);
+  const agreementCount = new Map<string, number>();
+  let spreads = 0;
   const position = new Map<string, SignalPoint[]>();
   const push = (m: Map<string, SignalPoint[]>, symbol: string, p: SignalPoint) => {
     const list = m.get(symbol);
@@ -185,6 +200,12 @@ export function fairValueStudy(input: {
       coverage[l.key]++;
       gaps[l.key].push(gap);
       push(signals.get(l.key)!, r.symbol, { at: formed, value: gap });
+    }
+    const level = agreementOf(modelSpread({ min: r.values[F.primaryMin], max: r.values[F.primaryMax], median: r.values[F.primary] }));
+    if (level && r.price > 0) {
+      spreads++;
+      agreementCount.set(level.key, (agreementCount.get(level.key) ?? 0) + 1);
+      push(signals.get(agreementKey(level.key))!, r.symbol, { at: formed, value: Math.log(r.values[F.primary] / r.price) });
     }
     const pos = positionOf(r.price, r.values);
     if (pos) {
@@ -278,5 +299,6 @@ export function fairValueStudy(input: {
     ics, deciles, convergence, positions,
     positionShare: Object.fromEntries(FAIR_POSITIONS.map((p) => [p, ranged ? (positionCount.get(p) ?? 0) / ranged : 0])),
     ranges,
+    agreementShare: Object.fromEntries(AGREEMENT_LEVELS.map((a) => [a.key, spreads ? (agreementCount.get(a.key) ?? 0) / spreads : 0])),
   };
 }

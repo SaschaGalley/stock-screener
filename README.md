@@ -107,11 +107,15 @@ The list does not move when any of that happens. The two densities share the row
 Measured across the list, the stock you clicked lands on the pixel it was on, going in and coming back. Where the browser supports view transitions the columns fade rather than vanish between frames.
 
 - **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and grouping belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
-- **Center pane**: full analysis — verdict card with the score's composition underneath, composite fair value (primary + conservative tiers), bull and bear case, valuation over five years, valuation models, fundamentals (history, margin trend, capital spending against depreciation and today's figures in one section), peer comparison, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+- **Center pane**: full analysis — verdict card with the score's composition underneath, composite fair value (primary + conservative tiers), bull and bear case, valuation over five years, valuation models, fundamentals (history, margin trend, the margins through the cycle, capital spending against depreciation and today's figures in one section), peer comparison, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+
+  **Steht das Geschäft am Gipfel?** sits under the margin trend (`src/analysis/cycle.ts`, `GET /api/stocks/:symbol/margins`): today's operating, net and free-cash-flow margins against every fiscal year on record and the median of the last ten, with the operating and net margin drawn since the first year and the median dashed. A P/E is a price over one year's earnings, and at a record margin it looks cheaper than the business is — a cyclical at the top, priced on earnings it will not keep — so the card also says what the P/E would be with the net margin at its median. *Gipfel* is at least 20 % above the median and above four in five of the years, *im Tal* the mirror; *nahe am Hoch* (or *eher unten*) is above nine in ten of the years but close to the median, because a margin that climbed slowly over a decade, as Microsoft's has, is not a cycle's top. Newmont in October 2026: an operating margin of 52 % against a median of 14 %, its best year since 1985, a P/E of 14.6 that reads 68 on the median net margin; Intel in the trough. The years are Finnhub's annual series, which the archive keeps from every refresh and which reach back to the 1980s for the large US companies; a listing Finnhub has fewer than five years of falls back to Yahoo's statements, and with four years there is no card.
 
   **Kommt eine Abschreibungswelle?** sits under the margin trend (`src/analysis/investment.ts`): capital spending against depreciation and amortisation, year by year as bars, and the answer in a card — *ja* from twice depreciation up, *etwas* above 1.3×, *nein* below or when the gap is under a tenth of operating income. Spending on a data centre reaches earnings a slice a year over the asset's life, so a company spending three times what it writes off has its depreciation still ahead of it: Microsoft in 2026 spent 3.0× (2.0× in 2023), 35 % of revenue against 18 % in the years before, and its depreciation grew 41 % a year to operating income's 21 %. The size is an order of magnitude: if spending stays where it is, depreciation ends up the gap higher, a life's share of it — the life read as gross PP&E over the year's depreciation — a year, set against operating income. It assumes the new assets earn nothing extra, which is the question the card leaves open.
 
   **The dividend's record** is in the header, on hover over the yield (`dividendRecord` in `src/analysis/payout.ts`): the years in a row the regular dividend rose and was paid, and a cut of the last ten years; a cut of the last two replaces the bond under the yield, in amber. Each refresh reads every payment Yahoo has (Coca-Cola's from 1962) from the monthly chart it fetched anyway. Counted in calendar years on the regular dividend: specials several times the payments around them are set aside, and so is the odd one out in a year with a payment too many — Yahoo lists Coca-Cola's September 2001 payment twice, P&G's 2002 spin-off of Jif and Crisco as a dividend. Two years with different counts compare their average payment, so one slipping across New Year breaks nothing; a cut is dated by the first payment below its counterpart a year earlier. A dividend converted from the reporting currency (Shell's dollars on the London line, Novo's kroner on the ADR) moves with the rate, so only its years paid are counted. Against the records published elsewhere: Coca-Cola 63 years raised, Johnson & Johnson 63, PepsiCo 53, Costco 21, Apple 13; BASF's cut of May 2025, AT&T's of 2022. P&G reads 42 rather than 69, and Exxon 42 rather than 43: Yahoo's amounts before 1984 are adjusted wrongly for a split.
+
+  **Unsicherheit** stands beside the fair value in *Was ist sie wert?*, as InvestingPro prints it beside its own: *gering*, *mittel* or *hoch* by how far the primary models lie apart — the highest less the lowest over their middle, below 0.5, below 1, above (`src/analysis/fair-agreement.ts`) — the same scale *Wie einig sind sie sich?* answers in the valuation tab, which now names the DCF's own scenario range beside the models'. Across the stored stocks the spread's median is 0.86, so *hoch* is two stocks in five. Its tooltip says what the backtest found: agreement does not make the fair value more accurate.
 
   **Wie der Score entsteht** is a strip under the three verdict cards rather than a section of its own: the blend as one line (Zahlen × weight + Text × weight → score), the six pillars with their weights, and the five narrative dimensions. Findings, method and the two prose reads sit behind *Befunde & Begründung*, which remembers being opened; the two prose reads are also a hover on their half of the formula.
 
@@ -1626,7 +1630,12 @@ headline; spending over revenue against its mean over the three years before
 (Titman, Wei and Xie 2004); and the growth of total assets over the year
 (Cooper, Gulen and Schill 2008). Firms that invest heavily have gone on to do
 worse in the literature; the card shows the ratio either way, and a criterion
-would read it only after passing.
+would read it only after passing. Then the cycle (`analysis/cycle.ts`): the
+newest operating margin against the median of the fiscal years before it, and
+the earnings yield at the median net margin of the years on file — whether a
+margin far above its own normal reverts, and whether a P/E on normal earnings
+ranks better than the plain one. Both from the five fiscal years the payload
+carries, shorter than the card's ten.
 
 A candidate carries when its rank IC over one month, within the sector, clears
 |t| ≥ 2 over all the months and points the same way in 2013–2019 and in
@@ -1835,6 +1844,15 @@ does not show in these stocks and these years. The card describes, as the fair
 value does; no criterion reads it. The score stays at 0.014 (t 2.2), with the
 rating histories of 52 small caps not downloaded this time.
 
+**The cycle (10 October 2026, same downloads).** Neither carries. The margin
+against its own past is 0.005 (t 0.8) within the sector over one month and
+0.013 (t 1.5) over twelve: a margin far above the company's normal has not gone
+on to revert in these years — if anything it persisted, beyond noise in
+neither direction. The earnings yield on the median net margin is 0.006 (t 0.6)
+within the sector, nothing before 2020 (−0.007) and 0.022 (t 1.7) since; the
+value lens it would join reads 0.010 (t 1.0). The card describes; the score
+stays at 0.014 (t 2.2).
+
 **At longer horizons, and cut up (3 October 2026).** The factor score's IC
 stays about the same as the horizon grows — 0.014 at one month, 0.011 at
 three and six, 0.010 at twelve — while its t falls with the fewer windows.
@@ -2037,6 +2055,15 @@ estimates; the rating history's target):
   the middle half 32 % and 27 %. The DCF's scenarios from bear to bull — its
   10th to 90th percentile — held the price itself only half the time: the
   scenarios spread less than model and market disagree.
+- **Agreement does not make it better** (10 October 2026). Split by how far the
+  primary models agree — the highest less the lowest over their middle, below
+  0.5, below 1, above (`analysis/fair-agreement.ts`) — the gap's IC over a
+  month is 0.006 (t 0.6) where they agree, 0.008 (t 0.8) where they partly do
+  and 0.004 (t 0.4) where they are far apart; within the sector the agreeing
+  third leads at six and twelve months, 0.010 against 0.001 and −0.006, with no
+  t near 2. The uncertainty the page states beside the fair value says how
+  much the number hangs on the choice of model, not how likely it is to come
+  true.
 
 The fair value describes what the models make of the company; it does not
 forecast the price, and its margin of safety is not an expected return. The
@@ -2337,6 +2364,8 @@ src/
 │   ├── payout.ts          Dividend and buyback yields as candidates, the share count's change, and the dividend's record
 │   ├── investment.ts      Capital spending against depreciation: the card, and three investment candidates
 │   ├── estimate-revisions.ts  The revenue consensus per fiscal year against its own past in the archive
+│   ├── cycle.ts           Today's margins against every fiscal year on record; two margin candidates
+│   ├── fair-agreement.ts  How far the primary models agree: the fair value's uncertainty in words
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
