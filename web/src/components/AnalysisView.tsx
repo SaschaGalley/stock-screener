@@ -17,6 +17,7 @@ import Section from "./Section";
 import ScoreBreakdown from "./sections/ScoreBreakdown";
 import MarginTrends from "./sections/MarginTrends";
 import DepreciationOutlook from "./sections/DepreciationOutlook";
+import MarginCycle from "./sections/MarginCycle";
 import EstimateRevisions from "./sections/EstimateRevisions";
 import BalanceChecks from "./sections/BalanceChecks";
 import AnalystTrackRecord from "./sections/AnalystTrackRecord";
@@ -459,6 +460,15 @@ function AnalysisView({
                       <>
                         <FundamentalsHistoryChart history={f.fundamentalsHistory} />
                         <MarginTrends history={f.fundamentalsHistory} />
+                        <MarginCycle
+                          symbol={symbol}
+                          now={{
+                            operatingMargin: m.ratios.operatingMargin,
+                            netMargin: m.ratios.netMargin,
+                            fcfMargin: typeof f.freeCashFlow === 'number' && typeof f.revenue === 'number' && f.revenue > 0 ? f.freeCashFlow / f.revenue : null,
+                          }}
+                          pe={m.ratios.pe}
+                        />
                         <DepreciationOutlook history={f.fundamentalsHistory} />
                       </>
                     )}

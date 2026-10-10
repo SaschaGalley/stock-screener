@@ -37,6 +37,7 @@ import type { ChartReadDoc, ChartResponse } from '../../src/analysis/chart';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
 import type { YearRevision } from '../../src/analysis/estimate-revisions';
+import type { MarginHistory } from '../../src/analysis/cycle';
 import type { DepotResponse } from '../../src/analysis/depot';
 import type { DepotCheckResponse } from '../../src/api-types';
 import type { ReviewPage, ReviewStats } from '../../src/review-service';
@@ -124,6 +125,9 @@ export const api = {
   /** This fiscal year's and the next's revenue consensus against their own past in the archive. */
   getEstimateRevisions: (symbol: string) =>
     jsonFetch<{ symbol: string; data: YearRevision[] | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/estimate-revisions`),
+  /** Every fiscal year's margins on record: Finnhub's series, else Yahoo's few years. */
+  getMargins: (symbol: string) =>
+    jsonFetch<{ symbol: string; data: MarginHistory | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/margins`),
   getVerdictRecord: (symbol: string) =>
     jsonFetch<{ symbol: string; data: VerdictRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/verdicts`),
   /** What happened across the watchlist over the last `days`. */

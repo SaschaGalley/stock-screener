@@ -231,6 +231,8 @@ export const GLOSSARY = {
   'concept.fcfConversion':
     'Free Cashflow durch Nettogewinn: wie viel vom Buchgewinn als Cash ankommt. Um oder über 100 % ist gesund. Dauerhaft deutlich darunter ist ein Warnsignal für die Gewinnqualität.',
   'concept.trendArrow': 'Vergleicht das letzte Jahr mit dem Schnitt der Jahre davor. Grün heißt verbessert, rot verschlechtert, Punkt heißt unverändert (unter 1 Prozentpunkt).',
+  'concept.marginCycle':
+    'Die heutigen Margen gegen jedes Geschäftsjahr, das vorliegt, und gegen den Median der letzten zehn. Ein KGV auf Rekordmarge sieht billiger aus, als das Geschäft ist: Bei einem Zykliker am Gipfel stehen Gewinne im Nenner, die er nicht halten wird. „Gipfel“ heißt mindestens 20 % über dem Median und höher als in vier Fünfteln der Jahre; „nahe am Hoch“ heißt höher als in neun Zehnteln, aber nicht so weit über dem Median — eine langsam gestiegene Marge ist kein Zyklus-Hoch. Das KGV auf mittlerer Marge rechnet den heutigen Gewinn auf die mittlere Nettomarge um. Jahre von Finnhub, für Börsen außerhalb der USA meist nur Yahoos vier oder fünf.',
   'concept.revenueRevisions':
     'Wie sich die Umsatzschätzung der Analysten für dieses und das nächste Geschäftsjahr bewegt hat. Yahoo liefert nur den heutigen Stand; den Verlauf liest die App aus ihrem eigenen Archiv, deshalb reicht er so weit zurück, wie sie die Aktie schon speichert. Gerechnet über das erwartete Wachstum statt in Geld, damit ein Wechselkurs bei ADRs keine Revision vortäuscht. Mit dem neuen Geschäftsjahr beginnt die Reihe neu. Ab ±0,5 % zählt eine Bewegung als Anhebung oder Senkung.',
   'concept.depreciationWave':

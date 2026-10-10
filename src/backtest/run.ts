@@ -46,8 +46,9 @@
  * to the same test before anyone proposes a weight for them: the insiders'
  * open-market buying and selling, from their Form 4 filings as Finnhub keeps
  * them (`insiders.ts`, `analysis/insider-signals.ts`), the dividend and
- * buyback yields (`analysis/payout.ts`), and how much a company invests against
- * its depreciation, its own past and its balance sheet (`analysis/investment.ts`).
+ * buyback yields (`analysis/payout.ts`), how much a company invests against
+ * its depreciation, its own past and its balance sheet (`analysis/investment.ts`),
+ * and its margin against its own past (`analysis/cycle.ts`).
  * Each is also measured in either half of the months (`candidateHalves`).
  *
  * It also fits the weights to what it measured and checks the fit on the half
@@ -79,6 +80,7 @@ import { TIMING_CANDIDATES } from '../analysis/timing.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
 import { PAYOUT_CANDIDATES } from '../analysis/payout.js';
 import { INVESTMENT_CANDIDATES } from '../analysis/investment.js';
+import { CYCLE_CANDIDATES } from '../analysis/cycle.js';
 import { payloadAt, yahooSector } from './payload.js';
 import {
   BACKTEST_CAVEATS, BacktestResult, departedCaveat, NO_ANALYSTS_CAVEAT, saveBacktestRun, writeBacktestStatus,
@@ -324,7 +326,7 @@ export async function runBacktest(
           }
         }
 
-        for (const cand of [...PAYOUT_CANDIDATES, ...INVESTMENT_CANDIDATES]) {
+        for (const cand of [...PAYOUT_CANDIDATES, ...INVESTMENT_CANDIDATES, ...CYCLE_CANDIDATES]) {
           const value = cand.read(e.financials);
           if (value !== null) push(`${CANDIDATE_PREFIX}${cand.key}`, e.c.symbol, { at, value });
         }

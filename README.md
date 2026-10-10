@@ -107,7 +107,9 @@ The list does not move when any of that happens. The two densities share the row
 Measured across the list, the stock you clicked lands on the pixel it was on, going in and coming back. Where the browser supports view transitions the columns fade rather than vanish between frames.
 
 - **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and grouping belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
-- **Center pane**: full analysis — verdict card with the score's composition underneath, composite fair value (primary + conservative tiers), bull and bear case, valuation over five years, valuation models, fundamentals (history, margin trend, capital spending against depreciation and today's figures in one section), peer comparison, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+- **Center pane**: full analysis — verdict card with the score's composition underneath, composite fair value (primary + conservative tiers), bull and bear case, valuation over five years, valuation models, fundamentals (history, margin trend, the margins through the cycle, capital spending against depreciation and today's figures in one section), peer comparison, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+
+  **Steht das Geschäft am Gipfel?** sits under the margin trend (`src/analysis/cycle.ts`, `GET /api/stocks/:symbol/margins`): today's operating, net and free-cash-flow margins against every fiscal year on record and the median of the last ten, with the operating and net margin drawn since the first year and the median dashed. A P/E is a price over one year's earnings, and at a record margin it looks cheaper than the business is — a cyclical at the top, priced on earnings it will not keep — so the card also says what the P/E would be with the net margin at its median. *Gipfel* is at least 20 % above the median and above four in five of the years, *im Tal* the mirror; *nahe am Hoch* (or *eher unten*) is above nine in ten of the years but close to the median, because a margin that climbed slowly over a decade, as Microsoft's has, is not a cycle's top. Newmont in October 2026: an operating margin of 52 % against a median of 14 %, its best year since 1985, a P/E of 14.6 that reads 68 on the median net margin; Intel in the trough. The years are Finnhub's annual series, which the archive keeps from every refresh and which reach back to the 1980s for the large US companies; a listing Finnhub has fewer than five years of falls back to Yahoo's statements, and with four years there is no card.
 
   **Kommt eine Abschreibungswelle?** sits under the margin trend (`src/analysis/investment.ts`): capital spending against depreciation and amortisation, year by year as bars, and the answer in a card — *ja* from twice depreciation up, *etwas* above 1.3×, *nein* below or when the gap is under a tenth of operating income. Spending on a data centre reaches earnings a slice a year over the asset's life, so a company spending three times what it writes off has its depreciation still ahead of it: Microsoft in 2026 spent 3.0× (2.0× in 2023), 35 % of revenue against 18 % in the years before, and its depreciation grew 41 % a year to operating income's 21 %. The size is an order of magnitude: if spending stays where it is, depreciation ends up the gap higher, a life's share of it — the life read as gross PP&E over the year's depreciation — a year, set against operating income. It assumes the new assets earn nothing extra, which is the question the card leaves open.
 
@@ -1626,7 +1628,12 @@ headline; spending over revenue against its mean over the three years before
 (Titman, Wei and Xie 2004); and the growth of total assets over the year
 (Cooper, Gulen and Schill 2008). Firms that invest heavily have gone on to do
 worse in the literature; the card shows the ratio either way, and a criterion
-would read it only after passing.
+would read it only after passing. Then the cycle (`analysis/cycle.ts`): the
+newest operating margin against the median of the fiscal years before it, and
+the earnings yield at the median net margin of the years on file — whether a
+margin far above its own normal reverts, and whether a P/E on normal earnings
+ranks better than the plain one. Both from the five fiscal years the payload
+carries, shorter than the card's ten.
 
 A candidate carries when its rank IC over one month, within the sector, clears
 |t| ≥ 2 over all the months and points the same way in 2013–2019 and in
@@ -1834,6 +1841,15 @@ literature has. Whatever the investment effect was in the studies' samples, it
 does not show in these stocks and these years. The card describes, as the fair
 value does; no criterion reads it. The score stays at 0.014 (t 2.2), with the
 rating histories of 52 small caps not downloaded this time.
+
+**The cycle (10 October 2026, same downloads).** Neither carries. The margin
+against its own past is 0.005 (t 0.8) within the sector over one month and
+0.013 (t 1.5) over twelve: a margin far above the company's normal has not gone
+on to revert in these years — if anything it persisted, beyond noise in
+neither direction. The earnings yield on the median net margin is 0.006 (t 0.6)
+within the sector, nothing before 2020 (−0.007) and 0.022 (t 1.7) since; the
+value lens it would join reads 0.010 (t 1.0). The card describes; the score
+stays at 0.014 (t 2.2).
 
 **At longer horizons, and cut up (3 October 2026).** The factor score's IC
 stays about the same as the horizon grows — 0.014 at one month, 0.011 at
@@ -2337,6 +2353,7 @@ src/
 │   ├── payout.ts          Dividend and buyback yields as candidates, the share count's change, and the dividend's record
 │   ├── investment.ts      Capital spending against depreciation: the card, and three investment candidates
 │   ├── estimate-revisions.ts  The revenue consensus per fiscal year against its own past in the archive
+│   ├── cycle.ts           Today's margins against every fiscal year on record; two margin candidates
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
