@@ -33,6 +33,7 @@ import QualityScores from "./sections/QualityScores";
 import FundamentalsGrid from "./sections/FundamentalsGrid";
 import PeerCompare from "./sections/PeerCompare";
 import ChartTab from "./chart/ChartTab";
+import ArticleTab from "./ArticleTab";
 import OwnershipFlow from "./sections/OwnershipFlow";
 import EarningsBlock from "./sections/EarningsBlock";
 import ResearchTab from "./sections/NewsAndResearch";
@@ -365,6 +366,11 @@ function AnalysisView({
               >
                 <VerdictTrackRecord record={verdictRecord} scoreHistory={row?.scoreHistory} />
               </Section>
+            </TabPane>
+
+            <TabPane on={tab === 'report'} seen={shown.has('report')}>
+              {/* THE REPORT — an article from the verdict, the research and the chart, written on request */}
+              <ArticleTab symbol={symbol} />
             </TabPane>
 
             <TabPane on={tab === 'chart'} seen={shown.has('chart')}>

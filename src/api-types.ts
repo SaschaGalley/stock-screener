@@ -236,6 +236,12 @@ export interface ConfigResponse {
   };
 }
 
+/** `GET /api/stocks/:symbol/article` — the newest report, and the day of the newest verdict it may predate. */
+export interface ArticleResponse {
+  article:    import('./analysis/article.js').StockArticle | null;
+  analysisAt: string | null;
+}
+
 /** `GET /api/backtest` — the stored result of `pnpm run backtest`, null before the first run. */
 export interface BacktestResponse {
   backtest: import('./backtest/result.js').BacktestResult | null;

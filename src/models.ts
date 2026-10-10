@@ -64,6 +64,7 @@ export const MODEL_TASKS = [
   { key: 'market-brief',   label: 'Marktlage',         perplexity: true,  hint: 'Für den Depot-Check: Lage, Rotation, Sektoren, Termine. Zwölf Stunden wiederverwendet.' },
   { key: 'stock-research', label: 'Recherche je Aktie', perplexity: true, hint: 'Was die Kennzahlen nicht zeigen, für jede Analyse; 14 Tage wiederverwendet.' },
   { key: 'deep-research',  label: 'Deep Research',     perplexity: true,  hint: 'Per Knopf in der Recherche einer Aktie; läuft immer direkt bei Perplexity, weil der Proxy beim Streamen die Quellen verliert.' },
+  { key: 'article',        label: 'Bericht',           perplexity: false, hint: 'Der Artikel zu einer Aktie, per Knopf im Tab „Bericht": fünf Abschnitte und die Redaktion. Ohne eigenen Namen im Proxy schreibt ihn das Analysemodell.' },
 ] as const;
 export type ModelTask = (typeof MODEL_TASKS)[number]['key'];
 

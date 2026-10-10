@@ -34,6 +34,8 @@ import type { Timeline } from '../../src/analysis/timeline';
 import type { DiscoverUniverse } from '../../src/analysis/discover';
 import type { MarketToday } from '../../src/analysis/market';
 import type { ChartReadDoc, ChartResponse } from '../../src/analysis/chart';
+import type { StockArticle } from '../../src/analysis/article';
+import type { ArticleResponse } from '../../src/api-types';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
 import type { YearRevision } from '../../src/analysis/estimate-revisions';
@@ -206,6 +208,11 @@ export const api = {
   getChart: (symbol: string) =>
     jsonFetch<ChartResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/chart`),
   /** A model reads the chart — one call, up to a minute or two on a reasoning model. */
+  getArticle: (symbol: string) =>
+    jsonFetch<ArticleResponse>(`${BASE}/stocks/${encodeURIComponent(symbol)}/article`),
+  /** Six model calls: about a minute. */
+  writeArticle: (symbol: string) =>
+    jsonFetch<{ article: StockArticle }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/article`, { method: 'POST' }),
   /** Without a model, the server reads with the chart reading's model from the administration. */
   runChartRead: (symbol: string, model: string | null) =>
     jsonFetch<ChartReadDoc>(`${BASE}/stocks/${encodeURIComponent(symbol)}/chart-read`, {

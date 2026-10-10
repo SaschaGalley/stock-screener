@@ -13,6 +13,7 @@ import { useEffect, useRef } from 'react';
 
 export const STOCK_TABS = [
   { key: 'overview',  label: 'Überblick' },
+  { key: 'report',    label: 'Bericht' },
   { key: 'chart',     label: 'Chart' },
   { key: 'valuation', label: 'Bewertung' },
   { key: 'business',  label: 'Geschäft & Zahlen' },

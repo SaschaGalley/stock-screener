@@ -86,6 +86,16 @@ export async function modelForTask(task: ModelTask, fallback: string): Promise<s
   return (await taskModels())[task] ?? fallback;
 }
 
+/**
+ * `task` where the proxy has it set up, else `fallback`: a task added to the
+ * app before its name is created in the proxy runs on another's model there,
+ * rather than failing on a name the proxy does not know.
+ */
+export async function taskOrFallback(task: ModelTask, fallback: ModelTask): Promise<ModelTask> {
+  if (!gateway()) return task;
+  return (await taskModels())[task] ? task : fallback;
+}
+
 /** A Perplexity task's model; the proxy's only where it is one of Perplexity's, whose settings the app knows. */
 export async function perplexityModelForTask(task: ModelTask, fallback: PerplexityModelId): Promise<PerplexityModelId> {
   const m = await modelForTask(task, fallback);

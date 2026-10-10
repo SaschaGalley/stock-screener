@@ -5,6 +5,7 @@ import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
+import { ArticleInputError, readArticle, writeArticle } from './article-service.js';
 import { getConfig } from './config.js';
 import { logger } from './utils/logger.js';
 import { isHatchetConfigured } from './hatchet/client.js';
@@ -1424,6 +1425,27 @@ export function createApp(): express.Express {
     }
   });
 
+  // ── GET/POST /api/stocks/:symbol/article ───────────────────────────────────
+  // The report on a stock (`article-service.ts`): the newest one and the day of
+  // the newest verdict; a POST writes a new one — six model calls, by hand.
+  app.get('/api/stocks/:symbol/article', async (req, res, next) => {
+    try {
+      res.json(await readArticle(req.params.symbol.toUpperCase()));
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.post('/api/stocks/:symbol/article', async (req, res, next) => {
+    req.setTimeout(10 * 60 * 1000);
+    res.setTimeout(10 * 60 * 1000);
+    try {
+      res.json({ article: await writeArticle(req.params.symbol.toUpperCase()) });
+    } catch (e) {
+      if (e instanceof ArticleInputError) res.status(400).json({ error: e.message });
+      else next(e);
+    }
+  });
+
   // ── GET /api/stocks/:symbol/valuation-history ──────────────────────────────
   // The last five years, month-end by month-end: price, the fair value the
   // models would have computed then, earnings and four multiples. Rebuilt on
@@ -1911,6 +1933,7 @@ if (isMain) {
         logger.info(`  GET  /api/stocks/:symbol/fundamentals  — reported figures by fiscal period`);
         logger.info(`  GET  /api/stocks/:symbol/chart         — bars, levels, channels, chart reading`);
         logger.info(`  POST /api/stocks/:symbol/chart-read    — a model reads the chart`);
+        logger.info(`  GET|POST /api/stocks/:symbol/article   — the report on a stock, written on request`);
         logger.info(`  GET  /api/stocks/:symbol/analyses      — list stored verdict combos`);
         logger.info(`  POST /api/analyze                      — run analysis (body: {input, model, search, pplx})`);
         logger.info(`  GET  /api/config · PUT /api/config     — operational settings`);

@@ -201,7 +201,7 @@ export const ChartReadSchema = z.object({
 });
 
 /** The reading as text, for the document's `content` — what a later diff reads. */
-function readAsText(r: ChartRead): string {
+export function readAsText(r: ChartRead): string {
   return [
     r.summary,
     `Trend: ${r.trend.direction}, ${r.trend.phase}. ${r.trend.comment}`,
