@@ -31,7 +31,7 @@ interface SeriesDef {
   points: (h: History) => Series;
 }
 
-type Unit = 'money' | 'perShare' | 'pct';
+export type Unit = 'money' | 'perShare' | 'pct';
 
 const raw = (key: keyof History) => (h: History) => h[key];
 
@@ -87,7 +87,7 @@ const MODE_PRESETS: Record<Mode, { label: string; series: SeriesDef[]; unit?: Un
  * `cur` is the trading currency's sign, written after the amount — the whole
  * series is FX-converted into it upstream, so one sign is right for every point.
  */
-function fmtChartValue(n: number, unit: Unit, cur: string): string {
+export function fmtChartValue(n: number, unit: Unit, cur: string): string {
   if (unit === 'pct') return fmtPct(n, 1);
   if (unit === 'perShare') return `${deNumber(n, 2)} ${cur}`;
   const a = Math.abs(n);

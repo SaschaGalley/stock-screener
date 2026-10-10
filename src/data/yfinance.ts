@@ -10,6 +10,7 @@ import {
   StockFinancials,
 } from '../types.js';
 import { insiderTotals } from '../analysis/holders.js';
+import { dividendRecord } from '../analysis/payout.js';
 import { DailyBar } from '../analysis/technical.js';
 import { auditFinancials, isFundamentalsStale } from '../analysis/data-quality.js';
 import { QuarterPoint, annualGrowth, latestValue, trailingGrowth, trailingSum } from '../analysis/trailing.js';
@@ -148,21 +149,29 @@ interface HistoricalData {
   dailyBars: DailyBar[];
   /** The daily chart as Yahoo sent it, for the price archive. */
   priceBars: PriceBarRow[];
+  /** Every split and dividend on record, from the monthly chart's full history. */
   priceEvents: PriceEventRow[];
 }
 
+/**
+ * The monthly chart reaches back as far as Yahoo has anything, for its events:
+ * the dividend's record needs every payment since the first (Coca-Cola's go
+ * back to 1962), and asking for them costs no request of its own. The monthly
+ * bars it brings along are a few hundred rows.
+ */
+const MONTHLY_FROM = '1950-01-01';
+
 async function safeHistoricalData(symbol: string): Promise<HistoricalData> {
   try {
-    const fromMonthly = new Date();
-    fromMonthly.setFullYear(fromMonthly.getFullYear() - 5);
     const fromDaily = new Date();
     fromDaily.setDate(fromDaily.getDate() - 380);  // ~1Y of daily bars + buffer for SMA200 + 3M lookback
 
     const [monthly, daily] = await Promise.all([
       (yf as any).chart(symbol, {
-        period1: fromMonthly.toISOString().slice(0, 10),
+        period1: MONTHLY_FROM,
         period2: new Date().toISOString().slice(0, 10),
         interval: '1mo',
+        events: 'div|split',
       }),
       (yf as any).chart(symbol, {
         period1: fromDaily.toISOString().slice(0, 10),
@@ -213,9 +222,14 @@ async function safeHistoricalData(symbol: string): Promise<HistoricalData> {
       });
     }
 
+    // The two charts list the same events; the daily one wins a day both have.
+    const events = new Map<string, PriceEventRow>();
+    for (const e of [...priceEventsFrom(monthly?.events), ...priceEventsFrom(daily?.events)]) events.set(`${e.day}|${e.kind}`, e);
+
     return {
       monthlyReturns, monthlyPrices, dailyBars,
-      priceBars: priceBarsFrom(dailyQuotes), priceEvents: priceEventsFrom(daily?.events),
+      priceBars: priceBarsFrom(dailyQuotes),
+      priceEvents: [...events.values()].sort((a, b) => a.day.localeCompare(b.day)),
     };
   } catch (e) {
     logger.warn(`Historical: ${(e as Error).message}`);
@@ -1137,6 +1151,14 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
     operatingCashFlow:  fxcSeries(series(cfData,  (r) => num((r as any).operatingCashFlow) ?? num((r as any).cashFlowFromContinuingOperatingActivities))),
     totalAssets:        fxcSeries(series(bsData,  (r) => num(r.totalAssets))),
     stockholdersEquity: fxcSeries(series(bsData,  (r) => num((r as any).stockholdersEquity) ?? num((r as any).totalEquityGrossMinorityInterest))),
+    // Spending is reported negative; the series holds what was spent.
+    capex:              fxcSeries(series(cfData,  (r) => {
+                          const c = num((r as any).capitalExpenditure) ?? num((r as any).purchaseOfPPE);
+                          return c === null ? null : Math.abs(c);
+                        })),
+    depreciation:       fxcSeries(series(cfData,  (r) => num((r as any).depreciationAndAmortization)
+                          ?? num((r as any).depreciationAmortizationDepletion) ?? num((r as any).depreciation))),
+    grossPPE:           fxcSeries(series(bsData,  (r) => num((r as any).grossPPE))),
   };
 
   // ── 5-year average trailing P/E ──────────────────────────────────────────
@@ -1445,6 +1467,12 @@ export async function getFinancials(symbol: string): Promise<FinancialsBundle> {
 
     prevYear,
     fundamentalsHistory,
+    dividendRecord: dividendRecord(
+      historicalData.priceEvents.filter((e) => e.kind === 'dividend').map((e) => ({ day: e.day, amount: e.value })),
+      new Date().toISOString().slice(0, 10),
+      quoteMajor && financialCurrency && quoteMajor !== financialCurrency ? financialCurrency : null,
+      Object.keys(monthlyPrices).sort()[0] ? `${Object.keys(monthlyPrices).sort()[0]}-01` : null,
+    ),
 
     shortPercentOfFloat:   num(ks.shortPercentOfFloat),
     shortRatio:            num(ks.shortRatio),

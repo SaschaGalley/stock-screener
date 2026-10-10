@@ -107,7 +107,11 @@ The list does not move when any of that happens. The two densities share the row
 Measured across the list, the stock you clicked lands on the pixel it was on, going in and coming back. Where the browser supports view transitions the columns fade rather than vanish between frames.
 
 - **Left rail**: the ranked list minus the columns 320px has no room for — name, ticker, score and a 3-segment buy/hold/sell consensus stripe (AI verdicts + analyst counts, AI weighted 0.6). It carries the search box and nothing else, with the count tucked inside the field: sorting and grouping belong to the table, and every row of header here is both a stock the rail cannot show and a row of drift in the transition. Both densities drive the same filter state, so neither can disagree with the other about what it is looking at.
-- **Center pane**: full analysis — verdict card with the score's composition underneath, composite fair value (primary + conservative tiers), bull and bear case, valuation over five years, valuation models, fundamentals (history, margin trend and today's figures in one section), peer comparison, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+- **Center pane**: full analysis — verdict card with the score's composition underneath, composite fair value (primary + conservative tiers), bull and bear case, valuation over five years, valuation models, fundamentals (history, margin trend, capital spending against depreciation and today's figures in one section), peer comparison, technical signals gauge (TradingView-style), price action, ownership flow, news & research.
+
+  **Kommt eine Abschreibungswelle?** sits under the margin trend (`src/analysis/investment.ts`): capital spending against depreciation and amortisation, year by year as bars, and the answer in a card — *ja* from twice depreciation up, *etwas* above 1.3×, *nein* below or when the gap is under a tenth of operating income. Spending on a data centre reaches earnings a slice a year over the asset's life, so a company spending three times what it writes off has its depreciation still ahead of it: Microsoft in 2026 spent 3.0× (2.0× in 2023), 35 % of revenue against 18 % in the years before, and its depreciation grew 41 % a year to operating income's 21 %. The size is an order of magnitude: if spending stays where it is, depreciation ends up the gap higher, a life's share of it — the life read as gross PP&E over the year's depreciation — a year, set against operating income. It assumes the new assets earn nothing extra, which is the question the card leaves open.
+
+  **The dividend's record** is in the header, on hover over the yield (`dividendRecord` in `src/analysis/payout.ts`): the years in a row the regular dividend rose and was paid, and a cut of the last ten years; a cut of the last two replaces the bond under the yield, in amber. Each refresh reads every payment Yahoo has (Coca-Cola's from 1962) from the monthly chart it fetched anyway. Counted in calendar years on the regular dividend: specials several times the payments around them are set aside, and so is the odd one out in a year with a payment too many — Yahoo lists Coca-Cola's September 2001 payment twice, P&G's 2002 spin-off of Jif and Crisco as a dividend. Two years with different counts compare their average payment, so one slipping across New Year breaks nothing; a cut is dated by the first payment below its counterpart a year earlier. A dividend converted from the reporting currency (Shell's dollars on the London line, Novo's kroner on the ADR) moves with the rate, so only its years paid are counted. Against the records published elsewhere: Coca-Cola 63 years raised, Johnson & Johnson 63, PepsiCo 53, Costco 21, Apple 13; BASF's cut of May 2025, AT&T's of 2022. P&G reads 42 rather than 69, and Exxon 42 rather than 43: Yahoo's amounts before 1984 are adjusted wrongly for a split.
 
   **Wie der Score entsteht** is a strip under the three verdict cards rather than a section of its own: the blend as one line (Zahlen × weight + Text × weight → score), the six pillars with their weights, and the five narrative dimensions. Findings, method and the two prose reads sit behind *Befunde & Begründung*, which remembers being opened; the two prose reads are also a hover on their half of the formula.
 
@@ -1615,7 +1619,13 @@ derivative trades are left out. Then the payout (`analysis/payout.ts`): the
 dividend yield with non-payers at zero, the yield among payers alone, and the
 shareholder yield — dividend plus the year's fall in the share count
 (Boudoukh, Michaely, Richardson and Roberts 2007). The score reads the
-dividend only inside the dividend model's fair value.
+dividend only inside the dividend model's fair value. Then the investment
+(`analysis/investment.ts`): capital spending over depreciation, the card's
+headline; spending over revenue against its mean over the three years before
+(Titman, Wei and Xie 2004); and the growth of total assets over the year
+(Cooper, Gulen and Schill 2008). Firms that invest heavily have gone on to do
+worse in the literature; the card shows the ratio either way, and a criterion
+would read it only after passing.
 
 A candidate carries when its rank IC over one month, within the sector, clears
 |t| ≥ 2 over all the months and points the same way in 2013–2019 and in
@@ -1812,6 +1822,17 @@ What carries in the shareholder yield is the buybacks; the dividend added to
 them dilutes the signal. No criterion is added. The dividend model's new
 perpetuity left the score where it was, 0.014 (t 2.3) at one month before and
 after, and the value lens at 0.010 (t 1.0).
+
+**The investment (10 October 2026, prices and ratings downloaded anew).** None
+of the three carries. Capital spending over depreciation is −0.005 (t −1.0)
+over one month and 0.000 (t 0.0) within the sector — negative in 2013–2019
+(−0.009, t −1.6), positive since (0.009, t 1.6). Abnormal investment against
+the three years before is −0.001 (t −0.3) within the sector, −0.012 (t −1.4)
+at twelve months. Asset growth is 0.003 (t 0.5): not even the sign the
+literature has. Whatever the investment effect was in the studies' samples, it
+does not show in these stocks and these years. The card describes, as the fair
+value does; no criterion reads it. The score stays at 0.014 (t 2.2), with the
+rating histories of 52 small caps not downloaded this time.
 
 **At longer horizons, and cut up (3 October 2026).** The factor score's IC
 stays about the same as the horizon grows — 0.014 at one month, 0.011 at
@@ -2312,7 +2333,8 @@ src/
 │   ├── analyst-history.ts The analyst consensus of a past day, rebuilt from the rating actions
 │   ├── verdict-record.ts  Our verdicts as calls, against the index after 1, 3, 6 and 12 months
 │   ├── insider-signals.ts The insiders' open-market buying and selling before a day
-│   ├── payout.ts          Dividend and buyback yields: the share count's change, and the yields as candidates
+│   ├── payout.ts          Dividend and buyback yields as candidates, the share count's change, and the dividend's record
+│   ├── investment.ts      Capital spending against depreciation: the card, and three investment candidates
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
@@ -2354,7 +2376,7 @@ web/
 │       ├── ScoreSplit.tsx         The two halves behind one headline, per list row
 │       ├── BullBearRisks.tsx      bull and bear case, each in theses / figures / triggers
 │       ├── ConsensusBar.tsx       3px buy/hold/sell stripe per rail item
-│       ├── StockHeader.tsx        Logo, price, P/E, dividend against the bond, refresh — and the ✕ / ⚙ chrome
+│       ├── StockHeader.tsx        Logo, price, P/E, dividend against the bond and its record, refresh — and the ✕ / ⚙ chrome
 │       ├── StockLogo.tsx          Multi-source logo cascade (TradingView → Logo.dev → …)
 │       ├── ProgressBanner.tsx     SSE progress events while a run is in flight
 │       ├── AnalyzeForm.tsx        Bottom "analyze a new symbol" input
@@ -2389,7 +2411,7 @@ cost history.
 | `fundamental_periods` | Reported figures keyed by fiscal period *and* observation date, so restatements are visible |
 | `macro_observations` | VIX, yield curve, HY spread, DXY, FRED rates as a refresh read them — global, one row per day |
 | `runs` / `run_steps` | Pipeline provenance; every row above can point at the run that produced it. Never pruned |
-| `price_bars` / `price_events` | Daily prices per ticker — stocks, the index, VIX, the dollar, the sector ETFs — with splits and dividends; ten years on a ticker's first refresh |
+| `price_bars` / `price_events` | Daily prices per ticker — stocks, the index, VIX, the dollar, the sector ETFs — with splits and dividends; ten years of prices on a ticker's first refresh, and every split and dividend on record with each refresh of a stock |
 | `analyst_actions` | Every rating action and price-target change Yahoo lists, by firm, back to 2012 for the large caps |
 | `insider_transactions` | Individual insider trades, appended as Yahoo's two-year window moves on |
 | `macro_series` | Every FRED series the models read, plus the short rates, the policy rate, inflation, its expectation and unemployment — by the date each value is for, back to 1990; and Damodaran's monthly implied premium |
