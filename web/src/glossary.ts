@@ -231,6 +231,8 @@ export const GLOSSARY = {
   'concept.fcfConversion':
     'Free Cashflow durch Nettogewinn: wie viel vom Buchgewinn als Cash ankommt. Um oder über 100 % ist gesund. Dauerhaft deutlich darunter ist ein Warnsignal für die Gewinnqualität.',
   'concept.trendArrow': 'Vergleicht das letzte Jahr mit dem Schnitt der Jahre davor. Grün heißt verbessert, rot verschlechtert, Punkt heißt unverändert (unter 1 Prozentpunkt).',
+  'concept.depreciationWave':
+    'Investitionen in Anlagen sind kein Aufwand im Jahr der Zahlung: Sie werden über die Nutzungsdauer abgeschrieben und belasten den Gewinn erst nach und nach. Wer deutlich mehr investiert, als er abschreibt, hat steigende Abschreibungen noch vor sich. Die Nutzungsdauer ist geschätzt aus den Anlagen vor Abschreibung durch die Abschreibungen des Jahres; die Abschreibungen enthalten auch die auf Zukäufe. Die Größenordnung nimmt an, dass die Investitionen bleiben, wo sie sind, und die neuen Anlagen nichts zusätzlich verdienen — das ist die Frage, die sie offenlässt.',
 
   // ── Peers ────────────────────────────────────────────────────────────────
   'section.peers':

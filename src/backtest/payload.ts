@@ -361,6 +361,8 @@ export function payloadAt(
       revenue: history('revenue'), grossProfit: history('grossProfit'), operatingIncome: history('operatingIncome'),
       netIncome: history('netIncome'), eps: epsHistory, freeCashFlow: fcfHistory,
       operatingCashFlow: history('operatingCashFlow'), totalAssets: assetsHistory, stockholdersEquity: equityHistory,
+      capex: history('capex').map((x) => ({ year: x.year, value: Math.abs(x.value) })),
+      depreciation: history('depreciation'),
     },
     shortPercentOfFloat: null, shortRatio: null, sharesShort: null, sharesShortPriorMonth: null,
     nextEarningsDate: null, exDividendDate: null, dividendPayDate: null, nextDividendAmount: null,

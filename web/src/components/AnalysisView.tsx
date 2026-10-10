@@ -16,6 +16,7 @@ import { verdictForScore } from "../format";
 import Section from "./Section";
 import ScoreBreakdown from "./sections/ScoreBreakdown";
 import MarginTrends from "./sections/MarginTrends";
+import DepreciationOutlook from "./sections/DepreciationOutlook";
 import BalanceChecks from "./sections/BalanceChecks";
 import AnalystTrackRecord from "./sections/AnalystTrackRecord";
 import VerdictTrackRecord, { VERDICT_RECORD_ID, VerdictRecordLine } from "./sections/VerdictTrackRecord";
@@ -457,6 +458,7 @@ function AnalysisView({
                       <>
                         <FundamentalsHistoryChart history={f.fundamentalsHistory} />
                         <MarginTrends history={f.fundamentalsHistory} />
+                        <DepreciationOutlook history={f.fundamentalsHistory} />
                       </>
                     )}
                   <IncomeFlowChart symbol={symbol} />

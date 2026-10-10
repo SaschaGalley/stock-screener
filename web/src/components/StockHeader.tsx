@@ -8,6 +8,7 @@ import { CloseIcon, PeersIcon } from "./icons";
 import Term from "./Term";
 import Tip from "./Tip";
 import type { GlossaryKey } from "../glossary";
+import type { DividendRecord } from "../../../src/types";
 
 interface Props {
   summary: StockSummary;
@@ -314,15 +315,62 @@ function peFigure(f: any, m: ComputedMetrics, peerPe: number | null): Figure {
   };
 }
 
+/** A cut this recent is news about the yield beside it; one older is history, and only the tooltip says it. */
+const RECENT_CUT_DAYS = 730;
+/** Older than this, a cut is left out of the tooltip too: Yahoo's oldest records hold frequency changes that read as cuts. */
+const SHOWN_CUT_YEARS = 10;
+
+const monthYear = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+
+/**
+ * How long the dividend has been raised and paid, and its last cut — the lines
+ * a yield alone hides (`analysis/payout.ts`, `dividendRecord`).
+ */
+function dividendRecordLines(r: DividendRecord | null | undefined): string[] {
+  if (!r) return [];
+  const out: string[] = [];
+  const reach = r.fromStart ? ', so weit die Daten reichen' : '';
+  if (r.raisedYears !== null && r.raisedYears > 0) {
+    out.push(`Seit ${r.through - r.raisedYears + 1} jedes Jahr erhöht (${r.raisedYears} ${r.raisedYears === 1 ? 'Jahr' : 'Jahre'}${r.raisedYears === r.paidYears - 1 ? reach : ''})`);
+  }
+  if (r.paidYears > 0 && (r.raisedYears === null || r.paidYears > r.raisedYears + 1)) {
+    out.push(`Ohne Unterbrechung gezahlt seit ${r.through - r.paidYears + 1}${reach}`);
+  }
+  const cutAge = r.lastCut ? (Date.now() - Date.parse(`${r.lastCut.day}T00:00:00Z`)) / 86_400_000 : null;
+  if (r.lastCut && cutAge !== null && cutAge <= SHOWN_CUT_YEARS * 365) {
+    out.push(`Zuletzt gekürzt im ${monthYear(r.lastCut.day)}, um ${fmtPct(1 - r.lastCut.to / r.lastCut.from, 0)}`);
+  }
+  if (r.convertedFrom) {
+    out.push(`Erhöhungen nicht gezählt: Die Dividende wird wohl in ${r.convertedFrom} erklärt und schwankt hier mit dem Wechselkurs`);
+  }
+  return out;
+}
+
+/** A cut within the last two years, as the small line under the yield says it. */
+function recentCut(r: DividendRecord | null | undefined): string | null {
+  if (!r?.lastCut) return null;
+  const age = (Date.now() - Date.parse(`${r.lastCut.day}T00:00:00Z`)) / 86_400_000;
+  return age <= RECENT_CUT_DAYS ? `gekürzt ${monthYear(r.lastCut.day)}` : null;
+}
+
 /**
  * The trailing yield, read against what the same money earns without risk:
  * the ten-year government bond of the currency the stock trades in. Unless the
- * dividend is paid out of more than the year earned — then that is what the
- * small line says, because it is the first thing to know about such a yield.
+ * dividend is paid out of more than the year earned, or was cut within two
+ * years — then that is what the small line says, because it is the first thing
+ * to know about such a yield.
  */
 function dividendFigure(f: any, m: ComputedMetrics, fmtPrice: (n: number | null | undefined) => string): Figure {
   const dy = finite(f.dividendYield);
-  if (dy === null || dy <= 0) return { value: 'keine', hint: 'Keine Dividende in den letzten zwölf Monaten.' };
+  const record: DividendRecord | null | undefined = f.dividendRecord;
+  if (dy === null || dy <= 0) {
+    return {
+      value: 'keine',
+      hint: record
+        ? `Keine Dividende in den letzten zwölf Monaten, zuletzt im ${monthYear(record.lastPaid)}.`
+        : 'Keine Dividende in den letzten zwölf Monaten.',
+    };
+  }
   const rf = finite(m.dcf.riskFreeRate);
   const payout = finite(f.payoutRatio);
   const growth = finite(f.dividendGrowthRate5Y);
@@ -330,9 +378,11 @@ function dividendFigure(f: any, m: ComputedMetrics, fmtPrice: (n: number | null 
   const exDay = typeof f.exDividendDate === 'string' && f.exDividendDate >= new Date().toISOString().slice(0, 10)
     ? f.exDividendDate : null;
   const uncovered = payout !== null && payout > 1;
+  const cut = recentCut(record);
   const hint = (
     <span className="block space-y-0.5">
       {price !== null && <span className="block">{fmtPrice(dy * price)} je Aktie im Jahr</span>}
+      {dividendRecordLines(record).map((line) => <span key={line} className="block">{line}</span>)}
       {payout !== null && <span className="block">Ausgeschüttet: {fmtPct(payout, 0)} des Gewinns</span>}
       {growth !== null && <span className="block">In fünf Jahren um {fmtPct(growth)} im Jahr gewachsen</span>}
       {exDay && <span className="block">Nächster Ex-Tag {new Date(`${exDay}T12:00:00Z`).toLocaleDateString('de-DE')}</span>}
@@ -346,8 +396,8 @@ function dividendFigure(f: any, m: ComputedMetrics, fmtPrice: (n: number | null 
   );
   return {
     value: fmtPct(dy),
-    subtle: uncovered ? `${fmtPct(payout, 0)} vom Gewinn` : rf !== null ? `Anleihe ${fmtPct(rf)}` : undefined,
-    warn: uncovered,
+    subtle: uncovered ? `${fmtPct(payout, 0)} vom Gewinn` : cut ?? (rf !== null ? `Anleihe ${fmtPct(rf)}` : undefined),
+    warn: uncovered || cut !== null,
     hint,
   };
 }

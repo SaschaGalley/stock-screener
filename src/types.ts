@@ -65,6 +65,23 @@ export const DataQualityWarningSchema = z.object({
 });
 export type DataQualityWarning = z.infer<typeof DataQualityWarningSchema>;
 
+export const DividendRecordSchema = z.object({
+  raisedYears:   z.number().nullable().describe('Calendar years in a row, up to the last complete one, in which the regular dividend per share rose; null where the amounts are converted from another currency and move with its rate'),
+  paidYears:     z.number().describe('Calendar years in a row, up to the last complete one, with a dividend paid'),
+  /** The history may start later than the dividend did; then both counts are "at least". */
+  fromStart:     z.boolean().describe('The paid run reaches back to the first year on record, and the record starts with the price history, so the true runs may be longer'),
+  through:       z.number().describe('The last complete calendar year the runs count to'),
+  lastCut:       z.object({ day: z.string(), from: z.number(), to: z.number() }).nullable()
+                   .describe('The newest cut: the first regular payment below its counterpart a year earlier, with both amounts per share; the current year counts. Null where the amounts are converted'),
+  lastPaid:      z.string().describe('Ex-date of the newest regular payment'),
+  convertedFrom: z.string().nullable().describe('The reporting currency, where it differs from the quote: the dividend is most likely declared in it, and the amounts here are converted at each day\'s rate'),
+  years:         z.array(z.object({ year: z.number(), amount: z.number(), payments: z.number() }))
+                   .describe('Regular dividends per share by calendar year of the ex-date, split-adjusted, oldest first'),
+  setAside:      z.array(z.object({ day: z.string(), amount: z.number() }))
+                   .describe('Payments not counted as the regular dividend: specials several times the regular ones, and the odd one out in a year with a payment too many (a spin-off or a correction Yahoo lists as a dividend)'),
+});
+export type DividendRecord = z.infer<typeof DividendRecordSchema>;
+
 export const StockFinancialsSchema = z.object({
   // ── Identity ────────────────────────────────────────────────────────────────
   symbol:      z.string().describe('Exchange ticker symbol as used by Yahoo Finance (e.g. AAPL, 0QW9.IL)'),
@@ -221,7 +238,12 @@ export const StockFinancialsSchema = z.object({
     operatingCashFlow: z.array(z.object({ year: z.number(), value: z.number() })),
     totalAssets:       z.array(z.object({ year: z.number(), value: z.number() })),
     stockholdersEquity:z.array(z.object({ year: z.number(), value: z.number() })),
+    capex:             z.array(z.object({ year: z.number(), value: z.number() })).optional().describe('Capital expenditure per fiscal year, as a positive amount'),
+    depreciation:      z.array(z.object({ year: z.number(), value: z.number() })).optional().describe('Depreciation and amortisation per fiscal year, from the cash flow statement'),
+    grossPPE:          z.array(z.object({ year: z.number(), value: z.number() })).optional().describe('Property, plant and equipment before accumulated depreciation, at each fiscal year end'),
   }).describe('Last ~5 fiscal years of headline metrics for trend charts'),
+
+  dividendRecord: DividendRecordSchema.nullable().optional().describe('The dividend year by year since it was first paid, and how long it has been raised and paid without a break; absent in payloads fetched before it was read'),
 
   // ── Short Interest ───────────────────────────────────────────────────────────
   shortPercentOfFloat:   z.number().nullable().describe('Fraction of float sold short (decimal, e.g. 0.045 = 4.5%); sourced from Yahoo defaultKeyStatistics'),
