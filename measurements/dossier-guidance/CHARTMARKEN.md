@@ -123,9 +123,16 @@ und Bear-Case, ungeordnet und ohne Abgleich.
   freigegeben und von distill an 60 protokollierten Calls gemessen (ai-troop/distill#412): reine
   Leerformeln in 97 von 99 Läufen leer (vorher 19), angehängte Leerformeln in allen 45 Läufen weg,
   normale Dossiers nie leer und im Median 0,94-mal so lang. Bei Sektoren ersetzt dieselbe Regel
-  »keep the dossier short«. Eingeschaltet wird nach Freigabe in der distill-Sitzung. Die 14-Tage-Regel
-  löst das nicht; dafür steht ai-troop/distill#413 und wartet auf die Entscheidung zu strukturierten
-  Kursmarken.
+  »keep the dossier short«. Die 14-Tage-Regel löst das nicht; dafür steht ai-troop/distill#413 und
+  wartet auf die Entscheidung zu strukturierten Kursmarken.
+  **Am 10.10. eingeschaltet und wieder zurückgenommen:** Die Regel leerte auch knappe Dossiers mit echtem
+  Inhalt (Tageskacheln von Microsoft, Nebius, Oracle und Sea Limited, rollierend Snowflake und Lockheed
+  Martin), und weil eine leere Tageskachel als wiedergegeben zählt, kamen deren Insights auch nicht roh
+  nach (ai-troop/distill#419). Die Messung hatte nur sehr kurze Leerformeln und dicke Kontrollen. Die
+  Vorgabe ist wieder Fassung 4, 126 Tages- und 58 rollierende Dossiers sind neu gebaut; Johnson &
+  Johnson und Pfizer tragen wieder ihre Leerformel. stock-cli hat in dieser Zeit nichts abgerufen
+  (letzter Abruf 09.10., 23:30 UTC). Eine nächste Fassung nur nach einer Messung mit knappen, echten
+  Dossiers als Kontrolle, auf Entscheidung des Eigentümers.
 - **Strukturierte Marken**, Einschätzung von distill:
   - *A, aus dem fertigen Dossiertext:* ein bis zwei Tage, gewinnt gegenüber dem Extraktor nur Art,
     Status und Währung; Datum und Quelle bleiben so lückenhaft wie im Text. Abgeraten.
