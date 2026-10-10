@@ -33,6 +33,13 @@ vorher 6 %.
   vollständig neu gelesen, beide Arme gleichzeitig wie vorgesehen; ihre verworfenen Zeilen stehen in
   `roh/verworfen-netz.jsonl`. Fehlschläge des Modells selbst wurden nicht wiederholt.
 - Der Prüfer lief zuerst mit 4, dann mit 12 parallelen Calls; fertige Zellen wurden nicht wiederholt.
+- **Nachtrag von distill:** Der Nacht-Sweep von distill lief am 10.10. nach Worker-Neustarts erst von
+  22:59 bis 23:33 UTC, also während des Abrufs. Bei 39 der 93 S1-Aktien ist das neue Firmendossier
+  deshalb der Neubau vom 09.10. tagsüber (gebaut vor 22:59 UTC), bei 54 der des Sweeps. Beide tragen die
+  neue Vorgabe; beim Neubau endet das Fenster laut distill am 08.10., es gibt dort also keinen
+  Fensterversatz zum alten Paket. Das Feld `periodEnd` im Paket steht bei allen auf dem 09.10. und zeigt
+  den Unterschied nicht. Für die Frage nach der Vorgabe ist das kein Fehler; die Zuordnung je Aktie
+  steht in `builtAt` der Pakete.
 
 ## Metriken (S1, 93 Symbole)
 

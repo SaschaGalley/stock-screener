@@ -107,11 +107,28 @@ und Bear-Case, ungeordnet und ohne Abgleich.
 6. Bis die Liste da ist, reicht der Extraktor für eine Vorschau der Ebene in Punkt 2 (Präzision 39/40),
    dann ohne Art und mit Datum nur, wo es im Satz steht.
 
-## Für die distill-Sitzung
+## Für die distill-Sitzung, und ihre Antwort (10.10.)
 
-- Bitte um die strukturierte Liste aus Punkt 5, falls der Eigentümer den Entwurf will.
-- Die 14-Tage-Regel hält in der Produktion schlechter als im Messlauf: 40 von 138 klar datierten Marken
-  sind älter (29 %, 11 Aktien), im Messlauf 3 %.
-- Dünne Dossiers bestehen jetzt oft aus einer Leerformel (»No stock-specific claims, price levels, or
-  views on Johnson & Johnson are provided«, ebenso Pfizer, BMW). Der fremde Rohtext ist weg, wie geplant;
-  übrig bleibt ein Satz über das Fehlen.
+- **14-Tage-Regel:** 40 von 138 klar datierten Marken sind älter (29 %, 11 Aktien), im Messlauf 3 %.
+  distill bestätigt: Die Regel hält in der Produktion nicht verlässlich. Deutlichstes Beispiel ist AMD,
+  dessen Dossier die ganze Markenliste einer Quelle vom 22.09. trägt und eine Zone doppelt führt. Die 29 %
+  sind eine Obergrenze: Einige der markierten Sätze sind keine Chartmarken (PayPal-Offerte, BABA,
+  SNDK), andere Zonen wurden später erneut genannt und verletzen dann die Regel »nur die jüngste je
+  Zone«. Die 3 % des Messlaufs waren anders gemessen (Handliste, Alter nach letzter Nennung in den
+  Eingaben). Der Fix wartet auf den Eigentümer.
+- **Leerformeln:** bestätigt; rein leer sind JNJ und PFE, bei BMW, Mastercard und Boeing hängt der Satz
+  an einem Fakt. Ursprung ist eine Tageskachel aus einem einzigen Insight über eine andere Firma.
+  Vorschlag von distill: ein Satz in der Vorgabe, leer zu antworten statt das Fehlen zu beschreiben;
+  dann meldet die API `state: empty` und liefert die rohen Insights trotzdem. Der Wortlaut wartet auf
+  den Eigentümer.
+- **Strukturierte Marken**, Einschätzung von distill:
+  - *A, aus dem fertigen Dossiertext:* ein bis zwei Tage, gewinnt gegenüber dem Extraktor nur Art,
+    Status und Währung; Datum und Quelle bleiben so lückenhaft wie im Text. Abgeraten.
+  - *B, aus den Insights je Firma und Tag:* rund 70 Calls pro Nacht. Datum und Quelle kommen
+    verlässlich aus der Periodenachse, Zone, jüngste Marke je Zone, 14-Tage-Grenze und Status rechnet
+    Code. Braucht einen allgemeinen Mechanismus für projektdefinierte Felder (eigene ADR), eine neue,
+    ausgeschaltet startende Stufe, Tabelle, Nachlauf, Aggregation, API-Feld und Messung: eher eine
+    Woche. Empfohlen, falls die Ebene kommt.
+  - *C, Text und Marken in einem Call:* abgeraten.
+- Nebenbei: Im Dossier der Bank of America stehen Broadcom-Marken, ein Fehler der Entity-Zuordnung;
+  distill sieht ihn sich an.
