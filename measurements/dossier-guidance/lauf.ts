@@ -54,11 +54,14 @@ function assertSameSystemPrompt(): void {
 interface Doc { id: number; producedAt: string; lastSeenAt: string; data: any }
 
 async function getJson(path: string): Promise<any> {
+  // Wiederholt auch bei Netzfehlern: Ein Rechner, der aus dem Ruhezustand aufwacht, hat für einige
+  // Sekunden kein Netz, und der erste Lauf ist genau daran nach 38 Symbolen abgebrochen.
   for (let attempt = 1; ; attempt++) {
-    const res = await fetch(`${API}${path}`);
-    if (res.ok) return res.json();
-    if (attempt >= 3 || res.status < 500) throw new Error(`${path}: HTTP ${res.status}`);
-    await new Promise((r) => setTimeout(r, 2000 * attempt));
+    let res: Response | null = null;
+    try { res = await fetch(`${API}${path}`); } catch (e) { if (attempt >= 6) throw e; }
+    if (res?.ok) return res.json();
+    if (res && (attempt >= 6 || res.status < 500)) throw new Error(`${path}: HTTP ${res.status}`);
+    await new Promise((r) => setTimeout(r, 5000 * attempt));
   }
 }
 
