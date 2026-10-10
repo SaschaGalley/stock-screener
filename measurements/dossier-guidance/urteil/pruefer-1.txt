@@ -1,0 +1,12 @@
+JD: gleich — Beide enthalten sich richtigerweise und sagen inhaltlich dasselbe: Es gibt nur Charttechnik und nichts zum Geschäft; A nennt die Quelle sauberer, mischt dafür aber Sektor-Hintergrund in die Argumente.
+OKTA: B — A kommt ohne einen einzigen harten Geschäftsbeleg auf 7,5 und gibt bei der Position +1, obwohl es selbst schreibt, dass die Daten fehlen; Bs 6,0 passt besser zur dünnen Lage.
+PFE: A — Ohne eigene Pfizer-Meldungen ist die Enthaltung ehrlich, während B aus reinem Sektor-Hintergrund eine scheinbar neutrale 5,0 und aufgefüllte Argumente baut.
+RBRK: B — B nennt bei gleichem Score die negativen Margen, datiert die Ereignisse und zeigt die Quellen, also ein vollständigeres und ausgewogeneres Bild von Wachstum und Gewinnqualität.
+MRVL: gleich — Beide haben dieselben Kernzahlen und Risiken; B beschreibt die FCC-Lage genauer, A die Margenfrage beim Custom Silicon, und beide enthalten etwas Rauschen (Charttechnik bzw. ETF-Erwähnung und Bewertung).
+AXON: A — Bei identischer Einstufung hat A korrekt datierte Ereignisse mit klaren Quellen, während B alles auf einen Tag legt und Belangloses wie den Kauf von vier Aktien eines Privatanlegers aufführt.
+NU: B — B liefert mehr harte Geschäftsdaten: Umsatz +39 %, fast 140 Mio. Kunden, Monetarisierung in Mexiko und Kolumbien, Break-even-Vergleich und die Details zum US-Start; A füllt mit einem Kursziel und dem Ende des Dossier-Zeitraums auf.
+LMT: B — Ohne eigene Meldungen zu Lockheed ist die Enthaltung ehrlicher als As 5,0 aus lauter Nullen, auch wenn Bs D-Wave-Kauf von 2011 überflüssig ist.
+BYDDF: gleich — Beide kommen auf fast denselben Score, übernehmen beide den unaufgelösten Widerspruch zwischen „erstmals positivem“ Free Cash Flow und 14 Mrd. $ Abfluss und enthalten beide viel Charttechnik bzw. KGV-Vergleiche.
+CRWV: B — B unterscheidet schärfer (Nachfrage +2, Umsetzung −1) und belegt das mit 13,7 Mrd. $ Cash Burn gegen 7,66 Mrd. $ Umsatz und dem Strom-Engpass, während A Marktkapitalisierung und Kurssprünge aufzählt.
+ORCL: B — B bringt die Quartalszahlen, die angehobene Prognose, die GPU-Auslastung und das Verhältnis von Investitionen zu operativem Cashflow, während A sich auf Anleihekurse und Chartmarken stützt; nur Bs −1 bei der Regulierung für eine noch offene Genehmigung ist zu streng.
+NKE: A — A liefert die harten Quartalszahlen (Umsatz −4 %, Nordamerika +2 %, China −26 %, Gewinn je Aktie über den Erwartungen, Bruttomarge), B dagegen vor allem Chartmarken von 10xTrading.

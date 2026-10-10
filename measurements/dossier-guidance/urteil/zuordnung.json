@@ -1,0 +1,54 @@
+{
+ "seed": 20261010,
+ "zuordnung": {
+  "JD": {
+   "A": "neu",
+   "B": "alt"
+  },
+  "OKTA": {
+   "A": "alt",
+   "B": "neu"
+  },
+  "PFE": {
+   "A": "neu",
+   "B": "alt"
+  },
+  "RBRK": {
+   "A": "alt",
+   "B": "neu"
+  },
+  "MRVL": {
+   "A": "neu",
+   "B": "alt"
+  },
+  "AXON": {
+   "A": "neu",
+   "B": "alt"
+  },
+  "NU": {
+   "A": "neu",
+   "B": "alt"
+  },
+  "LMT": {
+   "A": "alt",
+   "B": "neu"
+  },
+  "BYDDF": {
+   "A": "neu",
+   "B": "alt"
+  },
+  "CRWV": {
+   "A": "neu",
+   "B": "alt"
+  },
+  "ORCL": {
+   "A": "neu",
+   "B": "alt"
+  },
+  "NKE": {
+   "A": "alt",
+   "B": "neu"
+  }
+ },
+ "ersetzt": []
+}

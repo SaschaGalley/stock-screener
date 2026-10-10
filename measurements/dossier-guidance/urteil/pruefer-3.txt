@@ -1,0 +1,12 @@
+JD: A — Beide enthalten sich zu Recht, aber A nennt die Quelle und datiert die Ereignisse, während B die Ereignisse als „keine“ führt und die Thesen nur einem unklaren „Distill-Kommentar“ zuschreibt.
+OKTA: B — A vergibt aus reinem Management-Narrativ 7,5 und Position +1, obwohl es selbst sagt, dass die Marktanteilsdaten fehlen; Bs 6,0 spiegelt die dünne Beleglage ehrlicher, auch wenn B fehlende Dimensionen mit 0 statt ausgelassen führt.
+PFE: A — Für Pfizer gibt es keinen eigenen Newsflow, also ist As Enthaltung richtig; B baut aus Sektor-Hintergrund nur Füll-Thesen und eine Schein-Neutralität von 5,0.
+RBRK: B — Gleicher Score, aber B nennt zusätzlich die negativen operativen Margen (−18 % operativ, −16 % netto) und datiert die Ereignisse, das macht das Gegenargument zur Gewinnqualität greifbar.
+MRVL: gleich — A hat die Gegenargumente zu Ramp und Marge, B ordnet das FCC-Thema sauberer zeitlich ein; beide streuen Rauschen ein (A Chart-Signale, B ETF-Nennung und Bewertung).
+AXON: A — Beide sind inhaltlich gleich, aber A datiert die Ereignisse einzeln glaubwürdig, während B alles auf den 8.10. legt und Nebensächliches wie einen Kauf von vier Aktien als Ereignis führt.
+NU: B — B liefert die härteren Geschäftsdaten (Umsatz +39 % währungsbereinigt, fast 140 Mio. Kunden, Pro-Kunde-Umsatz in Mexiko und Kolumbien, Break-even in Mexiko nach 6 statt 8 Jahren in Brasilien); A füllt mit Kursziel-Senkung und Monzo-Stimmung auf.
+LMT: B — Die Quellen sagen zum Geschäft nichts, also ist Bs Enthaltung ehrlicher als As 5,0 aus lauter Nullen, auch wenn Bs D-Wave-Kauf von 2011 Ballast ist.
+BYDDF: A — A ordnet die Aussagen klar ihren Quellen zu und lässt das Produkt bei fehlenden Angaben korrekt aus; B mischt KGV-Vergleich und Kurslücken als Ereignisse ein.
+CRWV: B — B differenziert die Dimensionen klarer (Nachfrage +2, Umsetzung −1) und belegt sie mit harten Zahlen: $13,7 Mrd. Cash-Abfluss bei $7,66 Mrd. Umsatz, 4,2 GW zugesagt bei 1,5 GW in Betrieb, Investment-Grade-Rating von Moody's.
+ORCL: B — B hat die eigentlichen Quartalszahlen (Cloud-Infrastruktur +121 %, angehobene Prognose, $28 Mrd. Capex gegen negativen Free Cash Flow), während A hauptsächlich Anleihekurse und Chart-Marken liefert; Bs Regulierung −1 für einen noch offenen Permit ist allerdings zu streng.
+NKE: A — A liefert die harten Quartalsdaten (Umsatz −4 %, China −26 %, Nordamerika +2 %, Gewinn je Aktie über Erwartung), während Bs Ereignisse fast nur Chart-Marken sind.

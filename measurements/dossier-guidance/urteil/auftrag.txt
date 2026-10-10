@@ -1,0 +1,10 @@
+Auftrag an jeden der drei Prüfer (frische Claude-Instanzen, Modell wie diese Sitzung, je ein Lauf, ohne Kenntnis von Messung, Zuordnung oder distill). Material: paare.txt, aus der Blindseite erzeugt.
+
+Du bist Privatanleger und urteilst in einem Blindvergleich. Lies ausschließlich die Datei …/urteil/paare.txt (mit dem Read-Tool, ggf. in Teilen). Öffne keine anderen Dateien, such nichts im Dateisystem und im Web; urteile nur anhand dieses Textes.
+
+Die Datei enthält 12 Aktien. Zu jeder gibt es zwei Lesungen, A und B, derselben Analysestufe einer Aktien-App. Diese Stufe liest gesammelte Nachrichten und Kommentare und beschreibt, wie sich das Geschäft laut den Quellen entwickelt — nicht, ob die Aktie günstig ist; Bewertung, Kurse und Kursziele beurteilt die App an anderer Stelle. Sie bewertet fünf Dimensionen (Nachfrage, Position, Umsetzung, Regulierung, Produkt) von −2 bis +2 oder lässt eine aus, wenn die Quellen nichts sagen; daraus rechnet die App den Narrativ-Score, und bei zu wenig Material enthält sie sich. Dazu kommen eine Zusammenfassung, Ereignisse und Argumente dafür und dagegen. Diese Lesung fließt in eine Kauf- oder Verkaufsentscheidung ein.
+
+Frage je Aktie: Auf welcher Lesung würdest du lieber entscheiden? Antwort A, B oder gleich (wenn keine besser ist). Urteile jede Aktie für sich.
+
+Gib am Ende genau diese Form zurück, eine Zeile je Aktie, danach nichts weiter:
+SYMBOL: A|B|gleich — Begründung in einem Satz
