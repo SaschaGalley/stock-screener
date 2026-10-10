@@ -74,7 +74,8 @@ import { PILLAR_KEYS } from '../types.js';
 import { insiderHistory } from './insiders.js';
 import { VARIANTS, variantSignals } from './variants.js';
 import { featureArray, TOP_FEATURES, topDecileStudy, type TopRecord } from './top-decile.js';
-import { FAIR_LENSES, fairRecord, fairValueStudy, type FairRecord } from './fair-value.js';
+import { agreementKey, FAIR_LENSES, fairRecord, fairValueStudy, type FairRecord } from './fair-value.js';
+import { AGREEMENT_LEVELS } from '../analysis/fair-agreement.js';
 import { TIMING_GROUPS, TIMING_HORIZONS, timingArray, timingGroup, timingStudy, type TimingRecord } from './timing.js';
 import { TIMING_CANDIDATES } from '../analysis/timing.js';
 import { INSIDER_CANDIDATES, insiderActivity, type InsiderTrade } from '../analysis/insider-signals.js';
@@ -685,6 +686,16 @@ export function renderBacktest(r: BacktestResult): string {
           const b = fv.positions.find((x) => x.bucket === pos && x.horizon === h);
           return `${h}M ${pc(b?.meanExcess).padStart(7)} (${fmt(b?.tStat, 1)})`;
         }).join('  '));
+    }
+    if (fv.agreementShare) {
+      lines.push('  The primary gap by how far the models agree → IC (t, sector IC):');
+      for (const a of AGREEMENT_LEVELS) {
+        lines.push(`    ${a.answer.padEnd(18)} ${String(Math.round((fv.agreementShare[a.key] ?? 0) * 100)).padStart(3)}%  `
+          + [1, 3, 6, 12].map((h) => {
+            const ic = fv.ics.find((x) => x.key === agreementKey(a.key) && x.horizon === h);
+            return `${h}M ${fmt(ic?.meanIc)} (${fmt(ic?.tStat, 1)}, ${fmt(ic?.neutralIc)})`;
+          }).join('  '));
+      }
     }
     lines.push('  Price inside the range when drawn → a horizon later:');
     for (const g of fv.ranges) {

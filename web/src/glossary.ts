@@ -70,6 +70,8 @@ export const GLOSSARY = {
     'Was die Analysten sagen, die die Aktie abdecken: das mittlere Kursziel und sein Abstand zum Kurs, die Spanne der Ziele, wie einig sie sich sind, jedes Haus einzeln und die Verteilung der Ratings. Kopfzahlen aus Yahoos Konsensdaten, die Häuser einzeln aus Yahoos Rating-Historie.',
   'concept.upside':
     'Abstand zum Kurs: (Wert − Kurs) / Kurs. Positiv heißt, der Wert liegt über dem Kurs. Das ist die Sicherheitsmarge, wenn man dem Wert glaubt.',
+  'concept.fairUncertainty':
+    'Wie weit die marktnahen Modelle auseinanderliegen: das höchste minus das niedrigste, geteilt durch ihre Mitte. Unter 0,5 gering, unter 1 mittel, darüber hoch. Über die gespeicherten Aktien liegt der Median bei 0,86, also ist „hoch“ bei zwei von fünf Aktien der Normalfall. Einig heißt nicht treffsicher: Im Backtest 2013–2026 sagte die Lücke zum fairen Wert bei einigen Modellen so wenig voraus wie bei uneinigen (Rang-IC über einen Monat 0,006 gegen 0,004, beide t unter 1). Die Unsicherheit sagt, wie sehr die Zahl an der Wahl des Modells hängt, nicht, wie wahrscheinlich sie eintrifft.',
   'concept.modelRange': 'Niedrigster und höchster Wert unter den Modellen dieses Tiers. Je weiter die Spanne, desto weniger sind sich die Modelle einig.',
   'metrics.composite.conservative.median':
     'Die Value-Linse: Modelle, die kein Wachstum unterstellen oder an Vermögen ansetzen, nämlich Graham Number, Graham V*, EPV, Residual Income und das Dividendenmodell, jeweils nur, wo sie das Geschäft beschreiben. Sie liegt meist unter Primary. Ein Kurs darunter ist ein starkes Value-Signal. Banken, Versicherer und Kreditgeber werden im Score nur untereinander verglichen: Nach Grahams Formeln sieht jede Firma mit viel Fremdkapital billig aus.',

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { Close } from '../src/analysis/evaluate.js';
-import { FAIR_FIELDS, fairValueStudy, positionOf, type FairRecord } from '../src/backtest/fair-value.js';
+import { agreementKey, FAIR_FIELDS, fairValueStudy, positionOf, type FairRecord } from '../src/backtest/fair-value.js';
 
 const months = ['2020-01-31', '2020-02-28', '2020-03-31', '2020-04-30', '2020-05-29', '2020-06-30', '2020-07-31', '2020-08-31'];
 
@@ -48,6 +48,13 @@ describe('the fair value under test', () => {
     const c = study.convergence.find((x) => x.lens === 'fair.primary' && x.horizon === 1)!;
     assert.equal(c.months, months.length - 1);
     assert.ok(Math.abs(c.slope! - 0.1) < 0.01, `slope ${c.slope}`);
+  });
+
+  it('splits the gap by how far the models agree', () => {
+    // Every range here is 0.8 to 1.2 of the middle: a spread of 0.4, models in agreement.
+    assert.deepEqual(study.agreementShare, { agree: 1, split: 0, apart: 0 });
+    const ic = study.ics.find((x) => x.key === agreementKey('agree') && x.horizon === 1)!;
+    assert.ok(ic.meanIc! > 0.99);
   });
 
   it('ranks the returns by the gap', () => {

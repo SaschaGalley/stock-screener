@@ -115,6 +115,8 @@ Measured across the list, the stock you clicked lands on the pixel it was on, go
 
   **The dividend's record** is in the header, on hover over the yield (`dividendRecord` in `src/analysis/payout.ts`): the years in a row the regular dividend rose and was paid, and a cut of the last ten years; a cut of the last two replaces the bond under the yield, in amber. Each refresh reads every payment Yahoo has (Coca-Cola's from 1962) from the monthly chart it fetched anyway. Counted in calendar years on the regular dividend: specials several times the payments around them are set aside, and so is the odd one out in a year with a payment too many — Yahoo lists Coca-Cola's September 2001 payment twice, P&G's 2002 spin-off of Jif and Crisco as a dividend. Two years with different counts compare their average payment, so one slipping across New Year breaks nothing; a cut is dated by the first payment below its counterpart a year earlier. A dividend converted from the reporting currency (Shell's dollars on the London line, Novo's kroner on the ADR) moves with the rate, so only its years paid are counted. Against the records published elsewhere: Coca-Cola 63 years raised, Johnson & Johnson 63, PepsiCo 53, Costco 21, Apple 13; BASF's cut of May 2025, AT&T's of 2022. P&G reads 42 rather than 69, and Exxon 42 rather than 43: Yahoo's amounts before 1984 are adjusted wrongly for a split.
 
+  **Unsicherheit** stands beside the fair value in *Was ist sie wert?*, as InvestingPro prints it beside its own: *gering*, *mittel* or *hoch* by how far the primary models lie apart — the highest less the lowest over their middle, below 0.5, below 1, above (`src/analysis/fair-agreement.ts`) — the same scale *Wie einig sind sie sich?* answers in the valuation tab, which now names the DCF's own scenario range beside the models'. Across the stored stocks the spread's median is 0.86, so *hoch* is two stocks in five. Its tooltip says what the backtest found: agreement does not make the fair value more accurate.
+
   **Wie der Score entsteht** is a strip under the three verdict cards rather than a section of its own: the blend as one line (Zahlen × weight + Text × weight → score), the six pillars with their weights, and the five narrative dimensions. Findings, method and the two prose reads sit behind *Befunde & Begründung*, which remembers being opened; the two prose reads are also a hover on their half of the formula.
 
   **Six views read the archive back** (`src/stock-history-service.ts`, all reads, no fetches):
@@ -2053,6 +2055,15 @@ estimates; the rating history's target):
   the middle half 32 % and 27 %. The DCF's scenarios from bear to bull — its
   10th to 90th percentile — held the price itself only half the time: the
   scenarios spread less than model and market disagree.
+- **Agreement does not make it better** (10 October 2026). Split by how far the
+  primary models agree — the highest less the lowest over their middle, below
+  0.5, below 1, above (`analysis/fair-agreement.ts`) — the gap's IC over a
+  month is 0.006 (t 0.6) where they agree, 0.008 (t 0.8) where they partly do
+  and 0.004 (t 0.4) where they are far apart; within the sector the agreeing
+  third leads at six and twelve months, 0.010 against 0.001 and −0.006, with no
+  t near 2. The uncertainty the page states beside the fair value says how
+  much the number hangs on the choice of model, not how likely it is to come
+  true.
 
 The fair value describes what the models make of the company; it does not
 forecast the price, and its margin of safety is not an expected return. The
@@ -2354,6 +2365,7 @@ src/
 │   ├── investment.ts      Capital spending against depreciation: the card, and three investment candidates
 │   ├── estimate-revisions.ts  The revenue consensus per fiscal year against its own past in the archive
 │   ├── cycle.ts           Today's margins against every fiscal year on record; two margin candidates
+│   ├── fair-agreement.ts  How far the primary models agree: the fair value's uncertainty in words
 │   ├── data-quality.ts    Cross-field contradiction audit — feeds the caps
 │   ├── run-rate.ts        TTM ↔ run-rate factor shared by SVR, peer medians and the UI
 │   ├── signals.ts         TradingView-style buy/sell signal aggregation
