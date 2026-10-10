@@ -13,8 +13,8 @@
  */
 
 import { readAppConfig } from './app-config.js';
-import { fetchPerplexity, PerplexityContext, PERPLEXITY_PROMPT_HASH } from './data/perplexity.js';
-import { readDeepResearch, readFinancialsLax, readPerplexity, writePerplexity } from './db/store.js';
+import { BriefPartAnswer, fetchPerplexity, PerplexityContext, PERPLEXITY_PROMPT_HASH, reusableDebate } from './data/perplexity.js';
+import { readDeepResearch, readFinancialsLax, readPerplexity, readPerplexityLax, writePerplexity } from './db/store.js';
 import { DEEP_RESEARCH_MODEL } from './models.js';
 import { logger } from './utils/logger.js';
 
@@ -34,7 +34,7 @@ export async function getPerplexityCached(
   apiKey: string,
   runId?: number | null,
 ): Promise<PerplexityContext> {
-  const { maxAgeDays } = (await readAppConfig()).perplexity;
+  const { maxAgeDays, debateMaxAgeDays } = (await readAppConfig()).perplexity;
   const stored = await readPerplexity(symbol, maxAgeDays * DAY_MS, model);
   // An answer to a different question is not a cache hit, however fresh. The
   // hash existed from the start and was never compared, so rewriting the brief
@@ -44,7 +44,9 @@ export async function getPerplexityCached(
     return stored;
   }
   if (stored) logger.info('Perplexity in store was written by an earlier prompt — fetching anew');
-  return fetchAndStore(symbol, companyName, model, apiKey, runId);
+  // The facts are due; the debate of the newest brief stands in while it is young enough.
+  const kept = reusableDebate(stored ?? await readPerplexityLax(symbol), model, debateMaxAgeDays * DAY_MS);
+  return fetchAndStore(symbol, companyName, model, apiKey, runId, kept);
 }
 
 /**
@@ -63,7 +65,7 @@ export async function getDeepResearchStored(
   return stored;
 }
 
-/** Ask Perplexity again, whatever is stored — the refresh button. */
+/** Ask Perplexity again, whatever is stored — the refresh button, both parts of the brief. */
 export async function refreshPerplexity(
   symbol: string,
   model: PerplexityModel,
@@ -81,8 +83,9 @@ async function fetchAndStore(
   model: PerplexityModel,
   apiKey: string,
   runId?: number | null,
+  keptDebate: BriefPartAnswer | null = null,
 ): Promise<PerplexityContext> {
-  const data = await fetchPerplexity(symbol, companyName, apiKey, model);
+  const data = await fetchPerplexity(symbol, companyName, apiKey, model, keptDebate);
   await writePerplexity(symbol, data, runId);
   return data;
 }

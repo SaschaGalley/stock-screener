@@ -424,12 +424,16 @@ function usePerplexityRefresh(symbol: string, model: PerplexityModelId, onRefres
 
 /**
  * "14.8.2026, sonar-pro, 0,42 $" — when a brief was bought, from where, for how
- * much; and when it did not come back as asked, that too: as running text
- * instead of sections, or breaking off before its end.
+ * much, and its debate's day where that was kept from an earlier one; and when
+ * it did not come back as asked, that too: as running text instead of
+ * sections, or breaking off before its end.
  */
 function briefMeta(context: PerplexityContext): string {
+  // A debate kept from an earlier brief says from when.
+  const debate = context.parts?.debate?.fetchedAt;
   return [
     dayDe(context.fetchedAt),
+    debate && debate.slice(0, 10) !== context.fetchedAt.slice(0, 10) && `Debatte vom ${dayDe(debate)}`,
     context.pastedFrom ? `${context.pastedFrom}, von Hand` : context.model,
     context.costUsd !== undefined && `${context.costUsd.toFixed(2).replace('.', ',')} $`,
     !context.findings && 'als Fließtext',

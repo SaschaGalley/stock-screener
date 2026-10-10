@@ -155,6 +155,32 @@ export interface PerplexityContext {
   truncated?: boolean;
   /** Run in a chat app and pasted in by hand — which one. Absent on API rows. */
   pastedFrom?: ManualResearchTool;
+  /**
+   * The regular brief's two calls (`BRIEF_PARTS`, from 11 October 2026): when
+   * each was fetched, by which prompt, its sources, cost and answer. A part kept
+   * from an earlier brief carries that brief's. Absent on deep research, pasted
+   * and older rows, which were asked whole.
+   */
+  parts?: Partial<Record<BriefPart, BriefPartMeta>>;
+}
+
+/** How one part of the brief was fetched. */
+export interface BriefPartMeta {
+  fetchedAt:     string;
+  promptHash:    string;
+  citations:     string[];
+  costUsd?:      number;
+  usage?:        unknown;
+  /** The answer as returned, so a parser fix can re-read it. */
+  raw:           string;
+  finishReason?: string;
+  truncated?:    boolean;
+}
+
+/** One part of the brief as fetched, or kept: what it found and how. */
+export interface BriefPartAnswer {
+  findings: PerplexityFindings;
+  meta:     BriefPartMeta;
 }
 
 const PPLX_API_URL = 'https://api.perplexity.ai/chat/completions';
@@ -202,15 +228,41 @@ export const SYSTEM_PROMPT =
   'direction. Every factual claim carries a date and a source. You never pad a section: an ' +
   'empty list is a valid, useful answer. Never refuse, and never add commentary about your search.';
 
+// ── The brief ────────────────────────────────────────────────────────────────
+
+/**
+ * The brief is asked of the regular models in two calls (from 11 October
+ * 2026): the facts — what happened, what the figures cannot show, what is
+ * coming — and the debate — the open questions and the theses on each side.
+ * One call covering seven sections came back with a dozen sources between
+ * them; two searches go deeper, each answer is half as long, and each part
+ * keeps its own pace: the facts are fetched with every brief, the debate
+ * reused for `perplexity.debateMaxAgeDays`, since theses move slower than news.
+ * Deep research and the brief copied into a chat app ask it whole, in one.
+ *
+ * The fifth version, with the split, also cut what the rest of the app never
+ * read: the claims' "settles" (the debate says what settles it), dates ahead
+ * the calendar already holds — 25 of 28 catalysts in the stored briefs were
+ * earnings dates —, the reported figures of the last quarter, which Yahoo
+ * gives, and the length of every field.
+ */
+export const BRIEF_PARTS = ['facts', 'debate'] as const;
+export type BriefPart = (typeof BRIEF_PARTS)[number];
+
 // {date} is replaced at runtime and is deliberately outside the hash.
-const PROMPT_TEMPLATE =
+const HEADER =
   `Research {company} ({ticker}) as of {date}.
 
-We already hold its price, valuation multiples, reported financial statements, analyst
-ratings, price targets, estimate revisions and insider transactions. Do NOT repeat those.
-Report what that data cannot show, mostly from the last 90 days.
+We already hold its price, valuation multiples, reported financial statements (revenue,
+earnings and margins, against the estimates), analyst ratings, price targets, estimate
+revisions, insider transactions, and its earnings and dividend dates. Do NOT repeat those.`;
 
-Source rule: every event and every item of bear evidence names its "origin" — where the
+const NAMING_RULE =
+  `Name the firm or author whenever you can ("Morgan Stanley", "Hindenburg", "The
+Information"); never "an analyst" or "a published analysis".`;
+
+const SOURCE_RULE =
+  `Source rule: every event and every item of bear evidence names its "origin" — where the
 information comes from, not who reported it:
 - "company": results, guidance, operating figures, filings, press releases, earnings
   calls, investor presentations and executives' remarks, also when Reuters, CNBC or an
@@ -219,69 +271,110 @@ information comes from, not who reported it:
   third party has confirmed;
 - otherwise who established it: "analyst", "short-seller", "regulator", "court",
   "customer", "competitor", "industry-data", or "press" for a news outlet's own reporting
-  from documents or named sources.
-Name the firm or author whenever you can ("Morgan Stanley", "Hindenburg", "The
-Information"); never "an analyst" or "a published analysis".
+  from documents or named sources.`;
 
-1. "debate": the one to three open questions the stock price hinges on right now — the
-   points on which bulls and bears actually disagree. For each: why it matters for
-   earnings or the multiple, which figure or event would settle it, and when that is due.
+// One sentence alone came back as 50 to 60 words a field (11 October 2026).
+const LENGTH_RULE =
+  `Every text field is one sentence of at most 30 words; "mechanism" and "detail" at most 45.
+Nothing outside the JSON.`;
 
-2. "events": concrete, dated developments of the last 90 days that change the business
-   outlook. Always include the most recent earnings report: guidance raised, cut or held
-   versus the prior quarter and versus consensus, and what management emphasised or
-   avoided. Also M&A with terms, C-suite changes, regulatory or legal decisions, major
-   customer wins or losses, pricing changes, shifts in the product cycle. Partnership press
-   releases, minor product launches and routine insider sales do NOT qualify. For each,
-   "impact": what it changes for revenue, margins or risk, quantified where possible.
+/** One section of the brief: the lists it asks for, what it asks, at most how many, and the answer's shape. */
+interface BriefSection {
+  part:    BriefPart;
+  keys:    string[];
+  max:     number;
+  ask:     string;
+  example: Record<string, string>;
+}
 
-3. "kpis": up to four company-specific operating figures that are not line items of the
-   income statement, balance sheet or cash flow statement, with values for the last two
-   to four reported periods — for example remaining performance obligations, net revenue
-   retention, subscribers, same-store sales, backlog, book-to-bill, utilisation, churn.
-   Pick the ones the debate is about. "read": what the trend says.
+const FINDING_EXAMPLE = '[{"date": "YYYY-MM-DD", "what": "...", "impact": "...", "source": "url", "origin": "company"}]';
+const CLAIM_EXAMPLE = (evidence: string) =>
+  `[{"claim": "...", "mechanism": "...", "stake": "...", "proponents": "...", "evidence": "${evidence}", "detail": "...", "counter": "...", "source": "url"}]`;
 
-4. "bear_evidence": the strongest SPECIFIC evidence against the bull case — short-seller
-   reports, accounting or audit concerns, guidance cuts or misses, churn or seat
-   reductions, share lost to a named competitor, structural threats to the business model
-   that analysts or industry data have documented. Evidence only, never "risks could
-   include". For each, "impact" as above.
-
-5. "bull_claims" and 6. "bear_claims": the theses in circulation, as the people who hold
-   them argue them. For each:
-   - "claim": the thesis in one sentence,
-   - "mechanism": how it works through the business — the causal chain, in two to four
-     sentences,
-   - "stake": what it is worth if right — revenue, margin, earnings or multiple, with
-     figures from the sources where they exist,
+/** In the order the whole brief asks them. */
+const SECTIONS: BriefSection[] = [
+  {
+    part: 'debate', keys: ['debate'], max: 2,
+    ask: `the one or two open questions the stock price hinges on right now — the points on which
+   bulls and bears actually disagree: why it matters for earnings or the multiple, which
+   figure or event settles it, and when that is due.`,
+    example: { debate: '[{"question": "...", "why": "...", "settles": "...", "when": "YYYY-MM-DD"}]' },
+  },
+  {
+    part: 'facts', keys: ['events'], max: 5,
+    ask: `dated developments of the last 90 days that change the business outlook. Of the latest
+   earnings report only what its figures cannot show: guidance raised, cut or held against
+   the prior quarter and consensus, and what management stressed or avoided. Also M&A with
+   terms, C-suite changes, regulatory or legal decisions, major customer wins or losses,
+   pricing changes, shifts in the product cycle — not partnership releases, minor launches
+   or routine insider sales. "impact": what it changes for revenue, margins or risk,
+   quantified where possible.`,
+    example: { events: FINDING_EXAMPLE },
+  },
+  {
+    part: 'facts', keys: ['kpis'], max: 3,
+    ask: `company-specific operating figures that are not line items of the statements, with
+   values for the last two to four reported periods — remaining performance obligations, net
+   revenue retention, subscribers, same-store sales, backlog, book-to-bill, churn: the ones
+   the stock's debate is about. "read": what the trend says.`,
+    example: { kpis: '[{"name": "...", "values": [{"period": "Q2 2026", "value": "..."}], "read": "...", "source": "url"}]' },
+  },
+  {
+    part: 'facts', keys: ['bear_evidence'], max: 4,
+    ask: `the strongest SPECIFIC evidence against the bull case — short-seller reports, accounting
+   or audit concerns, guidance cuts or misses, churn or seat reductions, share lost to a named
+   competitor, structural threats that analysts or industry data have documented. Evidence
+   only, never "risks could include". "impact" as above.`,
+    example: { bear_evidence: FINDING_EXAMPLE.replace('"company"', '"analyst"') },
+  },
+  {
+    part: 'debate', keys: ['bull_claims', 'bear_claims'], max: 4,
+    ask: `the theses in circulation on each side, as the people who hold them argue them:
+   - "claim": the thesis,
+   - "mechanism": how it works through the business — the causal chain,
+   - "stake": what it is worth if right — revenue, margin, earnings or multiple, with figures
+     from the sources where they exist,
    - "proponents": who argues it, by name,
    - "evidence": "independent" | "opinion" | "contradicted", and for bull claims also
-     "management-only". "independent" needs a fact that does not come from the company —
-     a third party's figure, decision or data. A view is not such a fact, however
-     reputable its holder: a claim that analysts or commentators argue without one is
-     "opinion", a bull claim only the company makes is "management-only",
-   - "detail": the strongest evidence for the grade — for "independent", the fact and
-     where it comes from,
-   - "counter": the strongest point against the claim,
-   - "settles": the figure or event that would prove or disprove it, and when.
+     "management-only". "independent" needs a fact that does not come from the company — a
+     third party's figure, decision or data. A view is not such a fact, however reputable its
+     holder: a claim that analysts or commentators argue without one is "opinion", a bull
+     claim only the company makes is "management-only",
+   - "detail": the strongest evidence for the grade — for "independent", the fact and where
+     it comes from,
+   - "counter": the strongest point against it.`,
+    example: { bull_claims: CLAIM_EXAMPLE('independent'), bear_claims: CLAIM_EXAMPLE('opinion') },
+  },
+  {
+    part: 'facts', keys: ['catalysts'], max: 3,
+    ask: `dated events in the next six months that can move the stock and that a calendar of
+   earnings and dividends does not show — investor or capital-markets days, product launches,
+   regulatory or court decisions, contract renewals, index changes, lock-up expiries — and
+   what to watch in each. No earnings or dividend dates; an empty list is the usual answer.`,
+    example: { catalysts: '[{"date": "YYYY-MM-DD", "event": "...", "watch": "..."}]' },
+  },
+];
 
-7. "catalysts": dated events in the next six months that can move the stock — earnings
-   dates, investor days, product launches, regulatory decisions, contract renewals — and
-   what to watch in each.
+/** The brief, or one part of it, as a prompt: its sections numbered, their limits and the JSON they fill. */
+function briefTemplate(part: BriefPart | 'whole'): string {
+  const sections = SECTIONS.filter((x) => part === 'whole' || x.part === part);
+  const asks = sections.map((x, i) => `${i + 1}. ${x.keys.map((k) => `"${k}"`).join(' and ')}: ${x.ask}`);
+  const limits = sections.flatMap((x) => x.keys.map((k) => `${x.max} ${k}`)).join(', ');
+  const example = sections.flatMap((x) => Object.entries(x.example));
+  const width = Math.max(...example.map(([k]) => k.length)) + 4;
+  const json = example.map(([k, v]) => `  ${`"${k}":`.padEnd(width)}${v}`).join(',\n');
+  const intro = part === 'debate'
+    ? 'Set out the debate around the stock: the open questions and the theses on each side, not the news.'
+    : 'Report what that data cannot show, mostly from the last 90 days.';
+  const rules = part === 'debate' ? NAMING_RULE : `${SOURCE_RULE}\n${NAMING_RULE}`;
+  return `${HEADER}\n${intro}\n\n${rules}\n\n${asks.join('\n\n')}\n\nAt most ${limits}: the strongest, not all of them.\n${LENGTH_RULE}\n\nReturn ONLY this JSON:\n{\n${json}\n}`;
+}
 
-At most 3 debate items, 6 events, 4 kpis, 6 bear_evidence items, 5 bull_claims,
-5 bear_claims and 4 catalysts: the strongest, not all of them.
-
-Return ONLY this JSON:
-{
-  "debate":        [{"question": "...", "why": "...", "settles": "...", "when": "YYYY-MM-DD"}],
-  "events":        [{"date": "YYYY-MM-DD", "what": "...", "impact": "...", "source": "url", "origin": "company"}],
-  "kpis":          [{"name": "...", "values": [{"period": "Q2 2026", "value": "..."}], "read": "...", "source": "url"}],
-  "bear_evidence": [{"date": "YYYY-MM-DD", "what": "...", "impact": "...", "source": "url", "origin": "analyst"}],
-  "bull_claims":   [{"claim": "...", "mechanism": "...", "stake": "...", "proponents": "...", "evidence": "independent", "detail": "...", "counter": "...", "settles": "...", "source": "url"}],
-  "bear_claims":   [{"claim": "...", "mechanism": "...", "stake": "...", "proponents": "...", "evidence": "opinion", "detail": "...", "counter": "...", "settles": "...", "source": "url"}],
-  "catalysts":     [{"date": "YYYY-MM-DD", "event": "...", "watch": "..."}]
-}`;
+const TEMPLATES: Record<BriefPart | 'whole', string> = {
+  facts:  briefTemplate('facts'),
+  debate: briefTemplate('debate'),
+  whole:  briefTemplate('whole'),
+};
 
 /**
  * The answer's shape as a JSON schema, derived from the example the prompt
@@ -307,7 +400,7 @@ export const BRIEF_RESPONSE_FORMAT = {
   type: 'json_schema',
   json_schema: {
     name: 'research_brief',
-    schema: schemaOf(JSON.parse(PROMPT_TEMPLATE.slice(PROMPT_TEMPLATE.indexOf('{', PROMPT_TEMPLATE.indexOf('Return ONLY this JSON')))) as unknown),
+    schema: schemaOf(JSON.parse(TEMPLATES.whole.slice(TEMPLATES.whole.indexOf('{', TEMPLATES.whole.indexOf('Return ONLY this JSON')))) as unknown),
   },
 } as const;
 
@@ -381,17 +474,28 @@ const API_PARAMS = {
   web_search_options: { search_context_size: 'high' },
 };
 
-export const PERPLEXITY_PROMPT_HASH = createHash('md5')
-  .update(SYSTEM_PROMPT + PROMPT_TEMPLATE + JSON.stringify(API_PARAMS))
-  .digest('hex')
-  .slice(0, 8);
+const hash = (text: string) => createHash('md5').update(text).digest('hex').slice(0, 8);
 
-/** The brief for one company, as the API is sent it. */
-export function researchPrompt(ticker: string, companyName: string): { system: string; user: string } {
+/** Which prompt wrote a part: a part stored under another is asked anew, however fresh. */
+export const PART_PROMPT_HASH: Record<BriefPart, string> = {
+  facts:  hash(SYSTEM_PROMPT + TEMPLATES.facts + JSON.stringify(API_PARAMS)),
+  debate: hash(SYSTEM_PROMPT + TEMPLATES.debate + JSON.stringify(API_PARAMS)),
+};
+
+/** The regular brief's, of both parts: what the cache compares a stored brief against. */
+export const PERPLEXITY_PROMPT_HASH = hash(PART_PROMPT_HASH.facts + PART_PROMPT_HASH.debate);
+
+/** The whole brief's, asked in one: deep research and the brief copied into a chat app. */
+export const WHOLE_PROMPT_HASH = hash(SYSTEM_PROMPT + TEMPLATES.whole + JSON.stringify(API_PARAMS));
+
+/** The brief for one company — whole, or one of its parts — as the API is sent it. */
+export function researchPrompt(
+  ticker: string, companyName: string, part: BriefPart | 'whole' = 'whole',
+): { system: string; user: string } {
   // Strip Yahoo exchange suffix (ENR.DE → ENR, 0700.HK → 0700) — meaningless for web search
   const searchTicker = ticker.includes('.') ? ticker.split('.')[0] : ticker;
   const today = new Date().toISOString().slice(0, 10);
-  const user = PROMPT_TEMPLATE
+  const user = TEMPLATES[part]
     .replace('{date}', today)
     .replaceAll('{company}', companyName)
     .replaceAll('{ticker}', searchTicker);
@@ -794,16 +898,99 @@ export async function pplxComplete(
   };
 }
 
+/**
+ * A stored brief's debate, where it can stand in for a new one: written by the
+ * same prompt and model, and younger than `maxAgeMs`. Null otherwise, and then
+ * it is asked anew with the facts.
+ */
+export function reusableDebate(
+  stored: PerplexityContext | null, model: PerplexityModelId, maxAgeMs: number, now = Date.now(),
+): BriefPartAnswer | null {
+  const meta = stored?.parts?.debate;
+  if (!stored?.findings || !meta || stored.model !== model || meta.promptHash !== PART_PROMPT_HASH.debate) return null;
+  if (now - Date.parse(meta.fetchedAt) > maxAgeMs) return null;
+  const f = stored.findings;
+  return { findings: { debate: f.debate ?? [], events: [], bearEvidence: [], bullClaims: f.bullClaims, bearClaims: f.bearClaims ?? [] }, meta };
+}
+
+/** Ask one part of the brief. Throws when the answer holds no JSON: half a brief in prose cannot be merged. */
+async function askPart(
+  part: BriefPart, ticker: string, companyName: string, apiKey: string, model: PerplexityModelId,
+): Promise<BriefPartAnswer> {
+  const { system, user } = researchPrompt(ticker, companyName, part);
+  const fetchedAt = new Date().toISOString();
+  const { raw, citations, costUsd, usage, finishReason } = await pplxComplete('stock-research', model, system, user, apiKey);
+  const findings = parseFindings(raw);
+  if (!findings) throw new Error(`Perplexity answered the brief's ${part} without its JSON — no research this time`);
+  const truncated = cutOff(raw, true, finishReason);
+  if (truncated) logger.warn(`Perplexity's ${part} for ${ticker} stops before its end — kept, and marked as cut off`);
+  return {
+    findings,
+    meta: {
+      fetchedAt, promptHash: PART_PROMPT_HASH[part], citations, ...(costUsd !== undefined ? { costUsd } : {}),
+      usage, raw, finishReason, ...(truncated ? { truncated } : {}),
+    },
+  };
+}
+
+/**
+ * The research brief for one company. The regular models are asked it in two
+ * calls, the facts and the debate (see `BRIEF_PARTS`), at once — the debate
+ * not at all where `keptDebate` stands in for it — and the two are merged
+ * into one brief, which every reader takes as before. Deep research is asked
+ * it whole, in one call.
+ */
 export async function fetchPerplexity(
   ticker: string,
   companyName: string,
   apiKey: string,
   model: PerplexityModelId = DEFAULT_PERPLEXITY_MODEL,
+  keptDebate: BriefPartAnswer | null = null,
+): Promise<PerplexityContext> {
+  if (model === DEEP_RESEARCH_MODEL) return fetchWhole(ticker, companyName, apiKey, model);
+  logger.step(`Fetching Perplexity brief (${model}): the facts${keptDebate
+    ? `, the debate kept from ${keptDebate.meta.fetchedAt.slice(0, 10)}` : ' and the debate'}...`);
+  const [facts, debate] = await Promise.all([
+    askPart('facts', ticker, companyName, apiKey, model),
+    keptDebate ?? askPart('debate', ticker, companyName, apiKey, model),
+  ]);
+  const findings: PerplexityFindings = {
+    debate:       debate.findings.debate ?? [],
+    events:       facts.findings.events,
+    kpis:         facts.findings.kpis ?? [],
+    bearEvidence: facts.findings.bearEvidence,
+    bullClaims:   debate.findings.bullClaims,
+    bearClaims:   debate.findings.bearClaims ?? [],
+    catalysts:    facts.findings.catalysts ?? [],
+  };
+  const asked = keptDebate ? { facts } : { facts, debate };
+  const costs = Object.values(asked).flatMap((x) => (x.meta.costUsd !== undefined ? [x.meta.costUsd] : []));
+  const costUsd = costs.length ? costs.reduce((a, b) => a + b, 0) : undefined;
+  const truncated = facts.meta.truncated || debate.meta.truncated;
+  logger.success(`Perplexity brief fetched — ${findings.events.length} events, ${findings.bearEvidence.length} bear items, `
+    + `${findings.bullClaims.length} bull and ${findings.bearClaims?.length ?? 0} bear claims`
+    + `${costUsd !== undefined ? `, $${costUsd.toFixed(3)}` : ''}`);
+  return {
+    model, synthesis: renderFindings(findings),
+    citations: [...new Set([...facts.meta.citations, ...debate.meta.citations])],
+    fetchedAt: facts.meta.fetchedAt, findings, promptHash: PERPLEXITY_PROMPT_HASH,
+    ...(costUsd !== undefined ? { costUsd } : {}),
+    usage: Object.fromEntries(Object.entries(asked).map(([k, x]) => [k, x.meta.usage])),
+    finishReason: facts.meta.finishReason,
+    ...(truncated ? { truncated } : {}),
+    parts: { facts: facts.meta, debate: debate.meta },
+  };
+}
+
+/** The brief whole, in one call: deep research, sent the answer's schema. */
+async function fetchWhole(
+  ticker: string, companyName: string, apiKey: string, model: PerplexityModelId,
 ): Promise<PerplexityContext> {
   logger.step(`Fetching Perplexity AI context (${model})...`);
-  const { system, user } = researchPrompt(ticker, companyName);
+  const { system, user } = researchPrompt(ticker, companyName, 'whole');
   const { raw, citations, costUsd, usage, finishReason } = await pplxComplete(
-    model === DEEP_RESEARCH_MODEL ? 'deep-research' : 'stock-research', model, system, user, apiKey, SCHEMA_MODELS.has(model) ? { response_format: BRIEF_RESPONSE_FORMAT } : {},
+    model === DEEP_RESEARCH_MODEL ? 'deep-research' : 'stock-research', model, system, user, apiKey,
+    SCHEMA_MODELS.has(model) ? { response_format: BRIEF_RESPONSE_FORMAT } : {},
   );
 
   // A parsed answer is never a refusal, even with every list empty — "nothing
@@ -829,7 +1016,7 @@ export async function fetchPerplexity(
   return {
     model, synthesis, citations, fetchedAt: new Date().toISOString(),
     ...(findings ? { findings } : {}),
-    promptHash: PERPLEXITY_PROMPT_HASH,
+    promptHash: WHOLE_PROMPT_HASH,
     ...(costUsd !== undefined ? { costUsd } : {}),
     usage,
     finishReason,

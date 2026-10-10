@@ -102,6 +102,12 @@ export const AppConfigSchema = z.object({
      * costs ten times as much and is mostly about the business, not the week.
      */
     deepMaxAgeDays: z.number().int().min(1).max(365).default(60),
+    /**
+     * How long the brief's debate — the open questions and the theses — is
+     * kept while its facts are fetched anew on `maxAgeDays`: theses move
+     * slower than news, and the debate is half the call.
+     */
+    debateMaxAgeDays: z.number().int().min(1).max(365).default(30),
   }).prefault({}),
 
   /**

@@ -512,6 +512,12 @@ export default function AdminPage() {
               onChange={(v) => patch((d) => { d.perplexity.maxAgeDays = v; })}
             />
 
+            <label className="text-xs text-ink-400">Debatte</label>
+            <DaysInput
+              value={config.perplexity.debateMaxAgeDays}
+              onChange={(v) => patch((d) => { d.perplexity.debateMaxAgeDays = v; })}
+            />
+
             <label className="text-xs text-ink-400">Deep Research</label>
             <DaysInput
               value={config.perplexity.deepMaxAgeDays}
@@ -519,10 +525,12 @@ export default function AdminPage() {
             />
           </div>
           <p className="text-xs leading-relaxed text-ink-500">
-            Der Recherche-Cache gilt für jede Analyse, auch für von Hand gestartete —
-            jeder Aufruf kostet; „↻ Neu holen“ im Research-Tab fragt sofort neu.
-            Deep Research wird nur dort von Hand angefordert und geht so lange
-            zusätzlich in jede Analyse ein.
+            Die Recherche je Aktie sind zwei Aufrufe: die Lage (Ereignisse, Gegenbelege,
+            Kennzahlen, Termine), neu nach dem Recherche-Cache, und die Debatte (Kernfragen,
+            Thesen beider Seiten), die so lange wiederverwendet wird. Das gilt für jede Analyse,
+            auch für von Hand gestartete — jeder Aufruf kostet; „↻ Neu holen“ im Research-Tab
+            fragt beide sofort neu. Deep Research wird nur dort von Hand angefordert und geht so
+            lange zusätzlich in jede Analyse ein.
           </p>
         </Card>
       </div>

@@ -1074,19 +1074,22 @@ by a model nobody audits; its bear case read "competitive pressure could
 intensify". The one fact that mattered most in our own data — 71 net estimate
 cuts — went unexplained.
 
-The brief now names what we already hold (price, multiples, statements, ratings,
-targets, revisions, insider transactions) and forbids repeating it, and returns
-structured JSON:
+The brief now names what we already hold (price, multiples, statements and the
+reported figures against the estimates, ratings, targets, revisions, insider
+transactions, the earnings and dividend dates) and forbids repeating it, and
+returns structured JSON. The regular models are asked it in two calls, the
+facts and the debate; deep research and the brief copied into a chat app ask it
+whole:
 
-| Part | Asked for |
-|---|---|
-| `debate` | the one to three open questions the price hinges on — why each matters for earnings or the multiple, what settles it and when |
-| `events` | dated developments that move the outlook; always the latest earnings report — guidance against the prior quarter and consensus, what management avoided — each with its `impact` on revenue, margins or risk |
-| `kpis` | up to four company-specific operating figures the statements do not carry (cRPO, net retention, same-store sales, backlog…), over two to four periods |
-| `bear_evidence` | the strongest *specific* evidence against the bull case — short reports, accounting concerns, guidance cuts, churn, share loss, documented structural threats. Evidence only, never "risks could include" |
-| `bull_claims` | the theses bulls hold, each argued — `mechanism`, `stake`, named `proponents`, the strongest `counter`, what `settles` it — and graded `independent`, `management-only` or `contradicted` |
-| `bear_claims` | the same for the bears, graded `independent`, `opinion` or `contradicted` |
-| `catalysts` | dated events in the next six months and what to watch in each |
+| Call | Part | Asked for |
+|---|---|---|
+| debate | `debate` | the one or two open questions the price hinges on — why each matters for earnings or the multiple, what settles it and when |
+| facts | `events` | dated developments of the last 90 days that move the outlook; of the latest earnings report only what its figures cannot show — guidance against the prior quarter and consensus, what management stressed or avoided — each with its `impact` on revenue, margins or risk |
+| facts | `kpis` | up to three company-specific operating figures the statements do not carry (cRPO, net retention, same-store sales, backlog…), over two to four periods |
+| facts | `bear_evidence` | the strongest *specific* evidence against the bull case — short reports, accounting concerns, guidance cuts, churn, share loss, documented structural threats. Evidence only, never "risks could include" |
+| debate | `bull_claims` | the theses bulls hold, each argued — `mechanism`, `stake`, named `proponents`, the strongest `counter` — and graded `independent`, `management-only`, `opinion` or `contradicted` |
+| debate | `bear_claims` | the same for the bears, graded `independent`, `opinion` or `contradicted` |
+| facts | `catalysts` | dated events in the next six months that the earnings and dividend calendar does not show — investor days, launches, regulatory or court decisions, renewals — and what to watch in each |
 
 Every item carries a date, a source and an independent-or-company label. On the
 same stock it produced: a guide raised by $15M on a 150bp beat, federal revenue
@@ -1114,8 +1117,8 @@ Mechanics that keep it honest:
   independent. The third (3 October 2026) asks for the argument behind each
   claim, defines "independent" (the company's releases, calls and executives
   never are, even when a newspaper repeats them) and asks for the proponents by
-  name. Items are still capped — 3 / 6 / 4 / 6 / 5 / 5 / 4 — the strongest, not
-  all of them.
+  name. Items are still capped — since the fifth version 2 / 5 / 3 / 4 / 4 / 4 / 3 —
+  the strongest, not all of them.
 - **Where an item comes from, not whether it is independent.** Defined but asked
   as a yes or no, the label held in no brief read side by side on 10 October
   2026: Oracle's six theses all came back independent, quarterly results counted
@@ -1127,6 +1130,20 @@ Mechanics that keep it honest:
   not know is never independent. A bull thesis that only analysts argue is
   `opinion`, as on the bear side. On four stocks the independent items fell from
   42 of 44 to 14 of 45.
+- **Two calls, shorter answers** (fifth version, 11 October 2026). One call for
+  seven sections brought about a dozen sources between them; the facts and the
+  debate asked apart brought 28 on Microsoft. The debate is reused for
+  `perplexity.debateMaxAgeDays` (30 days by default) while the facts are fetched
+  on `perplexity.maxAgeDays`, since theses move slower than news; the stored
+  brief is the two merged, with each part's date, prompt hash, sources, cost and
+  answer in `parts`, and a debate is only reused from the same prompt and model
+  (`reusableDebate`). What nothing read was cut: the claims' `settles` (the
+  debate says what settles it), the reported figures of the last quarter, and
+  dates the calendar holds — 25 of 28 catalysts in the stored briefs were
+  earnings dates. One sentence a field came back as 50 to 60 words, so the
+  fields are capped at 30 words, `mechanism` and `detail` at 45. Measured on
+  Microsoft: 3,500 tokens of answer for both calls against about 5,300 for one,
+  8.5 cents against 9.7, and the facts alone, when the debate is kept, about 4.
 - **A truncated answer is salvaged**, not discarded: `salvageTruncatedJson` cuts
   back to the last finished item and closes what is open. Nothing is invented to
   replace the item that was being written.
