@@ -36,6 +36,7 @@ import type { MarketToday } from '../../src/analysis/market';
 import type { ChartReadDoc, ChartResponse } from '../../src/analysis/chart';
 import type { JournalEntry, JournalInput, JournalKind, OpenTrades } from '../../src/journal';
 import type { EntryContext } from '../../src/analysis/entry-context';
+import type { YearRevision } from '../../src/analysis/estimate-revisions';
 import type { DepotResponse } from '../../src/analysis/depot';
 import type { DepotCheckResponse } from '../../src/api-types';
 import type { ReviewPage, ReviewStats } from '../../src/review-service';
@@ -120,6 +121,9 @@ export const api = {
   /** Each firm's newest grade and target from the last year — the consensus card, firm by firm. */
   getCoverage: (symbol: string) =>
     jsonFetch<{ symbol: string; data: CoverageView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/coverage`),
+  /** This fiscal year's and the next's revenue consensus against their own past in the archive. */
+  getEstimateRevisions: (symbol: string) =>
+    jsonFetch<{ symbol: string; data: YearRevision[] | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/estimate-revisions`),
   getVerdictRecord: (symbol: string) =>
     jsonFetch<{ symbol: string; data: VerdictRecordView | null }>(`${BASE}/stocks/${encodeURIComponent(symbol)}/verdicts`),
   /** What happened across the watchlist over the last `days`. */

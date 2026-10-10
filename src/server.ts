@@ -73,7 +73,7 @@ import { invalidateReview, reviewPage, reviewStats } from './review-service.js';
 import { REVIEW_FILTERS, REVIEW_PAGE, REVIEW_SORTS, type ReviewFilter, type ReviewSort } from './analysis/review.js';
 import { fairRatios, getValuationHistory, sectorMultiples } from './valuation-history-service.js';
 import {
-  analystCoverage, analystTrackRecord, FEED_PAGE, incomeFlows, pageFeed, stockHolders, stockTimeline, verdictRecordSummary,
+  analystCoverage, analystTrackRecord, estimateRevisions, FEED_PAGE, incomeFlows, pageFeed, stockHolders, stockTimeline, verdictRecordSummary,
   verdictTrackRecord, watchlistFeed,
 } from './stock-history-service.js';
 import { TIMELINE_KINDS, type TimelineKind } from './analysis/timeline.js';
@@ -1438,8 +1438,8 @@ export function createApp(): express.Express {
   // ── The archive, read back ──────────────────────────────────────────────────
   // Views over what the refresh archives (`history-service.ts`) and the scores
   // it stored: how good the analysts' targets have been, how good our own
-  // verdicts, what happened when, who holds the stock, and where the revenue
-  // goes. All reads, no fetches.
+  // verdicts, what happened when, who holds the stock, where the revenue
+  // goes, and how its consensus has moved. All reads, no fetches.
   const archiveView = (path: string, read: (symbol: string, req: Request) => Promise<unknown>) =>
     app.get(`/api/stocks/:symbol/${path}`, async (req, res, next) => {
       try {
@@ -1458,6 +1458,7 @@ export function createApp(): express.Express {
   });
   archiveView('holders', (s) => stockHolders(s));
   archiveView('income-flow', (s) => incomeFlows(s));
+  archiveView('estimate-revisions', (s) => estimateRevisions(s));
 
   // ── GET /api/stocks/:symbol/peers ──────────────────────────────────────────
   // Who to compare a stock with, for the dialog in its header: the Finnhub

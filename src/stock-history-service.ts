@@ -22,9 +22,10 @@ import {
   readAnalystActions, readInsiderTransactions, readPriceBars, readPriceBarsMany, readPriceEvents, readVerdictChanges,
 } from './db/history-store.js';
 import {
-  latestSnapshot, listDocuments, listSymbols, readFinancialsLax, readFundamentals, readSeries, readSeriesForAll,
+  estimateHistory, latestSnapshot, listDocuments, listSymbols, readFinancialsLax, readFundamentals, readSeries, readSeriesForAll,
   snapshotHistory, symbolFacts, type Series,
 } from './db/store.js';
+import { revenueRevisions, type YearRevision } from './analysis/estimate-revisions.js';
 import { journalForSymbols } from './db/journal-store.js';
 import { newestMarketBrief } from './db/market-store.js';
 import { deNumber, fmtBigDe, fmtPriceDe } from './format.js';
@@ -47,6 +48,13 @@ export async function analystTrackRecord(symbol: string): Promise<TrackRecordVie
   const splits = events.filter((e) => e.kind === 'split').map((e) => ({ day: e.day, ratio: e.value }));
   const { outcomes, ...rest } = trackRecord(actions, bars.map((b) => ({ day: b.day, close: b.close })), splits);
   return { ...rest, targets: outcomes.length, pending: outcomes.filter((o) => o.error === null).length };
+}
+
+// ── How the revenue consensus has moved ─────────────────────────────────────
+
+/** This fiscal year's and the next's revenue consensus against their own past in the archive (`analysis/estimate-revisions.ts`). */
+export async function estimateRevisions(symbol: string): Promise<YearRevision[] | null> {
+  return revenueRevisions(await estimateHistory(symbol), new Date().toISOString());
 }
 
 // ── Who covers the stock, and what each firm says now ───────────────────────
