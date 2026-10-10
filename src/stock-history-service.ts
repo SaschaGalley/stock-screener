@@ -17,7 +17,7 @@ import { BENCHMARK_CURRENCY } from './data/macro.js';
 import { flowFromRow, ttmFlow, type IncomeFlow } from './analysis/income-flow.js';
 import { tradeKind, type Holder, type Holders } from './analysis/holders.js';
 import { analystEvent, bigMoves, upcomingOf, type Timeline, type TimelineEvent, type TimelineKind } from './analysis/timeline.js';
-import type { PerplexityContext } from './data/perplexity.js';
+import { type PerplexityContext, sourceLabel } from './data/perplexity.js';
 import {
   readAnalystActions, readInsiderTransactions, readPriceBars, readPriceBarsMany, readPriceEvents, readVerdictChanges,
 } from './db/history-store.js';
@@ -411,7 +411,7 @@ export async function stockTimeline(symbol: string, days = 365): Promise<Timelin
         seen.add(key);
         events.push({
           day: x.date, kind: 'event', tone, title: x.what,
-          detail: x.independent ? 'unabhängige Quelle' : 'Unternehmensquelle', url: x.source,
+          detail: sourceLabel(x), url: x.source,
         });
       }
     }

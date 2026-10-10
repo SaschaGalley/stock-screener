@@ -5,10 +5,12 @@ import { logger } from '../utils/logger.js';
 /**
  * One dated, sourced item of evidence.
  *
- * `independent` is the model's own label and is kept because it is the single
- * most useful thing to know about a claim here: a company press release and a
- * published short report are both "sources", and treating them alike is how the
- * previous synthesis ended up a third newsroom copy.
+ * `independent` is the single most useful thing to know about a claim here: a
+ * company press release and a published short report are both "sources", and
+ * treating them alike is how the previous synthesis ended up a third newsroom
+ * copy. Since 10 October 2026 it is derived from `origin` rather than asked for:
+ * asked as a yes or no, the model called a quarter's results independent
+ * whenever Reuters had reported them, and an unconfirmed deal too.
  */
 export interface PerplexityFinding {
   date:        string | null;
@@ -17,6 +19,35 @@ export interface PerplexityFinding {
   impact?:     string | null;
   source:      string | null;
   independent: boolean;
+  /** Where the information comes from — see `ORIGINS`. Absent on rows before 10 October 2026. */
+  origin?:     string | null;
+}
+
+/**
+ * Where an item's information comes from, and whether that makes it independent.
+ *
+ * Who reported it does not count: results in a newspaper are still the
+ * company's. An origin the model invents reads as not independent, so a label
+ * never upgrades an item.
+ */
+export const ORIGINS: Record<string, { independent: boolean; label: string }> = {
+  'company':       { independent: false, label: 'Unternehmensquelle' },
+  'unconfirmed':   { independent: false, label: 'unbestätigt' },
+  'analyst':       { independent: true,  label: 'Analyst' },
+  'short-seller':  { independent: true,  label: 'Leerverkäufer' },
+  'regulator':     { independent: true,  label: 'Behörde' },
+  'court':         { independent: true,  label: 'Gericht' },
+  'customer':      { independent: true,  label: 'Kunde' },
+  'competitor':    { independent: true,  label: 'Wettbewerber' },
+  'industry-data': { independent: true,  label: 'Branchendaten' },
+  'press':         { independent: true,  label: 'eigene Recherche der Presse' },
+};
+
+/** "unabhängig (Behörde)", "Unternehmensquelle", "unbestätigt" — how a finding is marked wherever it is shown. */
+export function sourceLabel(f: Pick<PerplexityFinding, 'independent' | 'origin'>): string {
+  const known = f.origin ? ORIGINS[f.origin] : undefined;
+  if (known) return known.independent ? `unabhängig (${known.label})` : known.label;
+  return f.independent ? 'unabhängig' : 'Unternehmensquelle';
 }
 
 /**
@@ -24,7 +55,10 @@ export interface PerplexityFinding {
  *
  * Each side has its own way of being unsupported: a bull claim that only
  * management makes (`management-only`), a bear claim nobody has evidenced yet
- * (`opinion`). Both are that side's weakest grade.
+ * (`opinion`). Both are that side's weakest grade. Since 10 October 2026 a
+ * bull claim can also be `opinion`: one that analysts or commentators argue
+ * without a fact from outside the company behind it, which until then came
+ * back graded independent.
  */
 export type ClaimEvidence = 'independent' | 'management-only' | 'opinion' | 'contradicted';
 
@@ -111,6 +145,13 @@ export interface PerplexityContext {
   raw?: string;
   /** Why the answer ended — `stop`, or `length` when it ran into the ceiling. */
   finishReason?: string;
+  /**
+   * The answer stops before its end: it ran into the ceiling, its JSON had to
+   * be salvaged, or its prose breaks off mid-sentence. Set from 10 October
+   * 2026, when SAP's deep research ended "… and commentators who" under a
+   * finish reason of `stop`.
+   */
+  truncated?: boolean;
   /** Run in a chat app and pasted in by hand — which one. Absent on API rows. */
   pastedFrom?: ManualResearchTool;
 }
@@ -144,6 +185,14 @@ const PPLX_API_URL = 'https://api.perplexity.ai/chat/completions';
  * company's own operating KPIs over recent quarters (none of which the
  * statements carry), and the dates ahead. "Independent" is defined rather than
  * left to the model, and the proponents must be named.
+ *
+ * The fourth (10 October 2026) asks where an item comes from instead of whether
+ * it is independent. Defined but asked as a yes or no, the label held in no
+ * brief read side by side that day: Oracle's six theses all came back
+ * independent, quarterly results counted as independent once a newspaper had
+ * reported them, and an unconfirmed Tencent contract did too. And a claim only
+ * analysts argue is now `opinion` on the bull side as well, where it used to be
+ * graded independent for want of a grade that fit.
  */
 export const SYSTEM_PROMPT =
   'You are a senior buy-side equity analyst preparing the research file for an investment ' +
@@ -160,10 +209,16 @@ We already hold its price, valuation multiples, reported financial statements, a
 ratings, price targets, estimate revisions and insider transactions. Do NOT repeat those.
 Report what that data cannot show, mostly from the last 90 days.
 
-Source rule: "independent" means the information does not originate from the company.
-The company's press releases, earnings calls, executives' remarks and investor
-presentations are NOT independent, even when a newspaper reports them. Analyst research,
-short-seller reports, regulators, courts, customers, competitors and industry data are.
+Source rule: every event and every item of bear evidence names its "origin" — where the
+information comes from, not who reported it:
+- "company": results, guidance, operating figures, filings, press releases, earnings
+  calls, investor presentations and executives' remarks, also when Reuters, CNBC or an
+  analyst repeats them;
+- "unconfirmed": reports citing unnamed people, which neither the company nor a named
+  third party has confirmed;
+- otherwise who established it: "analyst", "short-seller", "regulator", "court",
+  "customer", "competitor", "industry-data", or "press" for a news outlet's own reporting
+  from documents or named sources.
 Name the firm or author whenever you can ("Morgan Stanley", "Hindenburg", "The
 Information"); never "an analyst" or "a published analysis".
 
@@ -199,9 +254,13 @@ Information"); never "an analyst" or "a published analysis".
    - "stake": what it is worth if right — revenue, margin, earnings or multiple, with
      figures from the sources where they exist,
    - "proponents": who argues it, by name,
-   - "evidence": bull claims "independent" | "management-only" | "contradicted";
-     bear claims "independent" | "opinion" | "contradicted",
-   - "detail": the strongest evidence for the grade,
+   - "evidence": "independent" | "opinion" | "contradicted", and for bull claims also
+     "management-only". "independent" needs a fact that does not come from the company —
+     a third party's figure, decision or data. A view is not such a fact, however
+     reputable its holder: a claim that analysts or commentators argue without one is
+     "opinion", a bull claim only the company makes is "management-only",
+   - "detail": the strongest evidence for the grade — for "independent", the fact and
+     where it comes from,
    - "counter": the strongest point against the claim,
    - "settles": the figure or event that would prove or disprove it, and when.
 
@@ -215,13 +274,44 @@ At most 3 debate items, 6 events, 4 kpis, 6 bear_evidence items, 5 bull_claims,
 Return ONLY this JSON:
 {
   "debate":        [{"question": "...", "why": "...", "settles": "...", "when": "YYYY-MM-DD"}],
-  "events":        [{"date": "YYYY-MM-DD", "what": "...", "impact": "...", "source": "url", "independent": true}],
+  "events":        [{"date": "YYYY-MM-DD", "what": "...", "impact": "...", "source": "url", "origin": "company"}],
   "kpis":          [{"name": "...", "values": [{"period": "Q2 2026", "value": "..."}], "read": "...", "source": "url"}],
-  "bear_evidence": [{"date": "YYYY-MM-DD", "what": "...", "impact": "...", "source": "url", "independent": true}],
+  "bear_evidence": [{"date": "YYYY-MM-DD", "what": "...", "impact": "...", "source": "url", "origin": "analyst"}],
   "bull_claims":   [{"claim": "...", "mechanism": "...", "stake": "...", "proponents": "...", "evidence": "independent", "detail": "...", "counter": "...", "settles": "...", "source": "url"}],
   "bear_claims":   [{"claim": "...", "mechanism": "...", "stake": "...", "proponents": "...", "evidence": "opinion", "detail": "...", "counter": "...", "settles": "...", "source": "url"}],
   "catalysts":     [{"date": "YYYY-MM-DD", "event": "...", "watch": "..."}]
 }`;
+
+/**
+ * The answer's shape as a JSON schema, derived from the example the prompt
+ * ends with, so the two cannot drift apart.
+ *
+ * Sent with deep research only. Asked in words, it wrote a report instead on
+ * two of six calls on 10 October 2026 (Apple and SAP, 92,000 and 79,000
+ * characters of prose), and a report is stored unstructured and weighed at
+ * the flat rate. sonar-pro has kept to the format without a schema since the
+ * structured prompt. Outside the hash: the schema says nothing the prompt
+ * does not.
+ */
+function schemaOf(example: unknown): Record<string, unknown> {
+  if (Array.isArray(example)) return { type: 'array', items: schemaOf(example[0]) };
+  if (example && typeof example === 'object') {
+    const properties = Object.fromEntries(Object.entries(example).map(([k, v]) => [k, schemaOf(v)]));
+    return { type: 'object', properties, required: Object.keys(properties) };
+  }
+  return { type: typeof example === 'boolean' ? 'boolean' : 'string' };
+}
+
+export const BRIEF_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'research_brief',
+    schema: schemaOf(JSON.parse(PROMPT_TEMPLATE.slice(PROMPT_TEMPLATE.indexOf('{', PROMPT_TEMPLATE.indexOf('Return ONLY this JSON')))) as unknown),
+  },
+} as const;
+
+/** The models that are sent the schema — see `BRIEF_RESPONSE_FORMAT`. */
+const SCHEMA_MODELS: ReadonlySet<PerplexityModelId> = new Set([DEEP_RESEARCH_MODEL]);
 
 /**
  * Per-model request settings.
@@ -338,12 +428,15 @@ function finding(v: unknown): PerplexityFinding | null {
   const o = v as Record<string, unknown>;
   const what = text(o.what);
   if (!what) return null;
+  const origin = text(o.origin).toLowerCase() || null;
   return {
     date:        optText(o.date),
     what,
     impact:      optText(o.impact),
     source:      optText(o.source),
-    independent: o.independent === true || o.independent === 'true',
+    // A pasted answer to an older copy of the brief still says yes or no.
+    independent: origin ? ORIGINS[origin]?.independent === true : o.independent === true || o.independent === 'true',
+    ...(origin ? { origin } : {}),
   };
 }
 
@@ -400,6 +493,7 @@ function claimOf(weakest: 'management-only' | 'opinion') {
     const evidence: ClaimEvidence =
       raw.startsWith('contra') ? 'contradicted'
       : raw.startsWith('indep') ? 'independent'
+      : raw.startsWith('opin') ? 'opinion'
       : weakest;
     return {
       claim,
@@ -422,10 +516,15 @@ function claimOf(weakest: 'management-only' | 'opinion') {
  * research answer is read through this, the brief's and the pasted ones alike.
  */
 export function extractJson(answer: string): Record<string, unknown> | null {
+  return readJson(answer).obj;
+}
+
+/** `extractJson`, and whether the object had to be salvaged from a cut-off answer. */
+function readJson(answer: string): { obj: Record<string, unknown> | null; salvaged: boolean } {
   // The reasoning models think aloud before they answer, and the thinking may
   // hold braces and fences of its own. An unclosed block is a truncated one,
   // and then there is no answer after it.
-  const raw = answer.replace(/<think>[\s\S]*?(<\/think>|$)/g, '');
+  const raw = withoutThinking(answer);
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)(?:```|$)/)?.[1];
   const start = raw.indexOf('{');
   const body = (fenced ?? (start >= 0 ? raw.slice(start) : raw)).trim();
@@ -438,11 +537,36 @@ export function extractJson(answer: string): Record<string, unknown> | null {
     }
   };
   const whole = parse(body);
-  if (whole !== undefined) return whole;
+  if (whole !== undefined) return { obj: whole, salvaged: false };
   // A truncated answer still holds every item that finished. Keep those
   // rather than throw away a paid call over the one that did not.
   const salvaged = salvageTruncatedJson(body);
-  return salvaged === null ? null : parse(salvaged) ?? null;
+  const obj = salvaged === null ? null : parse(salvaged) ?? null;
+  return { obj, salvaged: obj !== null };
+}
+
+/** The answer without the reasoning models' thinking; an unclosed block takes the rest. */
+const withoutThinking = (answer: string): string => answer.replace(/<think>[\s\S]*?(<\/think>|$)/g, '');
+
+/**
+ * Prose that stops mid-sentence: its last character is a letter or a comma.
+ *
+ * Kept narrow on purpose. A list may end on a date and a pasted report on a
+ * URL, and neither is cut; a report ending "… and commentators who" is.
+ */
+export function breaksOff(prose: string): boolean {
+  const t = prose.trimEnd();
+  if (/https?:\/\/\S+$/.test(t)) return false;
+  return /[\p{L},]$/u.test(t);
+}
+
+/**
+ * Whether an answer stops before its end. The finish reason alone does not
+ * say: SAP's deep research reported `stop` and broke off mid-sentence.
+ */
+export function cutOff(answer: string, structured: boolean, finishReason?: string): boolean {
+  if (finishReason === 'length') return true;
+  return structured ? readJson(answer).salvaged : breaksOff(withoutThinking(answer));
 }
 
 /**
@@ -531,7 +655,7 @@ function claimLines(c: PerplexityClaim): string {
 }
 
 function findingLine(f: PerplexityFinding): string {
-  const line = `- ${f.date ?? 'undatiert'} · ${f.independent ? 'unabhängig' : 'Unternehmensquelle'} — ${f.what}`;
+  const line = `- ${f.date ?? 'undatiert'} · ${sourceLabel(f)} — ${f.what}`;
   return f.impact ? `${line}\n  - _Folge:_ ${f.impact}` : line;
 }
 
@@ -654,7 +778,9 @@ export async function fetchPerplexity(
 ): Promise<PerplexityContext> {
   logger.step(`Fetching Perplexity AI context (${model})...`);
   const { system, user } = researchPrompt(ticker, companyName);
-  const { raw, citations, costUsd, usage, finishReason } = await pplxComplete(model, system, user, apiKey);
+  const { raw, citations, costUsd, usage, finishReason } = await pplxComplete(
+    model, system, user, apiKey, SCHEMA_MODELS.has(model) ? { response_format: BRIEF_RESPONSE_FORMAT } : {},
+  );
 
   // A parsed answer is never a refusal, even with every list empty — "nothing
   // found" is the finding. Only free text falls back to the refusal heuristics.
@@ -663,11 +789,14 @@ export async function fetchPerplexity(
   if (findings) {
     synthesis = renderFindings(findings);
   } else {
-    synthesis = raw.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').replace(/\[\d+\]/g, '').replace(/  +/g, ' ').trim();
+    synthesis = withoutThinking(raw).replace(/\[\d+\]/g, '').replace(/  +/g, ' ').trim();
     if (looksLikeRefusal(synthesis)) {
       throw new Error('Perplexity returned a meta-refusal (no usable research) — skipping section');
     }
   }
+
+  const truncated = cutOff(raw, findings !== null, finishReason);
+  if (truncated) logger.warn(`Perplexity answer for ${ticker} stops before its end — kept, and marked as cut off`);
 
   logger.success(`Perplexity context fetched${findings
     ? ` — ${findings.events.length} events, ${findings.bearEvidence.length} bear items, `
@@ -680,6 +809,7 @@ export async function fetchPerplexity(
     ...(costUsd !== undefined ? { costUsd } : {}),
     usage,
     finishReason,
+    ...(truncated ? { truncated } : {}),
     raw,
   };
 }
@@ -746,7 +876,7 @@ export function pastedResearch(text: string, tool: ManualResearchTool): { contex
     catalysts:    findings?.catalysts?.length ?? 0,
   };
   const structured = !!findings && Object.values(counts).some((n) => n > 0);
-  const prose = text.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').replace(/\[\d+\]/g, '').replace(/[ \t]+/g, ' ').trim();
+  const prose = withoutThinking(text).replace(/\[\d+\]/g, '').replace(/[ \t]+/g, ' ').trim();
   // An empty JSON skeleton, a stray sentence or a refusal is nothing to keep.
   if (!structured && (looksLikeRefusal(prose) || prose.startsWith('{'))) return null;
 
@@ -764,6 +894,7 @@ export function pastedResearch(text: string, tool: ManualResearchTool): { contex
       promptHash: PERPLEXITY_PROMPT_HASH,
       raw: text,
       pastedFrom: tool,
+      ...(cutOff(text, structured) ? { truncated: true } : {}),
     },
     summary: { structured, counts, sources: citations.length },
   };

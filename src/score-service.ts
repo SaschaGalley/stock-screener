@@ -41,7 +41,9 @@ import {
 import { appendSearchResults } from './providers/base.js';
 import { createProviderForModel } from './providers/factory.js';
 import { DistillBundle } from './data/distill.js';
-import { EVIDENCE_LABEL, PerplexityClaim, PerplexityContext, PerplexityFindings } from './data/perplexity.js';
+import {
+  EVIDENCE_LABEL, PerplexityClaim, PerplexityContext, PerplexityFinding, PerplexityFindings, sourceLabel,
+} from './data/perplexity.js';
 import { logger } from './utils/logger.js';
 
 const SYSTEM_SUMMARISER =
@@ -86,7 +88,9 @@ const PERPLEXITY_FULL_WEIGHT_ITEMS = 6;
  *
  * Bull claims count when they were checked against something — independently
  * confirmed or contradicted. A claim resting only on management's statements is
- * exactly the thing the brief exists to discount.
+ * exactly the thing the brief exists to discount, and so is one resting only on
+ * analysts' or commentators' views (`opinion`, a bull grade since 10 October
+ * 2026).
  *
  * Bear claims do not count. They were added for the bull and bear case, not for
  * the weight, and whatever evidences them is already in `bearEvidence` —
@@ -96,7 +100,7 @@ const PERPLEXITY_FULL_WEIGHT_ITEMS = 6;
 function independentItems(f: PerplexityFindings): number {
   return f.events.filter((e) => e.independent).length
     + f.bearEvidence.filter((e) => e.independent).length
-    + f.bullClaims.filter((c) => c.evidence !== 'management-only').length;
+    + f.bullClaims.filter((c) => c.evidence === 'independent' || c.evidence === 'contradicted').length;
 }
 
 /** Newest material this old, in days, scales everything down. */
@@ -380,8 +384,8 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
  * prose the pipeline was built to keep out.
  */
 function researchDigest(findings: PerplexityFindings): string {
-  const line = (x: { date: string | null; what: string; independent: boolean }) =>
-    `- ${x.date ? `${x.date} · ` : ''}${x.independent ? 'unabhängig' : 'Unternehmensquelle'} — ${x.what}`;
+  const line = (x: PerplexityFinding) =>
+    `- ${x.date ? `${x.date} · ` : ''}${sourceLabel(x)} — ${x.what}`;
   // The argument travels with the claim: the theses are written from these,
   // and "AI adds wallet share — management-only" cannot be argued from.
   const claimLine = (c: PerplexityClaim) => [

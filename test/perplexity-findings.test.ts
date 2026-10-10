@@ -11,7 +11,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { parseFindings, renderFindings, salvageTruncatedJson } from '../src/data/perplexity.js';
+import {
+  BRIEF_RESPONSE_FORMAT, breaksOff, cutOff, parseFindings, renderFindings, salvageTruncatedJson, sourceLabel,
+} from '../src/data/perplexity.js';
 
 describe('parsing the brief', () => {
   it('reads a fenced answer and strips the citation markers', () => {
@@ -52,6 +54,15 @@ describe('parsing the brief', () => {
       ],
     }));
     assert.deepEqual(f?.bullClaims.map((c) => c.evidence), ['contradicted', 'independent', 'management-only']);
+  });
+
+  it('grades a bull claim that only views support as opinion, never as independent', () => {
+    // Before 10 October 2026 the bull scale had no such grade, and an analyst's
+    // conviction came back as "independent".
+    const f = parseFindings(JSON.stringify({
+      bull_claims: [{ claim: 'Jevons effect lifts demand', evidence: 'opinion', detail: 'Two sell-side notes argue it' }],
+    }));
+    assert.equal(f?.bullClaims[0].evidence, 'opinion');
   });
 
   it('grades a bear claim on its own scale, with opinion as the weakest', () => {
@@ -173,5 +184,82 @@ describe('salvaging a truncated answer', () => {
   it('passes a complete document through untouched', () => {
     const whole = '{"events": []}';
     assert.equal(salvageTruncatedJson(whole), whole);
+  });
+});
+
+describe('the schema sent with deep research', () => {
+  const schema = BRIEF_RESPONSE_FORMAT.json_schema.schema as {
+    properties: Record<string, { type: string; items: { properties: Record<string, { type: string }>; required: string[] } }>;
+  };
+
+  it('asks for every list the parser reads, as arrays of objects', () => {
+    assert.deepEqual(Object.keys(schema.properties).sort(),
+      ['bear_claims', 'bear_evidence', 'bull_claims', 'catalysts', 'debate', 'events', 'kpis']);
+    for (const list of Object.values(schema.properties)) assert.equal(list.type, 'array');
+  });
+
+  it('takes each field and its type from the prompt\'s own example', () => {
+    const event = schema.properties.events.items;
+    assert.deepEqual(event.required, ['date', 'what', 'impact', 'source', 'origin']);
+    assert.equal(event.properties.origin.type, 'string');
+    assert.equal(event.properties.what.type, 'string');
+    assert.equal(schema.properties.kpis.items.properties.values.type, 'array');
+  });
+
+  it('yields an answer the parser reads in full', () => {
+    // What a schema-bound answer looks like: every field present, as typed.
+    const answer = JSON.stringify({
+      debate: [], kpis: [], catalysts: [], bear_claims: [], bull_claims: [], bear_evidence: [],
+      events: [{ date: '2026-09-30', what: 'Guide cut', impact: 'Lower margin', source: 'https://x.test', origin: 'regulator' }],
+    });
+    assert.equal(parseFindings(answer)?.events[0].independent, true);
+    assert.equal(cutOff(answer, true, 'stop'), false);
+  });
+});
+
+describe('telling a cut-off answer', () => {
+  it('flags prose that breaks off mid-sentence, as SAP\'s deep research did under "stop"', () => {
+    assert.equal(breaksOff('Proponents of this claim include cautious investors and commentators who'), true);
+    assert.equal(cutOff('… investors, commentators who', false, 'stop'), true);
+  });
+
+  it('accepts prose that ends on a sentence, a date or a URL', () => {
+    assert.equal(breaksOff('Qualitative judgments matter as much as quantitative metrics.'), false);
+    assert.equal(breaksOff('- Next report: 21.10.2026'), false);
+    assert.equal(breaksOff('Sources: https://www.sap.com/investors/q2'), false);
+  });
+
+  it('flags JSON that had to be salvaged, and anything that hit the ceiling', () => {
+    assert.equal(cutOff('{"events": [{"what": "done"}, {"what": "cut', true), true);
+    assert.equal(cutOff('{"events": []}', true, 'length'), true);
+  });
+});
+
+describe('where a finding comes from', () => {
+  const events = (...items: object[]) => parseFindings(JSON.stringify({ events: items }))!.events;
+
+  it('derives independence from the origin, not from who reported it', () => {
+    const [results, ruling, deal] = events(
+      { what: 'Q2 revenue +30%, reported by Reuters', origin: 'company' },
+      { what: 'FTC opens a probe', origin: 'Regulator' },
+      { what: 'Talks with Tencent, people familiar said', origin: 'unconfirmed' },
+    );
+    assert.deepEqual([results.independent, ruling.independent, deal.independent], [false, true, false]);
+    assert.equal(ruling.origin, 'regulator');
+  });
+
+  it('never lets an invented origin upgrade an item', () => {
+    assert.equal(events({ what: 'A blog says so', origin: 'well-informed blogger' })[0].independent, false);
+  });
+
+  it('still reads the yes or no of an answer to an older brief', () => {
+    assert.equal(events({ what: 'Gartner: spend diverted', independent: true })[0].independent, true);
+  });
+
+  it('names the origin wherever a finding is shown', () => {
+    assert.equal(sourceLabel({ independent: true, origin: 'court' }), 'unabhängig (Gericht)');
+    assert.equal(sourceLabel({ independent: false, origin: 'unconfirmed' }), 'unbestätigt');
+    assert.equal(sourceLabel({ independent: false, origin: 'company' }), 'Unternehmensquelle');
+    assert.equal(sourceLabel({ independent: true }), 'unabhängig');
   });
 });

@@ -553,15 +553,18 @@ ${deepResearch.synthesis}
 Die Teile wiegen nicht gleich. **Ereignisse** sind datierte Fakten. Die **Belege gegen
 die Bullen-These** sind das Ergebnis einer ausdrücklichen Suche nach dem, was die
 Optimisten übersehen. Die **geprüften Bullen-Thesen** sagen, welche verbreiteten
-Argumente unabhängig belegt, nur vom Management behauptet oder widerlegt sind — eine
-widerlegte These ist das stärkste Signal auf dieser Seite, eine reine Management-Aussage
-das schwächste. Die **geprüften Bären-Thesen** sind die Argumente der Skeptiker, ebenso
-geprüft; „bisher nur Meinung" heißt, dass noch nichts sie belegt. Jede These steht mit
+Argumente unabhängig belegt, nur Meinung, nur vom Management behauptet oder widerlegt sind
+— eine widerlegte These ist das stärkste Signal auf dieser Seite, eine reine
+Management-Aussage das schwächste. Die **geprüften Bären-Thesen** sind die Argumente der
+Skeptiker, ebenso geprüft; „bisher nur Meinung" heißt auf beiden Seiten, dass Analysten
+oder Kommentatoren es vertreten, aber noch keine Tatsache von außerhalb des Unternehmens
+es belegt. Jede These steht mit
 ihrer Wirkung, ihrem Einsatz, ihren Vertretern und dem stärksten Gegenargument da — das
 ist das Material für die Argumente je Seite. Die **Kerndebatte** nennt die offenen Fragen,
 an denen der Kurs hängt; die **operativen Kennzahlen** und **Termine** zeigen, woran und
 wann sie sich entscheiden. Einträge aus einer
-Unternehmensquelle wiegen weniger als unabhängige. Leere Abschnitte heißen „gesucht und
+Unternehmensquelle wiegen weniger als unabhängige; „unbestätigt" sind Berichte ohne
+genannte Quelle. Leere Abschnitte heißen „gesucht und
 nichts gefunden", nicht „nicht gesucht".
 
 ${perplexity.synthesis}

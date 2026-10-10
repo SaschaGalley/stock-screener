@@ -422,12 +422,18 @@ function usePerplexityRefresh(symbol: string, model: PerplexityModelId, onRefres
   return { busy, error, run };
 }
 
-/** "14.8.2026, sonar-pro, 0,42 $" — when a brief was bought, from where, for how much. */
+/**
+ * "14.8.2026, sonar-pro, 0,42 $" — when a brief was bought, from where, for how
+ * much; and when it did not come back as asked, that too: as running text
+ * instead of sections, or breaking off before its end.
+ */
 function briefMeta(context: PerplexityContext): string {
   return [
     dayDe(context.fetchedAt),
     context.pastedFrom ? `${context.pastedFrom}, von Hand` : context.model,
     context.costUsd !== undefined && `${context.costUsd.toFixed(2).replace('.', ',')} $`,
+    !context.findings && 'als Fließtext',
+    context.truncated && 'bricht vor dem Ende ab',
   ].filter(Boolean).join(', ');
 }
 
