@@ -703,9 +703,12 @@ das Geschäftsmodell; sag in den Bear-Thesen, dass aktuelle Quellen fehlen.`;
     ? `### Recherche-Befunde (Perplexity, gezielt nach dem gesucht, was die Zahlen nicht zeigen)\n\n${s.research}`
     : '';
 
+  // The next report from the calendar: the research no longer names it, the calendar holds it.
+  const nextReport = f.nextEarningsDate ? ` · Nächste Zahlen ${f.nextEarningsDate}` : '';
+
   return `## ${f.symbol} — ${f.companyName}
 
-Kurs ${fmtPrice(f.price, cur)} · Marktkapitalisierung ${fmtBig(f.marketCap, cur)} · ${f.sector ?? 'N/A'}
+Kurs ${fmtPrice(f.price, cur)} · Marktkapitalisierung ${fmtBig(f.marketCap, cur)} · ${f.sector ?? 'N/A'}${nextReport}
 
 ${s.card}
 
