@@ -65,7 +65,7 @@ export default function ArticleTab({ symbol }: { symbol: string }) {
             Ein Artikel wie in einem Anlegermagazin: Geschäft und Lage, die Zahlen, Bewertung und Analysten, der
             Chart, Pro und Contra, dazu Überschrift, Vorspann und Fazit. Geschrieben aus der neuesten Analyse, ihren
             Säulen, der Recherche und der Chartlesung — eine ältere als eine Woche wird dafür neu gelesen. Sechs
-            Modellaufrufe, rund 15 Cent.
+            Modellaufrufe, eine knappe Minute, einige Cent.
           </p>
           <div className="mt-3">{button('Bericht schreiben')}</div>
         </div>

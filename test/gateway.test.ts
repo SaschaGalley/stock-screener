@@ -19,6 +19,7 @@ describe('the tasks as the proxy names them', () => {
         { model_name: 'stock-cli/analysis', litellm_params: { model: 'made-up-other' } },
         { model_name: 'stock-cli/market-brief', litellm_params: { model: 'perplexity/sonar-pro' } },
         { model_name: 'other-project/analysis', litellm_params: { model: 'made-up-small' } },
+        { model_name: 'stock-cli/made-up-task', litellm_params: { model: 'made-up-small' } },
         { model_name: 'stock-cli/summary' },
       ],
     });

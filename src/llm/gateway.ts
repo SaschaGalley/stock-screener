@@ -16,7 +16,7 @@
  */
 
 import { getConfig, requireApiKey } from '../config.js';
-import { isPerplexityModel, type ModelTask, type PerplexityModelId } from '../models.js';
+import { isPerplexityModel, MODEL_TASKS, type ModelTask, type PerplexityModelId } from '../models.js';
 import { logger } from '../utils/logger.js';
 
 export const taskAlias = (task: ModelTask): string => `stock-cli/${task}`;
@@ -36,17 +36,24 @@ export function plainModel(name: string): string {
   return name.slice(name.lastIndexOf('/') + 1);
 }
 
-/** The tasks' models from the proxy's `/v1/model/info`, by task; tasks the proxy does not know are left out. */
+const TASK_KEYS = new Set<string>(MODEL_TASKS.map((t) => t.key));
+
+/**
+ * The tasks' models from the proxy's `/v1/model/info`, by task; tasks the
+ * proxy does not know are left out, and so are names under `stock-cli/` that
+ * are not one of the app's tasks.
+ */
 export function tasksFromModelInfo(info: unknown): Partial<Record<ModelTask, string>> {
   const rows = (info as { data?: unknown })?.data;
   const out: Partial<Record<ModelTask, string>> = {};
   if (!Array.isArray(rows)) return out;
   for (const r of rows as { model_name?: unknown; litellm_params?: { model?: unknown } }[]) {
     const name = typeof r?.model_name === 'string' ? r.model_name : '';
+    const task = name.startsWith('stock-cli/') ? name.slice(10) : '';
     const model = r?.litellm_params?.model;
     // The first deployment of a task names it; more behind one name are the proxy's load balancing.
-    if (name.startsWith('stock-cli/') && typeof model === 'string' && !(name.slice(10) in out)) {
-      out[name.slice(10) as ModelTask] = plainModel(model);
+    if (TASK_KEYS.has(task) && typeof model === 'string' && !(task in out)) {
+      out[task as ModelTask] = plainModel(model);
     }
   }
   return out;
