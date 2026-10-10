@@ -22,6 +22,7 @@ export class AnthropicProvider extends LLMProvider {
 
   async complete<T>(req: CompletionRequest<T>): Promise<T> {
     logger.step(`Calling ${this.model} (${req.label})...`);
+    this.usedModel = this.model;
 
     if (this.useNativeSearch) return this.completeWithNativeSearch(req);
 
@@ -40,6 +41,8 @@ export class AnthropicProvider extends LLMProvider {
           ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
         })
       : await this.client.messages.create(params);
+    // A declined request re-run on another model says which.
+    this.usedModel = message.model ?? this.model;
 
     const text = message.content
       .filter((b) => b.type === 'text')

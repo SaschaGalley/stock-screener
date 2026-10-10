@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../../api';
 import { CHART_PATTERN_STATUS_LABEL, type ChartRead, type ChartReadDoc } from '../../../../src/analysis/chart';
 import { MODELS } from '../../../../src/models';
+import { modelName, useTaskModels } from '../../models';
 import PriceLadder, { type LadderMark } from './PriceLadder';
 import { Question, dayDe, de } from './shared';
 import { deProse } from '../prose';
@@ -40,12 +41,6 @@ function readMarks(r: ChartRead): LadderMark[] {
   return marks;
 }
 
-/** The chart reading's model as the administration sets it, asked once for every chart tab. */
-let standardModel: Promise<string | null> | null = null;
-const chartModel = () => (standardModel ??= api.getConfig()
-  .then(({ config }) => config.chartRead.model ?? config.steps.analysis.model)
-  .catch(() => { standardModel = null; return null; }));
-
 /**
  * A language model's reading of the chart: what it sees in a paragraph, the
  * three ways it can go — each with its trigger and where it would lead — and
@@ -56,10 +51,10 @@ export default function ChartReadBlock({ symbol, read, price, asOf, fmtPrice, on
   symbol: string; read: ChartReadDoc | null; price: number; asOf: string | null;
   fmtPrice: (n: number) => string; onRead: (r: ChartReadDoc) => void;
 }) {
-  // '' is the administration's model; another is picked for one reading.
+  // '' is the administration's model; another is picked for one reading — not through the LiteLLM proxy, which chooses.
   const [pick, setPick] = useState('');
-  const [standard, setStandard] = useState<string | null>(null);
-  useEffect(() => { void chartModel().then(setStandard); }, []);
+  const models = useTaskModels();
+  const standard = models?.chartRead ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async () => {
@@ -83,6 +78,9 @@ export default function ChartReadBlock({ symbol, read, price, asOf, fmtPrice, on
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {models?.gateway ? (
+            <span className="text-2xs text-ink-500" title={`Über den LiteLLM-Proxy (${models.gateway}), Aufgabe stock-cli/chart-read`}>{modelName(standard)}</span>
+          ) : (
           <select
             value={pick}
             onChange={(e) => setPick(e.target.value)}
@@ -92,6 +90,7 @@ export default function ChartReadBlock({ symbol, read, price, asOf, fmtPrice, on
             <option value="">Vorgabe{standard ? ` (${label(standard)})` : ''}</option>
             {MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
+          )}
           <button
             onClick={() => void run()}
             disabled={busy}

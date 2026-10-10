@@ -39,7 +39,7 @@ import {
   PromptData, buildDataSummaryPrompt, buildNarrativePrompt, buildSynthesisPrompt,
 } from './output/prompt.js';
 import { appendSearchResults } from './providers/base.js';
-import { createProviderForModel } from './providers/factory.js';
+import { providerForTask } from './providers/factory.js';
 import { DistillBundle } from './data/distill.js';
 import {
   EVIDENCE_LABEL, PerplexityClaim, PerplexityContext, PerplexityFinding, PerplexityFindings, sourceLabel,
@@ -258,10 +258,10 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
   const material = narrativeMaterial(distill, perplexity, searchResults, deepResearch);
 
   // ── Stages 1 + 2: two cheap summaries, neither seeing the other's input ────
-  const summariser = createProviderForModel(input.summaryModel);
+  const summariser = providerForTask('summary', input.summaryModel);
   const narrator = material.empty
     ? null
-    : createProviderForModel(input.summaryModel, input.nativeSearch ?? false);
+    : providerForTask('summary', input.summaryModel, input.nativeSearch ?? false);
 
   say(`Zusammenfassungen mit ${input.summaryModel}…`);
   const [dataNote, narrativeReads] = await Promise.all([
@@ -314,7 +314,8 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
     spread:     combined.spread,
     runs:       combined.runs,
     sources:    material.sources,
-    model:      input.summaryModel,
+    // The model that read it, as the proxy routed it, where one did.
+    model:      narrator?.usedModel ?? input.summaryModel,
     at:         new Date().toISOString(),
   };
 
@@ -351,7 +352,7 @@ export async function runVerdictPipeline(input: VerdictPipelineInput): Promise<V
   });
 
   say(`Synthese mit ${input.synthesisModel}…`);
-  const synthesis = await createProviderForModel(input.synthesisModel)
+  const synthesis = await providerForTask('analysis', input.synthesisModel)
     .complete({
       label:  'synthesis',
       system: SYSTEM_SYNTHESIS,

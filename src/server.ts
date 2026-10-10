@@ -40,7 +40,7 @@ import type {
   StockSummary,
 } from './api-types.js';
 import {
-  DEFAULT_PERPLEXITY_MODEL, isManualResearchTool, isPerplexityModel, MANUAL_RESEARCH_TOOLS, MODELS, PerplexityModelId,
+  DEEP_RESEARCH_MODEL, DEFAULT_PERPLEXITY_MODEL, isManualResearchTool, isPerplexityModel, MANUAL_RESEARCH_TOOLS, MODELS, PerplexityModelId,
 } from './models.js';
 import {
   deleteResearch, listResearch, pasteResearch, ResearchInputError, researchPromptFor,
@@ -97,6 +97,7 @@ import { logoDomain, looksLikeSymbol, SAFE_SYMBOL_RE } from './symbols.js';
 import { invalidateDiscover, universeLists } from './discover-service.js';
 import { marketToday } from './market-service.js';
 import { recommendationVote, verdictForScore } from './verdict.js';
+import { gateway, perplexityModelForTask, taskModels } from './llm/gateway.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
@@ -446,17 +447,19 @@ export function createApp(): express.Express {
   app.post('/api/stocks/:symbol/perplexity-refresh', async (req, res, next) => {
     try {
       const symbol = req.params.symbol.toUpperCase();
-      if (!cfg.pplxApiKey) {
+      const requested = (req.body as { model?: unknown } | undefined)?.model;
+      const asked = isPerplexityModel(requested) ? requested : DEFAULT_PERPLEXITY_MODEL;
+      // A brief through the LiteLLM proxy is its task's model, as the analyses read it; deep research goes direct.
+      const model = asked === DEEP_RESEARCH_MODEL ? asked : await perplexityModelForTask('stock-research', asked);
+      if (!cfg.pplxApiKey && (model === DEEP_RESEARCH_MODEL || !gateway())) {
         res.status(400).json({ error: 'Perplexity not configured — set PPLX_API_KEY in .env.' });
         return;
       }
-      const requested = (req.body as { model?: unknown } | undefined)?.model;
-      const model = isPerplexityModel(requested) ? requested : DEFAULT_PERPLEXITY_MODEL;
 
       const { perplexityRefresh } = await import('./hatchet/tasks/single.js');
       const { perplexity } = await viaHatchet(
         () => perplexityRefresh.run({ symbol, model }, interactive({ symbol })),
-        async () => ({ perplexity: await refreshPerplexity(symbol, model, cfg.pplxApiKey!) as never }),
+        async () => ({ perplexity: await refreshPerplexity(symbol, model, cfg.pplxApiKey ?? '') as never }),
       );
 
       res.json({ ok: true, symbol, perplexity });
@@ -709,7 +712,9 @@ export function createApp(): express.Express {
           brave:      !!cfg.braveApiKey,
           tavily:     !!cfg.tavilyApiKey,
           distill:    !!cfg.distillApiKey,
+          litellm:    gateway() !== null,
         },
+        gateway: gateway() ? { host: new URL(gateway()!.baseUrl).host, tasks: await taskModels() } : null,
         dataDir,
         distillApiUrl: cfg.distillApiUrl,
         referenceSymbols: counts.reference,

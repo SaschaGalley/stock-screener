@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
-import { DEEP_RESEARCH_MODEL, DEFAULT_PERPLEXITY_MODEL, type ManualResearchTool, PerplexityModelId } from '../models.js';
+import { gateway, taskAlias } from '../llm/gateway.js';
+import { DEEP_RESEARCH_MODEL, DEFAULT_PERPLEXITY_MODEL, type ManualResearchTool, type ModelTask, PerplexityModelId } from '../models.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -712,22 +713,28 @@ export interface PplxAnswer {
 }
 
 /**
- * One request to Perplexity: retried through the rate limit, streamed where
- * the model needs it (see `readStream`). `extra` goes into the body beside the
- * shared search settings.
+ * One request to Perplexity for `task`: retried through the rate limit,
+ * streamed where the model needs it (see `readStream`). `extra` goes into the
+ * body beside the shared search settings.
+ *
+ * Through the LiteLLM proxy under the task's name where one is configured
+ * (`src/llm/gateway.ts`), which passes the sources and the search settings
+ * through — except a streamed answer, whose sources it drops: those go to
+ * Perplexity directly, as every call does when the proxy cannot be reached.
  */
 export async function pplxComplete(
-  model: PerplexityModelId, system: string, user: string, apiKey: string, extra: Record<string, unknown> = {},
+  task: ModelTask, model: PerplexityModelId, system: string, user: string, apiKey: string, extra: Record<string, unknown> = {},
 ): Promise<PplxAnswer> {
   const params = MODEL_PARAMS[model];
-  const request = () => fetch(PPLX_API_URL, {
+  const g = params.stream ? null : gateway();
+  const send = (via: { url: string; key: string; model: string }) => fetch(via.url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      'Authorization': `Bearer ${via.key}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model,
+      model: via.model,
       messages: [
         { role: 'system', content: system },
         { role: 'user',   content: user },
@@ -740,6 +747,20 @@ export async function pplxComplete(
     }),
     signal: AbortSignal.timeout(params.timeoutMs),
   });
+  const direct = { url: PPLX_API_URL, key: apiKey, model };
+  let routed: string | null = null;
+  const request = async () => {
+    if (!g) return send(direct);
+    try {
+      const res = await send({ url: `${g.baseUrl}/v1/chat/completions`, key: g.apiKey, model: taskAlias(task) });
+      if (![502, 503, 504].includes(res.status) || !apiKey) return res;
+      logger.warn(`LiteLLM answered ${res.status} — ${task} goes to Perplexity directly`);
+    } catch (e) {
+      if (!apiKey) throw e;
+      logger.warn(`LiteLLM unreachable (${(e as Error).message}) — ${task} goes to Perplexity directly`);
+    }
+    return send(direct);
+  };
 
   // The rate limit is per minute and counts requests, so two briefs started
   // together can trip it. A 429 has not been billed; waiting it out is free.
@@ -755,16 +776,19 @@ export async function pplxComplete(
     throw new Error(`Perplexity API error ${res.status}: ${body}`);
   }
 
+  routed = res.headers.get('x-litellm-model-name');
+  const proxyCost = Number(res.headers.get('x-litellm-response-cost') ?? NaN);
   const json = params.stream
     ? await readStream(res)
     : await res.json().catch(() => null) as PplxResponse | null;
+  if (routed) logger.info(`Perplexity via LiteLLM: ${routed}${Number.isFinite(proxyCost) ? `, $${proxyCost.toFixed(4)}` : ''}`);
   if (json?.choices?.[0]?.finish_reason === 'length') {
     logger.warn(`Perplexity hit its token ceiling (${params.max_tokens ?? 'model default'}) — keeping the items that finished`);
   }
   return {
     raw: json?.choices?.[0]?.message?.content ?? '',
     citations: json?.citations ?? [],
-    costUsd: json?.usage?.cost?.total_cost,
+    costUsd: json?.usage?.cost?.total_cost ?? (Number.isFinite(proxyCost) ? proxyCost : undefined),
     usage: json?.usage,
     finishReason: json?.choices?.[0]?.finish_reason,
   };
@@ -779,7 +803,7 @@ export async function fetchPerplexity(
   logger.step(`Fetching Perplexity AI context (${model})...`);
   const { system, user } = researchPrompt(ticker, companyName);
   const { raw, citations, costUsd, usage, finishReason } = await pplxComplete(
-    model, system, user, apiKey, SCHEMA_MODELS.has(model) ? { response_format: BRIEF_RESPONSE_FORMAT } : {},
+    model === DEEP_RESEARCH_MODEL ? 'deep-research' : 'stock-research', model, system, user, apiKey, SCHEMA_MODELS.has(model) ? { response_format: BRIEF_RESPONSE_FORMAT } : {},
   );
 
   // A parsed answer is never a refusal, even with every list empty — "nothing

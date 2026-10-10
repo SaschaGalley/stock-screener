@@ -49,6 +49,24 @@ export const MODELS: ModelDef[] = [
   { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', provider: 'claude', aliases: ['haiku'] },
 ];
 
+/**
+ * The jobs a model does in this app. With the LiteLLM proxy configured
+ * (`src/llm/gateway.ts`) each is called by its own name there —
+ * `stock-cli/analysis` and so on — and the proxy decides which model does it;
+ * without, the administration's settings name the model. `perplexity` marks
+ * the jobs that need Perplexity's searching models and their sources.
+ */
+export const MODEL_TASKS = [
+  { key: 'analysis',       label: 'Analyse',           perplexity: false, hint: 'Jede Aktienanalyse, nachts und per Klick, samt der Synthese, die den Score setzt.' },
+  { key: 'summary',        label: 'Zusammenfassungen', perplexity: false, hint: 'Die zwei Stufen vor der Synthese, die Berichte und Recherche verdichten: ein günstiges Modell reicht.' },
+  { key: 'chart-read',     label: 'Chartlesung',       perplexity: false, hint: 'Im Depot-Check und im Chart-Tab einer Aktie.' },
+  { key: 'depot-manager',  label: 'Depotmanager',      perplexity: false, hint: 'Ein Aufruf je Depot-Check, der das ganze Depot abwägt: der Platz für das stärkste Modell.' },
+  { key: 'market-brief',   label: 'Marktlage',         perplexity: true,  hint: 'Für den Depot-Check: Lage, Rotation, Sektoren, Termine. Zwölf Stunden wiederverwendet.' },
+  { key: 'stock-research', label: 'Recherche je Aktie', perplexity: true, hint: 'Was die Kennzahlen nicht zeigen, für jede Analyse; 14 Tage wiederverwendet.' },
+  { key: 'deep-research',  label: 'Deep Research',     perplexity: true,  hint: 'Per Knopf in der Recherche einer Aktie; läuft immer direkt bei Perplexity, weil der Proxy beim Streamen die Quellen verliert.' },
+] as const;
+export type ModelTask = (typeof MODEL_TASKS)[number]['key'];
+
 /** Used when neither `--model` nor a stored web setting says otherwise. */
 export const DEFAULT_MODEL_ID = 'claude-sonnet-5-5';
 

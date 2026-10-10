@@ -40,6 +40,7 @@ import { buildDistillBundle } from './distill-content.js';
 import { PromptData } from './output/prompt.js';
 import { rescore, runVerdictPipeline } from './score-service.js';
 import { readAppConfig } from './app-config.js';
+import { modelForTask, perplexityKey, perplexityModelForTask } from './llm/gateway.js';
 import { formatMarkdown } from './output/markdown.js';
 // import { saveReports } from './output/report.js';  // disabled — see comment in run()
 import {
@@ -244,7 +245,11 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
   if (input.verbose) process.env.LOG_LEVEL = 'debug';
   const emit = input.onProgress ?? (() => {});
 
-  const { provider, modelId } = resolveModel(input.model);
+  // Through the LiteLLM proxy an analysis is its task's, whatever model was asked for: the flags it
+  // is stored under name the model that does the task there, so a switch in the proxy is a new entry.
+  const asked = resolveModel(input.model);
+  const modelId = await modelForTask('analysis', asked.modelId);
+  const provider = providerFor(modelId) ?? asked.provider;
 
   // Multi-select search resolution:
   //   - Parse input into a clean list (e.g. ['brave', 'tavily', 'claude'])
@@ -324,7 +329,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
 
   // ── 1b. News (cached 30 min) + Rates + Sector Medians + Perplexity ────────
   const usePplx   = input.pplx !== null && input.pplx !== undefined;
-  const pplxModel: PerplexityModelId = input.pplx ?? DEFAULT_PERPLEXITY_MODEL;
+  const pplxModel: PerplexityModelId = await perplexityModelForTask('stock-research', input.pplx ?? DEFAULT_PERPLEXITY_MODEL);
   // Distill goes in only when the administration says so (`scoring.distill`),
   // for every analysis alike; then as one qualitative source among others (see
   // `distillDossierSection`). The nightly step archives it either way.
@@ -353,7 +358,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
     // not new research, and the cache window exists so re-runs stop paying
     // for the same synthesis again.
     usePplx
-      ? getPerplexityCached(symbol, financials.companyName, pplxModel, requireApiKey('perplexity'), input.runId)
+      ? getPerplexityCached(symbol, financials.companyName, pplxModel, perplexityKey(), input.runId)
           .catch((e) => {
             logger.warn(`Perplexity unavailable: ${(e as Error).message}`);
             return null;
@@ -530,7 +535,7 @@ export async function runAnalysis(input: AnalysisRunInput): Promise<{ result: An
         deepResearch,
         searchResults,
         synthesisModel:      modelId,
-        summaryModel:        scoring.summaryModel,
+        summaryModel:        await modelForTask('summary', scoring.summaryModel),
         // Native search belongs to the stage that reads prose. The two
         // summarisers are otherwise identical, so only the narrative one is
         // ever handed a search tool.

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import type { AppConfig, ConfigResponse, JobRun, SchedulerStatus, SearchChoice } from '../types';
-import { MODELS, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel } from '../../../src/models';
+import {
+  DEFAULT_PERPLEXITY_MODEL, MODEL_TASKS, MODELS, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel,
+} from '../../../src/models';
 import Page from '../components/Page';
+import { modelName } from '../models';
 import { BacktestStatusLine, useBacktestOverview } from '../components/BacktestRuns';
 import CalibrationPanel from '../components/CalibrationPanel';
 import { universeIndices } from '../../../src/data/universe';
@@ -340,7 +343,40 @@ export default function AdminPage() {
       </Card>
 
       {/* ── Modelle ────────────────────────────────────────────────────── */}
-      <Card title="Modelle" hint="Welches Modell welche Aufgabe übernimmt. „wie Analyse“ folgt dem Analysemodell.">
+      {meta.gateway ? (
+        <Card
+          title="Modelle"
+          hint={`Über den LiteLLM-Proxy (${meta.gateway.host}): Dort hat jede Aufgabe ihren eigenen Namen, stock-cli/…, und dort wird ihr Modell gewählt und gezählt, was sie kostet. Hier steht, was er gerade dahinter hat.`}
+        >
+          <div className="grid grid-cols-1 items-center gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,16rem)_minmax(0,1fr)]">
+            {MODEL_TASKS.map((t) => {
+              const model = meta.gateway!.tasks[t.key];
+              // The two Perplexity tasks the app asks on its own can be switched off here; deep research is a button.
+              const toggle = t.key === 'market-brief'
+                ? { on: config.depotCheck.marketModel !== null, set: (v: boolean) => patch((d) => { d.depotCheck.marketModel = v ? DEFAULT_PERPLEXITY_MODEL : null; }) }
+                : t.key === 'stock-research'
+                  ? { on: analysis.pplx !== null, set: (v: boolean) => patch((d) => { d.steps.analysis.pplx = v ? DEFAULT_PERPLEXITY_MODEL : null; }) }
+                  : null;
+              return (
+                <div key={t.key} className="contents">
+                  <span className="text-xs text-ink-400">{t.label}</span>
+                  <span className="flex min-w-0 items-center gap-2 text-xs">
+                    {toggle && (
+                      <input type="checkbox" checked={toggle.on} onChange={(e) => toggle.set(e.target.checked)} className="accent-accent" aria-label={`${t.label} an`} />
+                    )}
+                    <span className={toggle && !toggle.on ? 'text-ink-500 line-through' : 'text-ink-100'}>
+                      {model ? modelName(model) : <span className="text-amber-300">im Proxy nicht angelegt</span>}
+                    </span>
+                    <span className="truncate font-mono text-2xs text-ink-500">stock-cli/{t.key}</span>
+                  </span>
+                  <p className="text-2xs text-ink-500">{t.hint}{toggle && !toggle.on ? ' Aus.' : ''}</p>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ) : (
+      <Card title="Modelle" hint="Welches Modell welche Aufgabe übernimmt. „wie Analyse“ folgt dem Analysemodell. Mit LITELLM_BASE_URL und LITELLM_API_KEY wählt sie stattdessen der LiteLLM-Proxy.">
         <div className="grid grid-cols-1 items-center gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,16rem)_minmax(0,1fr)]">
           <ModelRow
             label="Analyse" value={analysis.model} onChange={(v) => patch((d) => { d.steps.analysis.model = v ?? d.steps.analysis.model; })}
@@ -375,6 +411,7 @@ export default function AdminPage() {
           <p className="text-2xs text-ink-500">Perplexity, für den Depot-Check: Lage, Rotation, Sektoren, Termine. Zwölf Stunden wiederverwendet.</p>
         </div>
       </Card>
+      )}
 
       {/* ── Schritte ───────────────────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-3">
@@ -447,6 +484,7 @@ export default function AdminPage() {
               })}
             </div>
 
+            {!meta.gateway && <>
             <label className="text-xs text-ink-400">Perplexity</label>
             <select
               value={analysis.pplx ?? 'none'}
@@ -466,6 +504,7 @@ export default function AdminPage() {
                 {PERPLEXITY_MODELS.find((m) => m.id === analysis.pplx)?.note}
               </p>
             )}
+            </>}
 
             <label className="text-xs text-ink-400">Recherche-Cache</label>
             <DaysInput

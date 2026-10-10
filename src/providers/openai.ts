@@ -23,6 +23,7 @@ export class OpenAIProvider extends LLMProvider {
 
   async complete<T>(req: CompletionRequest<T>): Promise<T> {
     logger.step(`Calling ${this.model} (${req.label})...`);
+    this.usedModel = this.useNativeSearch ? SEARCH_MODEL : this.model;
 
     if (this.useNativeSearch) return this.completeWithNativeSearch(req);
 

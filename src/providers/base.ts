@@ -108,4 +108,13 @@ export abstract class LLMProvider {
    */
   protected _nativeSearchQueries: string[] = [];
   getNativeSearchQueries(): string[] { return [...this._nativeSearchQueries]; }
+
+  /**
+   * The model that answered the last call, read after it: the one asked of a
+   * provider directly, the one the LiteLLM proxy says it routed to — which may
+   * be a fallback of its own. Null before a call.
+   */
+  usedModel: string | null = null;
+  /** What the last call cost, where the proxy says so. */
+  costUsd: number | null = null;
 }

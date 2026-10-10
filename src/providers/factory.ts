@@ -1,9 +1,25 @@
 import { LLMProvider } from './base.js';
 import { AnthropicProvider } from './anthropic.js';
+import { LiteLLMProvider } from './litellm.js';
 import { OpenAIProvider } from './openai.js';
 import { requireApiKey } from '../config.js';
+import { gateway } from '../llm/gateway.js';
 import { AnalysisOptions } from '../types.js';
-import { ModelProvider, providerFor } from '../models.js';
+import { ModelProvider, ModelTask, providerFor } from '../models.js';
+
+/**
+ * The provider for one of the app's tasks: through the LiteLLM proxy under the
+ * task's name where one is configured, else `model` directly. A native web
+ * search is the providers' own tool and always goes to them directly; so does
+ * the call when the proxy cannot be reached, with `model`.
+ */
+export function providerForTask(task: ModelTask, model: string, useNativeSearch = false): LLMProvider {
+  const g = gateway();
+  if (!g || useNativeSearch) return createProviderForModel(model, useNativeSearch);
+  return new LiteLLMProvider(g.baseUrl, g.apiKey, task, () => {
+    try { return createProviderForModel(model); } catch { return null; }
+  });
+}
 
 /**
  * A provider for one model id, with no analysis options around it.

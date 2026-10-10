@@ -24,7 +24,8 @@ import { readPriceBarsOhlc } from './db/history-store.js';
 import { latestDocument, readFinancialsLax, saveDocument } from './db/store.js';
 import { modelFor, readAppConfig } from './app-config.js';
 import { resolveModelId } from './models.js';
-import { createProviderForModel } from './providers/factory.js';
+import { gateway, modelForTask } from './llm/gateway.js';
+import { providerForTask } from './providers/factory.js';
 import { logger } from './utils/logger.js';
 
 /** Bars read: three years, so the 200-day line and the year's squeeze have warmed up where the chart begins. */
@@ -217,12 +218,14 @@ export class ChartReadInputError extends Error {}
 
 /**
  * Ask `model` to read the chart — without one, the chart reading's model from
- * the administration — keep the answer and return it. Prices far outside
- * anything the chart traded at are dropped: a level at ten times the high is
- * a typo, not a reading.
+ * the administration; through the LiteLLM proxy always the one it gives the
+ * task — keep the answer and return it, with the model that wrote it. Prices
+ * far outside anything the chart traded at are dropped: a level at ten times
+ * the high is a typo, not a reading.
  */
 export async function runChartRead(symbol: string, model?: string | null): Promise<ChartReadDoc> {
-  const modelId = model ? resolveModelId(model) : modelFor(await readAppConfig(), 'chart');
+  const configured = modelFor(await readAppConfig(), 'chart');
+  const modelId = gateway() ? await modelForTask('chart-read', configured) : model ? resolveModelId(model) : configured;
   const [all, f] = await Promise.all([bars(symbol), readFinancialsLax(symbol)]);
   const a = chartAnalysis(all);
   if (!a) throw new ChartReadInputError(`Zu wenige Kursdaten für ${symbol}, um den Chart zu lesen.`);
@@ -233,7 +236,8 @@ export async function runChartRead(symbol: string, model?: string | null): Promi
   const plausible = (p: number | null) => p === null || (p >= lo * 0.5 && p <= hi * 1.6);
 
   logger.info(`${symbol}: Chart-Lesung mit ${modelId}…`);
-  const out = await createProviderForModel(modelId).complete({
+  const provider = providerForTask('chart-read', modelId);
+  const out = await provider.complete({
     label:  'chart-read',
     system: SYSTEM,
     user:   chartReadPrompt(symbol, f?.companyName ?? null, f?.tradingCurrency ?? null, all, a),
@@ -254,6 +258,7 @@ export async function runChartRead(symbol: string, model?: string | null): Promi
     invalidation: out.invalidation,
     watch: out.watch.slice(0, 5),
   };
-  await saveDocument({ symbol, kind: 'chart', content: readAsText(read), data: read, model: modelId, schemaVer: 1 });
-  return { read, model: modelId, producedAt: new Date().toISOString() };
+  const wrote = provider.usedModel ?? modelId;
+  await saveDocument({ symbol, kind: 'chart', content: readAsText(read), data: read, model: wrote, schemaVer: 1 });
+  return { read, model: wrote, producedAt: new Date().toISOString() };
 }

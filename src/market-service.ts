@@ -20,6 +20,7 @@ import { SECTOR_ETFS } from './data/macro.js';
 import { quotesFor, screenerQuotes, trendingTickers } from './data/yahoo-market.js';
 import { readPriceBarsMany } from './db/history-store.js';
 import { latestMarketBrief, saveMarketBrief, saveMarketList } from './db/market-store.js';
+import { gateway, perplexityModelForTask } from './llm/gateway.js';
 import type { PerplexityModelId } from './models.js';
 import { peersBySymbol, type StoredPeer } from './db/store.js';
 import { universeStocks } from './discover-service.js';
@@ -137,11 +138,13 @@ const BRIEF_REUSE_MS = 12 * 60 * 60 * 1000;
  * Perplexity's market brief: the stored one while it is fresh and from this
  * model and question, else a new one, kept. Throws without a key or an answer.
  */
-export async function marketBrief(model: PerplexityModelId): Promise<MarketBrief> {
+export async function marketBrief(configured: PerplexityModelId): Promise<MarketBrief> {
+  // Through the LiteLLM proxy the brief is its task's: stored and reused under the model that writes it there.
+  const model = await perplexityModelForTask('market-brief', configured);
   const stored = await latestMarketBrief(model, MARKET_BRIEF_PROMPT_HASH, BRIEF_REUSE_MS);
   if (stored) return stored;
-  const key = getConfig().pplxApiKey;
-  if (!key) throw new Error('Kein PPLX_API_KEY: ohne ihn keine Marktlage.');
+  const key = getConfig().pplxApiKey ?? '';
+  if (!key && !gateway()) throw new Error('Kein PPLX_API_KEY und kein LiteLLM: ohne einen von beiden keine Marktlage.');
   const { brief, raw } = await fetchMarketBrief(model, key);
   await saveMarketBrief(brief, raw);
   return brief;

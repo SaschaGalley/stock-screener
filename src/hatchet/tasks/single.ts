@@ -31,7 +31,8 @@ import { PerplexityModel, refreshPerplexity } from '../../perplexity-service.js'
 import { refreshStockData } from '../../refresh.js';
 import { runAnalysis } from '../../cli.js';
 import { looksLikeSymbol } from '../../symbols.js';
-import type { PerplexityModelId } from '../../models.js';
+import { gateway } from '../../llm/gateway.js';
+import { DEEP_RESEARCH_MODEL, type PerplexityModelId } from '../../models.js';
 import { getHatchet } from '../client.js';
 import {
   analysisGate, distillGate,
@@ -133,8 +134,9 @@ export const perplexityRefresh = hatchet.task<PerplexityRefreshInput, Perplexity
   retries: 0,
   executionTimeout: REFRESH_TIMEOUT,
   fn: async (input): Promise<PerplexityRefreshOutput> => {
-    const apiKey = getConfig().pplxApiKey;
-    if (!apiKey) throw new Error('Perplexity not configured — set PPLX_API_KEY.');
+    // Without its own key only through the LiteLLM proxy, which deep research never goes through.
+    const apiKey = getConfig().pplxApiKey ?? '';
+    if (!apiKey && (input.model === DEEP_RESEARCH_MODEL || !gateway())) throw new Error('Perplexity not configured — set PPLX_API_KEY.');
     const perplexity = await refreshPerplexity(input.symbol, input.model, apiKey);
     return { perplexity: perplexity as unknown as JsonPayload };
   },

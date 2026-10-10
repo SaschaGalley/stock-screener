@@ -3,6 +3,7 @@ import { api, type ModelInfo } from '../api';
 import type { AnalysisListEntry, SearchChoice, Settings } from '../types';
 import { searchesKey } from '../types';
 import { formatAge } from '../format';
+import { modelName, useTaskModels } from '../models';
 import { CloseIcon } from './icons';
 import {
   DEFAULT_MODEL_ID, type ModelProvider, PERPLEXITY_MODELS, type PerplexityModelId, perplexityLabel, providerFor,
@@ -88,6 +89,14 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
   const [refreshKey, setRefreshKey]       = useState(0);
   const [adding, setAdding]               = useState(false);
   const [newModelInput, setNewModelInput] = useState('');
+  const tasks = useTaskModels();
+  // Through the LiteLLM proxy a run is the proxy's model, whatever is picked: the settings follow it,
+  // so that the run's result is the analysis shown afterwards.
+  useEffect(() => {
+    if (tasks?.gateway && resolveModelId(settings.model) !== tasks.analysis) onChange({ ...settings, model: tasks.analysis });
+    // Once the models are known; a cached analysis picked afterwards may name another.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
 
   useEffect(() => { saveCustomModels(customModels); }, [customModels]);
   useEffect(() => { api.listModels().then(setModels).catch(() => setModels(null)); }, [refreshKey]);
@@ -278,6 +287,12 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
 
             <div className="space-y-4">
               <Section title="Modell">
+                {tasks?.gateway ? (
+                  <p className="text-xs text-ink-200">
+                    {modelName(tasks.analysis)}
+                    <span className="text-ink-500"> · über den LiteLLM-Proxy ({tasks.gateway}), Aufgabe stock-cli/analysis; das Modell wird dort gewählt</span>
+                  </p>
+                ) : (
                 <div className="space-y-1">
                   {allModelOptions.map((opt) => (
                     <ModelOption
@@ -315,6 +330,7 @@ export default function AnalysisModal({ symbol, settings, onChange, onRun, loadi
                     </button>
                   )}
                 </div>
+                )}
               </Section>
 
               <Section title="Websuche">

@@ -102,7 +102,7 @@ export async function fetchMarketBrief(model: PerplexityModelId, apiKey: string)
   logger.step(`Marktlage von Perplexity (${model})…`);
   const user = TEMPLATE.replace('{date}', new Date().toISOString().slice(0, 10));
   // A week of news is what a market note is about; older pages crowd it out.
-  const answer = await pplxComplete(model, SYSTEM, user, apiKey, { search_recency_filter: 'week' });
+  const answer = await pplxComplete('market-brief', model, SYSTEM, user, apiKey, { search_recency_filter: 'week' });
   const brief = parseMarketBrief(answer.raw);
   if (!brief) throw new Error('Perplexity lieferte keine lesbare Marktlage.');
   return {

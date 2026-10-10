@@ -218,6 +218,12 @@ export interface ConfigResponse {
   universeSize:     number;
   /** Of those, how many were refreshed within the last seven days. */
   universeFresh:    number;
+  /**
+   * The LiteLLM proxy, where one is configured: its host, and each task's
+   * model as it has it now (`src/llm/gateway.ts`). The administration then
+   * shows the models instead of choosing them. Null without the proxy.
+   */
+  gateway: { host: string; tasks: Partial<Record<import('./models.js').ModelTask, string>> } | null;
   /** The committed calibration table, and whether it should be regenerated. */
   calibration: {
     generatedAt:       string | null;

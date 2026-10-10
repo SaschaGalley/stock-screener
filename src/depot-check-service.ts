@@ -44,6 +44,7 @@ import { listJournal } from './db/journal-store.js';
 import { allTrades } from './db/trades-store.js';
 import { stopEvidence } from './backtest/result.js';
 import { euroRates } from './fx-service.js';
+import { modelForTask } from './llm/gateway.js';
 import { decisionOutcomes } from './stock-history-service.js';
 import { tradesSource } from './trades-service.js';
 import { latestPointsForAll, listSymbols, symbolFacts } from './db/store.js';
@@ -52,7 +53,7 @@ import { invalidateDiscover } from './discover-service.js';
 import { isHatchetConfigured } from './hatchet/client.js';
 import { interactive, NoWorkerError, viaHatchet } from './hatchet/via.js';
 import { marketBrief, sectorTrendsNow } from './market-service.js';
-import { createProviderForModel } from './providers/factory.js';
+import { providerForTask } from './providers/factory.js';
 import { refreshStockData } from './refresh.js';
 import { logger } from './utils/logger.js';
 import { settledPool } from './utils/pool.js';
@@ -175,7 +176,9 @@ async function runCheck(save: Save): Promise<void> {
   const config = await readAppConfig();
   const settings = config.depotCheck;
   const flags = analysisFlagsFor(config);
-  const chartModel = modelFor(config, 'chart');
+  // The models as the LiteLLM proxy has them now, where it is configured: what the check records.
+  const chartModel = await modelForTask('chart-read', modelFor(config, 'chart'));
+  const analysisModel = await modelForTask('analysis', flags.model);
 
   // Checked once, up front: without a worker every analysis would fail alike.
   if (isHatchetConfigured()) {
@@ -272,7 +275,7 @@ async function runCheck(save: Save): Promise<void> {
   const asked = await askManager(view, { holdings, lists, market: brief, sectorTrends }, modelFor(config, 'manager'));
 
   const result: DepotCheckResult = {
-    generatedAt: new Date().toISOString(), settings, model: flags.model, chartModel,
+    generatedAt: new Date().toISOString(), settings, model: analysisModel, chartModel,
     candidates: checkedCandidates, holdings, lists,
     market: brief, marketError, sectorTrends,
     ...asked,
@@ -336,10 +339,11 @@ async function askManager(
       trades: history.trades, reasons: history.reasons, previous,
       evidence: await stopEvidence().catch(() => null),
     });
-    const manager = await createProviderForModel(model).complete({
+    const provider = providerForTask('depot-manager', await modelForTask('depot-manager', model));
+    const manager = await provider.complete({
       label: 'depot-manager', system: MANAGER_SYSTEM, user: managerUser(input), schema: ManagerSchema, maxTokens: 10_000,
     });
-    return { manager, managerError: null, managerAt: new Date().toISOString(), managerModel: model, notes };
+    return { manager, managerError: null, managerAt: new Date().toISOString(), managerModel: provider.usedModel ?? model, notes };
   } catch (e) {
     const managerError = (e as Error).message;
     logger.warn(`Depot manager: ${managerError}`);

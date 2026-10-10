@@ -12,6 +12,13 @@ const ConfigSchema = z.object({
   braveApiKey: z.string().optional(),
   fredApiKey: z.string().optional(),
   pplxApiKey: z.string().optional(),
+  /**
+   * The self-hosted LiteLLM proxy (`src/llm/gateway.ts`): with both set, every
+   * model call goes through it under its task's name and the proxy picks the
+   * model; without, the providers are called directly.
+   */
+  litellmBaseUrl: z.string().url().optional(),
+  litellmApiKey: z.string().optional(),
   distillApiKey: z.string().optional(),
   distillApiUrl: z.string().default('http://localhost:3000'),
   /**
@@ -86,6 +93,8 @@ export function getConfig(): EnvConfig {
     braveApiKey: process.env.BRAVE_API_KEY,
     fredApiKey: process.env.FRED_API_KEY,
     pplxApiKey: process.env.PPLX_API_KEY,
+    litellmBaseUrl: process.env.LITELLM_BASE_URL || undefined,
+    litellmApiKey: process.env.LITELLM_API_KEY || undefined,
     distillApiKey: process.env.DISTILL_API_KEY,
     distillApiUrl: process.env.DISTILL_API_URL,
     umsatzApiUrl: process.env.UMSATZ_API_URL,
